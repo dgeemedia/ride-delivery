@@ -2,6 +2,8 @@ const { PrismaClient } = require('@prisma/client');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const { calculateDistance, calculateDeliveryFee } = require('../utils/helpers');
+const notificationService = require('../services/notification.service');
+const { broadcastToPartners } = require('../services/socket.service');
 
 const prisma = new PrismaClient();
 
@@ -18,22 +20,20 @@ exports.getFeeEstimate = async (req, res) => {
   }
 
   const distance = calculateDistance(
-    parseFloat(pickupLat),
-    parseFloat(pickupLng),
-    parseFloat(dropoffLat),
-    parseFloat(dropoffLng)
+    parseFloat(pickupLat), parseFloat(pickupLng),
+    parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
 
   const estimatedFee = calculateDeliveryFee(distance, packageWeight ? parseFloat(packageWeight) : 0);
-  const estimatedDuration = Math.ceil(distance / 0.4); // Assume 24 km/h average for deliveries
+  const estimatedDuration = Math.ceil(distance / 0.4);
 
   res.status(200).json({
     success: true,
     data: {
       distance: distance.toFixed(2),
       estimatedFee: estimatedFee.toFixed(2),
-      estimatedDuration, // in minutes
-      currency: 'USD'
+      estimatedDuration,
+      currency: 'NGN'
     }
   });
 };
@@ -46,86 +46,88 @@ exports.getFeeEstimate = async (req, res) => {
 exports.requestDelivery = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array()
-    });
+    return res.status(400).json({ success: false, errors: errors.array() });
   }
 
   const {
-    pickupAddress,
-    pickupLat,
-    pickupLng,
-    pickupContact,
-    dropoffAddress,
-    dropoffLat,
-    dropoffLng,
-    dropoffContact,
-    packageDescription,
-    packageWeight,
-    packageValue,
-    notes
+    pickupAddress, pickupLat, pickupLng, pickupContact,
+    dropoffAddress, dropoffLat, dropoffLng, dropoffContact,
+    packageDescription, packageWeight, packageValue, notes, promoCode
   } = req.body;
 
-  // Check if user has an active delivery
   const activeDelivery = await prisma.delivery.findFirst({
     where: {
       customerId: req.user.id,
-      status: {
-        in: ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT']
-      }
+      status: { in: ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] }
     }
   });
 
-  if (activeDelivery) {
-    throw new AppError('You already have an active delivery', 400);
+  if (activeDelivery) throw new AppError('You already have an active delivery', 400);
+
+  const distance = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
+  let estimatedFee = calculateDeliveryFee(distance, packageWeight || 0);
+
+  // Apply promo code if provided
+  let appliedPromo = null;
+  if (promoCode) {
+    appliedPromo = await prisma.promoCode.findFirst({
+      where: {
+        code: promoCode.toUpperCase(),
+        isActive: true,
+        validFrom: { lte: new Date() },
+        validUntil: { gte: new Date() },
+        applicableFor: { in: ['deliveries', 'both'] }
+      }
+    });
+
+    if (appliedPromo) {
+      if (appliedPromo.discountType === 'percentage') {
+        estimatedFee = estimatedFee * (1 - appliedPromo.discountValue / 100);
+      } else {
+        estimatedFee = Math.max(0, estimatedFee - appliedPromo.discountValue);
+      }
+      await prisma.promoCode.update({
+        where: { id: appliedPromo.id },
+        data: { currentUses: { increment: 1 } }
+      });
+    }
   }
 
-  // Calculate distance and fee
-  const distance = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
-  const estimatedFee = calculateDeliveryFee(distance, packageWeight || 0);
-
-  // Create delivery
   const delivery = await prisma.delivery.create({
     data: {
       customerId: req.user.id,
-      pickupAddress,
-      pickupLat,
-      pickupLng,
-      pickupContact,
-      dropoffAddress,
-      dropoffLat,
-      dropoffLng,
-      dropoffContact,
-      packageDescription,
-      packageWeight,
-      packageValue,
-      distance,
-      estimatedFee,
-      notes,
+      pickupAddress, pickupLat, pickupLng, pickupContact,
+      dropoffAddress, dropoffLat, dropoffLng, dropoffContact,
+      packageDescription, packageWeight, packageValue,
+      distance, estimatedFee, notes,
+      promoCode: appliedPromo?.code || null,
       status: 'PENDING'
     },
     include: {
       customer: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          phone: true,
-          profileImage: true
-        }
+        select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true }
       }
     }
   });
 
-  // FUTURE: Notify nearby available delivery partners via Socket.io
-  // const nearbyPartners = await findNearbyPartners(pickupLat, pickupLng, 5);
-  // notifyPartners(nearbyPartners, delivery);
+  // Notify all online delivery partners about new delivery
+  broadcastToPartners(notificationService._io, 'delivery:new_request', {
+    deliveryId: delivery.id,
+    pickupAddress: delivery.pickupAddress,
+    dropoffAddress: delivery.dropoffAddress,
+    estimatedFee: delivery.estimatedFee,
+    distance: delivery.distance,
+    packageDescription: delivery.packageDescription,
+    customer: {
+      firstName: delivery.customer.firstName,
+      profileImage: delivery.customer.profileImage
+    }
+  });
 
   res.status(201).json({
     success: true,
     message: 'Delivery requested successfully. Looking for nearby delivery partners...',
-    data: { delivery }
+    data: { delivery, promoApplied: !!appliedPromo }
   });
 };
 
@@ -140,45 +142,19 @@ exports.getActiveDelivery = async (req, res) => {
     : { customerId: req.user.id };
 
   const delivery = await prisma.delivery.findFirst({
-    where: {
-      ...whereClause,
-      status: {
-        in: ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT']
-      }
-    },
+    where: { ...whereClause, status: { in: ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } },
     include: {
-      customer: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          phone: true,
-          profileImage: true
-        }
-      },
+      customer: { select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true } },
       partner: {
         select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          phone: true,
-          profileImage: true,
-          deliveryProfile: {
-            select: {
-              vehicleType: true,
-              vehiclePlate: true,
-              rating: true
-            }
-          }
+          id: true, firstName: true, lastName: true, phone: true, profileImage: true,
+          deliveryProfile: { select: { vehicleType: true, vehiclePlate: true, rating: true, currentLat: true, currentLng: true } }
         }
       }
     }
   });
 
-  res.status(200).json({
-    success: true,
-    data: { delivery }
-  });
+  res.status(200).json({ success: true, data: { delivery } });
 };
 
 /**
@@ -189,82 +165,46 @@ exports.getActiveDelivery = async (req, res) => {
 exports.acceptDelivery = async (req, res) => {
   const { id } = req.params;
 
-  // Check if partner has active profile
-  const partnerProfile = await prisma.deliveryPartnerProfile.findUnique({
-    where: { userId: req.user.id }
-  });
+  const partnerProfile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
 
-  if (!partnerProfile || !partnerProfile.isApproved) {
-    throw new AppError('Delivery partner profile not approved', 403);
-  }
+  if (!partnerProfile || !partnerProfile.isApproved) throw new AppError('Delivery partner profile not approved', 403);
+  if (!partnerProfile.isOnline) throw new AppError('Please go online to accept deliveries', 400);
 
-  if (!partnerProfile.isOnline) {
-    throw new AppError('Please go online to accept deliveries', 400);
-  }
-
-  // Check if partner has another active delivery
   const activeDelivery = await prisma.delivery.findFirst({
-    where: {
-      partnerId: req.user.id,
-      status: {
-        in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT']
-      }
-    }
+    where: { partnerId: req.user.id, status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } }
   });
 
-  if (activeDelivery) {
-    throw new AppError('You already have an active delivery', 400);
-  }
+  if (activeDelivery) throw new AppError('You already have an active delivery', 400);
 
-  // Find and update delivery
-  const delivery = await prisma.delivery.findUnique({
-    where: { id }
-  });
+  const delivery = await prisma.delivery.findUnique({ where: { id } });
 
-  if (!delivery) {
-    throw new AppError('Delivery not found', 404);
-  }
-
-  if (delivery.status !== 'PENDING') {
-    throw new AppError('Delivery is no longer available', 400);
-  }
+  if (!delivery) throw new AppError('Delivery not found', 404);
+  if (delivery.status !== 'PENDING') throw new AppError('Delivery is no longer available', 400);
 
   const updatedDelivery = await prisma.delivery.update({
     where: { id },
-    data: {
-      partnerId: req.user.id,
-      status: 'ASSIGNED',
-      assignedAt: new Date()
-    },
+    data: { partnerId: req.user.id, status: 'ASSIGNED', assignedAt: new Date() },
     include: {
-      customer: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          phone: true
-        }
-      },
-      partner: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          phone: true,
-          deliveryProfile: true
-        }
-      }
+      customer: { select: { id: true, firstName: true, lastName: true, phone: true } },
+      partner: { select: { id: true, firstName: true, lastName: true, phone: true, deliveryProfile: true } }
     }
   });
 
-  // FUTURE: Notify customer via push notification
-  // sendPushNotification(delivery.customerId, 'Delivery partner assigned!');
-
-  res.status(200).json({
-    success: true,
-    message: 'Delivery accepted successfully',
-    data: { delivery: updatedDelivery }
+  // Notify customer
+  await notificationService.notify({
+    userId: delivery.customerId,
+    title: 'Delivery Partner Found! 🛵',
+    message: `${req.user.firstName} ${req.user.lastName} will pick up your package shortly.`,
+    type: notificationService.TYPES.DELIVERY_ASSIGNED,
+    data: {
+      deliveryId: id,
+      partnerName: `${req.user.firstName} ${req.user.lastName}`,
+      vehicleType: partnerProfile.vehicleType,
+      vehiclePlate: partnerProfile.vehiclePlate
+    }
   });
+
+  res.status(200).json({ success: true, message: 'Delivery accepted successfully', data: { delivery: updatedDelivery } });
 };
 
 /**
@@ -275,35 +215,26 @@ exports.acceptDelivery = async (req, res) => {
 exports.pickupDelivery = async (req, res) => {
   const { id } = req.params;
 
-  const delivery = await prisma.delivery.findUnique({
-    where: { id }
-  });
+  const delivery = await prisma.delivery.findUnique({ where: { id } });
 
-  if (!delivery) {
-    throw new AppError('Delivery not found', 404);
-  }
-
-  if (delivery.partnerId !== req.user.id) {
-    throw new AppError('Unauthorized', 403);
-  }
-
-  if (delivery.status !== 'ASSIGNED') {
-    throw new AppError('Cannot pickup at this status', 400);
-  }
+  if (!delivery) throw new AppError('Delivery not found', 404);
+  if (delivery.partnerId !== req.user.id) throw new AppError('Unauthorized', 403);
+  if (delivery.status !== 'ASSIGNED') throw new AppError('Cannot pickup at this status', 400);
 
   const updatedDelivery = await prisma.delivery.update({
     where: { id },
-    data: {
-      status: 'PICKED_UP',
-      pickedUpAt: new Date()
-    }
+    data: { status: 'PICKED_UP', pickedUpAt: new Date() }
   });
 
-  res.status(200).json({
-    success: true,
-    message: 'Package picked up',
-    data: { delivery: updatedDelivery }
+  await notificationService.notify({
+    userId: delivery.customerId,
+    title: 'Package Picked Up 📦',
+    message: 'Your package has been picked up and is heading to the destination.',
+    type: notificationService.TYPES.DELIVERY_PICKED_UP,
+    data: { deliveryId: id }
   });
+
+  res.status(200).json({ success: true, message: 'Package picked up', data: { delivery: updatedDelivery } });
 };
 
 /**
@@ -314,34 +245,26 @@ exports.pickupDelivery = async (req, res) => {
 exports.startTransit = async (req, res) => {
   const { id } = req.params;
 
-  const delivery = await prisma.delivery.findUnique({
-    where: { id }
-  });
+  const delivery = await prisma.delivery.findUnique({ where: { id } });
 
-  if (!delivery) {
-    throw new AppError('Delivery not found', 404);
-  }
-
-  if (delivery.partnerId !== req.user.id) {
-    throw new AppError('Unauthorized', 403);
-  }
-
-  if (delivery.status !== 'PICKED_UP') {
-    throw new AppError('Package must be picked up first', 400);
-  }
+  if (!delivery) throw new AppError('Delivery not found', 404);
+  if (delivery.partnerId !== req.user.id) throw new AppError('Unauthorized', 403);
+  if (delivery.status !== 'PICKED_UP') throw new AppError('Package must be picked up first', 400);
 
   const updatedDelivery = await prisma.delivery.update({
     where: { id },
-    data: {
-      status: 'IN_TRANSIT'
-    }
+    data: { status: 'IN_TRANSIT' }
   });
 
-  res.status(200).json({
-    success: true,
-    message: 'Delivery in transit',
-    data: { delivery: updatedDelivery }
+  await notificationService.notify({
+    userId: delivery.customerId,
+    title: 'Package In Transit 🚚',
+    message: 'Your package is on the way to the delivery address!',
+    type: notificationService.TYPES.DELIVERY_IN_TRANSIT,
+    data: { deliveryId: id }
   });
+
+  res.status(200).json({ success: true, message: 'Delivery in transit', data: { delivery: updatedDelivery } });
 };
 
 /**
@@ -352,38 +275,28 @@ exports.startTransit = async (req, res) => {
 exports.completeDelivery = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array()
-    });
+    return res.status(400).json({ success: false, errors: errors.array() });
   }
 
   const { id } = req.params;
-  const { actualFee, recipientName, deliveryImageUrl } = req.body;
+  const { actualFee, recipientName, deliveryImageUrl, paymentMethod = 'CASH' } = req.body;
 
-  const delivery = await prisma.delivery.findUnique({
-    where: { id }
-  });
+  const delivery = await prisma.delivery.findUnique({ where: { id } });
 
-  if (!delivery) {
-    throw new AppError('Delivery not found', 404);
-  }
+  if (!delivery) throw new AppError('Delivery not found', 404);
+  if (delivery.partnerId !== req.user.id) throw new AppError('Unauthorized', 403);
+  if (delivery.status !== 'IN_TRANSIT') throw new AppError('Delivery is not in transit', 400);
 
-  if (delivery.partnerId !== req.user.id) {
-    throw new AppError('Unauthorized', 403);
-  }
+  const finalFee = actualFee || delivery.estimatedFee;
+  const platformFee = finalFee * 0.15;
+  const partnerEarnings = finalFee - platformFee;
 
-  if (delivery.status !== 'IN_TRANSIT') {
-    throw new AppError('Delivery is not in transit', 400);
-  }
-
-  // Update delivery and create payment record
   const [updatedDelivery, payment] = await prisma.$transaction([
     prisma.delivery.update({
       where: { id },
       data: {
         status: 'DELIVERED',
-        actualFee: actualFee || delivery.estimatedFee,
+        actualFee: finalFee,
         recipientName,
         deliveryImageUrl,
         deliveredAt: new Date()
@@ -393,21 +306,58 @@ exports.completeDelivery = async (req, res) => {
       data: {
         userId: delivery.customerId,
         deliveryId: id,
-        amount: actualFee || delivery.estimatedFee,
-        method: 'CASH', // Default, can be updated
-        status: 'PENDING'
+        amount: finalFee,
+        currency: 'NGN',
+        method: paymentMethod,
+        status: paymentMethod === 'WALLET' ? 'COMPLETED' : 'PENDING',
+        transactionId: `DEL-${id}-${Date.now()}`,
+        platformFee,
+        driverEarnings: partnerEarnings
       }
     })
   ]);
 
-  // Update partner stats
+  // Handle wallet payment
+  if (paymentMethod === 'WALLET') {
+    const customerWallet = await prisma.wallet.findUnique({ where: { userId: delivery.customerId } });
+    if (!customerWallet || customerWallet.balance < finalFee) {
+      throw new AppError('Insufficient wallet balance', 400);
+    }
+    await prisma.$transaction([
+      prisma.wallet.update({ where: { userId: delivery.customerId }, data: { balance: { decrement: finalFee } } }),
+      prisma.wallet.update({ where: { userId: req.user.id }, data: { balance: { increment: partnerEarnings } } }),
+      prisma.walletTransaction.create({
+        data: {
+          walletId: customerWallet.id,
+          type: 'DEBIT',
+          amount: finalFee,
+          description: `Delivery payment - ${delivery.pickupAddress} to ${delivery.dropoffAddress}`,
+          status: 'COMPLETED',
+          reference: `DEL-${id}`
+        }
+      })
+    ]);
+  }
+
   await prisma.deliveryPartnerProfile.update({
     where: { userId: req.user.id },
-    data: {
-      totalDeliveries: {
-        increment: 1
-      }
-    }
+    data: { totalDeliveries: { increment: 1 } }
+  });
+
+  await notificationService.notify({
+    userId: delivery.customerId,
+    title: 'Package Delivered! ✅',
+    message: `Your package has been delivered to ${recipientName || 'the recipient'}. Total: ₦${finalFee.toFixed(2)}. Please rate your delivery partner!`,
+    type: notificationService.TYPES.DELIVERY_COMPLETED,
+    data: { deliveryId: id, fee: finalFee, deliveryImageUrl }
+  });
+
+  await notificationService.notify({
+    userId: req.user.id,
+    title: 'Delivery Completed 💰',
+    message: `Package delivered. Earnings: ₦${partnerEarnings.toFixed(2)} (after 15% platform fee).`,
+    type: notificationService.TYPES.PAYMENT_RECEIVED,
+    data: { deliveryId: id, earnings: partnerEarnings, platformFee }
   });
 
   res.status(200).json({
@@ -426,36 +376,37 @@ exports.cancelDelivery = async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
 
-  const delivery = await prisma.delivery.findUnique({
-    where: { id }
-  });
+  const delivery = await prisma.delivery.findUnique({ where: { id } });
 
-  if (!delivery) {
-    throw new AppError('Delivery not found', 404);
-  }
-
+  if (!delivery) throw new AppError('Delivery not found', 404);
   if (delivery.customerId !== req.user.id && delivery.partnerId !== req.user.id) {
     throw new AppError('Unauthorized', 403);
   }
-
   if (delivery.status === 'DELIVERED' || delivery.status === 'CANCELLED') {
     throw new AppError('Cannot cancel this delivery', 400);
   }
 
+  const cancelledByPartner = delivery.partnerId === req.user.id;
+
   const updatedDelivery = await prisma.delivery.update({
     where: { id },
-    data: {
-      status: 'CANCELLED',
-      cancelledAt: new Date(),
-      cancellationReason: reason
-    }
+    data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason }
   });
 
-  res.status(200).json({
-    success: true,
-    message: 'Delivery cancelled',
-    data: { delivery: updatedDelivery }
-  });
+  const notifyUserId = cancelledByPartner ? delivery.customerId : delivery.partnerId;
+  if (notifyUserId) {
+    await notificationService.notify({
+      userId: notifyUserId,
+      title: 'Delivery Cancelled',
+      message: cancelledByPartner
+        ? 'Your delivery partner cancelled. We\'re finding another partner for you.'
+        : `Your delivery was cancelled. ${reason ? `Reason: ${reason}` : ''}`,
+      type: notificationService.TYPES.DELIVERY_CANCELLED,
+      data: { deliveryId: id, reason }
+    });
+  }
+
+  res.status(200).json({ success: true, message: 'Delivery cancelled', data: { delivery: updatedDelivery } });
 };
 
 /**
@@ -473,53 +424,25 @@ exports.getDeliveryHistory = async (req, res) => {
 
   const [deliveries, total] = await Promise.all([
     prisma.delivery.findMany({
-      where: {
-        ...whereClause,
-        status: {
-          in: ['DELIVERED', 'CANCELLED']
-        }
-      },
+      where: { ...whereClause, status: { in: ['DELIVERED', 'CANCELLED'] } },
       include: {
-        customer: {
-          select: {
-            firstName: true,
-            lastName: true
-          }
-        },
-        partner: {
-          select: {
-            firstName: true,
-            lastName: true
-          }
-        },
-        rating: true
+        customer: { select: { firstName: true, lastName: true } },
+        partner: { select: { firstName: true, lastName: true } },
+        rating: true,
+        payment: { select: { amount: true, method: true, status: true } }
       },
-      orderBy: {
-        deliveredAt: 'desc'
-      },
+      orderBy: { deliveredAt: 'desc' },
       skip: parseInt(skip),
       take: parseInt(limit)
     }),
     prisma.delivery.count({
-      where: {
-        ...whereClause,
-        status: {
-          in: ['DELIVERED', 'CANCELLED']
-        }
-      }
+      where: { ...whereClause, status: { in: ['DELIVERED', 'CANCELLED'] } }
     })
   ]);
 
   res.status(200).json({
     success: true,
-    data: {
-      deliveries,
-      pagination: {
-        total,
-        page: parseInt(page),
-        pages: Math.ceil(total / limit)
-      }
-    }
+    data: { deliveries, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } }
   });
 };
 
@@ -534,42 +457,19 @@ exports.getDeliveryById = async (req, res) => {
   const delivery = await prisma.delivery.findUnique({
     where: { id },
     include: {
-      customer: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          phone: true,
-          profileImage: true
-        }
-      },
-      partner: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          phone: true,
-          profileImage: true,
-          deliveryProfile: true
-        }
-      },
+      customer: { select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true } },
+      partner: { select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true, deliveryProfile: true } },
       payment: true,
       rating: true
     }
   });
 
-  if (!delivery) {
-    throw new AppError('Delivery not found', 404);
-  }
-
+  if (!delivery) throw new AppError('Delivery not found', 404);
   if (delivery.customerId !== req.user.id && delivery.partnerId !== req.user.id) {
     throw new AppError('Unauthorized', 403);
   }
 
-  res.status(200).json({
-    success: true,
-    data: { delivery }
-  });
+  res.status(200).json({ success: true, data: { delivery } });
 };
 
 /**
@@ -580,52 +480,25 @@ exports.getDeliveryById = async (req, res) => {
 exports.rateDelivery = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array()
-    });
+    return res.status(400).json({ success: false, errors: errors.array() });
   }
 
   const { id } = req.params;
   const { rating, comment } = req.body;
 
-  const delivery = await prisma.delivery.findUnique({
-    where: { id },
-    include: { rating: true }
-  });
+  const delivery = await prisma.delivery.findUnique({ where: { id }, include: { rating: true } });
 
-  if (!delivery) {
-    throw new AppError('Delivery not found', 404);
-  }
-
-  if (delivery.customerId !== req.user.id) {
-    throw new AppError('Only customer can rate the delivery', 403);
-  }
-
-  if (delivery.status !== 'DELIVERED') {
-    throw new AppError('Can only rate completed deliveries', 400);
-  }
-
-  if (delivery.rating) {
-    throw new AppError('Delivery already rated', 400);
-  }
+  if (!delivery) throw new AppError('Delivery not found', 404);
+  if (delivery.customerId !== req.user.id) throw new AppError('Only customer can rate the delivery', 403);
+  if (delivery.status !== 'DELIVERED') throw new AppError('Can only rate completed deliveries', 400);
+  if (delivery.rating) throw new AppError('Delivery already rated', 400);
 
   const newRating = await prisma.rating.create({
-    data: {
-      userId: req.user.id,
-      deliveryId: id,
-      rating,
-      comment
-    }
+    data: { userId: req.user.id, deliveryId: id, rating, comment }
   });
 
-  // Update partner's average rating
   const partnerRatings = await prisma.rating.findMany({
-    where: {
-      delivery: {
-        partnerId: delivery.partnerId
-      }
-    }
+    where: { delivery: { partnerId: delivery.partnerId } }
   });
 
   const avgRating = partnerRatings.reduce((sum, r) => sum + r.rating, 0) / partnerRatings.length;
@@ -635,11 +508,15 @@ exports.rateDelivery = async (req, res) => {
     data: { rating: avgRating }
   });
 
-  res.status(201).json({
-    success: true,
-    message: 'Rating submitted successfully',
-    data: { rating: newRating }
+  await notificationService.notify({
+    userId: delivery.partnerId,
+    title: `New Rating: ${'⭐'.repeat(rating)}`,
+    message: `You received a ${rating}-star rating for your delivery. ${comment ? `"${comment}"` : ''}`,
+    type: 'rating_received',
+    data: { deliveryId: id, rating, comment }
   });
+
+  res.status(201).json({ success: true, message: 'Rating submitted successfully', data: { rating: newRating } });
 };
 
 module.exports = exports;

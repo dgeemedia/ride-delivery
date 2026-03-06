@@ -1,3 +1,4 @@
+// backend/src/routes/driver.routes.js
 const express = require('express');
 const { body } = require('express-validator');
 const driverController = require('../controllers/driver.controller');
@@ -5,7 +6,6 @@ const { authenticate, authorize } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
-// All routes require authentication
 router.use(authenticate);
 
 /**
@@ -40,7 +40,7 @@ router.get('/profile', authorize('DRIVER'), driverController.getProfile);
 
 /**
  * @route   PUT /api/drivers/status
- * @desc    Update online/offline status
+ * @desc    Update online/offline status and location
  * @access  Private (DRIVER)
  */
 router.put(
@@ -56,7 +56,7 @@ router.put(
 
 /**
  * @route   GET /api/drivers/earnings
- * @desc    Get driver earnings
+ * @desc    Get driver earnings (with period filter)
  * @access  Private (DRIVER)
  */
 router.get('/earnings', authorize('DRIVER'), driverController.getEarnings);
@@ -91,8 +91,28 @@ router.post(
   driverController.uploadDocuments
 );
 
-// FUTURE: Payout requests
-// router.post('/payout/request', driverController.requestPayout);
-// router.get('/payout/history', driverController.getPayoutHistory);
+/**
+ * @route   POST /api/drivers/payout/request
+ * @desc    Request wallet payout to bank
+ * @access  Private (DRIVER)
+ */
+router.post(
+  '/payout/request',
+  authorize('DRIVER'),
+  [
+    body('amount').isFloat({ min: 1000 }),
+    body('accountNumber').notEmpty().isLength({ min: 10, max: 10 }),
+    body('bankCode').notEmpty(),
+    body('accountName').optional().isString()
+  ],
+  driverController.requestPayout
+);
+
+/**
+ * @route   GET /api/drivers/payout/history
+ * @desc    Get payout history
+ * @access  Private (DRIVER)
+ */
+router.get('/payout/history', authorize('DRIVER'), driverController.getPayoutHistory);
 
 module.exports = router;

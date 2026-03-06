@@ -1,3 +1,4 @@
+// backend/src/middleware/errorHandler.js
 const { logger } = require('../utils/logger');
 
 /**

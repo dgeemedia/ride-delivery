@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // Enhanced with Admin features and audit trails
@@ -301,7 +302,7 @@ model Payment {
   
   // Payment details
   amount            Float
-  currency          String         @default("USD")
+  currency          String         @default("NGN")
   method            PaymentMethod
   status            PaymentStatus  @default(PENDING)
   

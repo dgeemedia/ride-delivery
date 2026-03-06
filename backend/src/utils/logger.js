@@ -1,3 +1,4 @@
+// backend/src/utils/logger.js
 const winston = require('winston');
 const path = require('path');
 
@@ -45,7 +46,7 @@ const transports = [
   new winston.transports.Console({
     format: process.env.NODE_ENV === 'production' ? format : consoleFormat
   }),
-  
+
   // File transport for errors
   new winston.transports.File({
     filename: path.join(__dirname, '../../logs/error.log'),
@@ -53,7 +54,7 @@ const transports = [
     maxsize: 5242880, // 5MB
     maxFiles: 5,
   }),
-  
+
   // File transport for all logs
   new winston.transports.File({
     filename: path.join(__dirname, '../../logs/combined.log'),
@@ -78,7 +79,7 @@ const logger = winston.createLogger({
 //     dsn: process.env.SENTRY_DSN,
 //     level: 'error'
 //   }));
-//   
+//
 //   // Add CloudWatch transport
 //   logger.add(new WinstonCloudWatch({
 //     logGroupName: 'duoride-api',

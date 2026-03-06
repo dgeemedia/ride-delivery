@@ -1,8 +1,10 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
+const notificationService = require('../services/notification.service');
 
 const prisma = new PrismaClient();
 
@@ -23,35 +25,27 @@ const generateToken = (userId) => {
  * @access  Public
  */
 exports.register = async (req, res) => {
-  // Validate input
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array()
-    });
+    return res.status(400).json({ success: false, errors: errors.array() });
   }
 
   const { email, phone, password, firstName, lastName, role } = req.body;
 
-  // Check if user already exists
   const existingUser = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { email },
-        { phone }
-      ]
-    }
+    where: { OR: [{ email }, { phone }] }
   });
 
   if (existingUser) {
     throw new AppError('User with this email or phone already exists', 400);
   }
 
-  // Hash password
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  // Create user
+  // Generate email verification token
+  const verifyToken = crypto.randomBytes(32).toString('hex');
+  const hashedVerifyToken = crypto.createHash('sha256').update(verifyToken).digest('hex');
+
   const user = await prisma.user.create({
     data: {
       email,
@@ -59,7 +53,9 @@ exports.register = async (req, res) => {
       password: hashedPassword,
       firstName,
       lastName,
-      role
+      role,
+      emailVerifyToken: hashedVerifyToken,
+      emailVerifyExpires: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
     },
     select: {
       id: true,
@@ -72,22 +68,30 @@ exports.register = async (req, res) => {
     }
   });
 
-  // Generate token
   const token = generateToken(user.id);
 
-  // FUTURE: Send welcome email
-  // await sendWelcomeEmail(user.email, user.firstName);
+  // Send welcome notification
+  await notificationService.notify({
+    userId: user.id,
+    title: 'Welcome to DuoRide! 🎉',
+    message: `Hi ${firstName}, your account has been created successfully. Start exploring rides and deliveries!`,
+    type: notificationService.TYPES.ACCOUNT_WELCOME,
+    data: { role }
+  });
 
-  // FUTURE: Send SMS verification code
-  // await sendSMSVerification(user.phone);
+  // Create wallet for new user
+  await prisma.wallet.create({
+    data: {
+      userId: user.id,
+      balance: 0,
+      currency: 'NGN'
+    }
+  });
 
   res.status(201).json({
     success: true,
-    message: 'Registration successful',
-    data: {
-      user,
-      token
-    }
+    message: 'Registration successful. Please verify your email.',
+    data: { user, token }
   });
 };
 
@@ -97,13 +101,9 @@ exports.register = async (req, res) => {
  * @access  Public
  */
 exports.login = async (req, res) => {
-  // Validate input
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array()
-    });
+    return res.status(400).json({ success: false, errors: errors.array() });
   }
 
   const { email, phone, password } = req.body;
@@ -112,40 +112,25 @@ exports.login = async (req, res) => {
     throw new AppError('Please provide email or phone number', 400);
   }
 
-  // Find user
   const user = await prisma.user.findFirst({
     where: email ? { email } : { phone }
   });
 
-  if (!user) {
-    throw new AppError('Invalid credentials', 401);
-  }
+  if (!user) throw new AppError('Invalid credentials', 401);
 
-  // Check password
   const isPasswordValid = await bcrypt.compare(password, user.password);
+  if (!isPasswordValid) throw new AppError('Invalid credentials', 401);
 
-  if (!isPasswordValid) {
-    throw new AppError('Invalid credentials', 401);
-  }
+  if (!user.isActive) throw new AppError('Account is deactivated. Contact support.', 403);
+  if (user.isSuspended) throw new AppError(`Account suspended: ${user.suspensionReason || 'Contact support'}`, 403);
 
-  // Check if account is active
-  if (!user.isActive) {
-    throw new AppError('Account is deactivated', 403);
-  }
-
-  // Generate token
   const token = generateToken(user.id);
-
-  // Remove password from response
-  const { password: _, ...userWithoutPassword } = user;
+  const { password: _, emailVerifyToken: __, passwordResetToken: ___, ...userWithoutSensitive } = user;
 
   res.status(200).json({
     success: true,
     message: 'Login successful',
-    data: {
-      user: userWithoutPassword,
-      token
-    }
+    data: { user: userWithoutSensitive, token }
   });
 };
 
@@ -166,14 +151,14 @@ exports.getCurrentUser = async (req, res) => {
       role: true,
       profileImage: true,
       isVerified: true,
-      createdAt: true
+      createdAt: true,
+      wallet: {
+        select: { balance: true, currency: true }
+      }
     }
   });
 
-  res.status(200).json({
-    success: true,
-    data: { user }
-  });
+  res.status(200).json({ success: true, data: { user } });
 };
 
 /**
@@ -183,11 +168,7 @@ exports.getCurrentUser = async (req, res) => {
  */
 exports.refreshToken = async (req, res) => {
   const token = generateToken(req.user.id);
-
-  res.status(200).json({
-    success: true,
-    data: { token }
-  });
+  res.status(200).json({ success: true, data: { token } });
 };
 
 /**
@@ -196,41 +177,174 @@ exports.refreshToken = async (req, res) => {
  * @access  Private
  */
 exports.logout = async (req, res) => {
-  // FUTURE: Implement token blacklist in Redis
-  // await redisClient.set(`blacklist_${token}`, 'true', 'EX', tokenExpiry);
+  // Token blacklist can be added via Redis when available
+  res.status(200).json({ success: true, message: 'Logged out successfully' });
+};
+
+/**
+ * @desc    Forgot password — sends reset link to email
+ * @route   POST /api/auth/forgot-password
+ * @access  Public
+ */
+exports.forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) throw new AppError('Email is required', 400);
+
+  const user = await prisma.user.findUnique({ where: { email } });
+
+  // Always respond 200 to prevent email enumeration
+  if (!user) {
+    return res.status(200).json({
+      success: true,
+      message: 'If that email exists, a reset link has been sent.'
+    });
+  }
+
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordResetToken: hashedToken,
+      passwordResetExpires: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+    }
+  });
+
+  // Send in-app notification
+  await notificationService.notify({
+    userId: user.id,
+    title: 'Password Reset Requested',
+    message: 'A password reset was requested for your account. If this wasn\'t you, please contact support immediately.',
+    type: notificationService.TYPES.PASSWORD_RESET,
+    data: { resetToken } // In production: send via email, not in notification data
+  });
+
+  // TODO: Send email with reset link
+  // await emailService.sendPasswordResetEmail(user.email, resetToken);
 
   res.status(200).json({
     success: true,
-    message: 'Logged out successfully'
+    message: 'If that email exists, a reset link has been sent.',
+    // Only expose token in dev mode for testing
+    ...(process.env.NODE_ENV === 'development' && { resetToken })
   });
 };
 
-// FUTURE: Password reset functionality
-// exports.forgotPassword = async (req, res) => {
-//   const { email } = req.body;
-//   const user = await prisma.user.findUnique({ where: { email } });
-//   
-//   if (!user) {
-//     throw new AppError('No user found with this email', 404);
-//   }
-//   
-//   const resetToken = crypto.randomBytes(32).toString('hex');
-//   const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-//   
-//   await prisma.user.update({
-//     where: { id: user.id },
-//     data: {
-//       passwordResetToken: hashedToken,
-//       passwordResetExpires: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
-//     }
-//   });
-//   
-//   await sendPasswordResetEmail(user.email, resetToken);
-//   
-//   res.status(200).json({
-//     success: true,
-//     message: 'Password reset link sent to email'
-//   });
-// };
+/**
+ * @desc    Reset password using token
+ * @route   POST /api/auth/reset-password/:token
+ * @access  Public
+ */
+exports.resetPassword = async (req, res) => {
+  const { token } = req.params;
+  const { password } = req.body;
+
+  if (!password || password.length < 8) {
+    throw new AppError('Password must be at least 8 characters', 400);
+  }
+
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  const user = await prisma.user.findFirst({
+    where: {
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { gt: new Date() }
+    }
+  });
+
+  if (!user) throw new AppError('Invalid or expired reset token', 400);
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      password: hashedPassword,
+      passwordResetToken: null,
+      passwordResetExpires: null
+    }
+  });
+
+  await notificationService.notify({
+    userId: user.id,
+    title: 'Password Changed',
+    message: 'Your password has been changed successfully. If you did not do this, contact support immediately.',
+    type: notificationService.TYPES.PASSWORD_RESET,
+    data: {}
+  });
+
+  res.status(200).json({ success: true, message: 'Password reset successfully. Please login.' });
+};
+
+/**
+ * @desc    Verify email with token
+ * @route   POST /api/auth/verify-email/:token
+ * @access  Public
+ */
+exports.verifyEmail = async (req, res) => {
+  const { token } = req.params;
+
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  const user = await prisma.user.findFirst({
+    where: {
+      emailVerifyToken: hashedToken,
+      emailVerifyExpires: { gt: new Date() }
+    }
+  });
+
+  if (!user) throw new AppError('Invalid or expired verification token', 400);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      isVerified: true,
+      emailVerifyToken: null,
+      emailVerifyExpires: null
+    }
+  });
+
+  await notificationService.notify({
+    userId: user.id,
+    title: 'Email Verified ✅',
+    message: 'Your email address has been verified successfully.',
+    type: notificationService.TYPES.ACCOUNT_VERIFIED,
+    data: {}
+  });
+
+  res.status(200).json({ success: true, message: 'Email verified successfully.' });
+};
+
+/**
+ * @desc    Resend email verification
+ * @route   POST /api/auth/resend-verification
+ * @access  Private
+ */
+exports.resendVerification = async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+  if (user.isVerified) throw new AppError('Email is already verified', 400);
+
+  const verifyToken = crypto.randomBytes(32).toString('hex');
+  const hashedVerifyToken = crypto.createHash('sha256').update(verifyToken).digest('hex');
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerifyToken: hashedVerifyToken,
+      emailVerifyExpires: new Date(Date.now() + 24 * 60 * 60 * 1000)
+    }
+  });
+
+  // TODO: await emailService.sendVerificationEmail(user.email, verifyToken);
+
+  res.status(200).json({
+    success: true,
+    message: 'Verification email sent.',
+    ...(process.env.NODE_ENV === 'development' && { verifyToken })
+  });
+};
 
 module.exports = exports;

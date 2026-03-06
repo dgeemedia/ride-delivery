@@ -16,12 +16,15 @@
   "keywords": [
     "ride-hailing",
     "delivery",
-    "uber-clone"
+    "nigeria",
+    "paystack",
+    "flutterwave"
   ],
   "author": "Diakite",
   "license": "MIT",
   "dependencies": {
     "@prisma/client": "^5.9.0",
+    "axios": "^1.13.6",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.0.1",
     "cors": "^2.8.5",
@@ -37,7 +40,6 @@
     "multer": "^1.4.5-lts.1",
     "multer-storage-cloudinary": "^4.0.0",
     "socket.io": "^4.6.1",
-    "stripe": "^14.14.0",
     "winston": "^3.11.0"
   },
   "devDependencies": {

@@ -1,3 +1,4 @@
+// backend/src/routes/delivery.routes.js
 const express = require('express');
 const { body, param } = require('express-validator');
 const deliveryController = require('../controllers/delivery.controller');
@@ -5,7 +6,6 @@ const { authenticate, authorize } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
-// All routes require authentication
 router.use(authenticate);
 
 /**
@@ -35,7 +35,8 @@ router.post(
     body('packageDescription').notEmpty(),
     body('packageWeight').optional().isFloat({ min: 0 }),
     body('packageValue').optional().isFloat({ min: 0 }),
-    body('notes').optional().isString()
+    body('notes').optional().isString(),
+    body('promoCode').optional().isString()
   ],
   deliveryController.requestDelivery
 );
@@ -109,7 +110,8 @@ router.put(
   [
     body('actualFee').optional().isFloat({ min: 0 }),
     body('recipientName').notEmpty(),
-    body('deliveryImageUrl').optional().isURL()
+    body('deliveryImageUrl').optional().isURL(),
+    body('paymentMethod').optional().isIn(['CASH', 'CARD', 'WALLET'])
   ],
   deliveryController.completeDelivery
 );
@@ -140,8 +142,5 @@ router.post(
   ],
   deliveryController.rateDelivery
 );
-
-// FUTURE: Add proof of delivery image upload
-// router.post('/:id/proof', upload.single('image'), deliveryController.uploadProof);
 
 module.exports = router;

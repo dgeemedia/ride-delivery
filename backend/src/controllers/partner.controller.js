@@ -1,6 +1,9 @@
+// backend/src/controllers/partner.controller.js
 const { PrismaClient } = require('@prisma/client');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
+const notificationService = require('../services/notification.service');
+const paymentService = require('../services/payment.service');
 
 const prisma = new PrismaClient();
 
@@ -12,28 +15,15 @@ const prisma = new PrismaClient();
 exports.createOrUpdateProfile = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array()
-    });
+    return res.status(400).json({ success: false, errors: errors.array() });
   }
 
-  const {
-    vehicleType,
-    vehiclePlate,
-    idImageUrl,
-    vehicleImageUrl
-  } = req.body;
+  const { vehicleType, vehiclePlate, idImageUrl, vehicleImageUrl } = req.body;
 
-  // Check if profile already exists
-  const existingProfile = await prisma.deliveryPartnerProfile.findUnique({
-    where: { userId: req.user.id }
-  });
-
+  const existingProfile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
   let profile;
 
   if (existingProfile) {
-    // Update existing profile
     profile = await prisma.deliveryPartnerProfile.update({
       where: { userId: req.user.id },
       data: {
@@ -44,10 +34,7 @@ exports.createOrUpdateProfile = async (req, res) => {
       }
     });
   } else {
-    // Create new profile
-    if (!idImageUrl) {
-      throw new AppError('ID image is required for new profile', 400);
-    }
+    if (!idImageUrl) throw new AppError('ID image is required for new profile', 400);
 
     profile = await prisma.deliveryPartnerProfile.create({
       data: {
@@ -58,11 +45,20 @@ exports.createOrUpdateProfile = async (req, res) => {
         vehicleImageUrl
       }
     });
+
+    // Notify partner that profile is under review
+    await notificationService.notify({
+      userId: req.user.id,
+      title: 'Profile Submitted for Review 🔍',
+      message: 'Your delivery partner profile has been submitted. Our team will review and notify you within 24–48 hours.',
+      type: 'profile_submitted',
+      data: { profileId: profile.id }
+    });
   }
 
   res.status(200).json({
     success: true,
-    message: existingProfile ? 'Profile updated successfully' : 'Profile created successfully',
+    message: existingProfile ? 'Profile updated successfully' : 'Profile created. Awaiting admin approval.',
     data: { profile }
   });
 };
@@ -77,25 +73,14 @@ exports.getProfile = async (req, res) => {
     where: { userId: req.user.id },
     include: {
       user: {
-        select: {
-          firstName: true,
-          lastName: true,
-          email: true,
-          phone: true,
-          profileImage: true
-        }
+        select: { firstName: true, lastName: true, email: true, phone: true, profileImage: true }
       }
     }
   });
 
-  if (!profile) {
-    throw new AppError('Delivery partner profile not found', 404);
-  }
+  if (!profile) throw new AppError('Delivery partner profile not found', 404);
 
-  res.status(200).json({
-    success: true,
-    data: { profile }
-  });
+  res.status(200).json({ success: true, data: { profile } });
 };
 
 /**
@@ -106,48 +91,28 @@ exports.getProfile = async (req, res) => {
 exports.updateStatus = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array()
-    });
+    return res.status(400).json({ success: false, errors: errors.array() });
   }
 
   const { isOnline, currentLat, currentLng } = req.body;
 
-  const profile = await prisma.deliveryPartnerProfile.findUnique({
-    where: { userId: req.user.id }
-  });
+  const profile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
+  if (!profile) throw new AppError('Delivery partner profile not found', 404);
+  if (!profile.isApproved) throw new AppError('Partner profile not approved yet', 403);
 
-  if (!profile) {
-    throw new AppError('Delivery partner profile not found', 404);
-  }
-
-  if (!profile.isApproved) {
-    throw new AppError('Partner profile not approved yet', 403);
-  }
-
-  // Check for active delivery if trying to go offline
   if (!isOnline) {
     const activeDelivery = await prisma.delivery.findFirst({
-      where: {
-        partnerId: req.user.id,
-        status: {
-          in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT']
-        }
-      }
+      where: { partnerId: req.user.id, status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } }
     });
-
-    if (activeDelivery) {
-      throw new AppError('Cannot go offline with an active delivery', 400);
-    }
+    if (activeDelivery) throw new AppError('Cannot go offline with an active delivery', 400);
   }
 
   const updatedProfile = await prisma.deliveryPartnerProfile.update({
     where: { userId: req.user.id },
     data: {
       isOnline,
-      ...(currentLat && { currentLat }),
-      ...(currentLng && { currentLng })
+      ...(currentLat !== undefined && { currentLat }),
+      ...(currentLng !== undefined && { currentLng })
     }
   });
 
@@ -167,49 +132,37 @@ exports.getEarnings = async (req, res) => {
   const { startDate, endDate, period = 'all' } = req.query;
 
   let dateFilter = {};
-
   if (period === 'today') {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
     dateFilter = { gte: today };
   } else if (period === 'week') {
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
+    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
     dateFilter = { gte: weekAgo };
   } else if (period === 'month') {
-    const monthAgo = new Date();
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth() - 1);
     dateFilter = { gte: monthAgo };
   } else if (startDate && endDate) {
-    dateFilter = {
-      gte: new Date(startDate),
-      lte: new Date(endDate)
-    };
+    dateFilter = { gte: new Date(startDate), lte: new Date(endDate) };
   }
 
   const deliveries = await prisma.delivery.findMany({
     where: {
       partnerId: req.user.id,
       status: 'DELIVERED',
-      ...(Object.keys(dateFilter).length > 0 && {
-        deliveredAt: dateFilter
-      })
+      ...(Object.keys(dateFilter).length > 0 && { deliveredAt: dateFilter })
     },
-    include: {
-      payment: true
-    },
-    orderBy: {
-      deliveredAt: 'desc'
-    }
+    include: { payment: { select: { amount: true, method: true, driverEarnings: true } } },
+    orderBy: { deliveredAt: 'desc' }
   });
 
-  const totalEarnings = deliveries.reduce((sum, delivery) => sum + (delivery.actualFee || 0), 0);
-  const totalDeliveries = deliveries.length;
-  
-  // Calculate platform fee (example: 15%)
-  const platformFeePercentage = 0.15;
-  const platformFee = totalEarnings * platformFeePercentage;
+  const totalEarnings = deliveries.reduce((sum, d) => sum + (d.actualFee || 0), 0);
+  const platformFee = totalEarnings * 0.15;
   const netEarnings = totalEarnings - platformFee;
+
+  const wallet = await prisma.wallet.findUnique({
+    where: { userId: req.user.id },
+    select: { balance: true }
+  });
 
   res.status(200).json({
     success: true,
@@ -217,16 +170,19 @@ exports.getEarnings = async (req, res) => {
       totalEarnings: totalEarnings.toFixed(2),
       platformFee: platformFee.toFixed(2),
       netEarnings: netEarnings.toFixed(2),
-      totalDeliveries,
-      averagePerDelivery: totalDeliveries > 0 ? (totalEarnings / totalDeliveries).toFixed(2) : 0,
+      walletBalance: wallet?.balance?.toFixed(2) || '0.00',
+      totalDeliveries: deliveries.length,
+      averagePerDelivery: deliveries.length > 0 ? (totalEarnings / deliveries.length).toFixed(2) : '0.00',
+      currency: 'NGN',
       period,
-      deliveries: deliveries.map(delivery => ({
-        id: delivery.id,
-        deliveredAt: delivery.deliveredAt,
-        fee: delivery.actualFee,
-        pickupAddress: delivery.pickupAddress,
-        dropoffAddress: delivery.dropoffAddress,
-        packageDescription: delivery.packageDescription
+      deliveries: deliveries.map(d => ({
+        id: d.id,
+        deliveredAt: d.deliveredAt,
+        fee: d.actualFee,
+        partnerEarnings: d.payment?.driverEarnings,
+        pickupAddress: d.pickupAddress,
+        dropoffAddress: d.dropoffAddress,
+        packageDescription: d.packageDescription
       }))
     }
   });
@@ -238,46 +194,16 @@ exports.getEarnings = async (req, res) => {
  * @access  Private (DELIVERY_PARTNER)
  */
 exports.getStats = async (req, res) => {
-  const profile = await prisma.deliveryPartnerProfile.findUnique({
-    where: { userId: req.user.id }
-  });
+  const profile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
+  if (!profile) throw new AppError('Partner profile not found', 404);
 
-  if (!profile) {
-    throw new AppError('Partner profile not found', 404);
-  }
-
-  // Get delivery statistics
   const [completedDeliveries, cancelledDeliveries, totalDeliveries] = await Promise.all([
-    prisma.delivery.count({
-      where: {
-        partnerId: req.user.id,
-        status: 'DELIVERED'
-      }
-    }),
-    prisma.delivery.count({
-      where: {
-        partnerId: req.user.id,
-        status: 'CANCELLED'
-      }
-    }),
-    prisma.delivery.count({
-      where: {
-        partnerId: req.user.id
-      }
-    })
+    prisma.delivery.count({ where: { partnerId: req.user.id, status: 'DELIVERED' } }),
+    prisma.delivery.count({ where: { partnerId: req.user.id, status: 'CANCELLED' } }),
+    prisma.delivery.count({ where: { partnerId: req.user.id } })
   ]);
 
-  // Get ratings
-  const ratings = await prisma.rating.findMany({
-    where: {
-      delivery: {
-        partnerId: req.user.id
-      }
-    }
-  });
-
-  const completionRate = totalDeliveries > 0 ? ((completedDeliveries / totalDeliveries) * 100).toFixed(2) : 0;
-  const cancellationRate = totalDeliveries > 0 ? ((cancelledDeliveries / totalDeliveries) * 100).toFixed(2) : 0;
+  const ratings = await prisma.rating.findMany({ where: { delivery: { partnerId: req.user.id } } });
 
   res.status(200).json({
     success: true,
@@ -287,14 +213,11 @@ exports.getStats = async (req, res) => {
       cancelledDeliveries,
       rating: profile.rating.toFixed(2),
       totalRatings: ratings.length,
-      completionRate,
-      cancellationRate,
+      completionRate: totalDeliveries > 0 ? ((completedDeliveries / totalDeliveries) * 100).toFixed(2) : '0.00',
+      cancellationRate: totalDeliveries > 0 ? ((cancelledDeliveries / totalDeliveries) * 100).toFixed(2) : '0.00',
       isOnline: profile.isOnline,
       isApproved: profile.isApproved,
-      vehicleInfo: {
-        type: profile.vehicleType,
-        plate: profile.vehiclePlate
-      }
+      vehicleInfo: { type: profile.vehicleType, plate: profile.vehiclePlate }
     }
   });
 };
@@ -305,52 +228,25 @@ exports.getStats = async (req, res) => {
  * @access  Private (DELIVERY_PARTNER)
  */
 exports.getNearbyRequests = async (req, res) => {
-  const { radius = 5 } = req.query;
+  const profile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
+  if (!profile) throw new AppError('Partner profile not found', 404);
+  if (!profile.isOnline) throw new AppError('You must be online to see requests', 400);
+  if (!profile.currentLat || !profile.currentLng) throw new AppError('Current location not set', 400);
 
-  const profile = await prisma.deliveryPartnerProfile.findUnique({
-    where: { userId: req.user.id }
-  });
-
-  if (!profile) {
-    throw new AppError('Partner profile not found', 404);
-  }
-
-  if (!profile.isOnline) {
-    throw new AppError('You must be online to see requests', 400);
-  }
-
-  if (!profile.currentLat || !profile.currentLng) {
-    throw new AppError('Current location not set', 400);
-  }
-
-  // Get all pending deliveries
   const pendingDeliveries = await prisma.delivery.findMany({
-    where: {
-      status: 'PENDING'
-    },
+    where: { status: 'PENDING' },
     include: {
-      customer: {
-        select: {
-          firstName: true,
-          lastName: true,
-          profileImage: true
-        }
-      }
+      customer: { select: { firstName: true, lastName: true, profileImage: true } }
     },
     take: 10,
-    orderBy: {
-      requestedAt: 'desc'
-    }
+    orderBy: { requestedAt: 'desc' }
   });
 
   res.status(200).json({
     success: true,
     data: {
       requests: pendingDeliveries,
-      partnerLocation: {
-        lat: profile.currentLat,
-        lng: profile.currentLng
-      }
+      partnerLocation: { lat: profile.currentLat, lng: profile.currentLng }
     }
   });
 };
@@ -367,13 +263,8 @@ exports.uploadDocuments = async (req, res) => {
     throw new AppError('At least one document is required', 400);
   }
 
-  const profile = await prisma.deliveryPartnerProfile.findUnique({
-    where: { userId: req.user.id }
-  });
-
-  if (!profile) {
-    throw new AppError('Partner profile not found', 404);
-  }
+  const profile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
+  if (!profile) throw new AppError('Partner profile not found', 404);
 
   const updatedProfile = await prisma.deliveryPartnerProfile.update({
     where: { userId: req.user.id },
@@ -383,10 +274,111 @@ exports.uploadDocuments = async (req, res) => {
     }
   });
 
+  res.status(200).json({ success: true, message: 'Documents uploaded successfully', data: { profile: updatedProfile } });
+};
+
+// ─────────────────────────────────────────────
+// PAYOUT SYSTEM
+// ─────────────────────────────────────────────
+
+/**
+ * @desc    Request a payout to bank account
+ * @route   POST /api/partners/payout/request
+ * @access  Private (DELIVERY_PARTNER)
+ */
+exports.requestPayout = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, errors: errors.array() });
+  }
+
+  const { amount, accountNumber, bankCode, accountName } = req.body;
+
+  if (amount < 1000) throw new AppError('Minimum payout amount is ₦1,000', 400);
+
+  const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+  if (!wallet || wallet.balance < amount) {
+    throw new AppError('Insufficient wallet balance for payout', 400);
+  }
+
+  const accountVerify = await paymentService.paystackVerifyAccount(accountNumber, bankCode).catch(() => null);
+  if (!accountVerify) throw new AppError('Unable to verify bank account. Please check details.', 400);
+
+  const recipient = await paymentService.paystackCreateTransferRecipient({
+    accountNumber,
+    bankCode,
+    name: accountName || accountVerify.account_name
+  });
+
+  const transfer = await paymentService.paystackInitiateTransfer({
+    amount: amount * 100,
+    recipient: recipient.recipient_code,
+    reason: `Partner payout - ${req.user.firstName} ${req.user.lastName}`
+  });
+
+  const reference = transfer.transfer_code || `PAYOUT-${Date.now()}`;
+
+  const [updatedWallet, payout] = await prisma.$transaction([
+    prisma.wallet.update({ where: { userId: req.user.id }, data: { balance: { decrement: amount } } }),
+    prisma.payout.create({
+      data: {
+        userId: req.user.id,
+        amount,
+        currency: 'NGN',
+        status: 'PENDING',
+        accountNumber,
+        bankCode,
+        accountName: accountName || accountVerify.account_name,
+        reference,
+        recipientCode: recipient.recipient_code
+      }
+    }),
+    prisma.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        type: 'WITHDRAWAL',
+        amount,
+        description: `Payout to ${accountNumber} (${bankCode})`,
+        status: 'PENDING',
+        reference
+      }
+    })
+  ]);
+
+  await notificationService.notify({
+    userId: req.user.id,
+    title: 'Payout Initiated 🏦',
+    message: `₦${amount.toFixed(2)} payout to your bank is being processed. Reference: ${reference}`,
+    type: notificationService.TYPES.WALLET_WITHDRAWAL,
+    data: { amount, reference, accountNumber: `****${accountNumber.slice(-4)}` }
+  });
+
   res.status(200).json({
     success: true,
-    message: 'Documents uploaded successfully',
-    data: { profile: updatedProfile }
+    message: 'Payout initiated. Funds will arrive within 1–2 business days.',
+    data: { payout, walletBalance: updatedWallet.balance, reference }
+  });
+};
+
+/**
+ * @desc    Get payout history
+ * @route   GET /api/partners/payout/history
+ * @access  Private (DELIVERY_PARTNER)
+ */
+exports.getPayoutHistory = async (req, res) => {
+  const { page = 1, limit = 10, status } = req.query;
+  const skip = (page - 1) * limit;
+
+  const where = { userId: req.user.id, ...(status && { status }) };
+
+  const [payouts, total] = await Promise.all([
+    prisma.payout.findMany({ where, orderBy: { createdAt: 'desc' }, skip: parseInt(skip), take: parseInt(limit) }),
+    prisma.payout.count({ where })
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: { payouts, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } }
   });
 };
 

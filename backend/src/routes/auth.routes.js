@@ -40,7 +40,7 @@ router.post(
 
 /**
  * @route   GET /api/auth/me
- * @desc    Get current user
+ * @desc    Get current user (with wallet balance)
  * @access  Private
  */
 router.get('/me', authenticate, authController.getCurrentUser);
@@ -59,13 +59,40 @@ router.post('/refresh', authenticate, authController.refreshToken);
  */
 router.post('/logout', authenticate, authController.logout);
 
-// FUTURE: Add password reset routes
-// router.post('/forgot-password', authController.forgotPassword);
-// router.post('/reset-password/:token', authController.resetPassword);
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Send password reset link to email
+ * @access  Public
+ */
+router.post(
+  '/forgot-password',
+  [body('email').isEmail().normalizeEmail()],
+  authController.forgotPassword
+);
 
-// FUTURE: Add email/phone verification
-// router.post('/verify-email', authController.verifyEmail);
-// router.post('/verify-phone', authController.verifyPhone);
-// router.post('/resend-verification', authController.resendVerification);
+/**
+ * @route   POST /api/auth/reset-password/:token
+ * @desc    Reset password using token
+ * @access  Public
+ */
+router.post(
+  '/reset-password/:token',
+  [body('password').isLength({ min: 8 })],
+  authController.resetPassword
+);
+
+/**
+ * @route   POST /api/auth/verify-email/:token
+ * @desc    Verify email address
+ * @access  Public
+ */
+router.post('/verify-email/:token', authController.verifyEmail);
+
+/**
+ * @route   POST /api/auth/resend-verification
+ * @desc    Resend email verification
+ * @access  Private
+ */
+router.post('/resend-verification', authenticate, authController.resendVerification);
 
 module.exports = router;

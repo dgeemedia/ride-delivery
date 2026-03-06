@@ -1,3 +1,4 @@
+// backend/src/routes/ride.routes.js
 const express = require('express');
 const { body, param } = require('express-validator');
 const rideController = require('../controllers/ride.controller');
@@ -5,7 +6,6 @@ const { authenticate, authorize } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
-// All routes require authentication
 router.use(authenticate);
 
 /**
@@ -23,7 +23,8 @@ router.post(
     body('dropoffAddress').notEmpty(),
     body('dropoffLat').isFloat({ min: -90, max: 90 }),
     body('dropoffLng').isFloat({ min: -180, max: 180 }),
-    body('notes').optional().isString()
+    body('notes').optional().isString(),
+    body('promoCode').optional().isString()
   ],
   rideController.requestRide
 );
@@ -69,6 +70,18 @@ router.put(
 );
 
 /**
+ * @route   PUT /api/rides/:id/arrived
+ * @desc    Driver marks arrived at pickup
+ * @access  Private (DRIVER)
+ */
+router.put(
+  '/:id/arrived',
+  authorize('DRIVER'),
+  param('id').isUUID(),
+  rideController.arrivedAtPickup
+);
+
+/**
  * @route   PUT /api/rides/:id/start
  * @desc    Driver starts ride
  * @access  Private (DRIVER)
@@ -89,13 +102,16 @@ router.put(
   '/:id/complete',
   authorize('DRIVER'),
   param('id').isUUID(),
-  [body('actualFare').isFloat({ min: 0 })],
+  [
+    body('actualFare').isFloat({ min: 0 }),
+    body('paymentMethod').optional().isIn(['CASH', 'CARD', 'WALLET'])
+  ],
   rideController.completeRide
 );
 
 /**
  * @route   PUT /api/rides/:id/cancel
- * @desc    Cancel ride
+ * @desc    Cancel ride (customer or driver)
  * @access  Private
  */
 router.put(
@@ -119,12 +135,5 @@ router.post(
   ],
   rideController.rateRide
 );
-
-// FUTURE: Add scheduled rides
-// router.post('/schedule', authorize('CUSTOMER'), rideController.scheduleRide);
-// router.get('/scheduled', rideController.getScheduledRides);
-
-// FUTURE: Add ride sharing
-// router.post('/share', authorize('CUSTOMER'), rideController.shareRide);
 
 module.exports = router;
