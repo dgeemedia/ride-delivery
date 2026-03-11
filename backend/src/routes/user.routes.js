@@ -1,3 +1,4 @@
+// backend/src/routes/user.routes.js
 const express = require('express');
 const { body } = require('express-validator');
 const userController = require('../controllers/user.controller');

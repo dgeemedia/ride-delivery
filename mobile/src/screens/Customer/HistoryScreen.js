@@ -1,37 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-} from 'react-native';
-import { rideAPI, deliveryAPI } from '../../services/api';
-import RideCard from '../../components/Cards/RideCard';
-import DeliveryCard from '../../components/Cards/DeliveryCard';
-import Loading from '../../components/Common/Loading';
-import { colors, spacing } from '../../theme';
+import React, {useEffect, useState} from 'react';
+import {View, Text, StyleSheet, FlatList, TouchableOpacity} from 'react-native';
+import {rideAPI} from '../../services/api';
+import {colors} from '../../theme/colors';
+import {spacing} from '../../theme/spacing';
 
-const HistoryScreen = ({ navigation }) => {
-  const [activeTab, setActiveTab] = useState('rides');
+const HistoryScreen = () => {
   const [rides, setRides] = useState([]);
-  const [deliveries, setDeliveries] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadHistory();
-  }, [activeTab]);
+  }, []);
 
   const loadHistory = async () => {
-    setLoading(true);
     try {
-      if (activeTab === 'rides') {
-        const response = await rideAPI.getRideHistory();
-        setRides(response.data.rides);
-      } else {
-        const response = await deliveryAPI.getDeliveryHistory();
-        setDeliveries(response.data.deliveries);
-      }
+      const response = await rideAPI.getRideHistory();
+      setRides(response.data.rides || []);
     } catch (error) {
       console.error('Error loading history:', error);
     } finally {
@@ -39,66 +23,48 @@ const HistoryScreen = ({ navigation }) => {
     }
   };
 
-  const renderRide = ({ item }) => (
-    <RideCard
-      ride={item}
-      onPress={() => navigation.navigate('RideDetails', { rideId: item.id })}
-    />
+  const renderRide = ({item}) => (
+    <TouchableOpacity style={styles.rideCard}>
+      <View style={styles.rideHeader}>
+        <Text style={styles.rideDate}>
+          {new Date(item.completedAt).toLocaleDateString()}
+        </Text>
+        <Text style={[styles.rideStatus, {color: getStatusColor(item.status)}]}>
+          {item.status}
+        </Text>
+      </View>
+      <Text style={styles.rideAddress}>{item.pickupAddress}</Text>
+      <Text style={styles.rideAddress}>↓</Text>
+      <Text style={styles.rideAddress}>{item.dropoffAddress}</Text>
+      <Text style={styles.rideFare}>₦{item.actualFare?.toFixed(2)}</Text>
+    </TouchableOpacity>
   );
 
-  const renderDelivery = ({ item }) => (
-    <DeliveryCard
-      delivery={item}
-      onPress={() =>
-        navigation.navigate('DeliveryDetails', { deliveryId: item.id })
-      }
-    />
-  );
+  const getStatusColor = (status) => {
+    return status === 'COMPLETED' ? colors.success : colors.error;
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'rides' && styles.activeTab]}
-          onPress={() => setActiveTab('rides')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'rides' && styles.activeTabText,
-            ]}
-          >
-            Rides
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'deliveries' && styles.activeTab]}
-          onPress={() => setActiveTab('deliveries')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'deliveries' && styles.activeTabText,
-            ]}
-          >
-            Deliveries
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading ? (
-        <Loading visible={true} />
-      ) : (
-        <FlatList
-          data={activeTab === 'rides' ? rides : deliveries}
-          renderItem={activeTab === 'rides' ? renderRide : renderDelivery}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No history yet</Text>
-          }
-        />
-      )}
+      <FlatList
+        data={rides}
+        renderItem={renderRide}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No ride history yet</Text>
+          </View>
+        }
+      />
     </View>
   );
 };
@@ -108,35 +74,51 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  tabs: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  tab: {
+  centerContainer: {
     flex: 1,
-    paddingVertical: spacing.md,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: colors.primary,
+  list: {
+    padding: spacing.lg,
   },
-  tabText: {
-    fontSize: 16,
-    color: colors.textSecondary,
+  rideCard: {
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: 12,
+    marginBottom: spacing.md,
   },
-  activeTabText: {
-    color: colors.primary,
+  rideHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  rideDate: {
+    fontSize: 12,
+    color: colors.text.secondary,
+  },
+  rideStatus: {
+    fontSize: 12,
     fontWeight: '600',
   },
-  list: {
-    padding: spacing.md,
+  rideAddress: {
+    fontSize: 14,
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  rideFare: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.primary,
+    marginTop: spacing.sm,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    marginTop: 40,
   },
   emptyText: {
-    textAlign: 'center',
-    color: colors.textSecondary,
-    marginTop: spacing.xl,
+    fontSize: 16,
+    color: colors.text.secondary,
   },
 });
 

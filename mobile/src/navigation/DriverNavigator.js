@@ -1,42 +1,29 @@
 import React from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { colors } from '../theme';
+import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
+import {Ionicons} from '@expo/vector-icons';
+import {colors} from '../theme/colors';
 
 import DriverDashboardScreen from '../screens/Driver/DriverDashboardScreen';
-import IncomingRideScreen from '../screens/Driver/IncomingRideScreen';
-import ActiveRideScreen from '../screens/Driver/ActiveRideScreen';
 import EarningsScreen from '../screens/Driver/EarningsScreen';
 import ProfileScreen from '../screens/Shared/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
-const Stack = createStackNavigator();
-
-const DashboardStack = () => (
-  <Stack.Navigator>
-    <Stack.Screen name="Dashboard" component={DriverDashboardScreen} options={{ headerShown: false }} />
-    <Stack.Screen name="IncomingRide" component={IncomingRideScreen} />
-    <Stack.Screen name="ActiveRide" component={ActiveRideScreen} />
-  </Stack.Navigator>
-);
 
 const DriverNavigator = () => {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ color, size }) => {
+      screenOptions={({route}) => ({
+        tabBarIcon: ({color, size}) => {
           let iconName;
-          if (route.name === 'DashboardTab') iconName = 'dashboard';
-          else if (route.name === 'Earnings') iconName = 'attach-money';
+          if (route.name === 'Dashboard') iconName = 'car';
+          else if (route.name === 'Earnings') iconName = 'cash';
           else if (route.name === 'Profile') iconName = 'person';
-          return <Icon name={iconName} size={size} color={color} />;
+          return <Ionicons name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
-      })}
-    >
-      <Tab.Screen name="DashboardTab" component={DashboardStack} options={{ title: 'Dashboard', headerShown: false }} />
+        tabBarInactiveTintColor: colors.text.secondary,
+      })}>
+      <Tab.Screen name="Dashboard" component={DriverDashboardScreen} />
       <Tab.Screen name="Earnings" component={EarningsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>

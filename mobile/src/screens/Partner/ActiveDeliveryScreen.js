@@ -1,172 +1,75 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
-import { useDelivery } from '../../context/DeliveryContext';
-import { useLocation } from '../../context/LocationContext';
+// mobile/src/screens/Partner/ActiveDeliveryScreen.js
+import React from 'react';
+import {View, Text, StyleSheet, Alert, SafeAreaView, ScrollView} from 'react-native';
+import MapView, {Marker} from 'react-native-maps';
+import {useDelivery} from '../../context/DeliveryContext';
+import {useLocation} from '../../context/LocationContext';
 import Button from '../../components/Common/Button';
-import { colors, spacing } from '../../theme';
-import socketService from '../../services/socket';
+import {colors, spacing, radius} from '../../theme';
+import {getStatusColor} from '../../utils/formatters';
 
-const ActiveDeliveryScreen = ({ navigation }) => {
-  const { activeDelivery, pickupDelivery, startTransit } = useDelivery();
-  const { location } = useLocation();
+const ActiveDeliveryScreen = ({navigation}) => {
+  const {activeDelivery, pickupDelivery, startTransit} = useDelivery();
+  const {location} = useLocation();
 
-  useEffect(() => {
-    if (location && activeDelivery) {
-      socketService.updatePartnerLocation(location);
-    }
-  }, [location]);
+  if (!activeDelivery) { navigation.goBack(); return null; }
+
+  const lat = activeDelivery.pickupLat ?? location?.latitude ?? 6.5244;
+  const lng = activeDelivery.pickupLng ?? location?.longitude ?? 3.3792;
 
   const handlePickup = async () => {
-    try {
-      await pickupDelivery(activeDelivery.id);
-    } catch (error) {
-      Alert.alert('Error', error.message);
-    }
+    try { await pickupDelivery(activeDelivery.id); }
+    catch (err) { Alert.alert('Error', err.response?.data?.message || 'Error'); }
   };
 
-  const handleStartTransit = async () => {
-    try {
-      await startTransit(activeDelivery.id);
-    } catch (error) {
-      Alert.alert('Error', error.message);
-    }
+  const handleTransit = async () => {
+    try { await startTransit(activeDelivery.id); }
+    catch (err) { Alert.alert('Error', err.response?.data?.message || 'Error'); }
   };
 
-  const handleComplete = () => {
-    navigation.navigate('ProofOfDelivery');
-  };
-
-  if (!activeDelivery) {
-    navigation.goBack();
-    return null;
-  }
+  const handleComplete = () => navigation.navigate('ProofOfDelivery');
 
   return (
     <View style={styles.container}>
-      <MapView
-        style={styles.map}
-        initialRegion={{
-          latitude: activeDelivery.pickupLat,
-          longitude: activeDelivery.pickupLng,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }}
-        showsUserLocation
-      >
-        <Marker
-          coordinate={{
-            latitude: activeDelivery.pickupLat,
-            longitude: activeDelivery.pickupLng,
-          }}
-          title="Pickup"
-        />
-        <Marker
-          coordinate={{
-            latitude: activeDelivery.dropoffLat,
-            longitude: activeDelivery.dropoffLng,
-          }}
-          title="Dropoff"
-        />
+      <MapView style={styles.map} initialRegion={{latitude: lat, longitude: lng, latitudeDelta: 0.02, longitudeDelta: 0.02}}>
+        {location && <Marker coordinate={location} title="You" />}
+        <Marker coordinate={{latitude: lat, longitude: lng}} title="Pickup" pinColor={colors.primary} />
+        <Marker coordinate={{latitude: activeDelivery.dropoffLat ?? lat + 0.01, longitude: activeDelivery.dropoffLng ?? lng + 0.01}} title="Dropoff" pinColor={colors.error} />
       </MapView>
 
-      <View style={styles.bottomSheet}>
-        <View style={styles.statusBadge}>
-          <Text style={styles.statusText}>{activeDelivery.status}</Text>
-        </View>
+      <SafeAreaView style={styles.sheet}>
+        <ScrollView>
+          <View style={[styles.badge, {backgroundColor: getStatusColor(activeDelivery.status)}]}>
+            <Text style={styles.badgeText}>{activeDelivery.status}</Text>
+          </View>
+          <Text style={styles.addr}>↑ {activeDelivery.pickupAddress}</Text>
+          <Text style={styles.addr}>↓ {activeDelivery.dropoffAddress}</Text>
+          {activeDelivery.recipientName && <Text style={styles.recipient}>Recipient: {activeDelivery.recipientName}</Text>}
 
-        <View style={styles.packageInfo}>
-          <Text style={styles.packageLabel}>Package:</Text>
-          <Text style={styles.packageDescription}>
-            {activeDelivery.packageDescription}
-          </Text>
-        </View>
-
-        <View style={styles.addressInfo}>
-          <Text style={styles.label}>Pickup</Text>
-          <Text style={styles.address}>{activeDelivery.pickupAddress}</Text>
-          <Text style={styles.contact}>{activeDelivery.pickupContact}</Text>
-
-          <Text style={[styles.label, { marginTop: spacing.md }]}>Dropoff</Text>
-          <Text style={styles.address}>{activeDelivery.dropoffAddress}</Text>
-          <Text style={styles.contact}>{activeDelivery.dropoffContact}</Text>
-        </View>
-
-        {activeDelivery.status === 'ASSIGNED' && (
-          <Button title="Confirm Pickup" onPress={handlePickup} fullWidth />
-        )}
-
-        {activeDelivery.status === 'PICKED_UP' && (
-          <Button title="Start Transit" onPress={handleStartTransit} fullWidth />
-        )}
-
-        {activeDelivery.status === 'IN_TRANSIT' && (
-          <Button title="Complete Delivery" onPress={handleComplete} fullWidth />
-        )}
-      </View>
+          <View style={styles.btns}>
+            {activeDelivery.status === 'ASSIGNED' && <Button title="Picked Up Package" onPress={handlePickup} fullWidth />}
+            {activeDelivery.status === 'PICKED_UP' && <Button title="Start Transit" onPress={handleTransit} fullWidth />}
+            {activeDelivery.status === 'IN_TRANSIT' && <Button title="Complete Delivery" variant="secondary" onPress={handleComplete} fullWidth />}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  map: { flex: 1 },
-  bottomSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: spacing.lg,
-    maxHeight: '70%',
+  container: {flex: 1},
+  map: {flex: 1},
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: spacing.lg, maxHeight: '50%',
   },
-  statusBadge: {
-    backgroundColor: colors.warning,
-    padding: spacing.sm,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    marginBottom: spacing.md,
-  },
-  statusText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  packageInfo: {
-    backgroundColor: colors.backgroundLight,
-    padding: spacing.md,
-    borderRadius: 8,
-    marginBottom: spacing.md,
-  },
-  packageLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  packageDescription: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  addressInfo: {
-    marginBottom: spacing.md,
-  },
-  label: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  address: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  contact: {
-    fontSize: 12,
-    color: colors.primary,
-  },
+  badge: {paddingHorizontal: spacing.md, paddingVertical: 4, borderRadius: radius.full, alignSelf: 'flex-start', marginBottom: spacing.sm},
+  badgeText: {color: '#fff', fontSize: 12, fontWeight: '700'},
+  addr: {fontSize: 13, color: colors.textSecondary, marginBottom: 4},
+  recipient: {fontSize: 14, fontWeight: '600', marginVertical: spacing.sm},
+  btns: {marginTop: spacing.md},
 });
 
 export default ActiveDeliveryScreen;

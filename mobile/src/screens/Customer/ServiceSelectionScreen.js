@@ -1,75 +1,47 @@
+// mobile/src/screens/Customer/ServiceSelectionScreen.js
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { colors, spacing } from '../../theme';
+import {View, Text, StyleSheet, TouchableOpacity, SafeAreaView} from 'react-native';
+import {colors, spacing, radius} from '../../theme';
 
-const ServiceSelectionScreen = ({ navigation }) => {
-  return (
+const SERVICES = [
+  {emoji: '🚗', title: 'Ride', sub: 'Book a car to your destination', screen: 'RequestRide'},
+  {emoji: '📦', title: 'Delivery', sub: 'Send a package across town', screen: 'RequestDelivery'},
+];
+
+const ServiceSelectionScreen = ({navigation}) => (
+  <SafeAreaView style={styles.safe}>
     <View style={styles.container}>
-      <Text style={styles.title}>What do you need?</Text>
-
-      <TouchableOpacity
-        style={[styles.serviceCard, { borderColor: colors.primary }]}
-        onPress={() => navigation.navigate('RequestRide')}
-      >
-        <Icon name="directions-car" size={64} color={colors.primary} />
-        <Text style={styles.serviceTitle}>Request a Ride</Text>
-        <Text style={styles.serviceDescription}>
-          Get picked up by a nearby driver
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.serviceCard, { borderColor: colors.warning }]}
-        onPress={() => navigation.navigate('RequestDelivery')}
-      >
-        <Icon name="local-shipping" size={64} color={colors.warning} />
-        <Text style={styles.serviceTitle}>Send a Package</Text>
-        <Text style={styles.serviceDescription}>
-          Fast and reliable delivery service
-        </Text>
-      </TouchableOpacity>
+      <Text style={styles.title}>Choose a Service</Text>
+      {SERVICES.map(s => (
+        <TouchableOpacity
+          key={s.screen}
+          style={styles.card}
+          onPress={() => navigation.navigate(s.screen)}>
+          <Text style={styles.emoji}>{s.emoji}</Text>
+          <View>
+            <Text style={styles.cardTitle}>{s.title}</Text>
+            <Text style={styles.cardSub}>{s.sub}</Text>
+          </View>
+          <Text style={styles.arrow}>›</Text>
+        </TouchableOpacity>
+      ))}
     </View>
-  );
-};
+  </SafeAreaView>
+);
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: spacing.lg,
-    backgroundColor: colors.background,
+  safe: {flex: 1, backgroundColor: '#fff'},
+  container: {flex: 1, padding: spacing.lg},
+  title: {fontSize: 24, fontWeight: '700', marginBottom: spacing.xl},
+  card: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.background, borderRadius: radius.lg,
+    padding: spacing.lg, marginBottom: spacing.md,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    marginBottom: spacing.xl,
-  },
-  serviceCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: spacing.xl,
-    marginBottom: spacing.lg,
-    alignItems: 'center',
-    borderWidth: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  serviceTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
-  },
-  serviceDescription: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
+  emoji: {fontSize: 36, marginRight: spacing.md},
+  cardTitle: {fontSize: 18, fontWeight: '600'},
+  cardSub: {fontSize: 13, color: colors.textSecondary, marginTop: 4},
+  arrow: {marginLeft: 'auto', fontSize: 24, color: colors.textMuted},
 });
 
 export default ServiceSelectionScreen;

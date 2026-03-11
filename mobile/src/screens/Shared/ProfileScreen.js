@@ -1,120 +1,50 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, Image } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
-import { userAPI } from '../../services/api';
-import Input from '../../components/Common/Input';
-import PhoneInput from '../../components/Inputs/PhoneInput';
-import Button from '../../components/Common/Button';
-import { colors, spacing } from '../../theme';
+import React from 'react';
+import {View, Text, TouchableOpacity, StyleSheet, Alert} from 'react-native';
+import {useAuth} from '../../context/AuthContext';
+import {colors} from '../../theme/colors';
+import {spacing} from '../../theme/spacing';
 
-const ProfileScreen = ({ navigation }) => {
-  const { user, logout } = useAuth();
-  const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    phone: '',
-    profileImage: '',
-  });
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      setFormData({
-        firstName: user.firstName,
-        lastName: user.lastName,
-        phone: user.phone,
-        profileImage: user.profileImage || '',
-      });
-    }
-  }, [user]);
-
-  const handleUpdate = async () => {
-    setLoading(true);
-    try {
-      await userAPI.updateProfile(formData);
-      Alert.alert('Success', 'Profile updated successfully');
-    } catch (error) {
-      Alert.alert('Error', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+const ProfileScreen = () => {
+  const {user, logout} = useAuth();
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', onPress: logout, style: 'destructive' },
+      {text: 'Cancel', style: 'cancel'},
+      {text: 'Logout', onPress: logout, style: 'destructive'},
     ]);
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
-        {formData.profileImage ? (
-          <Image source={{ uri: formData.profileImage }} style={styles.avatar} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>
-              {formData.firstName[0]}
-              {formData.lastName[0]}
-            </Text>
-          </View>
-        )}
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {user?.firstName?.[0]}{user?.lastName?.[0]}
+          </Text>
+        </View>
         <Text style={styles.name}>
-          {formData.firstName} {formData.lastName}
+          {user?.firstName} {user?.lastName}
         </Text>
         <Text style={styles.email}>{user?.email}</Text>
-        <View style={styles.roleBadge}>
-          <Text style={styles.roleText}>{user?.role}</Text>
-        </View>
+        <Text style={styles.role}>{user?.role}</Text>
       </View>
 
-      <View style={styles.form}>
-        <Input
-          label="First Name"
-          value={formData.firstName}
-          onChangeText={(text) =>
-            setFormData({ ...formData, firstName: text })
-          }
-        />
-
-        <Input
-          label="Last Name"
-          value={formData.lastName}
-          onChangeText={(text) => setFormData({ ...formData, lastName: text })}
-        />
-
-        <PhoneInput
-          label="Phone Number"
-          value={formData.phone}
-          onChangeText={(text) => setFormData({ ...formData, phone: text })}
-        />
-
-        <Button
-          title="Update Profile"
-          onPress={handleUpdate}
-          loading={loading}
-          fullWidth
-          style={styles.button}
-        />
-
-        <Button
-          title="Change Password"
-          variant="outline"
-          onPress={() => navigation.navigate('ChangePassword')}
-          fullWidth
-          style={styles.button}
-        />
-
-        <Button
-          title="Logout"
-          variant="danger"
-          onPress={handleLogout}
-          fullWidth
-          style={styles.button}
-        />
+      <View style={styles.menu}>
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuText}>Edit Profile</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuText}>Settings</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuText}>Help & Support</Text>
+        </TouchableOpacity>
       </View>
-    </ScrollView>
+
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <Text style={styles.logoutText}>Logout</Text>
+      </TouchableOpacity>
+    </View>
   );
 };
 
@@ -122,61 +52,65 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
   },
   header: {
     alignItems: 'center',
-    padding: spacing.xl,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    paddingVertical: spacing.xl,
   },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: spacing.md,
-  },
-  avatarPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.md,
   },
   avatarText: {
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.text.inverse,
   },
   name: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: colors.textPrimary,
+    color: colors.text.primary,
+    marginBottom: spacing.xs,
   },
   email: {
     fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
+    color: colors.text.secondary,
+    marginBottom: spacing.xs,
   },
-  roleBadge: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: 12,
-    marginTop: spacing.sm,
-  },
-  roleText: {
-    color: '#fff',
+  role: {
     fontSize: 12,
+    color: colors.primary,
     fontWeight: '600',
+    textTransform: 'uppercase',
   },
-  form: {
-    padding: spacing.lg,
+  menu: {
+    marginTop: spacing.lg,
   },
-  button: {
-    marginTop: spacing.md,
+  menuItem: {
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: 12,
+    marginBottom: spacing.sm,
+  },
+  menuText: {
+    fontSize: 16,
+    color: colors.text.primary,
+  },
+  logoutButton: {
+    marginTop: spacing.xl,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  logoutText: {
+    color: colors.error,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

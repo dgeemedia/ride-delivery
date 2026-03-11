@@ -1,61 +1,45 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
-import { useRide } from '../../context/RideContext';
-import { useLocation } from '../../context/LocationContext';
-import AddressInput from '../../components/Inputs/AddressInput';
-import Input from '../../components/Common/Input';
-import Button from '../../components/Common/Button';
-import { colors, spacing } from '../../theme';
-import { rideAPI } from '../../services/api';
+import React, {useState} from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ScrollView,
+} from 'react-native';
+import {rideAPI} from '../../services/api';
+import {colors} from '../../theme/colors';
+import {spacing} from '../../theme/spacing';
 
-const RequestRideScreen = ({ navigation }) => {
-  const [pickup, setPickup] = useState({ address: '', lat: 0, lng: 0 });
-  const [dropoff, setDropoff] = useState({ address: '', lat: 0, lng: 0 });
-  const [notes, setNotes] = useState('');
-  const [estimatedFare, setEstimatedFare] = useState(null);
+const RequestRideScreen = ({navigation}) => {
+  const [pickupAddress, setPickupAddress] = useState('');
+  const [dropoffAddress, setDropoffAddress] = useState('');
   const [loading, setLoading] = useState(false);
-  const { requestRide } = useRide();
-  const { location } = useLocation();
-
-  const handleGetEstimate = async () => {
-    if (!pickup.lat || !dropoff.lat) {
-      Alert.alert('Error', 'Please select pickup and dropoff locations');
-      return;
-    }
-
-    try {
-      const response = await rideAPI.getEstimate({
-        pickupLat: pickup.lat,
-        pickupLng: pickup.lng,
-        dropoffLat: dropoff.lat,
-        dropoffLng: dropoff.lng,
-      });
-      setEstimatedFare(response.data);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to get estimate');
-    }
-  };
 
   const handleRequestRide = async () => {
-    if (!pickup.lat || !dropoff.lat) {
-      Alert.alert('Error', 'Please select locations');
+    if (!pickupAddress || !dropoffAddress) {
+      Alert.alert('Error', 'Please enter pickup and dropoff addresses');
       return;
     }
 
     setLoading(true);
     try {
-      await requestRide({
-        pickupAddress: pickup.address,
-        pickupLat: pickup.lat,
-        pickupLng: pickup.lng,
-        dropoffAddress: dropoff.address,
-        dropoffLat: dropoff.lat,
-        dropoffLng: dropoff.lng,
-        notes,
+      // For demo, using dummy coordinates
+      await rideAPI.requestRide({
+        pickupAddress,
+        pickupLat: 6.5244,
+        pickupLng: 3.3792,
+        dropoffAddress,
+        dropoffLat: 6.5344,
+        dropoffLng: 3.3892,
       });
-      navigation.navigate('Tracking');
+
+      Alert.alert('Success', 'Ride requested! Looking for drivers...', [
+        {text: 'OK', onPress: () => navigation.goBack()},
+      ]);
     } catch (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to request ride');
     } finally {
       setLoading(false);
     }
@@ -63,61 +47,34 @@ const RequestRideScreen = ({ navigation }) => {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Request a Ride</Text>
+      <View style={styles.form}>
+        <Text style={styles.label}>Pickup Location</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Enter pickup address"
+          value={pickupAddress}
+          onChangeText={setPickupAddress}
+          placeholderTextColor={colors.text.secondary}
+        />
 
-      <AddressInput
-        label="Pickup Location"
-        placeholder="Where are you?"
-        value={pickup.address}
-        onSelectAddress={(addr) =>
-          setPickup({ address: addr.description, lat: 0, lng: 0 })
-        }
-      />
+        <Text style={styles.label}>Dropoff Location</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Enter dropoff address"
+          value={dropoffAddress}
+          onChangeText={setDropoffAddress}
+          placeholderTextColor={colors.text.secondary}
+        />
 
-      <AddressInput
-        label="Dropoff Location"
-        placeholder="Where to?"
-        value={dropoff.address}
-        onSelectAddress={(addr) =>
-          setDropoff({ address: addr.description, lat: 0, lng: 0 })
-        }
-      />
-
-      <Input
-        label="Notes (Optional)"
-        value={notes}
-        onChangeText={setNotes}
-        placeholder="Any special instructions?"
-        multiline
-        numberOfLines={3}
-      />
-
-      <Button
-        title="Get Fare Estimate"
-        variant="outline"
-        onPress={handleGetEstimate}
-        fullWidth
-      />
-
-      {estimatedFare && (
-        <View style={styles.estimateCard}>
-          <Text style={styles.estimateLabel}>Estimated Fare</Text>
-          <Text style={styles.estimateAmount}>
-            ${estimatedFare.estimatedFare}
+        <TouchableOpacity
+          style={[styles.button, loading && styles.buttonDisabled]}
+          onPress={handleRequestRide}
+          disabled={loading}>
+          <Text style={styles.buttonText}>
+            {loading ? 'Requesting...' : 'Request Ride'}
           </Text>
-          <Text style={styles.estimateDetails}>
-            {estimatedFare.distance} km • {estimatedFare.estimatedDuration} min
-          </Text>
-        </View>
-      )}
-
-      <Button
-        title="Request Ride"
-        onPress={handleRequestRide}
-        loading={loading}
-        fullWidth
-        style={styles.requestButton}
-      />
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 };
@@ -125,37 +82,41 @@ const RequestRideScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: spacing.lg,
     backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: spacing.lg,
+  form: {
+    paddingTop: spacing.lg,
   },
-  estimateCard: {
-    backgroundColor: '#fff',
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: spacing.sm,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     borderRadius: 12,
-    padding: spacing.lg,
-    marginVertical: spacing.md,
+    marginBottom: spacing.lg,
+    fontSize: 16,
+    color: colors.text.primary,
+  },
+  button: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    borderRadius: 12,
     alignItems: 'center',
-  },
-  estimateLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  estimateAmount: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: colors.primary,
-    marginVertical: spacing.xs,
-  },
-  estimateDetails: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  requestButton: {
     marginTop: spacing.md,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  buttonText: {
+    color: colors.text.inverse,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

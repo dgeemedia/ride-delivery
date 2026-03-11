@@ -1,48 +1,47 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import { rideAPI } from '../services/api';
+// mobile/src/context/RideContext.js
+import React, {createContext, useState, useEffect, useContext} from 'react';
+import {rideAPI} from '../services/api';
 import socketService from '../services/socket';
 
 const RideContext = createContext();
 
-export const RideProvider = ({ children }) => {
+export const RideProvider = ({children}) => {
   const [activeRide, setActiveRide] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadActiveRide();
-    
-    // Listen for driver location updates
-    socketService.on('driver:location:update', handleDriverLocationUpdate);
 
-    return () => {
-      socketService.off('driver:location:update');
+    const handleDriverLocation = data => {
+      setDriverLocation({
+        latitude: data.lat,
+        longitude: data.lng,
+        heading: data.heading ?? null,
+      });
     };
+
+    socketService.on('driver:location:update', handleDriverLocation);
+    return () => socketService.off('driver:location:update', handleDriverLocation);
   }, []);
 
   const loadActiveRide = async () => {
     try {
-      const response = await rideAPI.getActiveRide();
-      setActiveRide(response.data.ride);
-    } catch (error) {
-      console.log('No active ride');
+      const res = await rideAPI.getActiveRide();
+      setActiveRide(res.data?.ride ?? null);
+    } catch {
+      setActiveRide(null);
     }
   };
 
-  const handleDriverLocationUpdate = (data) => {
-    setDriverLocation({
-      latitude: data.lat,
-      longitude: data.lng,
-      heading: data.heading,
-    });
-  };
-
-  const requestRide = async (rideData) => {
+  const requestRide = async rideData => {
     setLoading(true);
     try {
-      const response = await rideAPI.requestRide(rideData);
-      setActiveRide(response.data.ride);
-      return response.data.ride;
+      const res = await rideAPI.requestRide(rideData);
+      const ride = res.data.ride;
+      setActiveRide(ride);
+      socketService.joinRide(ride.id);
+      return ride;
     } finally {
       setLoading(false);
     }
@@ -51,7 +50,8 @@ export const RideProvider = ({ children }) => {
   const cancelRide = async (rideId, reason) => {
     setLoading(true);
     try {
-      await rideAPI.cancelRide(rideId, { reason });
+      await rideAPI.cancelRide(rideId, {reason});
+      socketService.leaveRide(rideId);
       setActiveRide(null);
       setDriverLocation(null);
     } finally {
@@ -59,26 +59,27 @@ export const RideProvider = ({ children }) => {
     }
   };
 
-  const acceptRide = async (rideId) => {
+  const acceptRide = async rideId => {
     setLoading(true);
     try {
-      const response = await rideAPI.acceptRide(rideId);
-      setActiveRide(response.data.ride);
+      const res = await rideAPI.acceptRide(rideId);
+      setActiveRide(res.data.ride);
     } finally {
       setLoading(false);
     }
   };
 
-  const startRide = async (rideId) => {
-    const response = await rideAPI.startRide(rideId);
-    setActiveRide(response.data.ride);
+  const startRide = async rideId => {
+    const res = await rideAPI.startRide(rideId);
+    setActiveRide(res.data.ride);
   };
 
   const completeRide = async (rideId, actualFare) => {
-    const response = await rideAPI.completeRide(rideId, { actualFare });
+    const res = await rideAPI.completeRide(rideId, {actualFare});
+    socketService.leaveRide(rideId);
     setActiveRide(null);
     setDriverLocation(null);
-    return response.data.ride;
+    return res.data.ride;
   };
 
   return (
@@ -93,8 +94,7 @@ export const RideProvider = ({ children }) => {
         startRide,
         completeRide,
         refreshActiveRide: loadActiveRide,
-      }}
-    >
+      }}>
       {children}
     </RideContext.Provider>
   );

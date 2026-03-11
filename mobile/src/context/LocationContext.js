@@ -1,81 +1,39 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import Geolocation from 'react-native-geolocation-service';
-import { requestLocationPermission, watchPosition, clearWatch } from '../utils/permissions';
+import React, {createContext, useState, useContext} from 'react';
 
 const LocationContext = createContext();
 
-export const LocationProvider = ({ children }) => {
+export const LocationProvider = ({children}) => {
   const [location, setLocation] = useState(null);
-  const [watchId, setWatchId] = useState(null);
-  const [error, setError] = useState(null);
+  const [address, setAddress] = useState(null);
 
-  useEffect(() => {
-    initializeLocation();
-
-    return () => {
-      if (watchId) {
-        clearWatch(watchId);
-      }
+  const getCurrentLocation = async () => {
+    // For Expo Go, we'll use a default location
+    // You can add expo-location later for real GPS
+    const defaultLocation = {
+      latitude: 6.5244,
+      longitude: 3.3792,
     };
-  }, []);
-
-  const initializeLocation = async () => {
-    const hasPermission = await requestLocationPermission();
-    
-    if (hasPermission) {
-      startWatchingLocation();
-    } else {
-      setError('Location permission denied');
-    }
-  };
-
-  const startWatchingLocation = () => {
-    const id = watchPosition(
-      (position) => {
-        setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          heading: position.coords.heading,
-          speed: position.coords.speed,
-        });
-        setError(null);
-      },
-      (error) => {
-        console.error('Location error:', error);
-        setError(error.message);
-      }
-    );
-    setWatchId(id);
-  };
-
-  const getCurrentLocation = () => {
-    return new Promise((resolve, reject) => {
-      Geolocation.getCurrentPosition(
-        (position) => {
-          const loc = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          };
-          setLocation(loc);
-          resolve(loc);
-        },
-        (error) => reject(error),
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-      );
-    });
+    setLocation(defaultLocation);
+    return defaultLocation;
   };
 
   return (
     <LocationContext.Provider
       value={{
         location,
-        error,
+        address,
         getCurrentLocation,
-      }}
-    >
+        setAddress,
+      }}>
       {children}
     </LocationContext.Provider>
   );
 };
 
-export const useLocation = () => useContext(LocationContext);
+export const useLocation = () => {
+  const context = useContext(LocationContext);
+  if (!context) {
+    throw new Error('useLocation must be used within LocationProvider');
+  }
+  return context;
+};

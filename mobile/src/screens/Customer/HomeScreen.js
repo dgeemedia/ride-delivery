@@ -1,99 +1,81 @@
-// src/screens/Customer/HomeScreen.js
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
-import Geolocation from 'react-native-geolocation-service';
-import { request, PERMISSIONS } from 'react-native-permissions';
+import React from 'react';
+import {View, Text, TouchableOpacity, StyleSheet, ScrollView} from 'react-native';
+import {useAuth} from '../../context/AuthContext';
+import {colors} from '../../theme/colors';
+import {spacing} from '../../theme/spacing';
 
-const HomeScreen = ({ navigation }) => {
-  const [location, setLocation] = useState(null);
-
-  useEffect(() => {
-    requestLocationPermission();
-  }, []);
-
-  const requestLocationPermission = async () => {
-    const result = await request(
-      Platform.OS === 'ios'
-        ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
-        : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION
-    );
-
-    if (result === 'granted') {
-      getCurrentLocation();
-    }
-  };
-
-  const getCurrentLocation = () => {
-    Geolocation.getCurrentPosition(
-      (position) => {
-        setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01
-        });
-      },
-      (error) => console.log(error),
-      { enableHighAccuracy: true }
-    );
-  };
+const HomeScreen = ({navigation}) => {
+  const {user} = useAuth();
 
   return (
-    <View style={styles.container}>
-      {location && (
-        <MapView style={styles.map} initialRegion={location}>
-          <Marker coordinate={location} title="You are here" />
-        </MapView>
-      )}
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.greeting}>Hello, {user?.firstName}! 👋</Text>
+        <Text style={styles.subtitle}>Where would you like to go?</Text>
+      </View>
 
-      <View style={styles.buttonContainer}>
+      <View style={styles.content}>
         <TouchableOpacity
-          style={styles.serviceButton}
-          onPress={() => navigation.navigate('RequestRide')}
-        >
-          <Text style={styles.serviceButtonText}>🚗 Request Ride</Text>
+          style={styles.card}
+          onPress={() => navigation.navigate('RequestRide')}>
+          <Text style={styles.cardEmoji}>🚗</Text>
+          <Text style={styles.cardTitle}>Request Ride</Text>
+          <Text style={styles.cardSubtitle}>Get a ride to your destination</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.serviceButton}
-          onPress={() => navigation.navigate('RequestDelivery')}
-        >
-          <Text style={styles.serviceButtonText}>📦 Request Delivery</Text>
+        <TouchableOpacity style={styles.card}>
+          <Text style={styles.cardEmoji}>📦</Text>
+          <Text style={styles.cardTitle}>Request Delivery</Text>
+          <Text style={styles.cardSubtitle}>Send packages anywhere</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1
-  },
-  map: {
-    flex: 1
-  },
-  buttonContainer: {
-    position: 'absolute',
-    bottom: 30,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between'
-  },
-  serviceButton: {
     flex: 1,
-    backgroundColor: '#007AFF',
-    padding: 15,
-    borderRadius: 8,
-    marginHorizontal: 5
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
   },
-  serviceButtonText: {
-    color: '#fff',
-    textAlign: 'center',
+  header: {
+    marginTop: 60,
+    marginBottom: spacing.xl,
+  },
+  greeting: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: colors.text.primary,
+    marginBottom: spacing.sm,
+  },
+  subtitle: {
     fontSize: 16,
-    fontWeight: '600'
-  }
+    color: colors.text.secondary,
+  },
+  content: {
+    flex: 1,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    padding: spacing.lg,
+    borderRadius: 16,
+    marginBottom: spacing.md,
+  },
+  cardEmoji: {
+    fontSize: 40,
+    marginBottom: spacing.sm,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: spacing.xs,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+  },
 });
 
 export default HomeScreen;

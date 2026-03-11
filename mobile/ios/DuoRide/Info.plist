@@ -1,0 +1,5 @@
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>DuoRide needs your location to show nearby drivers and track your rides</string>
+
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>DuoRide needs your location to provide delivery and ride services</string>

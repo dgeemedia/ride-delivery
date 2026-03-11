@@ -1,41 +1,35 @@
-// src/screens/Driver/DriverDashboardScreen.js
-import React, { useState, useEffect } from 'react';
-import { View, Text, Switch, StyleSheet, TouchableOpacity } from 'react-native';
-import { driverAPI } from '../../services/api';
+import React, {useState} from 'react';
+import {View, Text, StyleSheet, TouchableOpacity, Switch} from 'react-native';
+import {driverAPI} from '../../services/api';
 import socketService from '../../services/socket';
+import {colors} from '../../theme/colors';
+import {spacing} from '../../theme/spacing';
 
-const DriverDashboardScreen = ({ navigation }) => {
+const DriverDashboardScreen = () => {
   const [isOnline, setIsOnline] = useState(false);
-  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadStats();
-    socketService.connect();
-  }, []);
-
-  const loadStats = async () => {
+  const toggleOnlineStatus = async () => {
+    setLoading(true);
     try {
-      const response = await driverAPI.getStats();
-      setStats(response.data);
-    } catch (error) {
-      console.error('Error loading stats:', error);
-    }
-  };
+      const newStatus = !isOnline;
+      await driverAPI.updateStatus({
+        isOnline: newStatus,
+        currentLat: 6.5244,
+        currentLng: 3.3792,
+      });
 
-  const toggleOnlineStatus = async (value) => {
-    try {
-      await driverAPI.updateStatus({ isOnline: value });
-      
-      if (value) {
-        // Get current location and send to server
-        socketService.goOnline({ latitude: 0, longitude: 0 });
+      if (newStatus) {
+        socketService.goOnline({latitude: 6.5244, longitude: 3.3792});
       } else {
         socketService.goOffline();
       }
-      
-      setIsOnline(value);
+
+      setIsOnline(newStatus);
     } catch (error) {
       console.error('Error updating status:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -43,37 +37,96 @@ const DriverDashboardScreen = ({ navigation }) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Driver Dashboard</Text>
-        <View style={styles.statusContainer}>
-          <Text>Online Status</Text>
-          <Switch value={isOnline} onValueChange={toggleOnlineStatus} />
+      </View>
+
+      <View style={styles.statusCard}>
+        <Text style={styles.statusLabel}>Status</Text>
+        <View style={styles.statusControl}>
+          <Text style={styles.statusText}>
+            {isOnline ? 'Online' : 'Offline'}
+          </Text>
+          <Switch
+            value={isOnline}
+            onValueChange={toggleOnlineStatus}
+            disabled={loading}
+            trackColor={{false: colors.gray[300], true: colors.success}}
+            thumbColor={colors.background}
+          />
         </View>
       </View>
 
-      {stats && (
-        <View style={styles.statsContainer}>
-          <StatCard title="Total Rides" value={stats.totalRides} />
-          <StatCard title="Rating" value={stats.rating} />
-          <StatCard title="Acceptance Rate" value={`${stats.acceptanceRate}%`} />
+      <View style={styles.statsContainer}>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>0</Text>
+          <Text style={styles.statLabel}>Today's Rides</Text>
         </View>
-      )}
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={() => navigation.navigate('Earnings')}
-      >
-        <Text style={styles.buttonText}>View Earnings</Text>
-      </TouchableOpacity>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>₦0</Text>
+          <Text style={styles.statLabel}>Today's Earnings</Text>
+        </View>
+      </View>
     </View>
   );
 };
 
-const StatCard = ({ title, value }) => (
-  <View style={styles.statCard}>
-    <Text style={styles.statTitle}>{title}</Text>
-    <Text style={styles.statValue}>{value}</Text>
-  </View>
-);
-
-// Styles here...
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
+  },
+  header: {
+    marginTop: 60,
+    marginBottom: spacing.xl,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: colors.text.primary,
+  },
+  statusCard: {
+    backgroundColor: colors.surface,
+    padding: spacing.lg,
+    borderRadius: 16,
+    marginBottom: spacing.lg,
+  },
+  statusLabel: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: spacing.sm,
+  },
+  statusControl: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statusText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.text.primary,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    padding: spacing.lg,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.primary,
+    marginBottom: spacing.xs,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    textAlign: 'center',
+  },
+});
 
 export default DriverDashboardScreen;

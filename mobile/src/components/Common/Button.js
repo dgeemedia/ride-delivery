@@ -1,143 +1,76 @@
+// mobile/src/components/Common/Button.js
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { colors, spacing } from '../../theme';
+import {TouchableOpacity, Text, ActivityIndicator, StyleSheet} from 'react-native';
+import {colors, radius} from '../../theme';
 
 const Button = ({
   title,
   onPress,
   variant = 'primary',
-  size = 'medium',
-  disabled = false,
   loading = false,
-  icon,
+  disabled = false,
   fullWidth = false,
   style,
-  textStyle,
 }) => {
-  const getBackgroundColor = () => {
-    if (disabled) return colors.disabled;
-    
-    switch (variant) {
-      case 'primary':
-        return colors.primary;
-      case 'secondary':
-        return colors.secondary;
-      case 'success':
-        return colors.success;
-      case 'danger':
-        return colors.error;
-      case 'outline':
-        return 'transparent';
-      case 'ghost':
-        return 'transparent';
-      default:
-        return colors.primary;
-    }
+  const bgMap = {
+    primary: colors.primary,
+    secondary: colors.secondary,
+    danger: colors.error,
+    outline: 'transparent',
+    ghost: 'transparent',
   };
 
-  const getTextColor = () => {
-    if (disabled) return colors.textSecondary;
-    if (variant === 'outline' || variant === 'ghost') return colors.primary;
-    return '#fff';
-  };
-
-  const getBorderStyle = () => {
-    if (variant === 'outline') {
-      return {
-        borderWidth: 2,
-        borderColor: disabled ? colors.disabled : colors.primary,
-      };
-    }
-    return {};
-  };
-
-  const getPadding = () => {
-    switch (size) {
-      case 'small':
-        return { paddingVertical: spacing.sm, paddingHorizontal: spacing.md };
-      case 'medium':
-        return { paddingVertical: spacing.md, paddingHorizontal: spacing.lg };
-      case 'large':
-        return { paddingVertical: spacing.lg, paddingHorizontal: spacing.xl };
-      default:
-        return { paddingVertical: spacing.md, paddingHorizontal: spacing.lg };
-    }
-  };
-
-  const getFontSize = () => {
-    switch (size) {
-      case 'small':
-        return 14;
-      case 'medium':
-        return 16;
-      case 'large':
-        return 18;
-      default:
-        return 16;
-    }
+  const textMap = {
+    primary: '#fff',
+    secondary: '#fff',
+    danger: '#fff',
+    outline: colors.primary,
+    ghost: colors.textSecondary,
   };
 
   return (
     <TouchableOpacity
       style={[
-        styles.button,
-        {
-          backgroundColor: getBackgroundColor(),
-          ...getPadding(),
-          ...getBorderStyle(),
-          width: fullWidth ? '100%' : 'auto',
-        },
+        styles.base,
+        {backgroundColor: bgMap[variant]},
+        variant === 'outline' && styles.outline,
+        fullWidth && styles.fullWidth,
+        (disabled || loading) && styles.disabled,
         style,
       ]}
       onPress={onPress}
       disabled={disabled || loading}
-      activeOpacity={0.7}
-    >
+      activeOpacity={0.8}>
       {loading ? (
-        <ActivityIndicator size="small" color={getTextColor()} />
+        <ActivityIndicator color={textMap[variant]} size="small" />
       ) : (
-        <>
-          {icon && (
-            <Icon
-              name={icon}
-              size={getFontSize() + 4}
-              color={getTextColor()}
-              style={styles.icon}
-            />
-          )}
-          <Text
-            style={[
-              styles.text,
-              {
-                color: getTextColor(),
-                fontSize: getFontSize(),
-              },
-              textStyle,
-            ]}
-          >
-            {title}
-          </Text>
-        </>
+        <Text style={[styles.text, {color: textMap[variant]}]}>{title}</Text>
       )}
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
-  button: {
-    flexDirection: 'row',
+  base: {
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
-    gap: 6,
+  },
+  outline: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  fullWidth: {
+    width: '100%',
+  },
+  disabled: {
+    opacity: 0.55,
   },
   text: {
+    fontSize: 16,
     fontWeight: '600',
-    textAlign: 'center',
-  },
-  icon: {
-    marginRight: 4,
   },
 });
 

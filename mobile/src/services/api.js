@@ -1,17 +1,17 @@
+// mobile/src/services/api.js
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Config from 'react-native-config';
+import { API_BASE_URL } from '../config/constants';
 
-// Create axios instance
 const api = axios.create({
-  baseURL: Config.API_BASE_URL || 'http://localhost:3000/api',
+  baseURL: API_BASE_URL,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request interceptor - Add auth token
+// Request interceptor
 api.interceptors.request.use(
   async (config) => {
     const token = await AsyncStorage.getItem('authToken');
@@ -20,21 +20,16 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor - Handle errors
+// Response interceptor
 api.interceptors.response.use(
   (response) => response.data,
   async (error) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid
       await AsyncStorage.removeItem('authToken');
       await AsyncStorage.removeItem('user');
-      // Navigate to login screen
-      // This will be handled by navigation context
     }
     return Promise.reject(error);
   }
@@ -54,12 +49,10 @@ export const rideAPI = {
   requestRide: (data) => api.post('/rides/request', data),
   getActiveRide: () => api.get('/rides/active'),
   getRideHistory: (params) => api.get('/rides/history', { params }),
-  getRideById: (id) => api.get(`/rides/${id}`),
   acceptRide: (id) => api.put(`/rides/${id}/accept`),
   startRide: (id) => api.put(`/rides/${id}/start`),
   completeRide: (id, data) => api.put(`/rides/${id}/complete`, data),
   cancelRide: (id, data) => api.put(`/rides/${id}/cancel`, data),
-  rateRide: (id, data) => api.post(`/rides/${id}/rate`, data),
 };
 
 // Delivery API
@@ -67,11 +60,16 @@ export const deliveryAPI = {
   getEstimate: (params) => api.get('/deliveries/estimate', { params }),
   requestDelivery: (data) => api.post('/deliveries/request', data),
   getActiveDelivery: () => api.get('/deliveries/active'),
-  getDeliveryHistory: (params) => api.get('/deliveries/history', { params }),
   acceptDelivery: (id) => api.put(`/deliveries/${id}/accept`),
   pickupDelivery: (id) => api.put(`/deliveries/${id}/pickup`),
-  completeDelivery: (id, data) => api.put(`/deliveries/${id}/deliver`, data),
-  cancelDelivery: (id, data) => api.put(`/deliveries/${id}/cancel`, data),
+  completeDelivery: (id, data) => api.put(`/deliveries/${id}/complete`, data),
+};
+
+// User API
+export const userAPI = {
+  getProfile: () => api.get('/users/profile'),
+  updateProfile: (data) => api.put('/users/profile', data),
+  getStats: () => api.get('/users/stats'),
 };
 
 // Driver API
@@ -80,29 +78,16 @@ export const driverAPI = {
   updateProfile: (data) => api.post('/drivers/profile', data),
   updateStatus: (data) => api.put('/drivers/status', data),
   getEarnings: () => api.get('/drivers/earnings'),
-  getStats: () => api.get('/drivers/stats'),
+  getNearbyRequests: () => api.get('/drivers/nearby-requests'),
 };
 
-// User API
-export const userAPI = {
-  getProfile: () => api.get('/users/profile'),
-  updateProfile: (data) => api.put('/users/profile', data),
+// Partner API
+export const partnerAPI = {
+  getProfile: () => api.get('/partners/profile'),
+  updateProfile: (data) => api.post('/partners/profile', data),
+  updateStatus: (data) => api.put('/partners/status', data),
+  getEarnings: () => api.get('/partners/earnings'),
+  getNearbyRequests: () => api.get('/partners/nearby-requests'),
 };
-
-// Payment API
-export const paymentAPI = {
-  processPayment: (data) => api.post('/payments/process', data),
-  getHistory: (params) => api.get('/payments/history', { params }),
-  getPaymentById: (id) => api.get(`/payments/${id}`),
-  addCard: (data) => api.post('/payments/card/add', data),
-  getCards: () => api.get('/payments/cards'),
-  removeCard: (id) => api.delete(`/payments/card/${id}`),
-};
-
-// FUTURE: Add more API endpoints
-// - Notifications
-// - Support/Help
-// - Referrals
-// - Promo codes
 
 export default api;
