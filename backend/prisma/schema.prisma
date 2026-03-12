@@ -127,6 +127,8 @@ model User {
   activityLogs         ActivityLog[]
   wallet               Wallet?
   payouts              Payout[]
+  supportTickets       SupportTicket[]          // ← added
+  appFeedback          AppFeedback[]            // ← added
 
   @@index([email])
   @@index([phone])
@@ -151,10 +153,10 @@ model DriverProfile {
   vehicleColor    String
   vehiclePlate    String      @unique
 
-  // Documents
-  licenseImageUrl String
-  vehicleRegUrl   String
-  insuranceUrl    String
+  // Documents — optional until uploaded via profile screen
+  licenseImageUrl String?     // ← was String (NOT NULL), now optional
+  vehicleRegUrl   String?     // ← was String (NOT NULL), now optional
+  insuranceUrl    String?     // ← was String (NOT NULL), now optional
 
   // Status
   isApproved      Boolean     @default(false)
@@ -184,8 +186,8 @@ model DeliveryPartnerProfile {
   vehicleType     VehicleType
   vehiclePlate    String?
 
-  // Documents
-  idImageUrl      String
+  // Documents — optional until uploaded via profile screen
+  idImageUrl      String?     // ← was String (NOT NULL), now optional
   vehicleImageUrl String?
 
   // Status
@@ -229,10 +231,8 @@ model Ride {
   estimatedFare      Float
   actualFare         Float?
 
-  // Promo
   promoCode          String?
 
-  // Timestamps
   requestedAt        DateTime   @default(now())
   acceptedAt         DateTime?
   arrivedAt          DateTime?
@@ -286,10 +286,8 @@ model Delivery {
   recipientName      String?
   recipientSignature String?
 
-  // Promo
   promoCode          String?
 
-  // Timestamps
   requestedAt        DateTime       @default(now())
   assignedAt         DateTime?
   pickedUpAt         DateTime?
@@ -331,11 +329,9 @@ model Payment {
   transactionId   String?       @unique
   receiptUrl      String?
 
-  // Commission split
   platformFee     Float?
   driverEarnings  Float?
 
-  // Refund tracking
   refundAmount    Float?
   refundedAt      DateTime?
 
@@ -351,20 +347,20 @@ model Payment {
 // ─────────────────────────────────────────────
 
 model Rating {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
 
   userId     String
-  user       User     @relation(fields: [userId], references: [id])
+  user       User      @relation(fields: [userId], references: [id])
 
-  rideId     String?  @unique
-  ride       Ride?    @relation(fields: [rideId], references: [id])
-  deliveryId String?  @unique
+  rideId     String?   @unique
+  ride       Ride?     @relation(fields: [rideId], references: [id])
+  deliveryId String?   @unique
   delivery   Delivery? @relation(fields: [deliveryId], references: [id])
 
-  rating     Int      // 1–5 stars
+  rating     Int
   comment    String?
 
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([userId])
 }
@@ -397,7 +393,7 @@ model WalletTransaction {
   type        WalletTxType
   amount      Float
   description String
-  status      String       @default("COMPLETED") // COMPLETED | PENDING | FAILED
+  status      String       @default("COMPLETED")
   reference   String?      @unique
 
   createdAt   DateTime     @default(now())
@@ -408,7 +404,7 @@ model WalletTransaction {
 }
 
 // ─────────────────────────────────────────────
-// PAYOUT (Driver / Partner bank withdrawals)
+// PAYOUT
 // ─────────────────────────────────────────────
 
 model Payout {
@@ -424,7 +420,7 @@ model Payout {
   bankCode       String
   accountName    String
   reference      String?      @unique
-  recipientCode  String?      // Paystack recipient code
+  recipientCode  String?
 
   processedAt    DateTime?
   failureReason  String?
@@ -441,17 +437,17 @@ model Payout {
 // ─────────────────────────────────────────────
 
 model AdminProfile {
-  id          String   @id @default(uuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   permissions Json
   department  String?
   lastLoginAt DateTime?
-  loginCount  Int      @default(0)
+  loginCount  Int       @default(0)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([userId])
 }
@@ -483,9 +479,9 @@ model Notification {
 // ─────────────────────────────────────────────
 
 model ActivityLog {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   userId     String?
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   action     String
   entityType String
@@ -494,7 +490,7 @@ model ActivityLog {
   ipAddress  String?
   userAgent  String?
 
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([userId])
   @@index([action])
@@ -527,7 +523,7 @@ model PromoCode {
   id                String   @id @default(uuid())
   code              String   @unique
   description       String?
-  discountType      String   // percentage | fixed
+  discountType      String
   discountValue     Float
   maxUses           Int?
   currentUses       Int      @default(0)
@@ -536,7 +532,7 @@ model PromoCode {
   validFrom         DateTime
   validUntil        DateTime
   isActive          Boolean  @default(true)
-  applicableFor     String   // rides | deliveries | both
+  applicableFor     String
 
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -552,6 +548,7 @@ model PromoCode {
 model SupportTicket {
   id           String    @id @default(uuid())
   userId       String
+  user         User      @relation(fields: [userId], references: [id]) // ← added relation
   ticketNumber String    @unique
   subject      String
   description  String
@@ -576,6 +573,7 @@ model SupportTicket {
 model AppFeedback {
   id         String   @id @default(uuid())
   userId     String
+  user       User     @relation(fields: [userId], references: [id]) // ← added relation
   rating     Int
   comment    String?
   category   String
