@@ -1,9 +1,7 @@
 // backend/src/services/socket.service.js
 const jwt = require('jsonwebtoken');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const { logger } = require('../utils/logger');
-
-const prisma = new PrismaClient();
 
 // Store active socket connections: userId -> socketId
 const activeSockets = new Map();

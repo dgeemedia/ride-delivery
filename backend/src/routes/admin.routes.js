@@ -1,3 +1,4 @@
+// backend/src/routes/admin.routes.js
 const express = require('express');
 const { body, param } = require('express-validator');
 const adminController = require('../controllers/admin.controller');

@@ -1,8 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
+// backend/src/controllers/admin.controller.js
+const prisma = require('../lib/prisma');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
-
-const prisma = new PrismaClient();
 
 // ─────────────────────────────────────────────
 // HELPERS

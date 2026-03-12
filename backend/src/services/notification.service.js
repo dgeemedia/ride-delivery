@@ -2,9 +2,7 @@
 // Central service for creating DB notifications + emitting Socket.io events
 // Used by: ride, delivery, admin, auth, wallet controllers
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-
+const prisma = require('../lib/prisma');
 // Socket.io instance — set once when server starts
 let _io = null;
 

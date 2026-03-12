@@ -1,8 +1,6 @@
 // backend/src/controllers/notification.controller.js
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const { AppError } = require('../middleware/errorHandler');
-
-const prisma = new PrismaClient();
 
 /**
  * @desc    Get all notifications for current user

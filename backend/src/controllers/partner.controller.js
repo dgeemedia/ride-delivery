@@ -1,11 +1,9 @@
 // backend/src/controllers/partner.controller.js
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
-
-const prisma = new PrismaClient();
 
 /**
  * @desc    Create or update delivery partner profile

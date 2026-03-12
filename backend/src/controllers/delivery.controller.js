@@ -1,12 +1,10 @@
 // backend/src/controllers/delivery.controller.js
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const { calculateDistance, calculateDeliveryFee } = require('../utils/helpers');
 const notificationService = require('../services/notification.service');
 const { broadcastToPartners } = require('../services/socket.service');
-
-const prisma = new PrismaClient();
 
 /**
  * @desc    Get delivery fee estimate

@@ -1,10 +1,9 @@
-const { PrismaClient } = require('@prisma/client');
+// backend/src/controllers/wallet.controller.js
+const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
-
-const prisma = new PrismaClient();
 
 /**
  * @desc    Get wallet balance and info

@@ -1,11 +1,9 @@
 // backend/src/controllers/payment.controller.js
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
-
-const prisma = new PrismaClient();
 
 // ─────────────────────────────────────────────
 // PAYSTACK FLOWS

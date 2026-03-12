@@ -1,3 +1,4 @@
+// backend/src/routes/wallet.routes.js
 const express = require('express');
 const { body } = require('express-validator');
 const walletController = require('../controllers/wallet.controller');

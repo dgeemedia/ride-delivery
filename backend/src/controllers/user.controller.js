@@ -1,10 +1,8 @@
 // backend/src/controllers/user.controller.js
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const bcrypt = require('bcryptjs');
-
-const prisma = new PrismaClient();
 
 /**
  * @desc    Get user profile

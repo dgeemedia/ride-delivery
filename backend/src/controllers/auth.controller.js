@@ -1,5 +1,5 @@
 // backend/src/controllers/auth.controller.js
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -7,7 +7,6 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 
-const prisma = new PrismaClient();
 
 /**
  * Generate JWT token

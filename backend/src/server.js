@@ -1,7 +1,8 @@
 // backend/src/server.js
 require('dotenv').config();
 const http = require('http');
-const app  = require('./app');
+const app    = require('./app');
+const prisma = require('./lib/prisma');   // ← import singleton here too
 const { Server } = require('socket.io');
 const { logger } = require('./utils/logger');
 const { initializeSocketHandlers } = require('./services/socket.service');
@@ -17,14 +18,12 @@ const io = new Server(server, {
     origin: process.env.NODE_ENV === 'production'
       ? [process.env.CLIENT_URL || 'https://yourdomain.com']
       : '*',
-    methods: ['GET', 'POST']
+    methods: ['GET', 'POST'],
   },
-  // Ping settings — keeps mobile connections alive
   pingTimeout:  60000,
-  pingInterval: 25000
+  pingInterval: 25000,
 });
 
-// Wire socket handlers AND inject io into notification.service in one call
 initializeSocketHandlers(io);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,12 +31,11 @@ initializeSocketHandlers(io);
 // ─────────────────────────────────────────────────────────────────────────────
 const shutdown = (signal) => {
   logger.info(`${signal} received — closing HTTP server`);
-  server.close(() => {
-    logger.info('HTTP server closed');
+  server.close(async () => {
+    await prisma.$disconnect();
+    logger.info('HTTP server + DB connection closed');
     process.exit(0);
   });
-
-  // Force-exit if server hasn't closed within 10 s
   setTimeout(() => {
     logger.error('Forced shutdown after timeout');
     process.exit(1);
@@ -61,15 +59,28 @@ process.on('uncaughtException', (err) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// START
+// START — verify DB before accepting traffic
 // ─────────────────────────────────────────────────────────────────────────────
-server.listen(PORT, () => {
-  logger.info(`🚀  Server running on port ${PORT}`);
-  logger.info(`📍  Environment : ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`🔗  API         : http://localhost:${PORT}/api`);
-  logger.info(`💓  Health      : http://localhost:${PORT}/health`);
-  logger.info(`🔔  WebSockets  : Socket.io ready`);
-  logger.info(`💳  Payments    : Paystack + Flutterwave (NGN)`);
-});
+const start = async () => {
+  // Ping DB — wakes Supabase free-tier if paused
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    logger.info('🗄️   Database    : Supabase connected');
+  } catch (err) {
+    logger.error('❌  Database connection failed on startup:', err.message);
+    logger.warn('⚠️   Server will still start — Prisma will retry on first request');
+  }
+
+  server.listen(PORT, () => {
+    logger.info(`🚀  Server running on port ${PORT}`);
+    logger.info(`📍  Environment : ${process.env.NODE_ENV || 'development'}`);
+    logger.info(`🔗  API         : http://localhost:${PORT}/api`);
+    logger.info(`💓  Health      : http://localhost:${PORT}/health`);
+    logger.info(`🔔  WebSockets  : Socket.io ready`);
+    logger.info(`💳  Payments    : Paystack + Flutterwave (NGN)`);
+  });
+};
+
+start();
 
 module.exports = { server, io };
