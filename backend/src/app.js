@@ -29,11 +29,27 @@ const app = express();
 app.use(helmet());
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
+const allowedOrigins = [
+  'http://localhost:3001',   // admin dev
+  'http://localhost:5173',   // vite default
+  'http://localhost:3000',   // any local dev
+  process.env.CLIENT_URL,    // production frontend
+  process.env.ADMIN_URL,     // production admin panel
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? [process.env.CLIENT_URL || 'https://yourdomain.com']
-    : '*',
-  credentials: true
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, curl)
+    if (!origin) return callback(null, true);
+    if (
+      process.env.NODE_ENV !== 'production' ||
+      allowedOrigins.includes(origin)
+    ) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
 }));
 
 // ─── Global rate limit ────────────────────────────────────────────────────────
@@ -49,7 +65,7 @@ app.use('/api/', globalLimiter);
 // ─── Stricter limit on auth endpoints ────────────────────────────────────────
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 50,
   message: 'Too many auth attempts, please try again later.'
 });
 app.use('/api/auth/login',           authLimiter);
@@ -58,7 +74,6 @@ app.use('/api/auth/register',        authLimiter);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WEBHOOK RAW BODY  ← Must be registered BEFORE express.json()
-// Paystack and Flutterwave need the raw Buffer to verify HMAC signatures.
 // ─────────────────────────────────────────────────────────────────────────────
 app.use(
   '/api/payments/paystack/webhook',
@@ -72,7 +87,7 @@ app.use(
   (req, _res, next) => { req.rawBody = req.body; next(); }
 );
 
-// ─── JSON / URL-encoded body parsing (all other routes) ───────────────────────
+// ─── JSON / URL-encoded body parsing ─────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -85,9 +100,7 @@ if (process.env.NODE_ENV === 'development') {
   }));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HEALTH CHECK
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -97,9 +110,7 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// API ROUTES
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth',          authRoutes);
 app.use('/api/users',         userRoutes);
 app.use('/api/rides',         rideRoutes);
@@ -112,7 +123,7 @@ app.use('/api/admin',         adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/wallet',        walletRoutes);
 
-// ─── API index (dev discovery) ────────────────────────────────────────────────
+// ─── API index ────────────────────────────────────────────────────────────────
 app.get('/api', (_req, res) => {
   res.status(200).json({
     message: 'DuoRide API v1.0',
@@ -137,7 +148,7 @@ app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` });
 });
 
-// ─── Global error handler (must be last middleware) ───────────────────────────
+// ─── Global error handler ─────────────────────────────────────────────────────
 app.use(errorHandler);
 
 module.exports = app;
