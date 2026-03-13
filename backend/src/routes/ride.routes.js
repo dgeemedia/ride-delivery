@@ -50,6 +50,43 @@ router.get('/active', rideController.getActiveRide);
  */
 router.get('/history', rideController.getRideHistory);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADD these two routes to backend/src/routes/ride.routes.js
+// Place them BEFORE the  router.get('/:id', ...)  line (to avoid :id catching them)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @route   GET /api/rides/nearby-drivers
+ * @desc    Get nearby online drivers for customer to choose from
+ * @access  Private (CUSTOMER)
+ */
+router.get('/nearby-drivers', authorize('CUSTOMER'), rideController.getNearbyDrivers);
+
+/**
+ * @route   POST /api/rides/request-driver
+ * @desc    Send ride request to a specific chosen driver
+ * @access  Private (CUSTOMER)
+ */
+router.post(
+  '/request-driver',
+  authorize('CUSTOMER'),
+  [
+    body('pickupAddress').notEmpty(),
+    body('pickupLat').isFloat({ min: -90,  max: 90  }),
+    body('pickupLng').isFloat({ min: -180, max: 180 }),
+    body('dropoffAddress').notEmpty(),
+    body('dropoffLat').isFloat({ min: -90,  max: 90  }),
+    body('dropoffLng').isFloat({ min: -180, max: 180 }),
+    body('driverId').notEmpty().isUUID(),
+    body('estimatedFare').optional().isFloat({ min: 0 }),
+    body('paymentMethod').optional().isIn(['CASH', 'CARD', 'WALLET']),
+    body('carType').optional().isString(),
+    body('notes').optional().isString(),
+    body('promoCode').optional().isString(),
+  ],
+  rideController.requestSpecificDriver
+);
+
 /**
  * @route   GET /api/rides/:id
  * @desc    Get ride details
