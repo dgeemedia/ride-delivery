@@ -142,7 +142,7 @@ app.get('/api', (_req, res) => {
     }
   });
 });
-
+app.use('/api/debug', require('./routes/debug.route'));
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` });
