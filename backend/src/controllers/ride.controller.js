@@ -737,5 +737,48 @@ exports.requestSpecificDriver = async (req, res) => {
     message: 'Request sent to driver. Waiting for response...',
     data: { ride }
   });
+  // Add this to backend/src/controllers/ride.controller.js
+// Paste it BEFORE the last line: module.exports = { ... }
+
+exports.getRideHistory = async (req, res) => {
+  const user = req.user;
+  const page  = parseInt(req.query.page  || '1');
+  const limit = parseInt(req.query.limit || '20');
+  const skip  = (page - 1) * limit;
+
+  // Build where clause based on role
+  let where = {};
+  if (user.role === 'DRIVER') {
+    where = { driverId: user.id, status: { in: ['COMPLETED', 'CANCELLED'] } };
+  } else if (user.role === 'CUSTOMER') {
+    where = { customerId: user.id, status: { in: ['COMPLETED', 'CANCELLED'] } };
+  } else {
+    // Admin — return all
+    where = { status: { in: ['COMPLETED', 'CANCELLED'] } };
+  }
+
+  const [rides, total] = await Promise.all([
+    prisma.ride.findMany({
+      where,
+      orderBy: { requestedAt: 'desc' },
+      skip,
+      take: limit,
+      include: {
+        customer: { select: { id: true, firstName: true, lastName: true, phone: true } },
+        driver:   { select: { id: true, firstName: true, lastName: true, phone: true } },
+        payment:  { select: { status: true, method: true, amount: true } },
+      },
+    }),
+    prisma.ride.count({ where }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      rides,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+    },
+  });
+};
 };
 module.exports = exports;
