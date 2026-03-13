@@ -71,3 +71,31 @@ router.post('/force-offline', async (req, res) => {
 });
 
 module.exports = router;
+
+// GET /api/debug/active-rides — see what rides are stuck
+router.get('/active-rides', async (req, res) => {
+  const rides = await prisma.ride.findMany({
+    where: { status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } },
+    include: {
+      customer: { select: { firstName: true, lastName: true, email: true } },
+      driver:   { select: { firstName: true, lastName: true, email: true } },
+    }
+  });
+  res.json({ total: rides.length, rides });
+});
+
+// POST /api/debug/cancel-ride — force cancel a stuck ride
+// Body: { "rideId": "..." }
+router.post('/cancel-ride', async (req, res) => {
+  const { rideId } = req.body;
+  if (!rideId) return res.status(400).json({ error: 'rideId required' });
+  try {
+    await prisma.ride.update({
+      where: { id: rideId },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: 'Debug: force cancelled' }
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
