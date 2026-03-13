@@ -9,38 +9,65 @@ const prisma = new PrismaClient();
 router.get('/drivers', async (req, res) => {
   const drivers = await prisma.driverProfile.findMany({
     include: {
-      user: {
-        select: { id: true, firstName: true, lastName: true, email: true, role: true, isActive: true }
-      }
+      user: { select: { id: true, firstName: true, lastName: true, email: true, role: true, isActive: true } }
     }
   });
-
   res.json({
     total: drivers.length,
     drivers: drivers.map(d => ({
-      name:        `${d.user.firstName} ${d.user.lastName}`,
-      email:       d.user.email,
-      userId:      d.user.id,
-      role:        d.user.role,        // ← added
-      isActive:    d.user.isActive,    // ← added
-      isOnline:    d.isOnline,
-      isApproved:  d.isApproved,
-      currentLat:  d.currentLat,
-      currentLng:  d.currentLng,
+      name: `${d.user.firstName} ${d.user.lastName}`,
+      email: d.user.email,
+      userId: d.user.id,
+      role: d.user.role,
+      isActive: d.user.isActive,
+      isOnline: d.isOnline,
+      isApproved: d.isApproved,
+      currentLat: d.currentLat,
+      currentLng: d.currentLng,
       vehicleType: d.vehicleType,
     }))
   });
 });
 
-// GET /api/debug/users — check all users and their roles
+// GET /api/debug/users
 router.get('/users', async (req, res) => {
   const users = await prisma.user.findMany({
-    select: {
-      id: true, firstName: true, lastName: true,
-      email: true, role: true, isActive: true, isSuspended: true
-    }
+    select: { id: true, firstName: true, lastName: true, email: true, role: true, isActive: true, isSuspended: true }
   });
   res.json({ total: users.length, users });
+});
+
+// POST /api/debug/force-online
+// Body: { "userId": "...", "lat": 6.54, "lng": 3.07 }
+router.post('/force-online', async (req, res) => {
+  const { userId, lat, lng } = req.body;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  try {
+    const updated = await prisma.driverProfile.update({
+      where: { userId },
+      data: {
+        isOnline: true,
+        currentLat: lat ?? 6.5411374,
+        currentLng: lng ?? 3.0710882,
+      }
+    });
+    res.json({ success: true, isOnline: updated.isOnline, currentLat: updated.currentLat, currentLng: updated.currentLng });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/debug/force-offline  
+// Body: { "userId": "..." }
+router.post('/force-offline', async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  try {
+    await prisma.driverProfile.update({ where: { userId }, data: { isOnline: false } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
