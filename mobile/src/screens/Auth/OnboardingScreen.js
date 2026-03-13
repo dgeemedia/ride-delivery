@@ -2,67 +2,42 @@
 import React, { useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Animated, Dimensions, StatusBar, Platform,
+  Animated, Dimensions, StatusBar, Platform, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../context/ThemeContext';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-const VEHICLES = [
-  { emoji: '🏎️', size: 30, delay: 0,   dur: 3200, dist: 12, style: { top: height * 0.06, left: width * 0.04 } },
-  { emoji: '🚕', size: 26, delay: 300, dur: 3800, dist: 10, style: { top: height * 0.06, left: width * 0.30 } },
-  { emoji: '🛵', size: 24, delay: 600, dur: 2900, dist: 14, style: { top: height * 0.10, right: width * 0.06 } },
-  { emoji: '🚐', size: 22, delay: 200, dur: 3500, dist: 11, style: { top: height * 0.19, left: width * 0.14 } },
-  { emoji: '🚙', size: 26, delay: 700, dur: 3100, dist: 13, style: { top: height * 0.17, right: width * 0.18 } },
-  { emoji: '🚌', size: 28, delay: 500, dur: 4000, dist: 9,  style: { top: height * 0.27, left: -2 } },
-  { emoji: '🚎', size: 26, delay: 800, dur: 3300, dist: 12, style: { top: height * 0.29, right: -2 } },
-  { emoji: '🏍️', size: 26, delay: 350, dur: 2800, dist: 14, style: { bottom: height * 0.27, left: width * 0.05 } },
-  { emoji: '🚗', size: 28, delay: 550, dur: 3600, dist: 10, style: { bottom: height * 0.25, right: width * 0.06 } },
-  { emoji: '🚚', size: 24, delay: 750, dur: 3000, dist: 12, style: { bottom: height * 0.17, left: width * 0.26 } },
-  { emoji: '🚛', size: 26, delay: 450, dur: 3700, dist: 11, style: { bottom: height * 0.13, right: width * 0.22 } },
-  { emoji: '🛺', size: 22, delay: 150, dur: 4200, dist: 8,  style: { bottom: height * 0.28, left: width * 0.46 } },
+const ACCENT_OPTIONS = [
+  { id: 'gold',  label: 'Gold',  color: '#C9A96E' },
+  { id: 'ocean', label: 'Ocean', color: '#4E8DBD' },
+  { id: 'sage',  label: 'Sage',  color: '#7EA882' },
 ];
 
-// RULE: Only opacity + transform → useNativeDriver: true, no exceptions
-const FloatingVehicle = ({ emoji, size, delay, dur, dist, style }) => {
-  const ty  = useRef(new Animated.Value(0)).current;
-  const tx  = useRef(new Animated.Value(0)).current;
-  const op  = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(op, { toValue: 0.92, duration: 800, delay, useNativeDriver: true }).start();
-    Animated.loop(Animated.sequence([
-      Animated.timing(ty, { toValue: -dist,       duration: dur,       useNativeDriver: true }),
-      Animated.timing(ty, { toValue: 0,           duration: dur,       useNativeDriver: true }),
-    ])).start();
-    Animated.loop(Animated.sequence([
-      Animated.timing(tx, { toValue: dist * 0.25,  duration: dur * 1.4, useNativeDriver: true }),
-      Animated.timing(tx, { toValue: -dist * 0.25, duration: dur * 1.4, useNativeDriver: true }),
-    ])).start();
-  }, []);
-
-  return (
-    <Animated.View style={[s.vehicle, style, { opacity: op, transform: [{ translateY: ty }, { translateX: tx }] }]}>
-      <View style={s.bubble}>
-        <Text style={{ fontSize: size }}>{emoji}</Text>
-      </View>
-    </Animated.View>
-  );
-};
+// Resolved at module level — Metro bundler requires static require() paths
+const LOGO_DARK  = require('../../../assets/diakite_light.png'); // white logo → dark backgrounds
+const LOGO_LIGHT = require('../../../assets/diakite_dark.png');  // black logo → light backgrounds
 
 export default function OnboardingScreen({ navigation }) {
-  const badgeS = useRef(new Animated.Value(0)).current;
+  const { theme, accentId, mode, changeAccent, changeMode } = useTheme();
+
+  const logoS  = useRef(new Animated.Value(0)).current;
+  const logoO  = useRef(new Animated.Value(0)).current;
   const titleO = useRef(new Animated.Value(0)).current;
-  const titleY = useRef(new Animated.Value(32)).current;
+  const titleY = useRef(new Animated.Value(24)).current;
   const subO   = useRef(new Animated.Value(0)).current;
-  const subY   = useRef(new Animated.Value(24)).current;
-  const btnO   = useRef(new Animated.Value(0)).current;
-  const btnY   = useRef(new Animated.Value(20)).current;
+  const subY   = useRef(new Animated.Value(16)).current;
+  const ftrO   = useRef(new Animated.Value(0)).current;
+  const ftrY   = useRef(new Animated.Value(16)).current;
   const glowS  = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.stagger(100, [
-      Animated.spring(badgeS, { toValue: 1, tension: 60, friction: 7, useNativeDriver: true }),
+    Animated.stagger(140, [
+      Animated.parallel([
+        Animated.spring(logoS, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
+        Animated.timing(logoO, { toValue: 1, duration: 500, useNativeDriver: true }),
+      ]),
       Animated.parallel([
         Animated.timing(titleO, { toValue: 1, duration: 600, useNativeDriver: true }),
         Animated.timing(titleY, { toValue: 0, duration: 600, useNativeDriver: true }),
@@ -72,116 +47,177 @@ export default function OnboardingScreen({ navigation }) {
         Animated.timing(subY, { toValue: 0, duration: 500, useNativeDriver: true }),
       ]),
       Animated.parallel([
-        Animated.timing(btnO, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.timing(btnY, { toValue: 0, duration: 400, useNativeDriver: true }),
+        Animated.timing(ftrO, { toValue: 1, duration: 450, useNativeDriver: true }),
+        Animated.timing(ftrY, { toValue: 0, duration: 450, useNativeDriver: true }),
       ]),
     ]).start();
 
     Animated.loop(Animated.sequence([
-      Animated.timing(glowS, { toValue: 1.22, duration: 1900, useNativeDriver: true }),
-      Animated.timing(glowS, { toValue: 1,    duration: 1900, useNativeDriver: true }),
+      Animated.timing(glowS, { toValue: 1.15, duration: 2400, useNativeDriver: true }),
+      Animated.timing(glowS, { toValue: 1,    duration: 2400, useNativeDriver: true }),
     ])).start();
   }, []);
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#080C18" />
-      <View style={s.orb1} />
-      <View style={s.orb2} />
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      {VEHICLES.map((v, i) => <FloatingVehicle key={i} {...v} />)}
+      <View style={[styles.ambientGlow, { backgroundColor: theme.accent }]} />
 
-      {/* scan lines */}
-      {[0.24, 0.48, 0.73].map((t, i) => (
-        <View key={i} style={[s.scan, { top: height * t, opacity: 0.055 - i * 0.015 }]} />
-      ))}
+      {/* ── HERO ── */}
+      <View style={styles.hero}>
 
-      {/* hero */}
-      <View style={s.hero}>
-        <Animated.View style={[s.badgeWrap, { transform: [{ scale: badgeS }] }]}>
-          <Animated.View style={[s.glowRing, { transform: [{ scale: glowS }] }]} />
-          <View style={s.badge}><Text style={{ fontSize: 42 }}>🚗</Text></View>
+        <Animated.View style={[styles.logoWrap, { opacity: logoO, transform: [{ scale: logoS }] }]}>
+          <Animated.View style={[styles.glowRing, { backgroundColor: theme.accent, transform: [{ scale: glowS }] }]} />
+          <View style={[styles.logoBadge, { backgroundColor: theme.backgroundAlt, borderColor: theme.border, shadowColor: theme.accent }]}>
+            <Image
+              source={mode === 'dark' ? LOGO_DARK : LOGO_LIGHT}
+              style={styles.logoImg}
+              resizeMode="contain"
+            />
+          </View>
         </Animated.View>
 
-        <Animated.View style={[s.brandRow, { opacity: titleO, transform: [{ translateY: titleY }] }]}>
-          <Text style={s.brand}>Diakite</Text>
-          <View style={s.dot} />
+        <Animated.View style={[styles.brandRow, { opacity: titleO, transform: [{ translateY: titleY }] }]}>
+          <Text style={[styles.brand, { color: theme.foreground }]}>Diakite</Text>
+          <View style={[styles.accentDot, { backgroundColor: theme.accent }]} />
         </Animated.View>
 
-        <Animated.Text style={[s.tag, { opacity: subO, transform: [{ translateY: subY }] }]}>
-          Rides {'&'} Deliveries,{'\n'}On Your Terms.
+        <Animated.Text style={[styles.tagline, { color: theme.muted, opacity: subO, transform: [{ translateY: subY }] }]}>
+          Rides & deliveries,{'\n'}built around you.
         </Animated.Text>
 
-        <Animated.View style={[s.pills, { opacity: subO, transform: [{ translateY: subY }] }]}>
-          {[['🚗','Book Rides'],['📦','Send Packages'],['💰','Earn Money']].map(([ic, lb]) => (
-            <View key={lb} style={s.pill}>
-              <Text style={{ fontSize: 13 }}>{ic}</Text>
-              <Text style={s.pillTxt}>{lb}</Text>
+        <Animated.View style={[styles.features, { opacity: subO, transform: [{ translateY: subY }] }]}>
+          {[
+            ['arrow-forward-circle-outline', 'Book a ride in seconds'],
+            ['cube-outline',                 'Send packages city-wide'],
+            ['wallet-outline',               'Earn on your schedule'],
+          ].map(([icon, label]) => (
+            <View key={label} style={styles.featureRow}>
+              <Ionicons name={icon} size={16} color={theme.accent} />
+              <Text style={[styles.featureTxt, { color: theme.muted }]}>{label}</Text>
             </View>
           ))}
         </Animated.View>
       </View>
 
-      {/* footer */}
-      <Animated.View style={[s.footer, { opacity: btnO, transform: [{ translateY: btnY }] }]}>
-        <TouchableOpacity style={s.cta} activeOpacity={0.85} onPress={() => navigation.navigate('Register')}>
-          <Text style={s.ctaTxt}>Get Started</Text>
-          <Ionicons name="arrow-forward" size={20} color="#080C18" />
+      {/* ── THEME PICKER ── */}
+      <Animated.View style={[styles.picker, { opacity: ftrO, transform: [{ translateY: ftrY }] }]}>
+        <Text style={[styles.pickerLabel, { color: theme.hint }]}>APPEARANCE</Text>
+
+        <View style={styles.swatchRow}>
+          {ACCENT_OPTIONS.map(opt => {
+            const active = accentId === opt.id;
+            return (
+              <TouchableOpacity
+                key={opt.id}
+                onPress={() => changeAccent(opt.id)}
+                style={[
+                  styles.swatch,
+                  {
+                    backgroundColor: active ? opt.color + '18' : 'transparent',
+                    borderColor:     active ? opt.color        : theme.border,
+                  },
+                ]}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.swatchDot, { backgroundColor: opt.color }]} />
+                <Text style={[styles.swatchTxt, { color: active ? opt.color : theme.hint }]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <View style={[styles.modeToggle, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+          {['dark', 'light'].map(m => {
+            const active = mode === m;
+            return (
+              <TouchableOpacity
+                key={m}
+                onPress={() => changeMode(m)}
+                style={[styles.modeBtn, active && { backgroundColor: theme.accent + '22' }]}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={m === 'dark' ? 'moon-outline' : 'sunny-outline'}
+                  size={14}
+                  color={active ? theme.accent : theme.hint}
+                />
+                <Text style={[styles.modeTxt, { color: active ? theme.accent : theme.hint }]}>
+                  {m === 'dark' ? 'Dark' : 'Light'}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </Animated.View>
+
+      {/* ── FOOTER ── */}
+      <Animated.View style={[styles.footer, { opacity: ftrO, transform: [{ translateY: ftrY }] }]}>
+        <TouchableOpacity
+          style={[styles.cta, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
+          activeOpacity={0.88}
+          onPress={() => navigation.navigate('Register')}
+        >
+          <Text style={styles.ctaTxt}>Get Started</Text>
+          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
         </TouchableOpacity>
-        <TouchableOpacity style={s.ghost} onPress={() => navigation.navigate('Login')}>
-          <Text style={s.ghostTxt}>
-            Already have an account?{'  '}
-            <Text style={s.ghostBold}>Sign In</Text>
+
+        <TouchableOpacity style={styles.ghost} onPress={() => navigation.navigate('Login')}>
+          <Text style={[styles.ghostTxt, { color: theme.hint }]}>
+            Have an account?{' '}
+            <Text style={[styles.ghostAccent, { color: theme.accent }]}>Sign In</Text>
           </Text>
         </TouchableOpacity>
-        <Text style={s.fine}>Available for riders, drivers {'&'} couriers</Text>
       </Animated.View>
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#080C18' },
-  orb1: { position:'absolute', width: width, height: width, borderRadius: width/2,
-    backgroundColor:'#00D4FF', top:-width*0.5, left:-width*0.2, opacity:0.045 },
-  orb2: { position:'absolute', width:width*0.8, height:width*0.8, borderRadius:width*0.4,
-    backgroundColor:'#FFB800', bottom:-width*0.1, right:-width*0.15, opacity:0.05 },
-  scan: { position:'absolute', left:0, right:0, height:1, backgroundColor:'#00D4FF' },
-
-  vehicle: { position:'absolute', zIndex:2 },
-  bubble: { width:60, height:60, borderRadius:16, backgroundColor:'#0D1525',
-    borderWidth:1, borderColor:'#1E3050', justifyContent:'center', alignItems:'center',
-    shadowColor:'#000', shadowOffset:{width:0,height:4}, shadowOpacity:0.4, shadowRadius:8, elevation:5 },
-
-  hero: { flex:1, justifyContent:'center', alignItems:'center', zIndex:10, paddingHorizontal:32 },
-
-  badgeWrap: { width:100, height:100, justifyContent:'center', alignItems:'center', marginBottom:28 },
-  glowRing: { position:'absolute', width:100, height:100, borderRadius:50,
-    backgroundColor:'#00D4FF', opacity:0.1 },
-  badge: { width:84, height:84, borderRadius:24, backgroundColor:'#0D1A2E',
-    borderWidth:1.5, borderColor:'#00D4FF35', justifyContent:'center', alignItems:'center',
-    shadowColor:'#00D4FF', shadowOffset:{width:0,height:8}, shadowOpacity:0.35, shadowRadius:18, elevation:10 },
-
-  brandRow: { flexDirection:'row', alignItems:'center', gap:10, marginBottom:16 },
-  brand: { fontSize:38, fontWeight:'900', color:'#FFF', letterSpacing:9 },
-  dot: { width:8, height:8, borderRadius:4, backgroundColor:'#00D4FF', marginTop:8 },
-
-  tag: { fontSize:20, color:'#7A9DBE', textAlign:'center', lineHeight:30,
-    fontWeight:'300', letterSpacing:0.3, marginBottom:28 },
-
-  pills: { flexDirection:'row', gap:8, flexWrap:'wrap', justifyContent:'center' },
-  pill: { flexDirection:'row', alignItems:'center', gap:5,
-    paddingHorizontal:14, paddingVertical:8, borderRadius:20,
-    backgroundColor:'#0D1A2E', borderWidth:1, borderColor:'#1E3050' },
-  pillTxt: { color:'#6A90B0', fontSize:12, fontWeight:'600' },
-
-  footer: { paddingHorizontal:28, paddingBottom: Platform.OS==='ios' ? 52 : 36, zIndex:10, gap:12 },
-  cta: { backgroundColor:'#00D4FF', borderRadius:16, height:58,
-    flexDirection:'row', justifyContent:'center', alignItems:'center', gap:10,
-    shadowColor:'#00D4FF', shadowOffset:{width:0,height:10}, shadowOpacity:0.5, shadowRadius:22, elevation:12 },
-  ctaTxt: { color:'#080C18', fontSize:17, fontWeight:'800', letterSpacing:0.5 },
-  ghost: { height:44, justifyContent:'center', alignItems:'center' },
-  ghostTxt: { color:'#4A6A8A', fontSize:14 },
-  ghostBold: { color:'#00D4FF', fontWeight:'700' },
-  fine: { textAlign:'center', color:'#243650', fontSize:11 },
+const styles = StyleSheet.create({
+  root:        { flex: 1 },
+  ambientGlow: {
+    position: 'absolute', width: width * 1.4, height: width * 1.4,
+    borderRadius: width * 0.7, top: -width * 0.85, alignSelf: 'center',
+    opacity: 0.07,
+  },
+  hero:        { flex: 1, justifyContent: 'center', alignItems: 'flex-start', paddingHorizontal: 36 },
+  logoWrap:    { marginBottom: 32, position: 'relative', alignItems: 'center', justifyContent: 'center', width: 76, height: 76 },
+  glowRing:    { position: 'absolute', width: 76, height: 76, borderRadius: 38, opacity: 0.10 },
+  logoBadge:   {
+    width: 76, height: 76, borderRadius: 20, borderWidth: 1,
+    justifyContent: 'center', alignItems: 'center',
+    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.20, shadowRadius: 16, elevation: 8,
+  },
+  logoImg:     { width: 48, height: 34 },
+  brandRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  brand:       { fontSize: 34, fontWeight: '800', letterSpacing: 6 },
+  accentDot:   { width: 7, height: 7, borderRadius: 3.5, marginTop: 6 },
+  tagline:     { fontSize: 20, lineHeight: 30, fontWeight: '300', letterSpacing: 0.2, marginBottom: 28 },
+  features:    { gap: 14 },
+  featureRow:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  featureTxt:  { fontSize: 14, fontWeight: '400', letterSpacing: 0.1 },
+  picker:      { paddingHorizontal: 36, paddingBottom: 14, gap: 12 },
+  pickerLabel: { fontSize: 10, letterSpacing: 3.5, fontWeight: '600' },
+  swatchRow:   { flexDirection: 'row', gap: 8 },
+  swatch:      {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    paddingVertical: 10, borderRadius: 10, borderWidth: 1,
+  },
+  swatchDot:   { width: 8, height: 8, borderRadius: 4 },
+  swatchTxt:   { fontSize: 12, fontWeight: '600' },
+  modeToggle:  { flexDirection: 'row', borderRadius: 10, borderWidth: 1, overflow: 'hidden', height: 40 },
+  modeBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  modeTxt:     { fontSize: 12, fontWeight: '600' },
+  footer:      { paddingHorizontal: 36, paddingBottom: Platform.OS === 'ios' ? 48 : 32, gap: 12 },
+  cta:         {
+    borderRadius: 14, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10,
+    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 18, elevation: 10,
+  },
+  ctaTxt:      { color: '#FFFFFF', fontSize: 16, fontWeight: '700', letterSpacing: 0.3 },
+  ghost:       { alignItems: 'center', paddingVertical: 4 },
+  ghostTxt:    { fontSize: 14 },
+  ghostAccent: { fontWeight: '600' },
 });

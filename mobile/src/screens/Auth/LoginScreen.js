@@ -3,19 +3,22 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Alert, KeyboardAvoidingView, Platform, ScrollView,
-  Animated, Dimensions, StatusBar,
+  Animated, Dimensions, StatusBar, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
-// ─── Input: border/label use useNativeDriver:false (they animate non-transform props)
-// ─── These values are NEVER shared with native-driver animations
-const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secureTextEntry, accentColor = '#00D4FF' }) => {
-  const [focused, setFocused]   = useState(false);
-  const [showPwd, setShowPwd]   = useState(false);
-  // JS-driver only (color, fontSize, top) — completely isolated values
+// Resolved at module level — Metro bundler requires static require() paths
+const LOGO_DARK  = require('../../../assets/diakite_light.png'); // white logo → dark backgrounds
+const LOGO_LIGHT = require('../../../assets/diakite_dark.png');  // black logo → light backgrounds
+
+const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secureTextEntry }) => {
+  const { theme } = useTheme();
+  const [focused, setFocused] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
   const labelY  = useRef(new Animated.Value(value ? 1 : 0)).current;
   const borderV = useRef(new Animated.Value(0)).current;
 
@@ -24,18 +27,18 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secure
     Animated.timing(borderV, { toValue: focused ? 1 : 0,          duration: 180, useNativeDriver: false }).start();
   }, [focused, value]);
 
-  const borderColor = borderV.interpolate({ inputRange:[0,1], outputRange:['#1A2840', accentColor] });
-  const top         = labelY.interpolate({ inputRange:[0,1], outputRange:[19, 7] });
-  const fontSize    = labelY.interpolate({ inputRange:[0,1], outputRange:[15, 11] });
-  const labelColor  = labelY.interpolate({ inputRange:[0,1], outputRange:['#3A5070', focused ? accentColor : '#5A7A9A'] });
+  const borderColor = borderV.interpolate({ inputRange: [0, 1], outputRange: [theme.border, theme.accent] });
+  const top         = labelY.interpolate({ inputRange: [0, 1], outputRange: [18, 7] });
+  const fontSize    = labelY.interpolate({ inputRange: [0, 1], outputRange: [15, 11] });
+  const lColor      = labelY.interpolate({ inputRange: [0, 1], outputRange: [theme.hint, focused ? theme.accent : theme.muted] });
 
   return (
-    <Animated.View style={[s.inputBox, { borderColor }]}>
-      <Ionicons name={iconName} size={17} color={focused ? accentColor : '#3A5070'} style={s.inputIcon} />
-      <View style={{ flex:1 }}>
-        <Animated.Text style={[s.floatLabel, { top, fontSize, color: labelColor }]}>{label}</Animated.Text>
+    <Animated.View style={[s.inputBox, { backgroundColor: theme.backgroundAlt, borderColor }]}>
+      <Ionicons name={iconName} size={16} color={focused ? theme.accent : theme.hint} style={s.inputIcon} />
+      <View style={{ flex: 1 }}>
+        <Animated.Text style={[s.floatLabel, { top, fontSize, color: lColor }]}>{label}</Animated.Text>
         <TextInput
-          style={s.inputText}
+          style={[s.inputText, { color: theme.foreground }]}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setFocused(true)}
@@ -49,7 +52,7 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secure
       </View>
       {secureTextEntry && (
         <TouchableOpacity onPress={() => setShowPwd(p => !p)} style={s.eyeBtn}>
-          <Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={17} color="#3A5070" />
+          <Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={16} color={theme.hint} />
         </TouchableOpacity>
       )}
     </Animated.View>
@@ -57,23 +60,23 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secure
 };
 
 export default function LoginScreen({ navigation }) {
+  const { theme, mode } = useTheme();
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [loading,  setLoading]  = useState(false);
   const { login } = useAuth();
 
-  // These are ONLY used with useNativeDriver:true (transform + opacity)
   const hdrO = useRef(new Animated.Value(0)).current;
-  const hdrY = useRef(new Animated.Value(-36)).current;
+  const hdrY = useRef(new Animated.Value(-28)).current;
   const frmO = useRef(new Animated.Value(0)).current;
-  const frmY = useRef(new Animated.Value(36)).current;
+  const frmY = useRef(new Animated.Value(28)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(hdrO, { toValue:1, duration:600, useNativeDriver:true }),
-      Animated.timing(hdrY, { toValue:0, duration:600, useNativeDriver:true }),
-      Animated.timing(frmO, { toValue:1, duration:700, delay:180, useNativeDriver:true }),
-      Animated.timing(frmY, { toValue:0, duration:700, delay:180, useNativeDriver:true }),
+      Animated.timing(hdrO, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(hdrY, { toValue: 0, duration: 600, useNativeDriver: true }),
+      Animated.timing(frmO, { toValue: 1, duration: 600, delay: 160, useNativeDriver: true }),
+      Animated.timing(frmY, { toValue: 0, duration: 600, delay: 160, useNativeDriver: true }),
     ]).start();
   }, []);
 
@@ -86,64 +89,66 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#080C18" />
-      <View style={s.orb1} /><View style={s.orb2} />
+    <View style={[s.root, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      <KeyboardAvoidingView style={{ flex:1 }} behavior={Platform.OS==='ios' ? 'padding' : undefined}>
+      <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
+
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-          {/* back */}
-          <TouchableOpacity style={s.back} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={20} color="#5A7A9A" />
+          <TouchableOpacity
+            style={[s.back, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={18} color={theme.muted} />
           </TouchableOpacity>
 
-          {/* header */}
           <Animated.View style={[s.header, { opacity: hdrO, transform: [{ translateY: hdrY }] }]}>
-            <View style={s.headerIcon}>
-              <Ionicons name="shield-checkmark-outline" size={28} color="#00D4FF" />
+            <View style={[s.logoBadge, { backgroundColor: theme.backgroundAlt, borderColor: theme.border, shadowColor: theme.accent }]}>
+              <Image
+                source={mode === 'dark' ? LOGO_DARK : LOGO_LIGHT}
+                style={s.logoImg}
+                resizeMode="contain"
+              />
             </View>
-            <Text style={s.eyebrow}>WELCOME BACK</Text>
-            <Text style={s.title}>Sign In to{'\n'}Diakite app</Text>
-            <Text style={s.subtitle}>Access rides, deliveries and your earnings</Text>
+            <Text style={[s.eyebrow, { color: theme.accent }]}>WELCOME BACK</Text>
+            <Text style={[s.title, { color: theme.foreground }]}>Sign in</Text>
+            <Text style={[s.subtitle, { color: theme.muted }]}>Good to see you again.</Text>
           </Animated.View>
 
-          {/* form */}
           <Animated.View style={[{ opacity: frmO, transform: [{ translateY: frmY }] }]}>
-            <FloatInput label="Email Address"       iconName="mail-outline"        value={email}    onChangeText={setEmail}    keyboardType="email-address" />
-            <FloatInput label="Password"            iconName="lock-closed-outline" value={password} onChangeText={setPassword} secureTextEntry />
+            <FloatInput label="Email"    iconName="mail-outline"        value={email}    onChangeText={setEmail}    keyboardType="email-address" />
+            <FloatInput label="Password" iconName="lock-closed-outline" value={password} onChangeText={setPassword} secureTextEntry />
 
             <TouchableOpacity style={s.forgot}>
-              <Text style={s.forgotTxt}>Forgot your password?</Text>
+              <Text style={[s.forgotTxt, { color: theme.accent }]}>Forgot password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[s.signBtn, loading && s.signBtnDim]} activeOpacity={0.85} onPress={handleLogin} disabled={loading}>
-              <Text style={s.signBtnTxt}>{loading ? 'Signing In...' : 'Sign In'}</Text>
-              {!loading && <Ionicons name="arrow-forward-circle-outline" size={22} color="#080C18" />}
+            <TouchableOpacity
+              style={[s.signBtn, loading && s.signBtnDim, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
+              activeOpacity={0.85}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              <Text style={s.signBtnTxt}>{loading ? 'Signing in…' : 'Sign In'}</Text>
+              {!loading && <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />}
             </TouchableOpacity>
 
-            {/* divider */}
             <View style={s.divRow}>
-              <View style={s.divLine} /><Text style={s.divTxt}>or</Text><View style={s.divLine} />
-            </View>
-
-            {/* trust stats */}
-            <View style={s.statsRow}>
-              {[['🚗','50K+','Rides'],['📦','30K+','Deliveries'],['⭐','4.9','Rating']].map(([ic,val,lbl]) => (
-                <View key={lbl} style={s.statCard}>
-                  <Text style={{ fontSize:20 }}>{ic}</Text>
-                  <Text style={s.statVal}>{val}</Text>
-                  <Text style={s.statLbl}>{lbl}</Text>
-                </View>
-              ))}
+              <View style={[s.divLine, { backgroundColor: theme.border }]} />
+              <Text style={[s.divTxt, { color: theme.hint }]}>or</Text>
+              <View style={[s.divLine, { backgroundColor: theme.border }]} />
             </View>
 
             <TouchableOpacity style={s.regLink} onPress={() => navigation.navigate('Register')}>
-              <Text style={s.regTxt}>
-                New to Diakite?{'  '}<Text style={s.regBold}>Create Account</Text>
+              <Text style={[s.regTxt, { color: theme.muted }]}>
+                New to Diakite?{'  '}
+                <Text style={[s.regBold, { color: theme.accent }]}>Create Account</Text>
               </Text>
             </TouchableOpacity>
           </Animated.View>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -151,55 +156,44 @@ export default function LoginScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  root: { flex:1, backgroundColor:'#080C18' },
-  orb1: { position:'absolute', width:width*1.1, height:width*1.1, borderRadius:width*0.55,
-    backgroundColor:'#00D4FF', top:-width*0.65, left:-width*0.2, opacity:0.04 },
-  orb2: { position:'absolute', width:width*0.75, height:width*0.75, borderRadius:width*0.375,
-    backgroundColor:'#FFB800', bottom:-width*0.2, right:-width*0.1, opacity:0.04 },
-
-  scroll: { paddingHorizontal:28, paddingBottom:48 },
-  back: { marginTop: Platform.OS==='ios' ? 56 : 40, width:44, height:44, borderRadius:12,
-    backgroundColor:'#0D1A2E', borderWidth:1, borderColor:'#1A2840',
-    justifyContent:'center', alignItems:'center', marginBottom:24 },
-
-  header: { marginBottom:36 },
-  headerIcon: { width:56, height:56, borderRadius:16, backgroundColor:'#0D1A2E',
-    borderWidth:1.5, borderColor:'#00D4FF30', justifyContent:'center', alignItems:'center',
-    marginBottom:20, shadowColor:'#00D4FF', shadowOffset:{width:0,height:6},
-    shadowOpacity:0.25, shadowRadius:14, elevation:8 },
-  eyebrow: { fontSize:11, letterSpacing:4, color:'#00D4FF', fontWeight:'700', marginBottom:10 },
-  title: { fontSize:36, fontWeight:'900', color:'#FFF', lineHeight:42, marginBottom:10, letterSpacing:-0.5 },
-  subtitle: { fontSize:15, color:'#5A7A9A', lineHeight:22 },
-
-  // input
-  inputBox: { flexDirection:'row', alignItems:'center', backgroundColor:'#0D1A2E',
-    borderRadius:14, borderWidth:1.5, marginBottom:14, height:62, paddingHorizontal:14 },
-  inputIcon: { marginRight:10 },
-  floatLabel: { position:'absolute', left:0, pointerEvents:'none' },
-  inputText: { color:'#FFF', fontSize:15, paddingTop:18, paddingBottom:4, fontWeight:'500' },
-  eyeBtn: { padding:6, marginLeft:4 },
-
-  forgot: { alignSelf:'flex-end', marginBottom:24, marginTop:2 },
-  forgotTxt: { color:'#00D4FF', fontSize:13, fontWeight:'600' },
-
-  signBtn: { backgroundColor:'#00D4FF', borderRadius:16, height:58,
-    flexDirection:'row', justifyContent:'center', alignItems:'center', gap:10,
-    shadowColor:'#00D4FF', shadowOffset:{width:0,height:10}, shadowOpacity:0.5,
-    shadowRadius:22, elevation:12, marginBottom:28 },
-  signBtnDim: { opacity:0.6 },
-  signBtnTxt: { color:'#080C18', fontSize:17, fontWeight:'800', letterSpacing:0.3 },
-
-  divRow: { flexDirection:'row', alignItems:'center', marginBottom:24, gap:12 },
-  divLine: { flex:1, height:1, backgroundColor:'#1A2840' },
-  divTxt: { color:'#3A5070', fontSize:13 },
-
-  statsRow: { flexDirection:'row', gap:10, marginBottom:28 },
-  statCard: { flex:1, backgroundColor:'#0D1A2E', borderRadius:14, borderWidth:1,
-    borderColor:'#1A2840', padding:14, alignItems:'center', gap:4 },
-  statVal: { color:'#FFF', fontSize:16, fontWeight:'800' },
-  statLbl: { color:'#3A5070', fontSize:10, fontWeight:'600', letterSpacing:0.5 },
-
-  regLink: { alignItems:'center', paddingVertical:8 },
-  regTxt: { color:'#5A7A9A', fontSize:14 },
-  regBold: { color:'#00D4FF', fontWeight:'700' },
+  root:        { flex: 1 },
+  ambientGlow: {
+    position: 'absolute', width: width * 1.3, height: width * 1.3,
+    borderRadius: width * 0.65, top: -width * 0.8, alignSelf: 'center',
+    opacity: 0.06,
+  },
+  scroll:      { paddingHorizontal: 32, paddingBottom: 56 },
+  back:        {
+    marginTop: Platform.OS === 'ios' ? 56 : 40, width: 40, height: 40,
+    borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginBottom: 32,
+  },
+  header:      { marginBottom: 40 },
+  logoBadge:   {
+    width: 60, height: 60, borderRadius: 16, borderWidth: 1,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 24,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 12, elevation: 6,
+  },
+  logoImg:     { width: 38, height: 27 },
+  eyebrow:     { fontSize: 10, letterSpacing: 4, fontWeight: '700', marginBottom: 10 },
+  title:       { fontSize: 34, fontWeight: '800', letterSpacing: -0.5, marginBottom: 8 },
+  subtitle:    { fontSize: 15, fontWeight: '300' },
+  inputBox:    { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1.5, marginBottom: 12, height: 60, paddingHorizontal: 14 },
+  inputIcon:   { marginRight: 10 },
+  floatLabel:  { position: 'absolute', left: 0 },
+  inputText:   { fontSize: 15, paddingTop: 18, paddingBottom: 4, fontWeight: '400' },
+  eyeBtn:      { padding: 6, marginLeft: 4 },
+  forgot:      { alignSelf: 'flex-end', marginBottom: 28, marginTop: 4 },
+  forgotTxt:   { fontSize: 13, fontWeight: '500' },
+  signBtn:     {
+    borderRadius: 13, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10,
+    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 18, elevation: 10, marginBottom: 32,
+  },
+  signBtnDim:  { opacity: 0.6 },
+  signBtnTxt:  { color: '#FFFFFF', fontSize: 16, fontWeight: '700', letterSpacing: 0.2 },
+  divRow:      { flexDirection: 'row', alignItems: 'center', marginBottom: 28, gap: 12 },
+  divLine:     { flex: 1, height: 1 },
+  divTxt:      { fontSize: 12 },
+  regLink:     { alignItems: 'center', paddingVertical: 4 },
+  regTxt:      { fontSize: 14 },
+  regBold:     { fontWeight: '600' },
 });
