@@ -1,10 +1,11 @@
-// backend/src/controllers/ride.controller.js
-const prisma = require('../lib/prisma');
+const { PrismaClient } = require('@prisma/client');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const { calculateDistance, calculateFare } = require('../utils/helpers');
 const notificationService = require('../services/notification.service');
 const { broadcastToDrivers } = require('../services/socket.service');
+
+const prisma = new PrismaClient();
 
 /**
  * @desc    Get fare estimate
@@ -551,4 +552,190 @@ exports.rateRide = async (req, res) => {
   res.status(201).json({ success: true, message: 'Rating submitted', data: { rating: newRating } });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADD these two functions to backend/src/controllers/ride.controller.js
+// Place them BEFORE the final module.exports = exports line
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @desc    Get nearby online drivers
+ * @route   GET /api/rides/nearby-drivers
+ * @access  Private (CUSTOMER)
+ */
+exports.getNearbyDrivers = async (req, res) => {
+  const { pickupLat, pickupLng, radiusKm = 10 } = req.query;
+
+  if (!pickupLat || !pickupLng) {
+    throw new AppError('Please provide pickup coordinates', 400);
+  }
+
+  const lat    = parseFloat(pickupLat);
+  const lng    = parseFloat(pickupLng);
+  const radius = parseFloat(radiusKm);
+
+  // Fetch all approved + online drivers that have a location set
+  const drivers = await prisma.driverProfile.findMany({
+    where: {
+      isApproved: true,
+      isOnline:   true,
+      currentLat: { not: null },
+      currentLng: { not: null },
+    },
+    include: {
+      user: {
+        select: {
+          id: true, firstName: true, lastName: true,
+          profileImage: true, phone: true,
+        }
+      }
+    }
+  });
+
+  // Filter by radius + attach distance
+  const nearby = drivers
+    .map(d => ({
+      ...d,
+      distanceKm: parseFloat(
+        calculateDistance(lat, lng, d.currentLat, d.currentLng).toFixed(2)
+      )
+    }))
+    .filter(d => d.distanceKm <= radius)
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, 20);
+
+  const formatted = nearby.map(d => ({
+    driverId:     d.user.id,
+    profileId:    d.id,
+    firstName:    d.user.firstName,
+    lastName:     d.user.lastName,
+    profileImage: d.user.profileImage,
+    vehicleType:  d.vehicleType,
+    vehicleMake:  d.vehicleMake,
+    vehicleModel: d.vehicleModel,
+    vehicleColor: d.vehicleColor,
+    vehiclePlate: d.vehiclePlate,
+    vehicleYear:  d.vehicleYear,
+    rating:       parseFloat((d.rating || 0).toFixed(1)),
+    totalRides:   d.totalRides,
+    distanceKm:   d.distanceKm,
+    etaMinutes:   Math.ceil(d.distanceKm / 0.5),
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: { drivers: formatted, total: formatted.length }
+  });
+};
+
+/**
+ * @desc    Send ride request to a SPECIFIC driver (targeted request)
+ * @route   POST /api/rides/request-driver
+ * @access  Private (CUSTOMER)
+ *
+ * Works WITHOUT db schema changes — uses the existing `notes` field to store
+ * the targeted driverId, and emits the socket event to that driver's room only.
+ */
+exports.requestSpecificDriver = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, errors: errors.array() });
+  }
+
+  const {
+    pickupAddress, pickupLat, pickupLng,
+    dropoffAddress, dropoffLat, dropoffLng,
+    driverId, estimatedFare, paymentMethod, carType, promoCode, notes
+  } = req.body;
+
+  // Check customer has no active ride
+  const activeRide = await prisma.ride.findFirst({
+    where: {
+      customerId: req.user.id,
+      status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] }
+    }
+  });
+  if (activeRide) throw new AppError('You already have an active ride', 400);
+
+  // Verify target driver is online and approved
+  const driverProfile = await prisma.driverProfile.findUnique({
+    where: { userId: driverId }
+  });
+  if (!driverProfile) throw new AppError('Driver not found', 404);
+  if (!driverProfile.isApproved) throw new AppError('Driver is not approved', 400);
+  if (!driverProfile.isOnline) throw new AppError('Driver is no longer online', 400);
+
+  const distance = calculateDistance(
+    parseFloat(pickupLat), parseFloat(pickupLng),
+    parseFloat(dropoffLat), parseFloat(dropoffLng)
+  );
+
+  let finalFare = estimatedFare ? parseFloat(estimatedFare) : calculateFare(distance);
+
+  // Apply promo if provided
+  if (promoCode) {
+    const promo = await prisma.promoCode.findFirst({
+      where: {
+        code: promoCode.toUpperCase(),
+        isActive: true,
+        validFrom:  { lte: new Date() },
+        validUntil: { gte: new Date() },
+        applicableFor: { in: ['rides', 'both'] }
+      }
+    });
+    if (promo) {
+      finalFare = promo.discountType === 'percentage'
+        ? finalFare * (1 - promo.discountValue / 100)
+        : Math.max(0, finalFare - promo.discountValue);
+      await prisma.promoCode.update({
+        where: { id: promo.id },
+        data:  { currentUses: { increment: 1 } }
+      });
+    }
+  }
+
+  // Create the ride — store targeted driverId in notes field (no schema change)
+  const ride = await prisma.ride.create({
+    data: {
+      customerId:    req.user.id,
+      pickupAddress, pickupLat:  parseFloat(pickupLat),  pickupLng:  parseFloat(pickupLng),
+      dropoffAddress, dropoffLat: parseFloat(dropoffLat), dropoffLng: parseFloat(dropoffLng),
+      distance,
+      estimatedFare: finalFare,
+      notes: `TARGETED:${driverId}${notes ? '|' + notes : ''}`,
+      promoCode: promoCode || null,
+      status: 'REQUESTED',
+    },
+    include: {
+      customer: {
+        select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true }
+      }
+    }
+  });
+
+  // Emit ONLY to the chosen driver's socket room
+  const io = notificationService._io;
+  if (io) {
+    io.to(`user:${driverId}`).emit('ride:new_request', {
+      rideId:        ride.id,
+      pickupAddress: ride.pickupAddress,
+      dropoffAddress: ride.dropoffAddress,
+      estimatedFare: ride.estimatedFare,
+      distance:      ride.distance,
+      carType:       carType || null,
+      paymentMethod: paymentMethod || 'CASH',
+      targeted:      true, // driver knows they were specifically chosen
+      customer: {
+        firstName:    ride.customer.firstName,
+        lastName:     ride.customer.lastName,
+        profileImage: ride.customer.profileImage,
+      }
+    });
+  }
+
+  res.status(201).json({
+    success: true,
+    message: 'Request sent to driver. Waiting for response...',
+    data: { ride }
+  });
+};
 module.exports = exports;
