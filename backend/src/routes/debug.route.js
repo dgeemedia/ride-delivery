@@ -5,6 +5,7 @@ const { PrismaClient } = require('@prisma/client');
 const router = express.Router();
 const prisma = new PrismaClient();
 
+
 // GET /api/debug/drivers
 // Returns all driver profiles so we can see their online status + location
 router.get('/drivers', async (req, res) => {
