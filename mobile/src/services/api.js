@@ -90,4 +90,26 @@ export const partnerAPI = {
   getNearbyRequests: () => api.get('/partners/nearby-requests'),
 };
 
+// Notification API
+export const notificationAPI = {
+  getNotifications:  (params) => api.get('/notifications', { params }),
+  getUnreadCount:    ()        => api.get('/notifications/count'),
+  markAsRead:        (id)      => api.put(`/notifications/${id}/read`),
+  markAllAsRead:     ()        => api.put('/notifications/read-all'),
+  deleteOne:         (id)      => api.delete(`/notifications/${id}`),
+  clearAll:          ()        => api.delete('/notifications'),
+};
+
+// Wallet API
+export const walletAPI = {
+  getWallet:               ()       => api.get('/wallet'),
+  getTransactions:         (params) => api.get('/wallet/transactions', { params }),
+  paystackTopup:           (data)   => api.post('/wallet/topup/paystack', data),
+  verifyPaystackTopup:     (data)   => api.post('/wallet/topup/paystack/verify', data),
+  flutterwaveTopup:        (data)   => api.post('/wallet/topup/flutterwave', data),
+  verifyFlutterwaveTopup:  (data)   => api.post('/wallet/topup/flutterwave/verify', data),
+  transfer:                (data)   => api.post('/wallet/transfer', data),
+  withdraw:                (data)   => api.post('/wallet/withdraw', data),
+};
+
 export default api;

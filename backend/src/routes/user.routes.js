@@ -10,99 +10,99 @@ router.use(authenticate);
 
 /**
  * @route   GET /api/users/profile
- * @desc    Get user profile
- * @access  Private
  */
 router.get('/profile', userController.getProfile);
 
 /**
  * @route   PUT /api/users/profile
- * @desc    Update user profile
- * @access  Private
+ *
+ * FIX: Use .optional({ checkFalsy: true }) so that empty strings ""
+ * are treated as absent (not validated), preventing 400 errors when
+ * phone is cleared or profileImage is omitted.
+ *
+ * Without checkFalsy:true, optional() only skips `undefined`.
+ * An empty string "" still gets passed to .isMobilePhone() and fails.
  */
 router.put('/profile', [
-  body('firstName').optional().trim().notEmpty(),
-  body('lastName').optional().trim().notEmpty(),
-  body('phone').optional().isMobilePhone(),
-  body('profileImage').optional().isURL()
+  body('firstName')
+    .optional({ checkFalsy: true })
+    .trim()
+    .notEmpty().withMessage('First name cannot be blank'),
+
+  body('lastName')
+    .optional({ checkFalsy: true })
+    .trim()
+    .notEmpty().withMessage('Last name cannot be blank'),
+
+  body('phone')
+    .optional({ checkFalsy: true })   // ← skips validation when phone is "" or undefined
+    .isMobilePhone().withMessage('Invalid phone number'),
+
+  body('profileImage')
+    .optional({ checkFalsy: true })   // ← skips validation when profileImage is "" or undefined
+    .isURL().withMessage('Profile image must be a valid URL'),
 ], userController.updateProfile);
 
 /**
  * @route   PUT /api/users/password
- * @desc    Update password
- * @access  Private
  */
 router.put('/password', [
-  body('currentPassword').notEmpty(),
-  body('newPassword').isLength({ min: 8 })
+  body('currentPassword').notEmpty().withMessage('Current password is required'),
+  body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters'),
 ], userController.updatePassword);
 
 /**
  * @route   POST /api/users/profile-image
- * @desc    Upload profile image URL
- * @access  Private
  */
 router.post('/profile-image', [
-  body('imageUrl').isURL()
+  body('imageUrl').isURL().withMessage('A valid image URL is required'),
 ], userController.uploadProfileImage);
 
 /**
  * @route   GET /api/users/stats
- * @desc    Get user statistics
- * @access  Private
  */
 router.get('/stats', userController.getUserStats);
 
 /**
  * @route   POST /api/users/support-ticket
- * @desc    Submit a support ticket
- * @access  Private
  */
 router.post('/support-ticket', [
   body('subject').notEmpty().isLength({ max: 200 }),
   body('description').notEmpty(),
   body('category').isIn(['account', 'payment', 'ride', 'delivery', 'technical', 'other']),
-  body('priority').optional().isIn(['low', 'medium', 'high', 'urgent'])
+  body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
 ], userController.submitSupportTicket);
 
 /**
  * @route   GET /api/users/support-tickets
- * @desc    Get user's support tickets
- * @access  Private
  */
 router.get('/support-tickets', userController.getSupportTickets);
 
 /**
  * @route   POST /api/users/feedback
- * @desc    Submit app feedback
- * @access  Private
  */
 router.post('/feedback', [
   body('rating').isInt({ min: 1, max: 5 }),
   body('comment').optional().isString(),
   body('category').isIn(['app_experience', 'driver_quality', 'pricing', 'delivery_quality', 'other']),
   body('platform').isIn(['ios', 'android', 'web']),
-  body('appVersion').optional().isString()
+  body('appVersion').optional().isString(),
 ], userController.submitFeedback);
 
 /**
  * @route   POST /api/users/apply-promo
- * @desc    Validate and preview a promo code
- * @access  Private
  */
 router.post('/apply-promo', [
   body('code').notEmpty(),
   body('amount').isFloat({ min: 0 }),
-  body('serviceType').isIn(['rides', 'deliveries'])
+  body('serviceType').isIn(['rides', 'deliveries']),
 ], userController.applyPromoCode);
 
 /**
  * @route   DELETE /api/users/account
- * @desc    Delete / deactivate account
- * @access  Private
  */
 router.delete('/account', [
-  body('password').notEmpty()
+  body('password').notEmpty(),
 ], userController.deleteAccount);
 
 module.exports = router;

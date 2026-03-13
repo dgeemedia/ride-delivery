@@ -14,6 +14,9 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "plugins": [
+      ["expo-image-picker", { "photosPermission": "Allow Diakite to access your photos." }]
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.diakite.app"
