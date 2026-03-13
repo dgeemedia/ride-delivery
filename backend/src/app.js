@@ -18,6 +18,7 @@ const uploadRoutes       = require('./routes/upload.routes');
 const adminRoutes        = require('./routes/admin.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const walletRoutes       = require('./routes/wallet.routes');
+const callRoutes         = require('./routes/call.routes');
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 const { errorHandler } = require('./middleware/errorHandler');
@@ -122,6 +123,7 @@ app.use('/api/upload',        uploadRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/wallet',        walletRoutes);
+app.use('/api/calls',         callRoutes);
 
 // ─── API index ────────────────────────────────────────────────────────────────
 app.get('/api', (_req, res) => {
