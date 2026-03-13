@@ -19,6 +19,7 @@ const adminRoutes        = require('./routes/admin.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const walletRoutes       = require('./routes/wallet.routes');
 const callRoutes         = require('./routes/call.routes');
+const debugRoutes        = require('./routes/debug.route');
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 const { errorHandler } = require('./middleware/errorHandler');
@@ -31,16 +32,15 @@ app.use(helmet());
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
-  'http://localhost:3001',   // admin dev
-  'http://localhost:5173',   // vite default
-  'http://localhost:3000',   // any local dev
-  process.env.CLIENT_URL,    // production frontend
-  process.env.ADMIN_URL,     // production admin panel
+  'http://localhost:3001',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.CLIENT_URL,
+  process.env.ADMIN_URL,
 ].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, curl)
     if (!origin) return callback(null, true);
     if (
       process.env.NODE_ENV !== 'production' ||
@@ -59,7 +59,7 @@ const globalLimiter = rateLimit({
   max:      parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
   message:  'Too many requests from this IP, please try again later.',
   standardHeaders: true,
-  legacyHeaders:   false
+  legacyHeaders:   false,
 });
 app.use('/api/', globalLimiter);
 
@@ -67,28 +67,25 @@ app.use('/api/', globalLimiter);
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
-  message: 'Too many auth attempts, please try again later.'
+  message: 'Too many auth attempts, please try again later.',
 });
 app.use('/api/auth/login',           authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
 app.use('/api/auth/register',        authLimiter);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WEBHOOK RAW BODY  ← Must be registered BEFORE express.json()
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Webhook raw body (MUST be before express.json) ──────────────────────────
 app.use(
   '/api/payments/paystack/webhook',
   express.raw({ type: 'application/json' }),
   (req, _res, next) => { req.rawBody = req.body; next(); }
 );
-
 app.use(
   '/api/payments/flutterwave/webhook',
   express.raw({ type: 'application/json' }),
   (req, _res, next) => { req.rawBody = req.body; next(); }
 );
 
-// ─── JSON / URL-encoded body parsing ─────────────────────────────────────────
+// ─── Body parsing ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -97,7 +94,7 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
   app.use(morgan('combined', {
-    stream: { write: (msg) => logger.info(msg.trim()) }
+    stream: { write: (msg) => logger.info(msg.trim()) },
   }));
 }
 
@@ -107,7 +104,7 @@ app.get('/health', (_req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
   });
 });
 
@@ -124,6 +121,7 @@ app.use('/api/admin',         adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/wallet',        walletRoutes);
 app.use('/api/calls',         callRoutes);
+app.use('/api/debug',         debugRoutes);   // ← must be BEFORE 404 handler
 
 // ─── API index ────────────────────────────────────────────────────────────────
 app.get('/api', (_req, res) => {
@@ -140,14 +138,19 @@ app.get('/api', (_req, res) => {
       wallet:        '/api/wallet',
       notifications: '/api/notifications',
       upload:        '/api/upload',
-      admin:         '/api/admin'
-    }
+      admin:         '/api/admin',
+      calls:         '/api/calls',
+      debug:         '/api/debug',
+    },
   });
 });
-app.use('/api/debug', require('./routes/debug.route'));
+
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` });
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.method} ${req.path} not found`,
+  });
 });
 
 // ─── Global error handler ─────────────────────────────────────────────────────

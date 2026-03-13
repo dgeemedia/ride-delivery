@@ -2,174 +2,111 @@
 const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
+// Note: multer-storage-cloudinary v4 works with cloudinary v2 despite the peer warning
 const path = require('path');
 const { AppError } = require('../middleware/errorHandler');
 
-// Configure Cloudinary
+// ─── Configure Cloudinary ─────────────────────────────────────────────────────
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Define storage for different file types
+// ─── Helper: pick folder from request path ────────────────────────────────────
+const getFolderFromPath = (reqPath) => {
+  if (reqPath.includes('license'))              return 'duoride/documents/licenses';
+  if (reqPath.includes('vehicle-registration')) return 'duoride/documents/vehicles';
+  if (reqPath.includes('insurance'))            return 'duoride/documents/insurance';
+  if (reqPath.includes('profile'))              return 'duoride/profiles';
+  if (reqPath.includes('delivery'))             return 'duoride/deliveries/proof';
+  if (reqPath.includes('partner/id'))           return 'duoride/documents/ids';
+  if (reqPath.includes('partner/vehicle'))      return 'duoride/documents/vehicles';
+  return 'duoride/general';
+};
+
+// ─── Cloudinary storage (multer-storage-cloudinary v5) ───────────────────────
+// v5 changed: params must be a plain object or async fn returning plain object.
+// transformation is now a top-level key, not nested inside params.
 const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: async (req, file) => {
-    // Determine folder based on file type
-    let folder = 'duoride/general';
-    
-    if (req.path.includes('license')) {
-      folder = 'duoride/documents/licenses';
-    } else if (req.path.includes('vehicle')) {
-      folder = 'duoride/documents/vehicles';
-    } else if (req.path.includes('insurance')) {
-      folder = 'duoride/documents/insurance';
-    } else if (req.path.includes('profile')) {
-      folder = 'duoride/profiles';
-    } else if (req.path.includes('delivery')) {
-      folder = 'duoride/deliveries/proof';
-    } else if (req.path.includes('id')) {
-      folder = 'duoride/documents/ids';
-    }
-
-    return {
-      folder: folder,
-      allowed_formats: ['jpg', 'jpeg', 'png', 'pdf'],
-      transformation: [
-        { width: 1000, height: 1000, crop: 'limit' }
-      ],
-      public_id: `${Date.now()}-${file.originalname.split('.')[0]}`
-    };
-  }
+  cloudinary,
+  params: async (req, file) => ({
+    folder:          getFolderFromPath(req.path),
+    allowed_formats: ['jpg', 'jpeg', 'png', 'pdf'],
+    public_id:       `${Date.now()}-${path.parse(file.originalname).name}`,
+    transformation:  [{ width: 1000, height: 1000, crop: 'limit' }],
+  }),
 });
 
-// File filter
+// ─── File filter ─────────────────────────────────────────────────────────────
 const fileFilter = (req, file, cb) => {
-  // Accept images and PDFs only
-  const allowedTypes = /jpeg|jpg|png|pdf/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  const allowed = /jpeg|jpg|png|pdf/;
+  const validExt  = allowed.test(path.extname(file.originalname).toLowerCase());
+  const validMime = allowed.test(file.mimetype);
 
-  if (mimetype && extname) {
-    return cb(null, true);
+  if (validExt && validMime) {
+    cb(null, true);
   } else {
-    cb(new AppError('Only images (jpeg, jpg, png) and PDF files are allowed', 400));
+    cb(new AppError('Only JPEG, PNG, and PDF files are allowed', 400));
   }
 };
 
-// Configure multer
+// ─── Multer instance ──────────────────────────────────────────────────────────
+// multer v2: `limits.fileSize` API is unchanged; fileFilter signature is unchanged.
 const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
-  },
-  fileFilter: fileFilter
+  storage,
+  limits:     { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  fileFilter,
 });
 
-/**
- * Upload single file to Cloudinary
- */
-exports.uploadSingle = (fieldName) => {
-  return upload.single(fieldName);
-};
+// ─── Exported middleware factories ────────────────────────────────────────────
 
 /**
- * Upload multiple files to Cloudinary
+ * Single-file upload middleware
+ * @param {string} fieldName — form field name
  */
-exports.uploadMultiple = (fieldName, maxCount = 10) => {
-  return upload.array(fieldName, maxCount);
-};
+exports.uploadSingle = (fieldName) => upload.single(fieldName);
 
 /**
- * Delete file from Cloudinary
+ * Multi-file upload middleware
+ * @param {string} fieldName
+ * @param {number} maxCount
  */
-exports.deleteFile = async (publicId) => {
-  try {
-    const result = await cloudinary.uploader.destroy(publicId);
-    return result;
-  } catch (error) {
-    throw new AppError('Failed to delete file: ' + error.message, 500);
-  }
-};
+exports.uploadMultiple = (fieldName, maxCount = 10) =>
+  upload.array(fieldName, maxCount);
+
+// ─── Direct Cloudinary helpers ────────────────────────────────────────────────
 
 /**
- * Upload file from base64
+ * Upload a base64 data-URI directly (used by mobile /upload/base64 endpoint)
  */
 exports.uploadBase64 = async (base64Data, folder = 'duoride/general') => {
   try {
     const result = await cloudinary.uploader.upload(base64Data, {
-      folder: folder,
-      resource_type: 'auto'
+      folder,
+      resource_type: 'auto',
     });
-    
-    return {
-      url: result.secure_url,
-      publicId: result.public_id
-    };
-  } catch (error) {
-    throw new AppError('Failed to upload file: ' + error.message, 500);
+    return { url: result.secure_url, publicId: result.public_id };
+  } catch (err) {
+    throw new AppError('Failed to upload file: ' + err.message, 500);
   }
 };
 
 /**
- * Get file URL from Cloudinary
+ * Delete a file from Cloudinary by public_id
  */
-exports.getFileUrl = (publicId, options = {}) => {
-  return cloudinary.url(publicId, {
-    secure: true,
-    ...options
-  });
-};
-
-// ALTERNATIVE: AWS S3 Upload Service (commented out)
-/*
-const AWS = require('aws-sdk');
-const { v4: uuidv4 } = require('uuid');
-
-// Configure AWS S3
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION
-});
-
-exports.uploadToS3 = async (file, folder = 'general') => {
-  const fileExtension = path.extname(file.originalname);
-  const fileName = `${folder}/${uuidv4()}${fileExtension}`;
-
-  const params = {
-    Bucket: process.env.AWS_BUCKET_NAME,
-    Key: fileName,
-    Body: file.buffer,
-    ContentType: file.mimetype,
-    ACL: 'public-read'
-  };
-
+exports.deleteFile = async (publicId) => {
   try {
-    const result = await s3.upload(params).promise();
-    return {
-      url: result.Location,
-      key: result.Key
-    };
-  } catch (error) {
-    throw new AppError('Failed to upload to S3: ' + error.message, 500);
+    return await cloudinary.uploader.destroy(publicId);
+  } catch (err) {
+    throw new AppError('Failed to delete file: ' + err.message, 500);
   }
 };
 
-exports.deleteFromS3 = async (key) => {
-  const params = {
-    Bucket: process.env.AWS_BUCKET_NAME,
-    Key: key
-  };
-
-  try {
-    await s3.deleteObject(params).promise();
-    return true;
-  } catch (error) {
-    throw new AppError('Failed to delete from S3: ' + error.message, 500);
-  }
-};
-*/
+/**
+ * Build a signed/transformed URL for an existing public_id
+ */
+exports.getFileUrl = (publicId, options = {}) =>
+  cloudinary.url(publicId, { secure: true, ...options });
 
 module.exports = exports;

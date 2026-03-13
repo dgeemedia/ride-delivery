@@ -13,17 +13,16 @@ const activeSockets = new Map();
 const verifySocketAuth = async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
-
     if (!token) return next(new Error('Authentication error: no token'));
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true, role: true, firstName: true, lastName: true, isActive: true }
+      select: { id: true, role: true, firstName: true, lastName: true, isActive: true },
     });
 
-    if (!user) return next(new Error('User not found'));
+    if (!user)          return next(new Error('User not found'));
     if (!user.isActive) return next(new Error('Account is deactivated'));
 
     socket.userId   = user.id;
@@ -56,7 +55,7 @@ const initializeSocketHandlers = (io) => {
     // Every user joins their private room
     socket.join(`user:${socket.userId}`);
 
-    // ── DRIVER EVENTS ──────────────────────────────
+    // ── DRIVER EVENTS ─────────────────────────────
 
     socket.on('driver:online', async (data) => {
       if (socket.userRole !== 'DRIVER') return;
@@ -64,10 +63,10 @@ const initializeSocketHandlers = (io) => {
         await prisma.driverProfile.update({
           where: { userId: socket.userId },
           data: {
-            isOnline: true,
+            isOnline:   true,
             currentLat: data?.lat ?? null,
-            currentLng: data?.lng ?? null
-          }
+            currentLng: data?.lng ?? null,
+          },
         });
         socket.join('drivers:online');
         logger.info(`[Socket] Driver online: ${socket.userId}`);
@@ -81,7 +80,7 @@ const initializeSocketHandlers = (io) => {
       try {
         await prisma.driverProfile.update({
           where: { userId: socket.userId },
-          data: { isOnline: false }
+          data: { isOnline: false },
         });
         socket.leave('drivers:online');
         logger.info(`[Socket] Driver offline: ${socket.userId}`);
@@ -95,23 +94,22 @@ const initializeSocketHandlers = (io) => {
       try {
         await prisma.driverProfile.update({
           where: { userId: socket.userId },
-          data: { currentLat: data.lat, currentLng: data.lng }
+          data: { currentLat: data.lat, currentLng: data.lng },
         });
 
-        // Forward real-time location to the customer in the active ride
         const activeRide = await prisma.ride.findFirst({
           where: {
             driverId: socket.userId,
-            status: { in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] }
-          }
+            status: { in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] },
+          },
         });
 
         if (activeRide) {
           io.to(`user:${activeRide.customerId}`).emit('driver:location:update', {
-            lat: data.lat,
-            lng: data.lng,
-            heading: data.heading ?? null,
-            timestamp: new Date()
+            lat:       data.lat,
+            lng:       data.lng,
+            heading:   data.heading ?? null,
+            timestamp: new Date(),
           });
         }
       } catch (err) {
@@ -127,10 +125,10 @@ const initializeSocketHandlers = (io) => {
         await prisma.deliveryPartnerProfile.update({
           where: { userId: socket.userId },
           data: {
-            isOnline: true,
+            isOnline:   true,
             currentLat: data?.lat ?? null,
-            currentLng: data?.lng ?? null
-          }
+            currentLng: data?.lng ?? null,
+          },
         });
         socket.join('partners:online');
         logger.info(`[Socket] Partner online: ${socket.userId}`);
@@ -144,7 +142,7 @@ const initializeSocketHandlers = (io) => {
       try {
         await prisma.deliveryPartnerProfile.update({
           where: { userId: socket.userId },
-          data: { isOnline: false }
+          data: { isOnline: false },
         });
         socket.leave('partners:online');
       } catch (err) {
@@ -157,22 +155,22 @@ const initializeSocketHandlers = (io) => {
       try {
         await prisma.deliveryPartnerProfile.update({
           where: { userId: socket.userId },
-          data: { currentLat: data.lat, currentLng: data.lng }
+          data: { currentLat: data.lat, currentLng: data.lng },
         });
 
         const activeDelivery = await prisma.delivery.findFirst({
           where: {
             partnerId: socket.userId,
-            status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] }
-          }
+            status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] },
+          },
         });
 
         if (activeDelivery) {
           io.to(`user:${activeDelivery.customerId}`).emit('partner:location:update', {
-            lat: data.lat,
-            lng: data.lng,
-            heading: data.heading ?? null,
-            timestamp: new Date()
+            lat:       data.lat,
+            lng:       data.lng,
+            heading:   data.heading ?? null,
+            timestamp: new Date(),
           });
         }
       } catch (err) {
@@ -182,22 +180,79 @@ const initializeSocketHandlers = (io) => {
 
     // ── RIDE ROOM ──────────────────────────────────
 
-    socket.on('ride:join', (rideId) => {
-      socket.join(`ride:${rideId}`);
-    });
-
-    socket.on('ride:leave', (rideId) => {
-      socket.leave(`ride:${rideId}`);
-    });
+    socket.on('ride:join',  (rideId) => socket.join(`ride:${rideId}`));
+    socket.on('ride:leave', (rideId) => socket.leave(`ride:${rideId}`));
 
     // ── DELIVERY ROOM ──────────────────────────────
 
-    socket.on('delivery:join', (deliveryId) => {
-      socket.join(`delivery:${deliveryId}`);
+    socket.on('delivery:join',  (deliveryId) => socket.join(`delivery:${deliveryId}`));
+    socket.on('delivery:leave', (deliveryId) => socket.leave(`delivery:${deliveryId}`));
+
+    // ── CALL SIGNALING ─────────────────────────────
+    //
+    // Flow:
+    //   caller  → call:initiate  → server → call:incoming  → callee
+    //   callee  → call:accept    → server → call:accepted  → caller
+    //   callee  → call:reject    → server → call:rejected  → caller
+    //   either  → call:end       → server → call:ended     → other party
+    //   either  → call:toggle_video → server → call:video_toggled → other party
+
+    socket.on('call:initiate', async (data) => {
+      // data: { targetUserId, channelName, callType, callerImage }
+      try {
+        const caller = await prisma.user.findUnique({
+          where:  { id: socket.userId },
+          select: { id: true, firstName: true, lastName: true, profileImage: true, role: true },
+        });
+
+        io.to(`user:${data.targetUserId}`).emit('call:incoming', {
+          callerId:    socket.userId,
+          callerName:  `${caller.firstName} ${caller.lastName}`,
+          callerImage: data.callerImage ?? caller.profileImage,
+          channelName: data.channelName,
+          callType:    data.callType ?? 'voice',
+        });
+
+        logger.info(`[Socket] call:initiate ${socket.userId} → ${data.targetUserId} (${data.callType})`);
+      } catch (err) {
+        logger.error('[Socket] call:initiate error:', err.message);
+      }
     });
 
-    socket.on('delivery:leave', (deliveryId) => {
-      socket.leave(`delivery:${deliveryId}`);
+    socket.on('call:accept', (data) => {
+      // data: { callerId, channelName }
+      io.to(`user:${data.callerId}`).emit('call:accepted', {
+        acceptedBy:  socket.userId,
+        channelName: data.channelName,
+      });
+      logger.info(`[Socket] call:accept ${socket.userId} accepted call from ${data.callerId}`);
+    });
+
+    socket.on('call:reject', (data) => {
+      // data: { callerId, channelName, reason }
+      io.to(`user:${data.callerId}`).emit('call:rejected', {
+        rejectedBy:  socket.userId,
+        channelName: data.channelName,
+        reason:      data.reason ?? 'declined',
+      });
+      logger.info(`[Socket] call:reject ${socket.userId} rejected call from ${data.callerId}`);
+    });
+
+    socket.on('call:end', (data) => {
+      // data: { targetUserId, channelName }
+      io.to(`user:${data.targetUserId}`).emit('call:ended', {
+        endedBy:     socket.userId,
+        channelName: data.channelName,
+      });
+      logger.info(`[Socket] call:end ${socket.userId} ended call with ${data.targetUserId}`);
+    });
+
+    socket.on('call:toggle_video', (data) => {
+      // data: { targetUserId, videoEnabled }
+      io.to(`user:${data.targetUserId}`).emit('call:video_toggled', {
+        byUserId:     socket.userId,
+        videoEnabled: data.videoEnabled,
+      });
     });
 
     // ── SOS / EMERGENCY ────────────────────────────
@@ -206,16 +261,14 @@ const initializeSocketHandlers = (io) => {
       try {
         logger.warn(`[EMERGENCY] User ${socket.userId} triggered SOS. Location: ${JSON.stringify(data)}`);
 
-        // Notify all admins
         io.to('admins:online').emit('emergency:alert', {
-          userId: socket.userId,
-          userName: socket.userName,
-          userRole: socket.userRole,
-          location: data,
-          timestamp: new Date()
+          userId:    socket.userId,
+          userName:  socket.userName,
+          userRole:  socket.userRole,
+          location:  data,
+          timestamp: new Date(),
         });
 
-        // Acknowledge to the user
         socket.emit('emergency:acknowledged', { message: 'Help is on the way. Stay safe.' });
       } catch (err) {
         logger.error('[Socket] emergency:trigger error:', err.message);
@@ -238,14 +291,13 @@ const initializeSocketHandlers = (io) => {
         if (socket.userRole === 'DRIVER') {
           await prisma.driverProfile.updateMany({
             where: { userId: socket.userId },
-            data: { isOnline: false }
+            data:  { isOnline: false },
           });
         }
-
         if (socket.userRole === 'DELIVERY_PARTNER') {
           await prisma.deliveryPartnerProfile.updateMany({
             where: { userId: socket.userId },
-            data: { isOnline: false }
+            data:  { isOnline: false },
           });
         }
       } catch (err) {
@@ -259,28 +311,15 @@ const initializeSocketHandlers = (io) => {
 // UTILITY EXPORTS
 // ─────────────────────────────────────────────
 
-/** Emit an event to a specific user's private room */
-const emitToUser = (io, userId, event, data) => {
-  if (io) io.to(`user:${userId}`).emit(event, data);
-};
-
-/** Broadcast to all online drivers */
-const broadcastToDrivers = (io, event, data) => {
-  if (io) io.to('drivers:online').emit(event, data);
-};
-
-/** Broadcast to all online delivery partners */
-const broadcastToPartners = (io, event, data) => {
-  if (io) io.to('partners:online').emit(event, data);
-};
-
-/** Get socket ID for a user (if connected) */
-const getSocketId = (userId) => activeSockets.get(userId) || null;
+const emitToUser         = (io, userId, event, data) => io?.to(`user:${userId}`).emit(event, data);
+const broadcastToDrivers = (io, event, data)          => io?.to('drivers:online').emit(event, data);
+const broadcastToPartners= (io, event, data)          => io?.to('partners:online').emit(event, data);
+const getSocketId        = (userId)                   => activeSockets.get(userId) || null;
 
 module.exports = {
   initializeSocketHandlers,
   emitToUser,
   broadcastToDrivers,
   broadcastToPartners,
-  getSocketId
+  getSocketId,
 };
