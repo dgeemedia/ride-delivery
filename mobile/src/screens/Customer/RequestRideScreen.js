@@ -143,9 +143,16 @@ const DriverCard = ({ driver, selected, onSelect, accentColor, theme }) => {
 
       {/* Info */}
       <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={[dc.name, { color: theme.foreground }]} numberOfLines={1}>
-          {driver.firstName} {driver.lastName}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+          <Text style={[dc.name, { color: theme.foreground }]} numberOfLines={1}>
+            {driver.firstName} {driver.lastName}
+          </Text>
+          {/* Verified badge — shown for all approved drivers returned by /nearby-drivers */}
+          <View style={[dc.verifiedBadge, { backgroundColor: '#FFB800' }]}>
+            <Ionicons name="shield-checkmark" size={9} color="#080C18" />
+            <Text style={dc.verifiedTxt}>VERIFIED</Text>
+          </View>
+        </View>
         <Text style={[dc.vehicle, { color: theme.hint }]} numberOfLines={1}>
           {driver.vehicleColor} {driver.vehicleMake} {driver.vehicleModel} · {driver.vehiclePlate}
         </Text>
@@ -180,7 +187,9 @@ const dc = StyleSheet.create({
   metaTxt:      { fontSize: 11 },
   dot:          { fontSize: 11 },
   radio:        { width: 22, height: 22, borderRadius: 11, borderWidth: 2, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
-  radioDot:     { width: 10, height: 10, borderRadius: 5 },
+  radioDot:      { width: 10, height: 10, borderRadius: 5 },
+  verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFB800', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 },
+  verifiedTxt:   { fontSize: 7, fontWeight: '900', color: '#080C18', letterSpacing: 0.8 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
