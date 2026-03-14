@@ -7,19 +7,20 @@ import socketService from '../services/socket';
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser]       = useState(null);
-  const [token, setToken]     = useState(null);
+  const [user,    setUser]    = useState(null);
+  const [token,   setToken]   = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadStoredAuth(); }, []);
 
   const loadStoredAuth = async () => {
     try {
-      const storedToken = await AsyncStorage.getItem('authToken');
-      const storedUser  = await AsyncStorage.getItem('user');
-      if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+      const [storedToken, storedUser] = await AsyncStorage.multiGet(['authToken', 'user']);
+      const t = storedToken[1];
+      const u = storedUser[1];
+      if (t && u) {
+        setToken(t);
+        setUser(JSON.parse(u));
         socketService.connect().catch(() => {});
       }
     } catch (e) {
@@ -33,13 +34,11 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await authAPI.login(credentials);
       const { user: u, token: t } = response.data;
-
       await AsyncStorage.setItem('authToken', t);
       await AsyncStorage.setItem('user', JSON.stringify(u));
       setToken(t);
       setUser(u);
       socketService.connect().catch(() => {});
-
       return { success: true };
     } catch (error) {
       return {
@@ -53,26 +52,11 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await authAPI.register(userData);
       const { user: u, token: t } = response.data;
-
       await AsyncStorage.setItem('authToken', t);
       await AsyncStorage.setItem('user', JSON.stringify(u));
       setToken(t);
       setUser(u);
       socketService.connect().catch(() => {});
-
-      // ─────────────────────────────────────────────────────────────────
-      // DEV MODE: Email verification is BYPASSED.
-      // The account is active immediately after registration.
-      //
-      // TODO (PRODUCTION): Integrate Twilio Verify or SendGrid here.
-      //   1. In auth.controller.js → register(), send the verifyToken via:
-      //      - Twilio SMS:  twilioClient.verify.v2.services(SID).verifications.create(...)
-      //      - SendGrid:    sendgrid.send({ to: email, subject: 'Verify', html: link })
-      //   2. Add a VerifyEmailScreen.js that accepts the 6-digit code / link.
-      //   3. Gate navigation: if (!u.isVerified) navigate to VerifyEmailScreen.
-      //   4. On success call POST /api/auth/verify-email/:token, then proceed.
-      // ─────────────────────────────────────────────────────────────────
-
       return { success: true };
     } catch (error) {
       return {
@@ -88,12 +72,28 @@ export const AuthProvider = ({ children }) => {
     setUser(updated);
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // logout — state is cleared FIRST, unconditionally, so the UI always
+  // responds immediately on web (where AsyncStorage & network can be slow).
+  // The backend call and storage cleanup happen after in the background.
+  // ─────────────────────────────────────────────────────────────────────────
   const logout = async () => {
-    try { await authAPI.logout(); } catch {}
-    await AsyncStorage.multiRemove(['authToken', 'user']);
-    socketService.disconnect();
+    // 1. Immediately clear React state → UI navigates to Auth screen right away
     setToken(null);
     setUser(null);
+
+    // 2. Disconnect socket
+    try { socketService.disconnect(); } catch {}
+
+    // 3. Clear persisted storage (non-blocking — failure is acceptable)
+    try {
+      await AsyncStorage.multiRemove(['authToken', 'user']);
+    } catch (e) {
+      console.warn('AsyncStorage clear failed (non-critical):', e);
+    }
+
+    // 4. Tell the backend to invalidate the session (non-blocking)
+    try { await authAPI.logout(); } catch {}
   };
 
   return (

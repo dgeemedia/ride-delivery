@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
+  Alert, StatusBar, Dimensions, Animated, ActivityIndicator, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -23,7 +23,6 @@ const ACCENT_OPTIONS = [
   { id: 'sage',  label: 'Sage',  color: '#7EA882' },
 ];
 
-// ── Avatar ───────────────────────────────────────────────────────────────────
 const Avatar = ({ user, theme }) => (
   <View style={[av.ring, { borderColor: theme.accent + '40' }]}>
     <View style={[av.circle, { backgroundColor: theme.accent + '18' }]}>
@@ -39,7 +38,6 @@ const av = StyleSheet.create({
   initials: { fontSize: 28, fontWeight: '800' },
 });
 
-// ── Info row ─────────────────────────────────────────────────────────────────
 const InfoRow = ({ icon, label, value, theme }) => (
   <View style={[ir.row, { borderBottomColor: theme.border }]}>
     <Ionicons name={icon} size={15} color={theme.hint} style={ir.icon} />
@@ -56,7 +54,6 @@ const ir = StyleSheet.create({
   value: { fontSize: 14, fontWeight: '500' },
 });
 
-// ── Menu item ────────────────────────────────────────────────────────────────
 const MenuItem = ({ icon, label, onPress, danger, value, theme, last }) => {
   const color = danger ? '#E05555' : theme.foreground;
   return (
@@ -84,7 +81,6 @@ const mi = StyleSheet.create({
   value:   { fontSize: 13, fontWeight: '600' },
 });
 
-// ── Doc badge ────────────────────────────────────────────────────────────────
 const DocBadge = ({ label, uploaded, theme }) => {
   const color = uploaded ? theme.accent : theme.hint;
   return (
@@ -99,7 +95,6 @@ const db = StyleSheet.create({
   txt:  { fontSize: 11, fontWeight: '600' },
 });
 
-// ── Section wrapper ──────────────────────────────────────────────────────────
 const Section = ({ title, children, theme }) => (
   <View style={[sec.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     {title && <Text style={[sec.title, { color: theme.hint }]}>{title}</Text>}
@@ -111,7 +106,6 @@ const sec = StyleSheet.create({
   title: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 6 },
 });
 
-// ── MAIN ─────────────────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
   const { user, logout }           = useAuth();
   const { theme, mode, accentId, changeAccent, changeMode } = useTheme();
@@ -140,11 +134,21 @@ export default function ProfileScreen({ navigation }) {
     finally { setLoading(false); }
   };
 
-  const confirmLogout = () =>
-    Alert.alert('Sign Out', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: logout },
-    ]);
+  // ── Sign out — works on both web and native ────────────────────────────────
+  // Alert.alert is a no-op on web, so we use window.confirm instead.
+  const confirmLogout = () => {
+    if (Platform.OS === 'web') {
+      // Browser native confirm dialog — always works, no extra deps needed
+      if (window.confirm('Sign out of Diakite?')) {
+        logout();
+      }
+    } else {
+      Alert.alert('Sign Out', 'Are you sure?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign Out', style: 'destructive', onPress: logout },
+      ]);
+    }
+  };
 
   const dp = profile?.driverProfile;
   const pp = profile?.deliveryProfile;
@@ -157,16 +161,13 @@ export default function ProfileScreen({ navigation }) {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: fadeA }}>
 
-          {/* ── Hero ── */}
           <View style={s.hero}>
             <Avatar user={user} theme={theme} />
             <Text style={[s.name, { color: theme.foreground }]}>{user?.firstName} {user?.lastName}</Text>
-
             <View style={[s.rolePill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '30' }]}>
               <Ionicons name={meta.icon} size={13} color={theme.accent} />
               <Text style={[s.roleLabel, { color: theme.accent }]}>{meta.label}</Text>
             </View>
-
             <View style={s.verifiedRow}>
               <Ionicons
                 name={user?.isVerified ? 'shield-checkmark-outline' : 'shield-outline'}
@@ -179,7 +180,6 @@ export default function ProfileScreen({ navigation }) {
             </View>
           </View>
 
-          {/* ── Stats strip ── */}
           {loading ? (
             <ActivityIndicator color={theme.accent} style={{ marginBottom: 20 }} />
           ) : (
@@ -225,7 +225,6 @@ export default function ProfileScreen({ navigation }) {
             </View>
           )}
 
-          {/* ── Personal info ── */}
           <Section title="PERSONAL INFORMATION" theme={theme}>
             <InfoRow icon="mail-outline"     label="EMAIL"        value={user?.email}   theme={theme} />
             <InfoRow icon="call-outline"     label="PHONE"        value={user?.phone}   theme={theme} />
@@ -235,7 +234,6 @@ export default function ProfileScreen({ navigation }) {
             />
           </Section>
 
-          {/* ── Driver docs ── */}
           {role === 'DRIVER' && dp && (
             <Section title="VEHICLE & DOCUMENTS" theme={theme}>
               <InfoRow icon="car-outline"           label="VEHICLE" value={`${dp.vehicleMake ?? ''} ${dp.vehicleModel ?? ''} ${dp.vehicleYear ?? ''}`.trim()} theme={theme} />
@@ -248,15 +246,12 @@ export default function ProfileScreen({ navigation }) {
               {!dp.isApproved && (
                 <View style={[s.pendingNote, { borderColor: theme.border }]}>
                   <Ionicons name="time-outline" size={14} color={theme.muted} />
-                  <Text style={[s.pendingTxt, { color: theme.muted }]}>
-                    Account under review — approval takes 24–48 hours.
-                  </Text>
+                  <Text style={[s.pendingTxt, { color: theme.muted }]}>Account under review — approval takes 24–48 hours.</Text>
                 </View>
               )}
             </Section>
           )}
 
-          {/* ── Courier docs ── */}
           {role === 'DELIVERY_PARTNER' && pp && (
             <Section title="VEHICLE & DOCUMENTS" theme={theme}>
               <InfoRow icon="bicycle-outline"       label="VEHICLE TYPE" value={pp.vehicleType}  theme={theme} />
@@ -268,15 +263,12 @@ export default function ProfileScreen({ navigation }) {
               {!pp.isApproved && (
                 <View style={[s.pendingNote, { borderColor: theme.border }]}>
                   <Ionicons name="time-outline" size={14} color={theme.muted} />
-                  <Text style={[s.pendingTxt, { color: theme.muted }]}>
-                    Awaiting approval. Upload your ID to speed up the process.
-                  </Text>
+                  <Text style={[s.pendingTxt, { color: theme.muted }]}>Awaiting approval. Upload your ID to speed up the process.</Text>
                 </View>
               )}
             </Section>
           )}
 
-          {/* ── Appearance ── */}
           <Section title="APPEARANCE" theme={theme}>
             <View style={s.swatchRow}>
               {ACCENT_OPTIONS.map(opt => {
@@ -315,7 +307,6 @@ export default function ProfileScreen({ navigation }) {
             </View>
           </Section>
 
-          {/* ── Account ── */}
           <Section title="ACCOUNT" theme={theme}>
             <MenuItem icon="create-outline"         label="Edit Profile"       theme={theme} onPress={() => navigation.navigate('EditProfile')} />
             {role === 'CUSTOMER' && (
@@ -330,14 +321,12 @@ export default function ProfileScreen({ navigation }) {
             <MenuItem icon="lock-closed-outline"    label="Change Password"   theme={theme} last onPress={() => navigation.navigate('ChangePassword')} />
           </Section>
 
-          {/* ── Support ── */}
           <Section title="SUPPORT" theme={theme}>
             <MenuItem icon="help-circle-outline"   label="Help & Support"  theme={theme} onPress={() => navigation.navigate('Support')} />
             <MenuItem icon="star-outline"          label="Rate the App"    theme={theme} onPress={() => navigation.navigate('AppFeedback')} />
             <MenuItem icon="document-text-outline" label="Terms & Privacy" theme={theme} last onPress={() => navigation.navigate('Terms')} />
           </Section>
 
-          {/* ── Sign out ── */}
           <TouchableOpacity style={[s.logoutBtn, { borderColor: theme.border }]} onPress={confirmLogout} activeOpacity={0.75}>
             <Ionicons name="log-out-outline" size={18} color="#E05555" />
             <Text style={s.logoutTxt}>Sign Out</Text>
@@ -354,25 +343,20 @@ const s = StyleSheet.create({
   root:        { flex: 1 },
   ambientGlow: { position: 'absolute', width: width * 1.2, height: width * 1.2, borderRadius: width * 0.6, top: -width * 0.75, alignSelf: 'center', opacity: 0.05 },
   scroll:      { paddingHorizontal: 24, paddingBottom: 90, paddingTop: 56 },
-
   hero:        { alignItems: 'center', paddingBottom: 28 },
   name:        { fontSize: 22, fontWeight: '800', marginBottom: 10, letterSpacing: -0.3 },
   rolePill:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 10 },
   roleLabel:   { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   verifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   verifiedTxt: { fontSize: 12, fontWeight: '500' },
-
   statsStrip:  { flexDirection: 'row', borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 20, alignItems: 'center' },
   stripItem:   { flex: 1, alignItems: 'center', gap: 4 },
   stripVal:    { fontSize: 17, fontWeight: '800' },
   stripLbl:    { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
   stripDivider:{ width: 1, height: 32 },
-
   docRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14, marginBottom: 6 },
   pendingNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderTopWidth: 1, paddingTop: 12, marginTop: 8, paddingBottom: 8 },
   pendingTxt:  { flex: 1, fontSize: 12, lineHeight: 18 },
-
-  // Appearance
   swatchRow:   { flexDirection: 'row', gap: 8, marginBottom: 10 },
   swatch:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
   swatchDot:   { width: 8, height: 8, borderRadius: 4 },
@@ -380,7 +364,6 @@ const s = StyleSheet.create({
   modeToggle:  { flexDirection: 'row', borderRadius: 10, borderWidth: 1, overflow: 'hidden', height: 38, marginBottom: 10 },
   modeBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   modeTxt:     { fontSize: 12, fontWeight: '600' },
-
   logoutBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1, paddingVertical: 15, marginBottom: 14 },
   logoutTxt:   { fontSize: 15, fontWeight: '700', color: '#E05555' },
   version:     { textAlign: 'center', fontSize: 11, fontWeight: '500', marginBottom: 12 },
