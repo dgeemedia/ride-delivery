@@ -1,14 +1,16 @@
 // mobile/src/navigation/CustomerNavigator.js
 import React from 'react';
+import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator }     from '@react-navigation/stack';
 import { Ionicons }                 from '@expo/vector-icons';
 import { useTheme }                 from '../context/ThemeContext';
 
 // ── Tab screens ───────────────────────────────────────────────────────────────
-import HomeScreen           from '../screens/Customer/HomeScreen';
-import RequestRideScreen    from '../screens/Customer/RequestRideScreen';
-import HistoryScreen        from '../screens/Customer/HistoryScreen';
+import HomeScreen              from '../screens/Customer/HomeScreen';
+import RequestRideScreen       from '../screens/Customer/RequestRideScreen';
+import RequestDeliveryScreen   from '../screens/Customer/RequestDeliveryScreen';
+import HistoryScreen           from '../screens/Customer/HistoryScreen';
 
 // ── Profile & account screens ─────────────────────────────────────────────────
 import ProfileScreen        from '../screens/Shared/ProfileScreen';
@@ -23,22 +25,22 @@ const Stack = createStackNavigator();
 // ── Home stack ────────────────────────────────────────────────────────────────
 const HomeStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Home"        component={HomeScreen} />
-    <Stack.Screen name="RequestRide" component={RequestRideScreen} />
-    {/* Notifications accessible from home header bell icon too */}
-    <Stack.Screen name="Notifications" component={NotificationsScreen} />
+    <Stack.Screen name="Home"            component={HomeScreen} />
+    <Stack.Screen name="RequestRide"     component={RequestRideScreen} />
+    <Stack.Screen name="RequestDelivery" component={RequestDeliveryScreen} />
+    <Stack.Screen name="Notifications"   component={NotificationsScreen} />
+    {/* Add RideTracking / DeliveryTracking screens here when built */}
   </Stack.Navigator>
 );
 
 // ── Profile stack ─────────────────────────────────────────────────────────────
-// Every screen reachable from ProfileScreen must live in this stack.
 const ProfileStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="ProfileHome"     component={ProfileScreen} />
-    <Stack.Screen name="EditProfile"     component={EditProfileScreen} />
-    <Stack.Screen name="Wallet"          component={WalletScreen} />
-    <Stack.Screen name="Notifications"   component={NotificationsScreen} />
-    <Stack.Screen name="ChangePassword"  component={ChangePasswordScreen} />
+    <Stack.Screen name="ProfileHome"    component={ProfileScreen} />
+    <Stack.Screen name="EditProfile"    component={EditProfileScreen} />
+    <Stack.Screen name="Wallet"         component={WalletScreen} />
+    <Stack.Screen name="Notifications"  component={NotificationsScreen} />
+    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
   </Stack.Navigator>
 );
 
@@ -52,9 +54,9 @@ const CustomerNavigator = () => {
         headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
           const icons = {
-            HomeTab:    focused ? 'home'              : 'home-outline',
-            History:    focused ? 'time'              : 'time-outline',
-            ProfileTab: focused ? 'person'            : 'person-outline',
+            HomeTab:    focused ? 'home'   : 'home-outline',
+            History:    focused ? 'time'   : 'time-outline',
+            ProfileTab: focused ? 'person' : 'person-outline',
           };
           return <Ionicons name={icons[route.name]} size={size} color={color} />;
         },
@@ -71,14 +73,11 @@ const CustomerNavigator = () => {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
       })}
     >
-      <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Home'    }} />
+      <Tab.Screen name="HomeTab"    component={HomeStack}     options={{ title: 'Home'    }} />
       <Tab.Screen name="History"    component={HistoryScreen} options={{ title: 'History' }} />
-      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
+      <Tab.Screen name="ProfileTab" component={ProfileStack}  options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
 };
-
-// Platform needed for tab bar height
-import { Platform } from 'react-native';
 
 export default CustomerNavigator;

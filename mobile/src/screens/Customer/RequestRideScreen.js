@@ -19,8 +19,8 @@ import {
   StatusBar, Platform, KeyboardAvoidingView, Alert,
   FlatList, Image,
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../../shims/MapView';
-import * as Location from '../../shims/Location';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { rideAPI } from '../../services/api';

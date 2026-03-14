@@ -73,7 +73,11 @@ export const deliveryAPI = {
   getActiveDelivery:()       => api.get('/deliveries/active'),
   acceptDelivery:   (id)     => api.put(`/deliveries/${id}/accept`),
   pickupDelivery:   (id)     => api.put(`/deliveries/${id}/pickup`),
-  completeDelivery: (id, data) => api.put(`/deliveries/${id}/complete`, data),
+  completeDelivery:    (id, data) => api.put(`/deliveries/${id}/complete`, data),
+
+  // GET /api/deliveries/nearby-partners?pickupLat=&pickupLng=&radiusKm=
+  // Returns: { success, data: { partners: [...], total } }
+  getNearbyPartners: (params) => api.get('/deliveries/nearby-partners', { params }),
 };
 
 // User API
