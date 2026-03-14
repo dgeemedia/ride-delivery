@@ -6,6 +6,7 @@ import {
   ActivityIndicator, Alert, Platform, Vibration,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from '../../shims/Location';
 import { useAuth }        from '../../context/AuthContext';
 import { useTheme }       from '../../context/ThemeContext';
@@ -281,6 +282,7 @@ const ws = StyleSheet.create({
 export default function DriverDashboardScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
+  const insets          = useSafeAreaInsets();
 
   const [isOnline,     setIsOnline]     = useState(false);
   const [toggling,     setToggling]     = useState(false);
@@ -373,12 +375,21 @@ export default function DriverDashboardScreen({ navigation }) {
 
   const isApproved = profile?.isApproved ?? false;
 
+  // Dynamically compute top/bottom padding from system insets so the
+  // Android nav bar (back / home / recents) never covers any content.
+  const paddingTop    = (Platform.OS === 'ios' ? insets.top + 16 : insets.top + 32);
+  const paddingBottom = insets.bottom + 24; // nav bar height + comfortable gap
+
   return (
     <View style={[s.root, { backgroundColor:theme.background }]}>
       <StatusBar barStyle={mode==='dark'?'light-content':'dark-content'} backgroundColor={theme.background} />
       <View style={[s.orb, { backgroundColor:DA }]} />
 
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} overScrollMode="never">
+      <ScrollView
+        contentContainerStyle={[s.scroll, { paddingTop, paddingBottom }]}
+        showsVerticalScrollIndicator={false}
+        overScrollMode="never"
+      >
         <Animated.View style={{ opacity:fadeA, transform:[{translateY:headerY}] }}>
 
           {/* Header */}
@@ -544,7 +555,8 @@ export default function DriverDashboardScreen({ navigation }) {
 const s = StyleSheet.create({
   root:       { flex:1 },
   orb:        { position:'absolute', width:width*1.2, height:width*1.2, borderRadius:width*0.6, top:-width*0.78, right:-width*0.3, opacity:0.05 },
-  scroll:     { paddingHorizontal:24, paddingBottom:100, paddingTop:Platform.OS==='ios'?60:48 },
+  // paddingTop & paddingBottom injected dynamically via insets — not hardcoded
+  scroll:     { paddingHorizontal:24 },
   header:     { flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:22 },
   eyebrow:    { fontSize:10, fontWeight:'800', letterSpacing:3, marginBottom:4 },
   name:       { fontSize:24, fontWeight:'900', letterSpacing:-0.3 },
