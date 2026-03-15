@@ -6,7 +6,7 @@ import {
   ActivityIndicator, Alert, Platform, Vibration,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from '../../shims/Location';
 import { useAuth }        from '../../context/AuthContext';
 import { useTheme }       from '../../context/ThemeContext';
@@ -16,7 +16,25 @@ import socketService from '../../services/socket';
 const { width } = Dimensions.get('window');
 const DA = '#FFB800';
 
-// ── VerifiedBadge ────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Get the device's real GPS coordinates.
+ * Throws a descriptive error if permission is denied or GPS times out —
+ * no silent fallback to fake coordinates.
+ */
+const getRealLocation = async () => {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') {
+    throw new Error('Location permission denied. Please enable location access in your phone settings to go online.');
+  }
+  const loc = await Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.High,
+  });
+  return { lat: loc.coords.latitude, lng: loc.coords.longitude };
+};
+
+// ── VerifiedBadge ─────────────────────────────────────────────────────────────
 const VerifiedBadge = () => (
   <View style={vb.wrap}>
     <Ionicons name="shield-checkmark" size={11} color="#080C18" />
@@ -28,7 +46,7 @@ const vb = StyleSheet.create({
   txt:  { fontSize:9, fontWeight:'900', color:'#080C18', letterSpacing:1.5 },
 });
 
-// ── PendingBadge ─────────────────────────────────────────────────────────────
+// ── PendingBadge ──────────────────────────────────────────────────────────────
 const PendingBadge = ({ theme }) => (
   <View style={[pb.wrap, { backgroundColor:theme.backgroundAlt, borderColor:DA+'40' }]}>
     <Ionicons name="time-outline" size={11} color={DA} />
@@ -40,7 +58,7 @@ const pb = StyleSheet.create({
   txt: { fontSize:9, fontWeight:'800', letterSpacing:1.5 },
 });
 
-// ── MetricCard ────────────────────────────────────────────────────────────────
+// ── MetricCard ─────────────────────────────────────────────────────────────────
 const MetricCard = ({ icon, value, label, color, sub, theme }) => (
   <View style={[mc.card, { backgroundColor:theme.backgroundAlt, borderColor:(color||DA)+'20' }]}>
     <View style={[mc.iconBox,{ backgroundColor:(color||DA)+'15' }]}>
@@ -59,7 +77,7 @@ const mc = StyleSheet.create({
   sub:    { fontSize:9,textAlign:'center' },
 });
 
-// ── IncomingRideCard ──────────────────────────────────────────────────────────
+// ── IncomingRideCard ───────────────────────────────────────────────────────────
 const IncomingRideCard = ({ request, onAccept, onDecline, theme }) => {
   const scaleA   = useRef(new Animated.Value(0.94)).current;
   const opacityA = useRef(new Animated.Value(0)).current;
@@ -83,7 +101,6 @@ const IncomingRideCard = ({ request, onAccept, onDecline, theme }) => {
 
   return (
     <Animated.View style={[ic.card, { backgroundColor:theme.backgroundAlt, borderColor, transform:[{scale:scaleA}], opacity:opacityA }]}>
-      {/* Top */}
       <View style={ic.top}>
         <View style={ic.newPill}>
           <Ionicons name="flash" size={10} color="#080C18" />
@@ -94,7 +111,6 @@ const IncomingRideCard = ({ request, onAccept, onDecline, theme }) => {
         </Text>
       </View>
 
-      {/* Customer */}
       {request.customer && (
         <View style={[ic.customerRow,{borderColor:theme.border}]}>
           <View style={[ic.cAvatar,{backgroundColor:DA+'18'}]}>
@@ -111,7 +127,6 @@ const IncomingRideCard = ({ request, onAccept, onDecline, theme }) => {
         </View>
       )}
 
-      {/* Route */}
       <View style={ic.route}>
         <View style={ic.routeCol}>
           <View style={[ic.dotA,{backgroundColor:DA}]} />
@@ -130,7 +145,6 @@ const IncomingRideCard = ({ request, onAccept, onDecline, theme }) => {
         </View>
       </View>
 
-      {/* Meta row */}
       <View style={[ic.meta,{borderColor:theme.border}]}>
         {[
           ['navigate-outline', `${request.distance?.toFixed(1)??'—'} km`],
@@ -147,7 +161,6 @@ const IncomingRideCard = ({ request, onAccept, onDecline, theme }) => {
         ))}
       </View>
 
-      {/* Buttons */}
       <View style={ic.actions}>
         <TouchableOpacity style={[ic.decline,{borderColor:theme.border}]} onPress={onDecline} activeOpacity={0.75}>
           <Ionicons name="close" size={16} color={theme.hint} />
@@ -190,7 +203,7 @@ const ic = StyleSheet.create({
   acceptTxt:   { color:'#080C18',fontWeight:'900',fontSize:15 },
 });
 
-// ── OnlineToggle ──────────────────────────────────────────────────────────────
+// ── OnlineToggle ───────────────────────────────────────────────────────────────
 const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
   const pulseA = useRef(new Animated.Value(1)).current;
 
@@ -210,7 +223,7 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
     <View style={[ot.card, { backgroundColor:theme.backgroundAlt, borderColor:isOnline?DA+'50':theme.border }]}>
       <View style={ot.left}>
         <View style={ot.dotRow}>
-          <View style={[ot.dotWrap]}>
+          <View style={ot.dotWrap}>
             {isOnline && <Animated.View style={[ot.dotRing, { borderColor:DA, transform:[{scale:pulseA}] }]} />}
             <View style={[ot.dot, { backgroundColor:isOnline?DA:theme.hint }]} />
           </View>
@@ -250,7 +263,7 @@ const ot = StyleSheet.create({
   sub:    { fontSize:12 },
 });
 
-// ── WalletStrip ───────────────────────────────────────────────────────────────
+// ── WalletStrip ────────────────────────────────────────────────────────────────
 const WalletStrip = ({ balance, todayEarnings, onWithdraw, theme }) => (
   <View style={[ws.card, { backgroundColor:theme.backgroundAlt, borderColor:DA+'25' }]}>
     <View style={ws.left}>
@@ -269,103 +282,133 @@ const WalletStrip = ({ balance, todayEarnings, onWithdraw, theme }) => (
   </View>
 );
 const ws = StyleSheet.create({
-  card:   { borderRadius:20,borderWidth:1,padding:18,flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:14 },
-  left:   { flex:1 },
-  lbl:    { fontSize:9,fontWeight:'700',letterSpacing:2,marginBottom:4 },
-  amount: { fontSize:22,fontWeight:'900',marginBottom:2 },
+  card:    { borderRadius:20,borderWidth:1,padding:18,flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:14 },
+  left:    { flex:1 },
+  lbl:     { fontSize:9,fontWeight:'700',letterSpacing:2,marginBottom:4 },
+  amount:  { fontSize:22,fontWeight:'900',marginBottom:2 },
   todayLbl:{ fontSize:11,fontWeight:'500' },
-  btn:    { borderRadius:13,paddingHorizontal:14,paddingVertical:10,flexDirection:'row',alignItems:'center',gap:5 },
-  btnTxt: { fontSize:12,fontWeight:'800',color:'#080C18' },
+  btn:     { borderRadius:13,paddingHorizontal:14,paddingVertical:10,flexDirection:'row',alignItems:'center',gap:5 },
+  btnTxt:  { fontSize:12,fontWeight:'800',color:'#080C18' },
 });
 
-// ── MAIN ──────────────────────────────────────────────────────────────────────
+// ── MAIN ───────────────────────────────────────────────────────────────────────
 export default function DriverDashboardScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
-  const insets          = useSafeAreaInsets();
 
-  const [isOnline,     setIsOnline]     = useState(false);
-  const [toggling,     setToggling]     = useState(false);
-  const [profile,      setProfile]      = useState(null);
-  const [stats,        setStats]        = useState(null);
-  const [walletBalance,setWalletBalance]= useState(null);
-  const [todayEarnings,setTodayEarnings]= useState(0);
-  const [loading,      setLoading]      = useState(true);
-  const [incomingRide, setIncomingRide] = useState(null);
+  const [isOnline,      setIsOnline]      = useState(false);
+  const [toggling,      setToggling]      = useState(false);
+  const [profile,       setProfile]       = useState(null);
+  const [stats,         setStats]         = useState(null);
+  const [walletBalance, setWalletBalance] = useState(null);
+  const [todayEarnings, setTodayEarnings] = useState(0);
+  const [loading,       setLoading]       = useState(true);
+  const [incomingRide,  setIncomingRide]  = useState(null);
 
-  const fadeA    = useRef(new Animated.Value(0)).current;
-  const headerY  = useRef(new Animated.Value(-20)).current;
+  const fadeA   = useRef(new Animated.Value(0)).current;
+  const headerY = useRef(new Animated.Value(-20)).current;
 
+  // ── Fetch data ──────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     try {
       const [profileRes, statsRes, walletRes, earningsRes] = await Promise.allSettled([
         driverAPI.getProfile(),
         userAPI.getStats(),
         walletAPI.getWallet(),
-        driverAPI.getEarnings({ period:'today' }),
+        driverAPI.getEarnings(),
       ]);
-      if (profileRes.status==='fulfilled') {
+      if (profileRes.status === 'fulfilled') {
         const p = profileRes.value?.data?.profile ?? profileRes.value?.data;
         setProfile(p);
-        setIsOnline(p?.isOnline??false);
+        setIsOnline(p?.isOnline ?? false);
       }
-      if (statsRes.status==='fulfilled')   setStats(statsRes.value?.data);
-      if (walletRes.status==='fulfilled')  setWalletBalance(walletRes.value?.data?.wallet?.balance??0);
-      if (earningsRes.status==='fulfilled') setTodayEarnings(parseFloat(earningsRes.value?.data?.netEarnings??0));
+      if (statsRes.status    === 'fulfilled') setStats(statsRes.value?.data);
+      if (walletRes.status   === 'fulfilled') setWalletBalance(walletRes.value?.data?.wallet?.balance ?? 0);
+      if (earningsRes.status === 'fulfilled') setTodayEarnings(parseFloat(earningsRes.value?.data?.netEarnings ?? 0));
     } catch {}
     finally {
       setLoading(false);
       Animated.parallel([
-        Animated.timing(fadeA,  { toValue:1, duration:600, useNativeDriver:true }),
-        Animated.spring(headerY,{ toValue:0, tension:80, friction:9, useNativeDriver:true }),
+        Animated.timing(fadeA,   { toValue:1, duration:600, useNativeDriver:true }),
+        Animated.spring(headerY, { toValue:0, tension:80, friction:9, useNativeDriver:true }),
       ]).start();
     }
   }, []);
 
   useEffect(() => { fetchData(); }, []);
 
+  // ── Socket ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleReq  = (data) => setIncomingRide(data);
     const handleCanc = ()     => setIncomingRide(null);
-    socketService.on('ride:new_request', handleReq);
-    socketService.on('ride:cancelled',   handleCanc);
+
+    socketService.connect().catch(() => {}).finally(() => {
+      socketService.on('ride:new_request', handleReq);
+      socketService.on('ride:cancelled',   handleCanc);
+    });
+
     return () => {
       socketService.off('ride:new_request', handleReq);
       socketService.off('ride:cancelled',   handleCanc);
     };
   }, []);
 
+  // ── Toggle online ───────────────────────────────────────────────────────────
   const toggleOnline = async () => {
     if (!profile?.isApproved) {
       Alert.alert('Pending Approval', 'Your account is under review. You will be notified when approved.');
       return;
     }
+
     setToggling(true);
     try {
       const next = !isOnline;
-      let lat = 6.5244, lng = 3.3792;
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status==='granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy:Location.Accuracy.Balanced });
-          lat = loc.coords.latitude;
-          lng = loc.coords.longitude;
+
+      if (next) {
+        // ── Going ONLINE — must have real GPS ──────────────────────────────
+        let coords;
+        try {
+          coords = await getRealLocation();
+        } catch (locErr) {
+          // GPS failed — tell the driver clearly and abort
+          Alert.alert('Location Required', locErr.message);
+          return;
         }
-      } catch {}
-      await driverAPI.updateStatus({ isOnline:next, currentLat:lat, currentLng:lng });
-      if (next) socketService.goOnline({ latitude:lat, longitude:lng });
-      else      { socketService.goOffline(); setIncomingRide(null); }
+
+        // Save status + real GPS to backend
+        await driverAPI.updateStatus({
+          isOnline:   true,
+          currentLat: coords.lat,
+          currentLng: coords.lng,
+        });
+
+        // Broadcast to socket room so customers can find this driver
+        socketService.goOnline({ latitude: coords.lat, longitude: coords.lng });
+
+        console.log(`[Driver] Online at ${coords.lat}, ${coords.lng}`);
+
+      } else {
+        // ── Going OFFLINE ─────────────────────────────────────────────────
+        await driverAPI.updateStatus({ isOnline: false });
+        socketService.goOffline();
+        setIncomingRide(null);
+      }
+
       setIsOnline(next);
+
     } catch (err) {
       Alert.alert('Error', err?.response?.data?.message ?? 'Failed to update status.');
-    } finally { setToggling(false); }
+    } finally {
+      setToggling(false);
+    }
   };
 
+  // ── Accept ride ─────────────────────────────────────────────────────────────
   const handleAcceptRide = async () => {
     if (!incomingRide?.rideId) return;
     try {
       await rideAPI.acceptRide(incomingRide.rideId);
-      navigation.navigate('ActiveRide', { rideId:incomingRide.rideId });
+      navigation.navigate('ActiveRide', { rideId: incomingRide.rideId });
       setIncomingRide(null);
     } catch (err) {
       Alert.alert('Could not accept', err?.response?.data?.message ?? 'Ride may have been cancelled.');
@@ -375,59 +418,60 @@ export default function DriverDashboardScreen({ navigation }) {
 
   const isApproved = profile?.isApproved ?? false;
 
-  // Dynamically compute top/bottom padding from system insets so the
-  // Android nav bar (back / home / recents) never covers any content.
-  const paddingTop    = (Platform.OS === 'ios' ? insets.top + 16 : insets.top + 32);
-  const paddingBottom = insets.bottom + 24; // nav bar height + comfortable gap
-
   return (
-    <View style={[s.root, { backgroundColor:theme.background }]}>
-      <StatusBar barStyle={mode==='dark'?'light-content':'dark-content'} backgroundColor={theme.background} />
-      <View style={[s.orb, { backgroundColor:DA }]} />
+    <SafeAreaView
+      style={[s.root, { backgroundColor: theme.background }]}
+      edges={['top']}
+    >
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
+      <View style={[s.orb, { backgroundColor: DA }]} />
 
       <ScrollView
-        contentContainerStyle={[s.scroll, { paddingTop, paddingBottom }]}
+        contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
         overScrollMode="never"
       >
-        <Animated.View style={{ opacity:fadeA, transform:[{translateY:headerY}] }}>
+        <Animated.View style={{ opacity: fadeA, transform: [{ translateY: headerY }] }}>
 
           {/* Header */}
           <View style={s.header}>
-            <View style={{flex:1,minWidth:0,marginRight:12}}>
-              <Text style={[s.eyebrow, { color:DA+'70' }]}>DRIVER DASHBOARD</Text>
-              <Text style={[s.name, { color:theme.foreground }]} numberOfLines={1}>
+            <View style={{ flex:1, minWidth:0, marginRight:12 }}>
+              <Text style={[s.eyebrow, { color: DA+'70' }]}>DRIVER DASHBOARD</Text>
+              <Text style={[s.name, { color: theme.foreground }]} numberOfLines={1}>
                 {user?.firstName} {user?.lastName}
               </Text>
-              <View style={{marginTop:8}}>
+              <View style={{ marginTop:8 }}>
                 {isApproved ? <VerifiedBadge /> : <PendingBadge theme={theme} />}
               </View>
             </View>
             <View style={s.headerRight}>
               <TouchableOpacity
-                style={[s.notifBtn, { backgroundColor:theme.backgroundAlt, borderColor:theme.border }]}
+                style={[s.notifBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
                 onPress={() => navigation.navigate('Notifications')}
               >
                 <Ionicons name="notifications-outline" size={19} color={DA} />
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.avatarBtn, { backgroundColor:DA+'18', borderColor:DA+'40' }]}
+                style={[s.avatarBtn, { backgroundColor: DA+'18', borderColor: DA+'40' }]}
                 onPress={() => navigation.navigate('Profile')}
               >
-                <Text style={[s.avatarTxt, { color:DA }]}>
+                <Text style={[s.avatarTxt, { color: DA }]}>
                   {user?.firstName?.[0]}{user?.lastName?.[0]}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Approval notice */}
+          {/* Approval banner */}
           {!isApproved && !loading && (
-            <View style={[s.approvalBanner, { backgroundColor:theme.backgroundAlt, borderColor:DA+'30' }]}>
+            <View style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: DA+'30' }]}>
               <Ionicons name="time-outline" size={18} color={DA} />
-              <View style={{flex:1}}>
-                <Text style={[s.approvalTitle, { color:DA }]}>Account Under Review</Text>
-                <Text style={[s.approvalSub,   { color:theme.hint }]}>
+              <View style={{ flex:1 }}>
+                <Text style={[s.approvalTitle, { color: DA }]}>Account Under Review</Text>
+                <Text style={[s.approvalSub, { color: theme.hint }]}>
                   Your documents are being reviewed. Approval takes 24-48 hours.
                 </Text>
               </View>
@@ -453,7 +497,7 @@ export default function DriverDashboardScreen({ navigation }) {
             />
           )}
 
-          {/* Wallet strip */}
+          {/* Wallet */}
           {!loading && (
             <WalletStrip
               balance={walletBalance}
@@ -465,118 +509,105 @@ export default function DriverDashboardScreen({ navigation }) {
 
           {/* Stats */}
           {loading ? (
-            <ActivityIndicator color={DA} style={{marginBottom:16}} />
+            <ActivityIndicator color={DA} style={{ marginBottom:16 }} />
           ) : (
             <View style={s.statsRow}>
-              <MetricCard
-                icon="car-sport-outline"
-                value={stats?.completedRides ?? profile?.totalRides ?? 0}
-                label="Rides"
-                theme={theme}
-              />
-              <MetricCard
-                icon="star-outline"
-                value={(profile?.rating ?? stats?.rating ?? 0).toFixed(1)}
-                label="Rating"
-                color="#A78BFA"
-                theme={theme}
-              />
-              <MetricCard
-                icon="trending-up-outline"
-                value={isApproved?'94%':'—'}
-                label="Accept"
-                color="#5DAA72"
-                theme={theme}
-              />
+              <MetricCard icon="car-sport-outline" value={stats?.completedRides ?? profile?.totalRides ?? 0} label="Rides" theme={theme} />
+              <MetricCard icon="star-outline" value={(profile?.rating ?? stats?.rating ?? 0).toFixed(1)} label="Rating" color="#A78BFA" theme={theme} />
+              <MetricCard icon="trending-up-outline" value={isApproved ? '94%' : '—'} label="Accept" color="#5DAA72" theme={theme} />
             </View>
           )}
 
-          {/* Vehicle card */}
+          {/* Vehicle */}
           {profile?.vehicleMake && (
             <TouchableOpacity
-              style={[s.vehicleCard, { backgroundColor:theme.backgroundAlt, borderColor:DA+'25' }]}
+              style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: DA+'25' }]}
               onPress={() => navigation.navigate('DriverDocuments')}
               activeOpacity={0.8}
             >
-              <View style={[s.vehicleIconWrap, { backgroundColor:DA+'18' }]}>
+              <View style={[s.vehicleIconWrap, { backgroundColor: DA+'18' }]}>
                 <Ionicons name="car-outline" size={18} color={DA} />
               </View>
-              <View style={{flex:1}}>
-                <Text style={[s.vehicleName, { color:theme.foreground }]}>
+              <View style={{ flex:1 }}>
+                <Text style={[s.vehicleName, { color: theme.foreground }]}>
                   {profile.vehicleColor} {profile.vehicleMake} {profile.vehicleModel}
                 </Text>
-                <Text style={[s.vehiclePlate, { color:DA }]}>{profile.vehiclePlate}</Text>
+                <Text style={[s.vehiclePlate, { color: DA }]}>{profile.vehiclePlate}</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={theme.hint} />
             </TouchableOpacity>
           )}
 
           {/* Quick actions */}
-          <Text style={[s.sectionTitle, { color:theme.hint }]}>QUICK ACTIONS</Text>
+          <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
           <View style={s.actionGrid}>
             {[
-              { icon:'wallet-outline',        label:'Earnings',    color:DA,         screen:'Earnings'       },
-              { icon:'time-outline',           label:'Ride History',color:'#5DAA72',  screen:'DriverHistory'  },
-              { icon:'document-text-outline',  label:'Documents',  color:'#A78BFA',  screen:'DriverDocuments'},
-              { icon:'help-circle-outline',    label:'Support',    color:theme.hint, screen:'Support'        },
+              { icon:'wallet-outline',       label:'Earnings',     color:DA,         screen:'Earnings'        },
+              { icon:'time-outline',          label:'Ride History', color:'#5DAA72',  screen:'DriverHistory'   },
+              { icon:'document-text-outline', label:'Documents',   color:'#A78BFA',  screen:'DriverDocuments' },
+              { icon:'help-circle-outline',   label:'Support',     color:theme.hint, screen:'Support'         },
             ].map(item => (
               <TouchableOpacity
                 key={item.label}
-                style={[s.actionCard, { backgroundColor:theme.backgroundAlt, borderColor:(item.color)+'25' }]}
+                style={[s.actionCard, { backgroundColor: theme.backgroundAlt, borderColor: item.color+'25' }]}
                 onPress={() => navigation.navigate(item.screen)}
                 activeOpacity={0.75}
               >
-                <View style={[s.actionIcon, { backgroundColor:(item.color)+'18' }]}>
+                <View style={[s.actionIcon, { backgroundColor: item.color+'18' }]}>
                   <Ionicons name={item.icon} size={20} color={item.color} />
                 </View>
-                <Text style={[s.actionLabel, { color:item.color }]}>{item.label}</Text>
+                <Text style={[s.actionLabel, { color: item.color }]}>{item.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* Status footer */}
-          <View style={[s.footer, { backgroundColor:theme.backgroundAlt, borderColor:theme.border }]}>
+          {/* Footer */}
+          <View style={[s.footer, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <Ionicons
-              name={isApproved?'shield-checkmark-outline':'shield-outline'}
+              name={isApproved ? 'shield-checkmark-outline' : 'shield-outline'}
               size={13}
-              color={isApproved?'#5DAA72':theme.hint}
+              color={isApproved ? '#5DAA72' : theme.hint}
             />
-            <Text style={[s.footerTxt, { color:isApproved?'#5DAA72':theme.hint }]}>
-              {isApproved?'Verified & Approved Driver':'Verification Pending'}
+            <Text style={[s.footerTxt, { color: isApproved ? '#5DAA72' : theme.hint }]}>
+              {isApproved ? 'Verified & Approved Driver' : 'Verification Pending'}
             </Text>
           </View>
 
         </Animated.View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  root:       { flex:1 },
-  orb:        { position:'absolute', width:width*1.2, height:width*1.2, borderRadius:width*0.6, top:-width*0.78, right:-width*0.3, opacity:0.05 },
-  // paddingTop & paddingBottom injected dynamically via insets — not hardcoded
-  scroll:     { paddingHorizontal:24 },
-  header:     { flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:22 },
-  eyebrow:    { fontSize:10, fontWeight:'800', letterSpacing:3, marginBottom:4 },
-  name:       { fontSize:24, fontWeight:'900', letterSpacing:-0.3 },
-  headerRight:{ flexDirection:'row', alignItems:'center', gap:10, flexShrink:0 },
-  notifBtn:   { width:40,height:40,borderRadius:12,borderWidth:1,justifyContent:'center',alignItems:'center' },
-  avatarBtn:  { width:44,height:44,borderRadius:22,borderWidth:1.5,justifyContent:'center',alignItems:'center' },
-  avatarTxt:  { fontSize:14, fontWeight:'800' },
+  root:  { flex:1 },
+  orb:   { position:'absolute', width:width*1.2, height:width*1.2, borderRadius:width*0.6, top:-width*0.78, right:-width*0.3, opacity:0.05 },
+  scroll:{ paddingHorizontal:24, paddingTop:16, paddingBottom:24 },
+
+  header:      { flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:22 },
+  eyebrow:     { fontSize:10, fontWeight:'800', letterSpacing:3, marginBottom:4 },
+  name:        { fontSize:24, fontWeight:'900', letterSpacing:-0.3 },
+  headerRight: { flexDirection:'row', alignItems:'center', gap:10, flexShrink:0 },
+  notifBtn:    { width:40,height:40,borderRadius:12,borderWidth:1,justifyContent:'center',alignItems:'center' },
+  avatarBtn:   { width:44,height:44,borderRadius:22,borderWidth:1.5,justifyContent:'center',alignItems:'center' },
+  avatarTxt:   { fontSize:14, fontWeight:'800' },
+
   approvalBanner: { flexDirection:'row',alignItems:'flex-start',gap:12,borderRadius:16,borderWidth:1,padding:16,marginBottom:14 },
   approvalTitle:  { fontSize:13,fontWeight:'800',marginBottom:3 },
   approvalSub:    { fontSize:11,lineHeight:17 },
-  statsRow:   { flexDirection:'row', gap:10, marginBottom:14 },
-  vehicleCard:{ flexDirection:'row',alignItems:'center',gap:12,borderRadius:16,borderWidth:1,padding:14,marginBottom:20 },
+
+  statsRow:       { flexDirection:'row', gap:10, marginBottom:14 },
+  vehicleCard:    { flexDirection:'row',alignItems:'center',gap:12,borderRadius:16,borderWidth:1,padding:14,marginBottom:20 },
   vehicleIconWrap:{ width:40,height:40,borderRadius:12,justifyContent:'center',alignItems:'center',flexShrink:0 },
-  vehicleName:{ fontSize:14,fontWeight:'700',marginBottom:2 },
-  vehiclePlate:{ fontSize:12,fontWeight:'800',letterSpacing:1 },
-  sectionTitle:{ fontSize:10,fontWeight:'700',letterSpacing:3,marginBottom:14 },
-  actionGrid: { flexDirection:'row',flexWrap:'wrap',gap:12,marginBottom:20 },
-  actionCard: { width:(width-60)/2,borderRadius:16,borderWidth:1,padding:16,alignItems:'center',gap:8 },
-  actionIcon: { width:44,height:44,borderRadius:13,justifyContent:'center',alignItems:'center' },
-  actionLabel:{ fontSize:12,fontWeight:'700',textAlign:'center' },
-  footer:     { flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,borderRadius:12,borderWidth:1,paddingVertical:12 },
-  footerTxt:  { fontSize:12,fontWeight:'700' },
+  vehicleName:    { fontSize:14,fontWeight:'700',marginBottom:2 },
+  vehiclePlate:   { fontSize:12,fontWeight:'800',letterSpacing:1 },
+
+  sectionTitle: { fontSize:10,fontWeight:'700',letterSpacing:3,marginBottom:14 },
+  actionGrid:   { flexDirection:'row',flexWrap:'wrap',gap:12,marginBottom:20 },
+  actionCard:   { width:(width-60)/2,borderRadius:16,borderWidth:1,padding:16,alignItems:'center',gap:8 },
+  actionIcon:   { width:44,height:44,borderRadius:13,justifyContent:'center',alignItems:'center' },
+  actionLabel:  { fontSize:12,fontWeight:'700',textAlign:'center' },
+
+  footer:    { flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,borderRadius:12,borderWidth:1,paddingVertical:12 },
+  footerTxt: { fontSize:12,fontWeight:'700' },
 });

@@ -7,22 +7,28 @@ const { logger } = require('./utils/logger');
 const { initializeSocketHandlers } = require('./services/socket.service');
 
 const PORT = parseInt(process.env.PORT) || 3000;
+const HOST = '0.0.0.0'; // ← bind to all interfaces so phone + web can reach it
+const IS_DEV = process.env.NODE_ENV !== 'production';
 
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
+    // In development: allow every origin so Expo Web (localhost:8081/19006),
+    // the Android device on your LAN, and any browser tab all connect freely.
+    // In production: restrict to explicit CLIENT_URL / ADMIN_URL env vars.
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
+      if (IS_DEV) return callback(null, true); // ← open for all dev origins
+
+      if (!origin) return callback(null, true); // same-origin / curl / mobile
+
       const allowed = [
         process.env.CLIENT_URL,
         process.env.ADMIN_URL,
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:5173',
       ].filter(Boolean);
+
       if (allowed.includes(origin)) return callback(null, true);
-      if (process.env.NODE_ENV !== 'production') return callback(null, true);
+
       callback(new Error(`Socket CORS blocked: ${origin}`));
     },
     methods: ['GET', 'POST'],
@@ -30,6 +36,7 @@ const io = new Server(server, {
   },
   pingTimeout:  60000,
   pingInterval: 25000,
+  // Allow both polling (web fallback) and websocket (preferred on native)
   transports: ['polling', 'websocket'],
 });
 
@@ -39,6 +46,7 @@ app.set('io', io);
 // Wire socket handlers AND inject io into notification.service
 initializeSocketHandlers(io);
 
+// ─── Graceful shutdown ────────────────────────────────────────────────────────
 const shutdown = (signal) => {
   logger.info(`${signal} received — closing HTTP server`);
   server.close(() => { logger.info('HTTP server closed'); process.exit(0); });
@@ -58,11 +66,27 @@ process.on('uncaughtException', (err) => {
   server.close(() => process.exit(1));
 });
 
-server.listen(PORT, () => {
+// ─── Start ────────────────────────────────────────────────────────────────────
+server.listen(PORT, HOST, () => {
+  // Get the actual LAN IP so it's easy to copy into .env
+  const { networkInterfaces } = require('os');
+  const nets = networkInterfaces();
+  let lanIP = 'localhost';
+  for (const ifaces of Object.values(nets)) {
+    for (const iface of ifaces) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        lanIP = iface.address;
+        break;
+      }
+    }
+    if (lanIP !== 'localhost') break;
+  }
+
   logger.info(`🚀  Server running on port ${PORT}`);
   logger.info(`📍  Environment : ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`🔗  API         : http://localhost:${PORT}/api`);
-  logger.info(`💓  Health      : http://localhost:${PORT}/health`);
+  logger.info(`🔗  Local       : http://localhost:${PORT}/api`);
+  logger.info(`📱  On network  : http://${lanIP}:${PORT}/api  ← use this in .env`);
+  logger.info(`💓  Health      : http://${lanIP}:${PORT}/health`);
   logger.info(`🔔  WebSockets  : Socket.io ready`);
   logger.info(`💳  Payments    : Paystack + Flutterwave (NGN)`);
 });

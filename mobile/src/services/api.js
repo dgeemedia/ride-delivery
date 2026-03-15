@@ -6,24 +6,20 @@ import { API_BASE_URL } from '../config/constants';
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor
+// Request interceptor — attach auth token
 api.interceptors.request.use(
   async (config) => {
     const token = await AsyncStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Response interceptor
+// Response interceptor — unwrap .data, handle 401
 api.interceptors.response.use(
   (response) => response.data,
   async (error) => {
@@ -35,59 +31,53 @@ api.interceptors.response.use(
   }
 );
 
-// Auth API
+// ── Auth ──────────────────────────────────────────────────────────────────────
 export const authAPI = {
-  register: (data) => api.post('/auth/register', data),
-  login: (data) => api.post('/auth/login', data),
-  getCurrentUser: () => api.get('/auth/me'),
-  logout: () => api.post('/auth/logout'),
+  register:       (data) => api.post('/auth/register', data),
+  login:          (data) => api.post('/auth/login', data),
+  getCurrentUser: ()     => api.get('/auth/me'),
+  logout:         ()     => api.post('/auth/logout'),
 };
 
-// Ride API
+// ── Ride ──────────────────────────────────────────────────────────────────────
 export const rideAPI = {
-  getEstimate:          (params) => api.get('/rides/estimate', { params }),
-  requestRide:          (data)   => api.post('/rides/request', data),
-  getActiveRide:        ()       => api.get('/rides/active'),
-  getRideHistory:       (params) => api.get('/rides/history', { params }),
-  acceptRide:           (id)     => api.put(`/rides/${id}/accept`),
-  startRide:            (id)     => api.put(`/rides/${id}/start`),
-  completeRide:         (id, data) => api.put(`/rides/${id}/complete`, data),
-  cancelRide:           (id, data) => api.put(`/rides/${id}/cancel`, data),
+  getEstimate:   (params)     => api.get('/rides/estimate', { params }),
+  requestRide:   (data)       => api.post('/rides/request', data),
+  getActiveRide: ()           => api.get('/rides/active'),
+  getRideHistory:(params)     => api.get('/rides/history', { params }),
+  getRideById:   (id)         => api.get(`/rides/${id}`),
 
-  // ── Nearby drivers + targeted request ─────────────────────────────────────
-  // GET /api/rides/nearby-drivers?pickupLat=&pickupLng=&radiusKm=
-  // Returns: { success, data: { drivers: [...], total } }
-  getNearbyDrivers: (params) => api.get('/rides/nearby-drivers', { params }),
+  // Driver actions
+  acceptRide:        (id)       => api.put(`/rides/${id}/accept`),
+  arrivedAtPickup:   (id)       => api.put(`/rides/${id}/arrived`),  // ← was missing
+  startRide:         (id)       => api.put(`/rides/${id}/start`),
+  completeRide:      (id, data) => api.put(`/rides/${id}/complete`, data),
+  cancelRide:        (id, data) => api.put(`/rides/${id}/cancel`, data),
 
-  // POST /api/rides/request-driver
-  // Body: { pickupAddress, pickupLat, pickupLng, dropoffAddress, dropoffLat,
-  //         dropoffLng, driverId, estimatedFare, paymentMethod, notes }
-  // Returns: { success, message, data: { ride } }
-  requestSpecificDriver: (data) => api.post('/rides/request-driver', data),
+  // Customer — find & book a specific driver
+  getNearbyDrivers:      (params) => api.get('/rides/nearby-drivers', { params }),
+  requestSpecificDriver: (data)   => api.post('/rides/request-driver', data),
 };
 
-// Delivery API
+// ── Delivery ──────────────────────────────────────────────────────────────────
 export const deliveryAPI = {
-  getEstimate:      (params) => api.get('/deliveries/estimate', { params }),
-  requestDelivery:  (data)   => api.post('/deliveries/request', data),
-  getActiveDelivery:()       => api.get('/deliveries/active'),
-  acceptDelivery:   (id)     => api.put(`/deliveries/${id}/accept`),
-  pickupDelivery:   (id)     => api.put(`/deliveries/${id}/pickup`),
-  completeDelivery:    (id, data) => api.put(`/deliveries/${id}/complete`, data),
-
-  // GET /api/deliveries/nearby-partners?pickupLat=&pickupLng=&radiusKm=
-  // Returns: { success, data: { partners: [...], total } }
-  getNearbyPartners: (params) => api.get('/deliveries/nearby-partners', { params }),
+  getEstimate:       (params)     => api.get('/deliveries/estimate', { params }),
+  requestDelivery:   (data)       => api.post('/deliveries/request', data),
+  getActiveDelivery: ()           => api.get('/deliveries/active'),
+  acceptDelivery:    (id)         => api.put(`/deliveries/${id}/accept`),
+  pickupDelivery:    (id)         => api.put(`/deliveries/${id}/pickup`),
+  completeDelivery:  (id, data)   => api.put(`/deliveries/${id}/complete`, data),
+  getNearbyPartners: (params)     => api.get('/deliveries/nearby-partners', { params }),
 };
 
-// User API
+// ── User ──────────────────────────────────────────────────────────────────────
 export const userAPI = {
-  getProfile:     ()     => api.get('/users/profile'),
-  updateProfile:  (data) => api.put('/users/profile', data),
-  getStats:       ()     => api.get('/users/stats'),
+  getProfile:    ()     => api.get('/users/profile'),
+  updateProfile: (data) => api.put('/users/profile', data),
+  getStats:      ()     => api.get('/users/stats'),
 };
 
-// Driver API
+// ── Driver ────────────────────────────────────────────────────────────────────
 export const driverAPI = {
   getProfile:        ()     => api.get('/drivers/profile'),
   updateProfile:     (data) => api.post('/drivers/profile', data),
@@ -96,7 +86,7 @@ export const driverAPI = {
   getNearbyRequests: ()     => api.get('/drivers/nearby-requests'),
 };
 
-// Partner API
+// ── Partner ───────────────────────────────────────────────────────────────────
 export const partnerAPI = {
   getProfile:        ()     => api.get('/partners/profile'),
   updateProfile:     (data) => api.post('/partners/profile', data),
@@ -105,7 +95,7 @@ export const partnerAPI = {
   getNearbyRequests: ()     => api.get('/partners/nearby-requests'),
 };
 
-// Notification API
+// ── Notifications ─────────────────────────────────────────────────────────────
 export const notificationAPI = {
   getNotifications: (params) => api.get('/notifications', { params }),
   getUnreadCount:   ()       => api.get('/notifications/count'),
@@ -115,7 +105,7 @@ export const notificationAPI = {
   clearAll:         ()       => api.delete('/notifications'),
 };
 
-// Wallet API
+// ── Wallet ────────────────────────────────────────────────────────────────────
 export const walletAPI = {
   getWallet:              ()       => api.get('/wallet'),
   getTransactions:        (params) => api.get('/wallet/transactions', { params }),

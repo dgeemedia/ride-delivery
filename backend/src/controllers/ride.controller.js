@@ -1,12 +1,10 @@
 // backend/src/controllers/ride.controller.js
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const { calculateDistance, calculateFare } = require('../utils/helpers');
 const notificationService = require('../services/notification.service');
 const { broadcastToDrivers, emitToUser } = require('../services/socket.service');
-
-const prisma = new PrismaClient();
 
 // Helper: get io instance
 const getIO = (req) => req.app.get('io');
