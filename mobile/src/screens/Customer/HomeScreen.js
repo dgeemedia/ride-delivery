@@ -3,17 +3,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   StatusBar, Dimensions, Animated, ActivityIndicator, Image,
-  ImageBackground,
+  ImageBackground, Platform,
 } from 'react-native';
 import { Ionicons }  from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth }   from '../../context/AuthContext';
 import { useTheme }  from '../../context/ThemeContext';
 import { userAPI }   from '../../services/api';
 
 const { width } = Dimensions.get('window');
-const H_PAD    = 24;   // horizontal padding each side
-const CARD_GAP = 12;   // gap between the two action cards
-const CARD_W   = (width - H_PAD * 2 - CARD_GAP) / 2;  // exact half, no overflow
+const H_PAD    = 24;
+const CARD_GAP = 12;
+const CARD_W   = (width - H_PAD * 2 - CARD_GAP) / 2;
 
 const RIDE_IMAGES = [
   'https://images.unsplash.com/photo-1619767886558-efdc259cde1a?w=700&q=80',
@@ -71,7 +72,7 @@ const WalletStrip = ({ balance, onTopUp, theme }) => (
     <View style={{ flex: 1, minWidth: 0 }}>
       <Text style={[wl.label, { color: theme.hint }]}>WALLET BALANCE</Text>
       <Text style={[wl.amount, { color: theme.foreground }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-        ₦{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+        {'\u20A6'}{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
       </Text>
     </View>
     <TouchableOpacity style={[wl.btn, { backgroundColor: theme.accent }]} onPress={onTopUp} activeOpacity={0.85}>
@@ -105,7 +106,7 @@ const sp = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ActionCard — explicit CARD_W, overflow hidden
+// ActionCard
 // ─────────────────────────────────────────────────────────────────────────────
 const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
   const scaleA = useRef(new Animated.Value(1)).current;
@@ -193,24 +194,24 @@ const ar = StyleSheet.create({
 // PromoBanner
 // ─────────────────────────────────────────────────────────────────────────────
 const PromoBanner = ({ theme, onPress }) => (
-  <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={pb.wrap}>
-    <ImageBackground source={{ uri: PROMO_IMAGE }} style={pb.bg} imageStyle={pb.bgStyle} resizeMode="cover">
-      <View style={pb.overlay} />
-      <View style={pb.content}>
+  <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={promo.wrap}>
+    <ImageBackground source={{ uri: PROMO_IMAGE }} style={promo.bg} imageStyle={promo.bgStyle} resizeMode="cover">
+      <View style={promo.overlay} />
+      <View style={promo.content}>
         <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
-          <Text style={pb.eyebrow}>LIMITED OFFER</Text>
-          <Text style={pb.title} numberOfLines={1}>First Ride Free</Text>
-          <Text style={pb.sub} numberOfLines={1}>Use code WELCOME at checkout</Text>
+          <Text style={promo.eyebrow}>LIMITED OFFER</Text>
+          <Text style={promo.title} numberOfLines={1}>First Ride Free</Text>
+          <Text style={promo.sub} numberOfLines={1}>Use code WELCOME at checkout</Text>
         </View>
-        <View style={[pb.btn, { backgroundColor: theme.accent }]}>
-          <Text style={pb.btnTxt}>Claim</Text>
+        <View style={[promo.btn, { backgroundColor: theme.accent }]}>
+          <Text style={promo.btnTxt}>Claim</Text>
           <Ionicons name="arrow-forward" size={13} color="#FFF" />
         </View>
       </View>
     </ImageBackground>
   </TouchableOpacity>
 );
-const pb = StyleSheet.create({
+const promo = StyleSheet.create({
   wrap:    { borderRadius: 18, overflow: 'hidden', marginBottom: 28, height: 110 },
   bg:      { width: '100%', height: '100%' },
   bgStyle: { borderRadius: 18 },
@@ -229,6 +230,7 @@ const pb = StyleSheet.create({
 export default function HomeScreen({ navigation }) {
   const { user }             = useAuth();
   const { theme, mode }      = useTheme();
+  const insets               = useSafeAreaInsets();
   const [stats,   setStats]  = useState(null);
   const [loading, setLoading]= useState(true);
 
@@ -254,12 +256,20 @@ export default function HomeScreen({ navigation }) {
   const hour  = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
+  // Dynamic safe-area padding
+  const paddingTop    = Platform.OS === 'ios' ? insets.top + 16 : insets.top + 32;
+  const paddingBottom = insets.bottom + 24;
+
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} overScrollMode="never">
+      <ScrollView
+        contentContainerStyle={[s.scroll, { paddingTop, paddingBottom }]}
+        showsVerticalScrollIndicator={false}
+        overScrollMode="never"
+      >
         <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
 
           {/* ── Header ── */}
@@ -302,7 +312,7 @@ export default function HomeScreen({ navigation }) {
             <View style={s.statsRow}>
               <StatPill icon="car-outline"  value={stats?.totalRides ?? 0}      label="Rides"    theme={theme} />
               <StatPill icon="cube-outline" value={stats?.totalDeliveries ?? 0} label="Packages" theme={theme} />
-              <StatPill icon="cash-outline" value={`₦${((stats?.totalSpent ?? 0) / 1000).toFixed(1)}k`} label="Spent" theme={theme} />
+              <StatPill icon="cash-outline" value={`${'\u20A6'}${((stats?.totalSpent ?? 0) / 1000).toFixed(1)}k`} label="Spent" theme={theme} />
             </View>
           )}
 
@@ -336,8 +346,8 @@ export default function HomeScreen({ navigation }) {
               <ActivityIndicator color={theme.accent} style={{ marginVertical: 20 }} />
             ) : (stats?.totalRides > 0 || stats?.totalDeliveries > 0) ? (
               <>
-                <ActivityRow icon="car-outline"  title="Ride to Victoria Island"  subtitle="Today · 2:30 PM · 12 min"        amount="₦1,200" status="COMPLETED" theme={theme} />
-                <ActivityRow icon="cube-outline" title="Package to Lekki Phase 1" subtitle="Yesterday · 10:15 AM · 3.2 km"   amount="₦800"   status="COMPLETED" theme={theme} last />
+                <ActivityRow icon="car-outline"  title="Ride to Victoria Island"  subtitle="Today · 2:30 PM · 12 min"        amount={`${'\u20A6'}1,200`} status="COMPLETED" theme={theme} />
+                <ActivityRow icon="cube-outline" title="Package to Lekki Phase 1" subtitle="Yesterday · 10:15 AM · 3.2 km"   amount={`${'\u20A6'}800`}   status="COMPLETED" theme={theme} last />
               </>
             ) : (
               <View style={s.emptyActivity}>
@@ -370,7 +380,8 @@ const s = StyleSheet.create({
     position: 'absolute', width: width * 1.3, height: width * 1.3,
     borderRadius: width * 0.65, top: -width * 0.75, alignSelf: 'center', opacity: 0.05,
   },
-  scroll: { paddingHorizontal: H_PAD, paddingBottom: 100, paddingTop: 60 },
+  // paddingTop & paddingBottom are injected dynamically via insets
+  scroll: { paddingHorizontal: H_PAD },
 
   header:                { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 },
   greet:                 { fontSize: 12, fontWeight: '600', marginBottom: 3 },
@@ -385,7 +396,6 @@ const s = StyleSheet.create({
   statsRow:     { flexDirection: 'row', gap: 10, marginBottom: 28 },
   sectionTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 14 },
 
-  // Pinned to exact content width — two fixed-width children + one gap = no overflow
   actionsRow: {
     flexDirection: 'row',
     gap: CARD_GAP,
