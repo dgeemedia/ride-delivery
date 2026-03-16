@@ -1,53 +1,77 @@
 // mobile/src/navigation/DriverNavigator.js
 import React from 'react';
-import { Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator }     from '@react-navigation/stack';
 import { Ionicons }                 from '@expo/vector-icons';
+import { useSafeAreaInsets }        from 'react-native-safe-area-context';
 import { useTheme }                 from '../context/ThemeContext';
 
-// ── Driver screens ────────────────────────────────────────────────────────────
+// ── Driver screens ─────────────────────────────────────────────────────────
 import DriverDashboardScreen from '../screens/Driver/DriverDashboardScreen';
-import EarningsScreen        from '../screens/Driver/EarningsScreen';
+import IncomingRideScreen    from '../screens/Driver/IncomingRideScreen';
 import ActiveRideScreen      from '../screens/Driver/ActiveRideScreen';
+import EarningsScreen        from '../screens/Driver/EarningsScreen';
 
-// ── Shared screens ────────────────────────────────────────────────────────────
+// ── Shared screens ─────────────────────────────────────────────────────────
 import ProfileScreen         from '../screens/Shared/ProfileScreen';
 import EditProfileScreen     from '../screens/Shared/EditProfileScreen';
 import NotificationsScreen   from '../screens/Shared/NotificationsScreen';
 import ChangePasswordScreen  from '../screens/Shared/ChangePasswordScreen';
+import SupportScreen         from '../screens/Shared/SupportScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// Driver role accent color — amber, matches DriverDashboardScreen
 const DA = '#FFB800';
 
-// ── Dashboard stack (includes ActiveRide so it covers full screen) ────────────
+// ── Dashboard stack ────────────────────────────────────────────────────────
+// IncomingRide is presented as a transparent modal over the dashboard.
+// ActiveRide covers the full screen once the driver accepts.
 const DashboardStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+  <Stack.Navigator
+    screenOptions={{ headerShown: false }}
+  >
+    {/* Base dashboard */}
     <Stack.Screen name="Dashboard"     component={DriverDashboardScreen} />
+
+    {/* Full-screen incoming request — slides up as a modal */}
+    <Stack.Screen
+      name="IncomingRide"
+      component={IncomingRideScreen}
+      options={{
+        presentation: 'transparentModal',
+        cardOverlayEnabled: true,
+        animationEnabled: false, // IncomingRideScreen handles its own slide animation
+      }}
+    />
+
+    {/* Active ride — replaces IncomingRide on accept */}
     <Stack.Screen name="ActiveRide"    component={ActiveRideScreen} />
+
+    {/* Other screens reachable from Dashboard */}
     <Stack.Screen name="Notifications" component={NotificationsScreen} />
-    {/* Placeholder screens — build these when needed */}
-    {/* <Stack.Screen name="DriverDocuments" component={DriverDocumentsScreen} /> */}
-    {/* <Stack.Screen name="DriverHistory"   component={DriverHistoryScreen} /> */}
+    <Stack.Screen name="Support"       component={SupportScreen} />
+    <Stack.Screen name="DriverDocuments" component={PlaceholderScreen} />
+    <Stack.Screen name="DriverHistory"   component={PlaceholderScreen} />
   </Stack.Navigator>
 );
 
-// ── Profile stack ─────────────────────────────────────────────────────────────
+// ── Profile stack ──────────────────────────────────────────────────────────
 const ProfileStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="ProfileHome"    component={ProfileScreen} />
     <Stack.Screen name="EditProfile"    component={EditProfileScreen} />
     <Stack.Screen name="Notifications"  component={NotificationsScreen} />
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-    {/* DriverEarnings reachable from ProfileScreen's "Earnings & Payouts" menu item */}
+    <Stack.Screen name="Support"        component={SupportScreen} />
     <Stack.Screen name="DriverEarnings" component={EarningsScreen} />
+    <Stack.Screen name="AppFeedback"    component={PlaceholderScreen} />
+    <Stack.Screen name="Terms"          component={PlaceholderScreen} />
   </Stack.Navigator>
 );
 
-// ── Tab navigator ─────────────────────────────────────────────────────────────
+// ── Tab navigator ──────────────────────────────────────────────────────────
 const DriverNavigator = () => {
   const { theme } = useTheme();
 
@@ -85,3 +109,33 @@ const DriverNavigator = () => {
 };
 
 export default DriverNavigator;
+
+// ── PlaceholderScreen ──────────────────────────────────────────────────────
+// Temporary stand-in for screens not yet built.
+function PlaceholderScreen({ navigation, route }) {
+  const { theme } = useTheme();
+  const insets    = useSafeAreaInsets();
+
+  return (
+    <View style={[ph.root, { backgroundColor: theme.background, paddingTop: insets.top + 14 }]}>
+      <TouchableOpacity
+        onPress={() => navigation.goBack()}
+        style={[ph.back, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+      >
+        <Ionicons name="arrow-back" size={20} color={theme.foreground} />
+      </TouchableOpacity>
+      <View style={ph.center}>
+        <Ionicons name="construct-outline" size={40} color={theme.hint} />
+        <Text style={[ph.title, { color: theme.foreground }]}>{route.name}</Text>
+        <Text style={[ph.sub, { color: theme.hint }]}>Coming soon</Text>
+      </View>
+    </View>
+  );
+}
+const ph = StyleSheet.create({
+  root:   { flex: 1 },
+  back:   { marginHorizontal: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, marginBottom: 80 },
+  title:  { fontSize: 18, fontWeight: '800' },
+  sub:    { fontSize: 13 },
+});
