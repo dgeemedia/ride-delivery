@@ -7,13 +7,10 @@ import { Ionicons }                 from '@expo/vector-icons';
 import { useSafeAreaInsets }        from 'react-native-safe-area-context';
 import { useTheme }                 from '../context/ThemeContext';
 
-// ── Driver screens ─────────────────────────────────────────────────────────
 import DriverDashboardScreen from '../screens/Driver/DriverDashboardScreen';
 import IncomingRideScreen    from '../screens/Driver/IncomingRideScreen';
 import ActiveRideScreen      from '../screens/Driver/ActiveRideScreen';
 import EarningsScreen        from '../screens/Driver/EarningsScreen';
-
-// ── Shared screens ─────────────────────────────────────────────────────────
 import ProfileScreen         from '../screens/Shared/ProfileScreen';
 import EditProfileScreen     from '../screens/Shared/EditProfileScreen';
 import NotificationsScreen   from '../screens/Shared/NotificationsScreen';
@@ -22,36 +19,30 @@ import SupportScreen         from '../screens/Shared/SupportScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
-
-const DA = '#FFB800';
+const DA    = '#FFB800';
 
 // ── Dashboard stack ────────────────────────────────────────────────────────
-// IncomingRide is presented as a transparent modal over the dashboard.
-// ActiveRide covers the full screen once the driver accepts.
 const DashboardStack = () => (
-  <Stack.Navigator
-    screenOptions={{ headerShown: false }}
-  >
-    {/* Base dashboard */}
-    <Stack.Screen name="Dashboard"     component={DriverDashboardScreen} />
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="Dashboard"  component={DriverDashboardScreen} />
 
-    {/* Full-screen incoming request — slides up as a modal */}
+    {/* IncomingRide as transparent modal — driver sees the dashboard behind it */}
     <Stack.Screen
       name="IncomingRide"
       component={IncomingRideScreen}
       options={{
-        presentation: 'transparentModal',
+        presentation:       'transparentModal',
         cardOverlayEnabled: true,
-        animationEnabled: false, // IncomingRideScreen handles its own slide animation
+        animationEnabled:   false, // IncomingRideScreen handles its own animation
+        // Prevent Android back button from dismissing without action
+        gestureEnabled:     false,
       }}
     />
 
-    {/* Active ride — replaces IncomingRide on accept */}
-    <Stack.Screen name="ActiveRide"    component={ActiveRideScreen} />
-
-    {/* Other screens reachable from Dashboard */}
-    <Stack.Screen name="Notifications" component={NotificationsScreen} />
-    <Stack.Screen name="Support"       component={SupportScreen} />
+    {/* ActiveRide replaces IncomingRide — no back to request screen */}
+    <Stack.Screen name="ActiveRide"      component={ActiveRideScreen} />
+    <Stack.Screen name="Notifications"   component={NotificationsScreen} />
+    <Stack.Screen name="Support"         component={SupportScreen} />
     <Stack.Screen name="DriverDocuments" component={PlaceholderScreen} />
     <Stack.Screen name="DriverHistory"   component={PlaceholderScreen} />
   </Stack.Navigator>
@@ -110,12 +101,10 @@ const DriverNavigator = () => {
 
 export default DriverNavigator;
 
-// ── PlaceholderScreen ──────────────────────────────────────────────────────
-// Temporary stand-in for screens not yet built.
+// ── Placeholder ────────────────────────────────────────────────────────────
 function PlaceholderScreen({ navigation, route }) {
   const { theme } = useTheme();
   const insets    = useSafeAreaInsets();
-
   return (
     <View style={[ph.root, { backgroundColor: theme.background, paddingTop: insets.top + 14 }]}>
       <TouchableOpacity
@@ -127,7 +116,7 @@ function PlaceholderScreen({ navigation, route }) {
       <View style={ph.center}>
         <Ionicons name="construct-outline" size={40} color={theme.hint} />
         <Text style={[ph.title, { color: theme.foreground }]}>{route.name}</Text>
-        <Text style={[ph.sub, { color: theme.hint }]}>Coming soon</Text>
+        <Text style={[ph.sub,   { color: theme.hint }]}>Coming soon</Text>
       </View>
     </View>
   );

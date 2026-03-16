@@ -3,13 +3,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   StatusBar, Dimensions, Animated, ActivityIndicator, Image,
-  ImageBackground, Platform,
+  ImageBackground, Platform, Alert,
 } from 'react-native';
-import { Ionicons }  from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth }   from '../../context/AuthContext';
-import { useTheme }  from '../../context/ThemeContext';
-import { userAPI }   from '../../services/api';
+import { useAuth }           from '../../context/AuthContext';
+import { useTheme }          from '../../context/ThemeContext';
+import { userAPI, rideAPI }  from '../../services/api';
+import ActiveRideBanner      from '../../components/ActiveRideBanner';
 
 const { width } = Dimensions.get('window');
 const H_PAD    = 24;
@@ -34,9 +35,7 @@ const DELIVERY_IMAGES = [
 
 const PROMO_IMAGE = 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=900&q=80';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CrossfadeImageCycler
-// ─────────────────────────────────────────────────────────────────────────────
+// ── CrossfadeImageCycler ───────────────────────────────────────────────────────
 const CrossfadeImageCycler = ({ images, intervalMs = 4500, transitionMs = 2200 }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [nextIdx,    setNextIdx]    = useState(1);
@@ -44,7 +43,9 @@ const CrossfadeImageCycler = ({ images, intervalMs = 4500, transitionMs = 2200 }
 
   useEffect(() => {
     const timer = setInterval(() => {
-      Animated.timing(nextOpacity, { toValue: 1, duration: transitionMs, useNativeDriver: true }).start(() => {
+      Animated.timing(nextOpacity, {
+        toValue: 1, duration: transitionMs, useNativeDriver: true,
+      }).start(() => {
         setCurrentIdx(prev => {
           const newCurrent = (prev + 1) % images.length;
           setNextIdx((newCurrent + 1) % images.length);
@@ -64,9 +65,7 @@ const CrossfadeImageCycler = ({ images, intervalMs = 4500, transitionMs = 2200 }
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WalletStrip
-// ─────────────────────────────────────────────────────────────────────────────
+// ── WalletStrip ────────────────────────────────────────────────────────────────
 const WalletStrip = ({ balance, onTopUp, theme }) => (
   <View style={[wl.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <View style={{ flex: 1, minWidth: 0 }}>
@@ -89,9 +88,7 @@ const wl = StyleSheet.create({
   btnTxt: { fontSize: 13, fontWeight: '700', color: '#FFF' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// StatPill
-// ─────────────────────────────────────────────────────────────────────────────
+// ── StatPill ───────────────────────────────────────────────────────────────────
 const StatPill = ({ icon, value, label, theme }) => (
   <View style={[sp.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <Ionicons name={icon} size={16} color={theme.accent} />
@@ -105,9 +102,7 @@ const sp = StyleSheet.create({
   lbl:  { fontSize: 9, fontWeight: '600' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ActionCard
-// ─────────────────────────────────────────────────────────────────────────────
+// ── ActionCard ─────────────────────────────────────────────────────────────────
 const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
   const scaleA = useRef(new Animated.Value(1)).current;
 
@@ -131,7 +126,7 @@ const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
         )}
         <View style={ac.content}>
           <Text style={ac.title} numberOfLines={1}>{title}</Text>
-          <Text style={ac.sub} numberOfLines={2}>{subtitle}</Text>
+          <Text style={ac.sub}   numberOfLines={2}>{subtitle}</Text>
           <View style={[ac.arrowBtn, { backgroundColor: theme.accent }]}>
             <Ionicons name="arrow-forward" size={13} color="#FFF" />
           </View>
@@ -151,9 +146,7 @@ const ac = StyleSheet.create({
   arrowBtn:{ width: 24, height: 24, borderRadius: 7, justifyContent: 'center', alignItems: 'center' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ActivityRow
-// ─────────────────────────────────────────────────────────────────────────────
+// ── ActivityRow ────────────────────────────────────────────────────────────────
 const ACTIVITY_STATUS_META = {
   COMPLETED:   { color: '#5DAA72', label: 'Completed' },
   CANCELLED:   { color: '#E05555', label: 'Cancelled' },
@@ -169,7 +162,7 @@ const ActivityRow = ({ icon, title, subtitle, amount, status, theme, last }) => 
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={[ar.title, { color: theme.foreground }]} numberOfLines={1}>{title}</Text>
-        <Text style={[ar.sub, { color: theme.hint }]} numberOfLines={1}>{subtitle}</Text>
+        <Text style={[ar.sub,   { color: theme.hint }]}       numberOfLines={1}>{subtitle}</Text>
       </View>
       <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
         <Text style={[ar.amount, { color: meta.color }]}>{amount}</Text>
@@ -190,9 +183,7 @@ const ar = StyleSheet.create({
   statusTxt:  { fontSize: 9, fontWeight: '700', letterSpacing: 0.4 },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PromoBanner
-// ─────────────────────────────────────────────────────────────────────────────
+// ── PromoBanner ────────────────────────────────────────────────────────────────
 const PromoBanner = ({ theme, onPress }) => (
   <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={promo.wrap}>
     <ImageBackground source={{ uri: PROMO_IMAGE }} style={promo.bg} imageStyle={promo.bgStyle} resizeMode="cover">
@@ -201,7 +192,7 @@ const PromoBanner = ({ theme, onPress }) => (
         <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
           <Text style={promo.eyebrow}>LIMITED OFFER</Text>
           <Text style={promo.title} numberOfLines={1}>First Ride Free</Text>
-          <Text style={promo.sub} numberOfLines={1}>Use code WELCOME at checkout</Text>
+          <Text style={promo.sub}   numberOfLines={1}>Use code WELCOME at checkout</Text>
         </View>
         <View style={[promo.btn, { backgroundColor: theme.accent }]}>
           <Text style={promo.btnTxt}>Claim</Text>
@@ -224,25 +215,47 @@ const promo = StyleSheet.create({
   btnTxt:  { fontSize: 13, fontWeight: '700', color: '#FFF' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN
-// ─────────────────────────────────────────────────────────────────────────────
+// ── MAIN ───────────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
-  const { user }             = useAuth();
-  const { theme, mode }      = useTheme();
-  const insets               = useSafeAreaInsets();
-  const [stats,   setStats]  = useState(null);
-  const [loading, setLoading]= useState(true);
+  const { user }        = useAuth();
+  const { theme, mode } = useTheme();
+  // FIX: correct safe area insets — paddingTop uses insets.top, not Platform hack
+  const insets          = useSafeAreaInsets();
+
+  const [stats,      setStats]      = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [activeRide, setActiveRide] = useState(null);
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(20)).current;
 
-  useEffect(() => { fetchStats(); }, []);
+  useEffect(() => { fetchAll(); }, []);
 
-  const fetchStats = async () => {
+  // Refresh active ride when returning from booking screen
+  useEffect(() => {
+    const unsub = navigation.addListener('focus', fetchAll);
+    return unsub;
+  }, [navigation]);
+
+  const fetchAll = async () => {
     try {
-      const res = await userAPI.getStats();
-      setStats(res.data ?? res);
+      const [statsRes, rideRes] = await Promise.allSettled([
+        userAPI.getStats(),
+        rideAPI.getActiveRide(),
+      ]);
+
+      if (statsRes.status === 'fulfilled') {
+        setStats(statsRes.value?.data ?? statsRes.value);
+      }
+      if (rideRes.status === 'fulfilled') {
+        const ride = rideRes.value?.data?.ride ?? rideRes.value?.ride ?? null;
+        // Show banner for any non-completed, non-cancelled ride
+        setActiveRide(
+          ride && ['REQUESTED','ACCEPTED','ARRIVED','IN_PROGRESS'].includes(ride.status)
+            ? ride
+            : null
+        );
+      }
     } catch {}
     finally {
       setLoading(false);
@@ -253,16 +266,49 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+  // ── Cancel a REQUESTED ride (no driver yet) ─────────────────────────────────
+  const handleCancelRide = () => {
+    if (!activeRide) return;
+    Alert.alert(
+      'Cancel Ride?',
+      'Your ride request will be cancelled.',
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Cancel Ride',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await rideAPI.cancelRide(activeRide.id, { reason: 'Customer cancelled from home screen' });
+              setActiveRide(null);
+            } catch (err) {
+              Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  // ── Navigate to ride tracking ───────────────────────────────────────────────
+  const handleResumeRide = () => {
+    navigation.navigate('RideTracking', { rideId: activeRide?.id });
+  };
+
   const hour  = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  // Dynamic safe-area padding
-  const paddingTop    = Platform.OS === 'ios' ? insets.top + 16 : insets.top + 32;
+  // Safe-area top padding: insets.top (notch/status bar) + breathing room
+  // Safe-area bottom padding: insets.bottom (home indicator on iPhone) + extra
+  const paddingTop    = insets.top    + 16;
   const paddingBottom = insets.bottom + 24;
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
       <ScrollView
@@ -276,7 +322,7 @@ export default function HomeScreen({ navigation }) {
           <View style={s.header}>
             <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
               <Text style={[s.greet, { color: theme.hint }]}>{greet}</Text>
-              <Text style={[s.name, { color: theme.foreground }]} numberOfLines={1}>
+              <Text style={[s.name,  { color: theme.foreground }]} numberOfLines={1}>
                 {user?.firstName} {user?.lastName}
               </Text>
             </View>
@@ -288,7 +334,10 @@ export default function HomeScreen({ navigation }) {
                 <Ionicons name="notifications-outline" size={20} color={theme.accent} />
                 <View style={[s.notifDot, { borderColor: theme.background }]} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('ProfileTab')} activeOpacity={0.85}>
+              <TouchableOpacity
+                onPress={() => navigation.getParent()?.navigate('ProfileTab')}
+                activeOpacity={0.85}
+              >
                 {user?.profileImage ? (
                   <Image source={{ uri: user.profileImage }} style={[s.profileAvatar, { borderColor: theme.accent + '40' }]} />
                 ) : (
@@ -302,17 +351,40 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
+          {/* ── Active ride banner ─────────────────────────────────────────────
+              Shows when the customer has an ongoing ride.
+              REQUESTED: can cancel (driver not yet assigned)
+              ACCEPTED/ARRIVED/IN_PROGRESS: tap to go to tracking
+          ── */}
+          {activeRide && (
+            <ActiveRideBanner
+              ride={activeRide}
+              role="CUSTOMER"
+              theme={theme}
+              onPress={handleResumeRide}
+              onCancel={activeRide.status === 'REQUESTED' ? handleCancelRide : undefined}
+            />
+          )}
+
           {/* ── Wallet ── */}
-          <WalletStrip balance={stats?.walletBalance} onTopUp={() => navigation.navigate('Wallet')} theme={theme} />
+          <WalletStrip
+            balance={stats?.walletBalance}
+            onTopUp={() => navigation.navigate('Wallet')}
+            theme={theme}
+          />
 
           {/* ── Stats ── */}
           {loading ? (
             <ActivityIndicator color={theme.accent} style={{ marginBottom: 24 }} />
           ) : (
             <View style={s.statsRow}>
-              <StatPill icon="car-outline"  value={stats?.totalRides ?? 0}      label="Rides"    theme={theme} />
+              <StatPill icon="car-outline"  value={stats?.totalRides      ?? 0} label="Rides"    theme={theme} />
               <StatPill icon="cube-outline" value={stats?.totalDeliveries ?? 0} label="Packages" theme={theme} />
-              <StatPill icon="cash-outline" value={`${'\u20A6'}${((stats?.totalSpent ?? 0) / 1000).toFixed(1)}k`} label="Spent" theme={theme} />
+              <StatPill icon="cash-outline"
+                value={`${'\u20A6'}${((stats?.totalSpent ?? 0) / 1000).toFixed(1)}k`}
+                label="Spent"
+                theme={theme}
+              />
             </View>
           )}
 
@@ -346,8 +418,16 @@ export default function HomeScreen({ navigation }) {
               <ActivityIndicator color={theme.accent} style={{ marginVertical: 20 }} />
             ) : (stats?.totalRides > 0 || stats?.totalDeliveries > 0) ? (
               <>
-                <ActivityRow icon="car-outline"  title="Ride to Victoria Island"  subtitle="Today · 2:30 PM · 12 min"        amount={`${'\u20A6'}1,200`} status="COMPLETED" theme={theme} />
-                <ActivityRow icon="cube-outline" title="Package to Lekki Phase 1" subtitle="Yesterday · 10:15 AM · 3.2 km"   amount={`${'\u20A6'}800`}   status="COMPLETED" theme={theme} last />
+                <ActivityRow
+                  icon="car-outline"  title="Ride to Victoria Island"
+                  subtitle="Today · 2:30 PM · 12 min"
+                  amount={`${'\u20A6'}1,200`} status="COMPLETED" theme={theme}
+                />
+                <ActivityRow
+                  icon="cube-outline" title="Package to Lekki Phase 1"
+                  subtitle="Yesterday · 10:15 AM · 3.2 km"
+                  amount={`${'\u20A6'}800`} status="COMPLETED" theme={theme} last
+                />
               </>
             ) : (
               <View style={s.emptyActivity}>
@@ -355,7 +435,9 @@ export default function HomeScreen({ navigation }) {
                   <Ionicons name="map-outline" size={28} color={theme.accent} />
                 </View>
                 <Text style={[s.emptyTitle, { color: theme.foreground }]}>No trips yet</Text>
-                <Text style={[s.emptySub, { color: theme.hint }]}>Book your first ride or send a package to get started</Text>
+                <Text style={[s.emptySub,   { color: theme.hint }]}>
+                  Book your first ride or send a package to get started
+                </Text>
                 <TouchableOpacity
                   style={[s.emptyBtn, { borderColor: theme.accent + '40', backgroundColor: theme.accent + '10' }]}
                   onPress={() => navigation.navigate('RequestRide')}
@@ -380,7 +462,6 @@ const s = StyleSheet.create({
     position: 'absolute', width: width * 1.3, height: width * 1.3,
     borderRadius: width * 0.65, top: -width * 0.75, alignSelf: 'center', opacity: 0.05,
   },
-  // paddingTop & paddingBottom are injected dynamically via insets
   scroll: { paddingHorizontal: H_PAD },
 
   header:                { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 },
@@ -397,8 +478,7 @@ const s = StyleSheet.create({
   sectionTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 14 },
 
   actionsRow: {
-    flexDirection: 'row',
-    gap: CARD_GAP,
+    flexDirection: 'row', gap: CARD_GAP,
     width: width - H_PAD * 2,
     marginBottom: 20,
   },

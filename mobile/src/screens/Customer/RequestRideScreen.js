@@ -10,27 +10,16 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../../context/ThemeContext';
-import { rideAPI } from '../../services/api';
-import socketService from '../../services/socket';
+import { useTheme }          from '../../context/ThemeContext';
+import { rideAPI }           from '../../services/api';
+import socketService         from '../../services/socket';
 
 const { width, height } = Dimensions.get('window');
 
-// ─────────────────────────────────────────────────────────────────────────────
-// NO hardcoded coordinates. NO mock drivers. Real GPS only.
-// ─────────────────────────────────────────────────────────────────────────────
-
-const calcFare = (distanceKm) => Math.max(300, 500 + distanceKm * 120);
-
-const haversineKm = (lat1, lng1, lat2, lng2) => {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
+const calcFare     = (km) => Math.max(300, 500 + km * 120);
+const haversineKm  = (lat1, lng1, lat2, lng2) => {
+  const R = 6371, dLat = ((lat2 - lat1) * Math.PI) / 180, dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
@@ -38,18 +27,13 @@ const DARK_MAP_STYLE = [
   { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a1a' }] },
   { elementType: 'labels.text.fill',   stylers: [{ color: '#746855' }] },
-  { featureType: 'road',               elementType: 'geometry',           stylers: [{ color: '#2b2b2b' }] },
-  { featureType: 'road',               elementType: 'geometry.stroke',    stylers: [{ color: '#212121' }] },
-  { featureType: 'road.highway',       elementType: 'geometry',           stylers: [{ color: '#2c2c2c' }] },
-  { featureType: 'road.highway',       elementType: 'geometry.stroke',    stylers: [{ color: '#1f2835' }] },
-  { featureType: 'road.highway',       elementType: 'labels.text.fill',   stylers: [{ color: '#C9A96E' }] },
-  { featureType: 'water',              elementType: 'geometry',           stylers: [{ color: '#0d1b2a' }] },
-  { featureType: 'water',              elementType: 'labels.text.fill',   stylers: [{ color: '#515c6d' }] },
-  { featureType: 'poi',                elementType: 'labels',             stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit',            elementType: 'labels',             stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative',     elementType: 'geometry',           stylers: [{ color: '#757575' }] },
-  { featureType: 'administrative.country', elementType: 'labels.text.fill', stylers: [{ color: '#9e9e9e' }] },
-  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#bdbdbd' }] },
+  { featureType: 'road',               elementType: 'geometry',         stylers: [{ color: '#2b2b2b' }] },
+  { featureType: 'road',               elementType: 'geometry.stroke',  stylers: [{ color: '#212121' }] },
+  { featureType: 'road.highway',       elementType: 'geometry',         stylers: [{ color: '#2c2c2c' }] },
+  { featureType: 'road.highway',       elementType: 'labels.text.fill', stylers: [{ color: '#C9A96E' }] },
+  { featureType: 'water',              elementType: 'geometry',         stylers: [{ color: '#0d1b2a' }] },
+  { featureType: 'poi',                elementType: 'labels',           stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit',            elementType: 'labels',           stylers: [{ visibility: 'off' }] },
 ];
 
 // ── DriverPin ──────────────────────────────────────────────────────────────────
@@ -103,7 +87,7 @@ const DriverCard = ({ driver, selected, onSelect, accentColor, theme }) => (
         <Text style={[dc.name, { color: theme.foreground }]} numberOfLines={1}>
           {driver.firstName} {driver.lastName}
         </Text>
-        <View style={[dc.verifiedBadge, { backgroundColor: '#FFB800' }]}>
+        <View style={dc.verifiedBadge}>
           <Ionicons name="shield-checkmark" size={9} color="#080C18" />
           <Text style={dc.verifiedTxt}>VERIFIED</Text>
         </View>
@@ -194,6 +178,61 @@ const QUICK_DESTINATIONS = [
   { label: 'Ajah',            icon: 'cart-outline',     lat: 6.4698, lng: 3.5827 },
 ];
 
+// ── WaitingSheet — shown after confirmRide succeeds ────────────────────────────
+const WaitingSheet = ({ accentColor, theme, driverName, onCancel, rideAccepted }) => {
+  const dotA = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    if (rideAccepted) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(dotA, { toValue: 1,   duration: 600, useNativeDriver: true }),
+      Animated.timing(dotA, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [rideAccepted]);
+
+  if (rideAccepted) {
+    return (
+      <View style={wt.wrap}>
+        <View style={[wt.iconWrap, { backgroundColor: '#5DAA72' + '18' }]}>
+          <Ionicons name="checkmark-circle" size={36} color="#5DAA72" />
+        </View>
+        <Text style={[wt.title, { color: theme.foreground }]}>Driver Accepted!</Text>
+        <Text style={[wt.sub, { color: theme.hint }]}>{driverName} is on the way</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={wt.wrap}>
+      <View style={[wt.iconWrap, { backgroundColor: accentColor + '18' }]}>
+        <Animated.View style={{ opacity: dotA }}>
+          <Ionicons name="car" size={32} color={accentColor} />
+        </Animated.View>
+      </View>
+      <Text style={[wt.title, { color: theme.foreground }]}>Request Sent!</Text>
+      <Text style={[wt.sub, { color: theme.hint }]}>
+        Waiting for {driverName} to accept...
+      </Text>
+      <TouchableOpacity
+        style={[wt.cancelBtn, { borderColor: theme.border }]}
+        onPress={onCancel}
+        activeOpacity={0.8}
+      >
+        <Text style={[wt.cancelTxt, { color: theme.hint }]}>Cancel Request</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+const wt = StyleSheet.create({
+  wrap:      { alignItems: 'center', paddingVertical: 24 },
+  iconWrap:  { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  title:     { fontSize: 20, fontWeight: '900', marginBottom: 6, letterSpacing: -0.3 },
+  sub:       { fontSize: 14, textAlign: 'center', marginBottom: 24 },
+  cancelBtn: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 24, paddingVertical: 10 },
+  cancelTxt: { fontSize: 14, fontWeight: '600' },
+});
+
 // ── MAIN ───────────────────────────────────────────────────────────────────────
 export default function RequestRideScreen({ navigation }) {
   const { theme }   = useTheme();
@@ -217,12 +256,15 @@ export default function RequestRideScreen({ navigation }) {
   const [fareEstimate, setFareEstimate]  = useState(null);
   const [etaMinutes,   setEtaMinutes]   = useState(null);
 
-  const [step,       setStep]       = useState(1);
-  const [requesting, setRequesting] = useState(false);
+  const [step,          setStep]          = useState(1);
+  const [requesting,    setRequesting]    = useState(false);
+  // step 4 = waiting for driver to accept
+  const [pendingRideId, setPendingRideId] = useState(null);
+  const [rideAccepted,  setRideAccepted]  = useState(false);
 
   const fadeA = useRef(new Animated.Value(1)).current;
 
-  // ── Real GPS on mount ───────────────────────────────────────────────────────
+  // ── GPS on mount ───────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -237,18 +279,11 @@ export default function RequestRideScreen({ navigation }) {
         setPickupCoords(coords);
         console.log('[RequestRide] Customer GPS:', coords.lat, coords.lng);
 
-        const [place] = await Location.reverseGeocodeAsync({
-          latitude: coords.lat, longitude: coords.lng,
-        }).catch(() => []);
-
+        const [place] = await Location.reverseGeocodeAsync({ latitude: coords.lat, longitude: coords.lng }).catch(() => []);
         if (place) {
           const name = [place.name, place.street, place.district].filter(Boolean).join(', ');
-          const coords_str = `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
-          setPickupAddress(
-            name
-              ? `${name} (${coords_str})`
-              : coords_str
-          );
+          const cs = `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+          setPickupAddress(name ? `${name} (${cs})` : cs);
         } else {
           setPickupAddress(`${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`);
         }
@@ -257,10 +292,43 @@ export default function RequestRideScreen({ navigation }) {
         console.warn('[RequestRide] GPS error:', err.message);
       }
     })();
-    socketService.connect?.();
+
+    socketService.connect().catch(() => {});
   }, []);
 
-  // ── Find drivers ────────────────────────────────────────────────────────────
+  // ── Socket: listen for ride:status:update and ride:cancelled ──────────────
+  // This tells the customer when the driver has accepted.
+  useEffect(() => {
+    const handleStatus = (data) => {
+      console.log('[RequestRide] ride:status:update', data);
+      if (data.rideId === pendingRideId && data.status === 'ACCEPTED') {
+        setRideAccepted(true);
+        // Give the user a moment to see the "Driver Accepted!" message,
+        // then navigate to the tracking screen
+        setTimeout(() => {
+          navigation.replace('RideTracking', { rideId: data.rideId });
+        }, 1800);
+      }
+    };
+    const handleCancelled = (data) => {
+      console.log('[RequestRide] ride:cancelled', data);
+      if (data.rideId === pendingRideId) {
+        setPendingRideId(null);
+        setRideAccepted(false);
+        setStep(2);
+        Alert.alert('Request Cancelled', 'The driver cancelled this request. Please choose another driver.');
+      }
+    };
+
+    socketService.on('ride:status:update', handleStatus);
+    socketService.on('ride:cancelled',     handleCancelled);
+    return () => {
+      socketService.off('ride:status:update', handleStatus);
+      socketService.off('ride:cancelled',     handleCancelled);
+    };
+  }, [pendingRideId, navigation]);
+
+  // ── Find drivers ───────────────────────────────────────────────────────────
   const proceedToMap = useCallback(async () => {
     if (!pickupAddress || !dropoffAddress) {
       Alert.alert('Missing locations', 'Please enter both pickup and drop-off locations.');
@@ -286,28 +354,17 @@ export default function RequestRideScreen({ navigation }) {
     setFareEstimate(calcFare(km));
     setEtaMinutes(Math.ceil(km / 0.5));
 
-    console.log('[RequestRide] Pickup coords:', pCoords.lat, pCoords.lng);
-    console.log('[RequestRide] Dropoff coords:', dCoords.lat, dCoords.lng);
-
     setLoadingDrivers(true);
     try {
-      const res  = await rideAPI.getNearbyDrivers({
-        pickupLat: pCoords.lat,
-        pickupLng: pCoords.lng,
-        radiusKm:  50,  // wider radius to account for GPS variance during testing
-      });
+      const res  = await rideAPI.getNearbyDrivers({ pickupLat: pCoords.lat, pickupLng: pCoords.lng, radiusKm: 50 });
       const list = res?.data?.drivers ?? res?.drivers ?? [];
 
-      // ── Diagnostic: log every driver returned by the API ──────────────────
       console.log('[RequestRide] API returned', list.length, 'drivers:');
-      list.forEach((d, i) => console.log(`  [${i}] id=${d.driverId} name=${d.firstName} ${d.lastName} lat=${d.currentLat} lng=${d.currentLng}`));
+      list.forEach((d, i) =>
+        console.log(`  [${i}] id=${d.driverId} name=${d.firstName} ${d.lastName} lat=${d.currentLat} lng=${d.currentLng}`)
+      );
 
-      // ── Safety check: reject any mock/fake driver IDs ─────────────────────
       const realDrivers = list.filter(d => !String(d.driverId).startsWith('mock-'));
-      if (realDrivers.length < list.length) {
-        console.warn('[RequestRide] Filtered out', list.length - realDrivers.length, 'mock driver(s)');
-      }
-
       setDrivers(realDrivers);
     } catch (err) {
       console.error('[RequestRide] getNearbyDrivers error:', err?.response?.data ?? err.message);
@@ -330,21 +387,18 @@ export default function RequestRideScreen({ navigation }) {
     }, 500);
   }, [pickupAddress, dropoffAddress, pickupCoords, dropoffCoords]);
 
-  // ── Confirm ride ────────────────────────────────────────────────────────────
+  // ── Confirm ride ───────────────────────────────────────────────────────────
   const confirmRide = async () => {
     if (!selectedDriver) { Alert.alert('Select a driver', 'Please choose a driver.'); return; }
-
-    // Final guard — should never happen after the mock filter above
     if (String(selectedDriver.driverId).startsWith('mock-')) {
-      Alert.alert('Error', 'Selected driver is not a real driver. Please retry to find real drivers.');
+      Alert.alert('Error', 'Invalid driver. Please retry.');
       return;
     }
 
     console.log('[RequestRide] Booking driver:', selectedDriver.driverId, selectedDriver.firstName);
-
     setRequesting(true);
     try {
-      await rideAPI.requestSpecificDriver({
+      const res = await rideAPI.requestSpecificDriver({
         pickupAddress,
         pickupLat:     pickupCoords.lat,
         pickupLng:     pickupCoords.lng,
@@ -355,8 +409,21 @@ export default function RequestRideScreen({ navigation }) {
         estimatedFare: fareEstimate,
         paymentMethod: 'CASH',
       });
-      if (navigation.replace) navigation.replace('RideTracking');
-      else navigation.goBack();
+
+      // ── FIX: store rideId so we can match socket events ──────────────────
+      const rideId = res?.data?.ride?.id ?? res?.ride?.id;
+      console.log('[RequestRide] Request sent, rideId:', rideId);
+      setPendingRideId(rideId);
+
+      // Join the ride room so we receive ride:status:update
+      if (rideId) socketService.joinRide(rideId);
+
+      // Move to waiting step — do NOT navigate away yet
+      Animated.timing(fadeA, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
+        setStep(4);
+        Animated.timing(fadeA, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+      });
+
     } catch (err) {
       Alert.alert('Request failed', err?.response?.data?.message ?? 'Could not book the ride.');
     } finally {
@@ -364,12 +431,26 @@ export default function RequestRideScreen({ navigation }) {
     }
   };
 
+  // ── Cancel pending request ─────────────────────────────────────────────────
+  const cancelPendingRide = async () => {
+    if (!pendingRideId) { navigation.goBack(); return; }
+    try {
+      await rideAPI.cancelRide(pendingRideId, { reason: 'Customer cancelled before acceptance' });
+      socketService.leaveRide(pendingRideId);
+    } catch {}
+    setPendingRideId(null);
+    setRideAccepted(false);
+    setStep(2);
+  };
+
   const handleSelectDriver = (driver) => {
     setSelectedDriver(driver);
-    mapRef.current?.animateToRegion({
-      latitude: driver.currentLat, longitude: driver.currentLng,
-      latitudeDelta: 0.015, longitudeDelta: 0.015,
-    }, 600);
+    if (driver.currentLat && driver.currentLng) {
+      mapRef.current?.animateToRegion({
+        latitude: driver.currentLat, longitude: driver.currentLng,
+        latitudeDelta: 0.015, longitudeDelta: 0.015,
+      }, 600);
+    }
   };
 
   const mapRegion = myLocation
@@ -424,14 +505,18 @@ export default function RequestRideScreen({ navigation }) {
 
       <TouchableOpacity
         style={[s.backBtn, { top: backBtnTop, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
-        onPress={() => step > 1 ? setStep(prev => prev - 1) : navigation.goBack()}
+        onPress={() => {
+          if (step === 4) { cancelPendingRide(); }
+          else if (step > 1) { setStep(prev => prev - 1); }
+          else { navigation.goBack(); }
+        }}
         activeOpacity={0.85}
       >
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
       <Animated.View style={[s.sheet, { backgroundColor: theme.background, borderColor: theme.border, opacity: fadeA, paddingBottom: sheetPadBottom }]}>
-        <StepDots step={step} accentColor={accentColor} theme={theme} />
+        <StepDots step={Math.min(step, 3)} accentColor={accentColor} theme={theme} />
 
         {/* ── STEP 1 ── */}
         {step === 1 && (
@@ -468,9 +553,9 @@ export default function RequestRideScreen({ navigation }) {
               {QUICK_DESTINATIONS.map((d) => (
                 <TouchableOpacity key={d.label}
                   style={[s.quickChip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-                  onPress={() => { 
-                    setDropoffAddress(`${d.label} (${d.lat.toFixed(4)}, ${d.lng.toFixed(4)})`); 
-                    setDropoffCoords({ lat: d.lat, lng: d.lng }); 
+                  onPress={() => {
+                    setDropoffAddress(`${d.label} (${d.lat.toFixed(4)}, ${d.lng.toFixed(4)})`);
+                    setDropoffCoords({ lat: d.lat, lng: d.lng });
                   }}
                   activeOpacity={0.8}
                 >
@@ -547,7 +632,7 @@ export default function RequestRideScreen({ navigation }) {
           </View>
         )}
 
-        {/* ── STEP 3 ── */}
+        {/* ── STEP 3: Confirm ── */}
         {step === 3 && selectedDriver && (
           <View>
             <Text style={[s.sheetTitle, { color: theme.foreground }]}>Confirm Ride</Text>
@@ -622,6 +707,17 @@ export default function RequestRideScreen({ navigation }) {
               <Text style={[s.secondaryBtnTxt, { color: theme.hint }]}>Change Driver</Text>
             </TouchableOpacity>
           </View>
+        )}
+
+        {/* ── STEP 4: Waiting for driver acceptance ── */}
+        {step === 4 && (
+          <WaitingSheet
+            accentColor={accentColor}
+            theme={theme}
+            driverName={selectedDriver?.firstName ?? 'the driver'}
+            onCancel={cancelPendingRide}
+            rideAccepted={rideAccepted}
+          />
         )}
       </Animated.View>
     </View>

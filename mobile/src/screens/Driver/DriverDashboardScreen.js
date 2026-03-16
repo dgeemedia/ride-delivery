@@ -10,8 +10,9 @@ import { SafeAreaView }      from 'react-native-safe-area-context';
 import * as Location         from '../../shims/Location';
 import { useAuth }           from '../../context/AuthContext';
 import { useTheme }          from '../../context/ThemeContext';
-import { driverAPI, userAPI, walletAPI } from '../../services/api';
+import { driverAPI, userAPI, walletAPI, rideAPI } from '../../services/api';
 import socketService         from '../../services/socket';
+import ActiveRideBanner      from '../../components/ActiveRideBanner';
 
 const { width } = Dimensions.get('window');
 const DA = '#FFB800';
@@ -208,6 +209,7 @@ export default function DriverDashboardScreen({ navigation }) {
   const [walletBalance, setWalletBalance] = useState(null);
   const [todayEarnings, setTodayEarnings] = useState(0);
   const [loading,       setLoading]       = useState(true);
+  const [activeRide,    setActiveRide]    = useState(null);
 
   const fadeA   = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-20)).current;
@@ -215,11 +217,12 @@ export default function DriverDashboardScreen({ navigation }) {
   // ── Fetch data ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     try {
-      const [profileRes, statsRes, walletRes, earningsRes] = await Promise.allSettled([
+      const [profileRes, statsRes, walletRes, earningsRes, activeRideRes] = await Promise.allSettled([
         driverAPI.getProfile(),
         userAPI.getStats(),
         walletAPI.getWallet(),
         driverAPI.getEarnings(),
+        rideAPI.getActiveRide(),
       ]);
       if (profileRes.status === 'fulfilled') {
         const p = profileRes.value?.data?.profile ?? profileRes.value?.data;
@@ -229,6 +232,10 @@ export default function DriverDashboardScreen({ navigation }) {
       if (statsRes.status    === 'fulfilled') setStats(statsRes.value?.data);
       if (walletRes.status   === 'fulfilled') setWalletBalance(walletRes.value?.data?.wallet?.balance ?? 0);
       if (earningsRes.status === 'fulfilled') setTodayEarnings(parseFloat(earningsRes.value?.data?.netEarnings ?? 0));
+      if (activeRideRes.status === 'fulfilled') {
+        const ride = activeRideRes.value?.data?.ride ?? activeRideRes.value?.ride ?? null;
+        setActiveRide(ride && ['ACCEPTED','ARRIVED','IN_PROGRESS'].includes(ride.status) ? ride : null);
+      }
     } catch {}
     finally {
       setLoading(false);
@@ -380,8 +387,18 @@ export default function DriverDashboardScreen({ navigation }) {
             theme={theme}
           />
 
-          {/* ── Waiting banner ── */}
-          {isOnline && <WaitingBanner theme={theme} />}
+          {/* ── Resume active ride banner ── */}
+          {activeRide && (
+            <ActiveRideBanner
+              ride={activeRide}
+              role="DRIVER"
+              theme={theme}
+              onPress={() => navigation.navigate('ActiveRide', { rideId: activeRide.id })}
+            />
+          )}
+
+          {/* ── Waiting banner — only when online and no active ride ── */}
+          {isOnline && !activeRide && <WaitingBanner theme={theme} />}
 
           {/* ── Wallet ── */}
           {!loading && (
