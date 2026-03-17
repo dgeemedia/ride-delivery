@@ -280,12 +280,16 @@ export default function RequestRideScreen({ navigation }) {
         console.log('[RequestRide] Customer GPS:', coords.lat, coords.lng);
 
         const [place] = await Location.reverseGeocodeAsync({ latitude: coords.lat, longitude: coords.lng }).catch(() => []);
+        // Show human-readable address + precise coordinates so the driver
+        // and server both have an exact pickup point.
+        const coordStr = `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
         if (place) {
-          const name = [place.name, place.street, place.district].filter(Boolean).join(', ');
-          const cs = `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
-          setPickupAddress(name ? `${name} (${cs})` : cs);
+          const parts = [place.name, place.street, place.district, place.city]
+            .filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3);
+          const human = parts.join(', ');
+          setPickupAddress(human ? `${human} (${coordStr})` : coordStr);
         } else {
-          setPickupAddress(`${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`);
+          setPickupAddress(coordStr);
         }
       } catch (err) {
         setLocationError('Could not get your location. Please type your pickup address.');

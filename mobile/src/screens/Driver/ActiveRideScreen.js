@@ -136,13 +136,30 @@ export default function ActiveRideScreen({ route, navigation }) {
 
     Animated.spring(sheetA, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }).start();
 
-    // Driver's real GPS for map pin
+    // Driver's real GPS — get once on mount, then watch continuously
+    // The watchPositionAsync broadcasts location to the server so the customer
+    // can see the driver moving in real-time on their tracking screen.
+    let locationWatcher = null;
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
+          // Seed initial position immediately
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-          setMyLoc({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+          const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+          setMyLoc(coords);
+          // Broadcast to server so customer tracking screen updates
+          socketService.updateLocation({ latitude: coords.latitude, longitude: coords.longitude });
+
+          // Watch for continuous movement
+          locationWatcher = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 10 },
+            (position) => {
+              const c = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+              setMyLoc(c);
+              socketService.updateLocation({ latitude: c.latitude, longitude: c.longitude });
+            }
+          );
         }
       } catch {}
     })();
@@ -168,6 +185,8 @@ export default function ActiveRideScreen({ route, navigation }) {
     return () => {
       socketService.off('ride:status:update', handleStatus);
       socketService.off('ride:cancelled',     handleCancelled);
+      // Stop GPS watcher on unmount
+      locationWatcher?.remove?.();
     };
   }, [rideId]);
 
