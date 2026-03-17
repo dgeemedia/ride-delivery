@@ -1,11 +1,17 @@
 // backend/src/controllers/ride.controller.js
-// PASTE THIS FILE ENTIRELY — replaces the previous version
+// Uses the new fareEngine for proper Lagos-tuned pricing.
 const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
-const { AppError } = require('../middleware/errorHandler');
-const { calculateDistance, calculateFare } = require('../utils/helpers');
+const { AppError }         = require('../middleware/errorHandler');
+const { calculateDistance } = require('../utils/helpers');
+const {
+  estimateFare,
+  calculateFinalFare,
+  applyDriverFloor,
+  calculateFare,
+} = require('../utils/fareEngine');
 const notificationService = require('../services/notification.service');
-const { broadcastToDrivers, emitToUser } = require('../services/socket.service');
+const { broadcastToDrivers } = require('../services/socket.service');
 
 const getIO = (req) => req.app.get('io');
 
@@ -18,9 +24,11 @@ const emitRideStatus = (io, customerId, rideId, status, extra = {}) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// GET /api/rides/estimate
+// Returns full fare breakdown including surge, booking fee, driver earnings
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getFareEstimate = async (req, res) => {
-  const { pickupLat, pickupLng, dropoffLat, dropoffLng } = req.query;
+  const { pickupLat, pickupLng, dropoffLat, dropoffLng, vehicleType = 'CAR' } = req.query;
   if (!pickupLat || !pickupLng || !dropoffLat || !dropoffLng)
     throw new AppError('Please provide pickup and dropoff coordinates', 400);
 
@@ -28,29 +36,39 @@ exports.getFareEstimate = async (req, res) => {
     parseFloat(pickupLat), parseFloat(pickupLng),
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
-  const estimatedFare     = calculateFare(distance);
-  const estimatedDuration = Math.ceil(distance / 0.5);
+
+  const estimate = estimateFare(distance, vehicleType.toUpperCase());
+
   res.status(200).json({
     success: true,
-    data: { distance: distance.toFixed(2), estimatedFare: estimatedFare.toFixed(2), estimatedDuration, currency: 'NGN' }
+    data: {
+      ...estimate,
+      distance: distance.toFixed(2),
+    }
   });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// POST /api/rides/request
+// ─────────────────────────────────────────────────────────────────────────────
 exports.requestRide = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
-  const { pickupAddress, pickupLat, pickupLng, dropoffAddress, dropoffLat, dropoffLng, notes, promoCode } = req.body;
+  const {
+    pickupAddress, pickupLat, pickupLng,
+    dropoffAddress, dropoffLat, dropoffLng,
+    vehicleType = 'CAR', notes, promoCode,
+  } = req.body;
 
   const activeRide = await prisma.ride.findFirst({
     where: { customerId: req.user.id, status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } }
   });
   if (activeRide) throw new AppError('You already have an active ride', 400);
 
-  const distance = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
-  let estimatedFare = calculateFare(distance);
+  const distance  = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
+  const fareBreakdown = estimateFare(distance, vehicleType.toUpperCase());
+  let finalFare   = fareBreakdown.estimatedFare;
 
   let appliedPromo = null;
   if (promoCode) {
@@ -62,9 +80,15 @@ exports.requestRide = async (req, res) => {
       }
     });
     if (appliedPromo) {
-      estimatedFare = appliedPromo.discountType === 'percentage'
-        ? estimatedFare * (1 - appliedPromo.discountValue / 100)
-        : Math.max(0, estimatedFare - appliedPromo.discountValue);
+      const discount = appliedPromo.discountType === 'percentage'
+        ? finalFare * (appliedPromo.discountValue / 100)
+        : appliedPromo.discountValue;
+      // Discount applies to fare minus booking fee (booking fee is non-refundable)
+      finalFare = Math.max(
+        fareBreakdown.bookingFee + (fareBreakdown.estimatedFare - fareBreakdown.bookingFee - discount),
+        fareBreakdown.bookingFee + 100  // never reduce to just booking fee
+      );
+      finalFare = Math.round(finalFare / 50) * 50;
       await prisma.promoCode.update({ where: { id: appliedPromo.id }, data: { currentUses: { increment: 1 } } });
     }
   }
@@ -74,9 +98,9 @@ exports.requestRide = async (req, res) => {
       customerId: req.user.id,
       pickupAddress, pickupLat, pickupLng,
       dropoffAddress, dropoffLat, dropoffLng,
-      distance, estimatedFare,
+      distance, estimatedFare: finalFare,
       notes, promoCode: appliedPromo?.code || null,
-      status: 'REQUESTED'
+      status: 'REQUESTED',
     },
     include: {
       customer: { select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true } }
@@ -84,13 +108,16 @@ exports.requestRide = async (req, res) => {
   });
 
   broadcastToDrivers(getIO(req), 'ride:new_request', {
-    rideId:        ride.id,
-    pickupAddress: ride.pickupAddress,
-    dropoffAddress:ride.dropoffAddress,
-    estimatedFare: ride.estimatedFare,
-    distance:      ride.distance,
-    etaMinutes:    Math.ceil((ride.distance || 3) / 0.5),
-    paymentMethod: 'CASH',
+    rideId:         ride.id,
+    pickupAddress:  ride.pickupAddress,
+    dropoffAddress: ride.dropoffAddress,
+    estimatedFare:  ride.estimatedFare,
+    bookingFee:     fareBreakdown.bookingFee,
+    distance:       ride.distance,
+    etaMinutes:     fareBreakdown.estimatedMinutes,
+    surgeMultiplier:fareBreakdown.surgeMultiplier,
+    surgeLabel:     fareBreakdown.surgeLabel,
+    paymentMethod:  'CASH',
     customer: {
       firstName:    ride.customer.firstName,
       lastName:     ride.customer.lastName,
@@ -101,12 +128,17 @@ exports.requestRide = async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'Ride requested successfully. Looking for nearby drivers...',
-    data: { ride, promoApplied: !!appliedPromo }
+    data: {
+      ride,
+      fareBreakdown,
+      promoApplied: !!appliedPromo,
+    }
   });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// GET /api/rides/active
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getActiveRide = async (req, res) => {
   const whereClause = req.user.role === 'DRIVER'
     ? { driverId: req.user.id }
@@ -120,7 +152,11 @@ exports.getActiveRide = async (req, res) => {
         select: {
           id: true, firstName: true, lastName: true, phone: true, profileImage: true,
           driverProfile: {
-            select: { vehicleType: true, vehicleMake: true, vehicleModel: true, vehicleColor: true, vehiclePlate: true, rating: true, currentLat: true, currentLng: true }
+            select: {
+              vehicleType: true, vehicleMake: true, vehicleModel: true,
+              vehicleColor: true, vehiclePlate: true, rating: true,
+              currentLat: true, currentLng: true,
+            }
           }
         }
       }
@@ -131,13 +167,14 @@ exports.getActiveRide = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// PUT /api/rides/:id/accept
+// ─────────────────────────────────────────────────────────────────────────────
 exports.acceptRide = async (req, res) => {
   const { id } = req.params;
 
   const driverProfile = await prisma.driverProfile.findUnique({ where: { userId: req.user.id } });
-  if (!driverProfile || !driverProfile.isApproved) throw new AppError('Driver profile not approved', 403);
-  if (!driverProfile.isOnline) throw new AppError('Please go online to accept rides', 400);
+  if (!driverProfile?.isApproved) throw new AppError('Driver profile not approved', 403);
+  if (!driverProfile.isOnline)    throw new AppError('Please go online to accept rides', 400);
 
   const activeRide = await prisma.ride.findFirst({
     where: { driverId: req.user.id, status: { in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } }
@@ -145,12 +182,12 @@ exports.acceptRide = async (req, res) => {
   if (activeRide) throw new AppError('You already have an active ride', 400);
 
   const ride = await prisma.ride.findUnique({ where: { id } });
-  if (!ride) throw new AppError('Ride not found', 404);
+  if (!ride)                     throw new AppError('Ride not found', 404);
   if (ride.status !== 'REQUESTED') throw new AppError('Ride is no longer available', 400);
 
   const updatedRide = await prisma.ride.update({
     where: { id },
-    data: { driverId: req.user.id, status: 'ACCEPTED', acceptedAt: new Date() },
+    data:  { driverId: req.user.id, status: 'ACCEPTED', acceptedAt: new Date() },
     include: {
       customer: { select: { id: true, firstName: true, lastName: true, phone: true } },
       driver:   { select: { id: true, firstName: true, lastName: true, phone: true, driverProfile: true } }
@@ -162,24 +199,25 @@ exports.acceptRide = async (req, res) => {
   await notificationService.notify({
     userId:  ride.customerId,
     title:   'Driver Found! 🚗',
-    message: `${req.user.firstName} ${req.user.lastName} has accepted your ride and is on the way.`,
+    message: `${req.user.firstName} ${req.user.lastName} accepted your ride and is on the way.`,
     type:    'ride_accepted',
     data: {
-      rideId:      id,
-      driverName:  `${req.user.firstName} ${req.user.lastName}`,
+      rideId:       id,
+      driverName:   `${req.user.firstName} ${req.user.lastName}`,
       vehiclePlate: driverProfile.vehiclePlate,
       vehicleColor: driverProfile.vehicleColor,
     }
   });
 
-  res.status(200).json({ success: true, message: 'Ride accepted successfully', data: { ride: updatedRide } });
+  res.status(200).json({ success: true, message: 'Ride accepted', data: { ride: updatedRide } });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// PUT /api/rides/:id/arrived
+// ─────────────────────────────────────────────────────────────────────────────
 exports.arrivedAtPickup = async (req, res) => {
   const { id } = req.params;
-  const ride = await prisma.ride.findUnique({ where: { id } });
+  const ride   = await prisma.ride.findUnique({ where: { id } });
   if (!ride)                         throw new AppError('Ride not found', 404);
   if (ride.driverId !== req.user.id) throw new AppError('Unauthorized', 403);
   if (ride.status !== 'ACCEPTED')    throw new AppError('Cannot mark arrived at this status', 400);
@@ -197,13 +235,14 @@ exports.arrivedAtPickup = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// PUT /api/rides/:id/start
+// ─────────────────────────────────────────────────────────────────────────────
 exports.startRide = async (req, res) => {
   const { id } = req.params;
-  const ride = await prisma.ride.findUnique({ where: { id } });
+  const ride   = await prisma.ride.findUnique({ where: { id } });
   if (!ride)                         throw new AppError('Ride not found', 404);
   if (ride.driverId !== req.user.id) throw new AppError('Unauthorized', 403);
-  if (ride.status !== 'ACCEPTED' && ride.status !== 'ARRIVED')
+  if (!['ACCEPTED','ARRIVED'].includes(ride.status))
     throw new AppError('Cannot start ride at this status', 400);
 
   const updatedRide = await prisma.ride.update({ where: { id }, data: { status: 'IN_PROGRESS', startedAt: new Date() } });
@@ -219,31 +258,61 @@ exports.startRide = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// PUT /api/rides/:id/complete
+// Uses calculateFinalFare with ACTUAL time → captures traffic holdups
+// ─────────────────────────────────────────────────────────────────────────────
 exports.completeRide = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
   const { id } = req.params;
-  const { actualFare, paymentMethod = 'CASH' } = req.body;
+  const { paymentMethod = 'CASH' } = req.body;
 
-  const ride = await prisma.ride.findUnique({ where: { id } });
+  const ride = await prisma.ride.findUnique({
+    where: { id },
+    include: {
+      driver: { select: { driverProfile: true } }
+    }
+  });
   if (!ride)                         throw new AppError('Ride not found', 404);
   if (ride.driverId !== req.user.id) throw new AppError('Unauthorized', 403);
   if (ride.status !== 'IN_PROGRESS') throw new AppError('Ride is not in progress', 400);
 
-  const finalFare      = actualFare || ride.estimatedFare;
-  const platformFee    = finalFare * 0.20;
-  const driverEarnings = finalFare - platformFee;
+  const completedAt = new Date();
+
+  // ── FINAL FARE using actual trip time (traffic meter) ────────────────────
+  const finalFareBreakdown = calculateFinalFare({
+    distanceKm:   ride.distance,
+    startedAt:    ride.startedAt,
+    completedAt,
+    vehicleType:  ride.driver?.driverProfile?.vehicleType ?? 'CAR',
+    requestedAt:  ride.requestedAt,
+  });
+
+  const finalFare      = finalFareBreakdown.finalFare;
+  const platformFee    = finalFareBreakdown.platformRevenue.total;
+  const driverEarnings = finalFareBreakdown.driverEarnings;
 
   const [updatedRide, payment] = await prisma.$transaction([
-    prisma.ride.update({ where: { id }, data: { status: 'COMPLETED', actualFare: finalFare, completedAt: new Date() } }),
+    prisma.ride.update({
+      where: { id },
+      data: {
+        status:     'COMPLETED',
+        actualFare: finalFare,
+        completedAt,
+      }
+    }),
     prisma.payment.create({
       data: {
-        userId: ride.customerId, rideId: id, amount: finalFare,
-        currency: 'NGN', method: paymentMethod,
-        status: paymentMethod === 'WALLET' ? 'COMPLETED' : 'PENDING',
-        transactionId: `RIDE-${id}-${Date.now()}`, platformFee, driverEarnings
+        userId:        ride.customerId,
+        rideId:        id,
+        amount:        finalFare,
+        currency:      'NGN',
+        method:        paymentMethod,
+        status:        paymentMethod === 'WALLET' ? 'COMPLETED' : 'PENDING',
+        transactionId: `RIDE-${id}-${Date.now()}`,
+        platformFee,
+        driverEarnings,
       }
     })
   ]);
@@ -256,9 +325,12 @@ exports.completeRide = async (req, res) => {
       prisma.wallet.update({ where: { userId: req.user.id },    data: { balance: { increment: driverEarnings } } }),
       prisma.walletTransaction.create({
         data: {
-          walletId: customerWallet.id, type: 'DEBIT', amount: finalFare,
+          walletId:    customerWallet.id,
+          type:        'DEBIT',
+          amount:      finalFare,
           description: `Ride payment - ${ride.pickupAddress} to ${ride.dropoffAddress}`,
-          status: 'COMPLETED', reference: `RIDE-${id}`
+          status:      'COMPLETED',
+          reference:   `RIDE-${id}`,
         }
       })
     ]);
@@ -267,33 +339,51 @@ exports.completeRide = async (req, res) => {
   await prisma.driverProfile.update({ where: { userId: req.user.id }, data: { totalRides: { increment: 1 } } });
   emitRideStatus(getIO(req), ride.customerId, id, 'COMPLETED');
 
+  const surgeNote = finalFareBreakdown.surgeLabel
+    ? ` (${finalFareBreakdown.surgeLabel} pricing applied)`
+    : '';
+  const trafficNote = finalFareBreakdown.actualMinutes > (ride.distance / 18 * 60 * 1.2)
+    ? ' Traffic surcharge included.'
+    : '';
+
   await notificationService.notify({
     userId: ride.customerId, title: 'Ride Completed ✅',
-    message: `Your ride has been completed. Total fare: ₦${finalFare.toFixed(2)}. Please rate your driver!`,
-    type: 'ride_completed', data: { rideId: id, fare: finalFare, paymentMethod }
+    message: `Your ride is done. Total: ₦${finalFare.toLocaleString('en-NG')}${surgeNote}.${trafficNote} Please rate your driver!`,
+    type: 'ride_completed', data: { rideId: id, fare: finalFare, paymentMethod, fareBreakdown: finalFareBreakdown }
   });
   await notificationService.notify({
     userId: req.user.id, title: 'Payment Received 💰',
-    message: `Ride completed. Earnings: ₦${driverEarnings.toFixed(2)} (after 20% platform fee).`,
+    message: `Ride done. Your earnings: ₦${driverEarnings.toLocaleString('en-NG')} (after platform fees).`,
     type: 'payment_received', data: { rideId: id, earnings: driverEarnings, platformFee }
   });
 
-  res.status(200).json({ success: true, message: 'Ride completed successfully', data: { ride: updatedRide, payment } });
+  res.status(200).json({
+    success: true,
+    message: 'Ride completed',
+    data: {
+      ride: updatedRide,
+      payment,
+      fareBreakdown: finalFareBreakdown,
+    }
+  });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// PUT /api/rides/:id/cancel
+// ─────────────────────────────────────────────────────────────────────────────
 exports.cancelRide = async (req, res) => {
-  const { id } = req.params;
+  const { id }     = req.params;
   const { reason } = req.body;
 
   const ride = await prisma.ride.findUnique({ where: { id } });
   if (!ride) throw new AppError('Ride not found', 404);
   if (ride.customerId !== req.user.id && ride.driverId !== req.user.id) throw new AppError('Unauthorized', 403);
-  if (ride.status === 'COMPLETED' || ride.status === 'CANCELLED') throw new AppError('Cannot cancel this ride', 400);
+  if (['COMPLETED','CANCELLED'].includes(ride.status)) throw new AppError('Cannot cancel this ride', 400);
 
   const cancelledByDriver = ride.driverId === req.user.id;
   let cancellationFee = 0;
+
+  // Cancellation fee only applies when customer cancels after driver accepted
   if (ride.status !== 'REQUESTED' && !cancelledByDriver) {
     cancellationFee = 200;
     await prisma.payment.create({
@@ -307,24 +397,24 @@ exports.cancelRide = async (req, res) => {
 
   const updatedRide = await prisma.ride.update({
     where: { id },
-    data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason }
+    data:  { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason }
   });
 
   const io = getIO(req);
   if (io) {
-    io.to(`ride:${id}`).emit('ride:cancelled', { rideId: id, reason, cancelledBy: req.user.id });
+    io.to(`ride:${id}`).emit('ride:cancelled',          { rideId: id, reason, cancelledBy: req.user.id });
     if (ride.customerId) io.to(`user:${ride.customerId}`).emit('ride:cancelled', { rideId: id, reason });
-    if (ride.driverId)   io.to(`user:${ride.driverId}`).emit('ride:cancelled',   { rideId: id, reason });
+    if (ride.driverId)   io.to(`user:${ride.driverId}` ).emit('ride:cancelled',  { rideId: id, reason });
   }
 
-  const notifyUserId = cancelledByDriver ? ride.customerId : ride.driverId;
-  if (notifyUserId) {
+  const notifyId = cancelledByDriver ? ride.customerId : ride.driverId;
+  if (notifyId) {
     await notificationService.notify({
-      userId: notifyUserId,
+      userId: notifyId,
       title:  'Ride Cancelled',
       message: cancelledByDriver
-        ? "Your driver cancelled the ride. We're looking for another driver for you."
-        : `Your ride was cancelled. ${reason ? `Reason: ${reason}` : ''}`,
+        ? "Your driver cancelled. We're finding another driver for you."
+        : `Your ride was cancelled. ${reason ? `Reason: ${reason}` : ''} ${cancellationFee ? `₦${cancellationFee} cancellation fee applies.` : ''}`,
       type: 'ride_cancelled',
       data: { rideId: id, reason, cancelledBy: req.user.id, cancellationFee }
     });
@@ -334,16 +424,17 @@ exports.cancelRide = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// GET /api/rides/history
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getRideHistory = async (req, res) => {
   const { page = 1, limit = 20 } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
   const whereClause = req.user.role === 'DRIVER'
-    ? { driverId:   req.user.id, status: { in: ['COMPLETED', 'CANCELLED'] } }
+    ? { driverId:   req.user.id, status: { in: ['COMPLETED','CANCELLED'] } }
     : req.user.role === 'CUSTOMER'
-    ? { customerId: req.user.id, status: { in: ['COMPLETED', 'CANCELLED'] } }
-    : { status: { in: ['COMPLETED', 'CANCELLED'] } };
+    ? { customerId: req.user.id, status: { in: ['COMPLETED','CANCELLED'] } }
+    : { status: { in: ['COMPLETED','CANCELLED'] } };
 
   const [rides, total] = await Promise.all([
     prisma.ride.findMany({
@@ -352,7 +443,7 @@ exports.getRideHistory = async (req, res) => {
         customer: { select: { firstName: true, lastName: true } },
         driver:   { select: { firstName: true, lastName: true } },
         rating:   true,
-        payment:  { select: { amount: true, method: true, status: true } }
+        payment:  { select: { amount: true, method: true, status: true, platformFee: true, driverEarnings: true } }
       },
       orderBy: { requestedAt: 'desc' }, skip, take: parseInt(limit)
     }),
@@ -366,16 +457,17 @@ exports.getRideHistory = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// GET /api/rides/:id
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getRideById = async (req, res) => {
   const { id } = req.params;
-  const ride = await prisma.ride.findUnique({
+  const ride   = await prisma.ride.findUnique({
     where: { id },
     include: {
       customer: { select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true } },
       driver:   { select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true, driverProfile: true } },
       payment:  true,
-      rating:   true
+      rating:   true,
     }
   });
   if (!ride) throw new AppError('Ride not found', 404);
@@ -384,12 +476,13 @@ exports.getRideById = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// POST /api/rides/:id/rate
+// ─────────────────────────────────────────────────────────────────────────────
 exports.rateRide = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
-  const { id } = req.params;
+  const { id }             = req.params;
   const { rating, comment } = req.body;
 
   const ride = await prisma.ride.findUnique({ where: { id }, include: { rating: true } });
@@ -405,31 +498,36 @@ exports.rateRide = async (req, res) => {
   await prisma.driverProfile.update({ where: { userId: ride.driverId }, data: { rating: avgRating } });
 
   await notificationService.notify({
-    userId:  ride.driverId,
-    title:   `New Rating: ${'⭐'.repeat(rating)}`,
-    message: `You received a ${rating}-star rating. ${comment ? `"${comment}"` : ''}`,
-    type:    'rating_received',
-    data:    { rideId: id, rating, comment }
+    userId: ride.driverId,
+    title:  `New Rating: ${'⭐'.repeat(rating)}`,
+    message:`You received a ${rating}-star rating. ${comment ? `"${comment}"` : ''}`,
+    type:   'rating_received',
+    data:   { rideId: id, rating, comment }
   });
 
   res.status(201).json({ success: true, message: 'Rating submitted', data: { rating: newRating } });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// GET /api/rides/nearby-drivers
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getNearbyDrivers = async (req, res) => {
-  const { pickupLat, pickupLng, radiusKm = 10 } = req.query;
+  const { pickupLat, pickupLng, radiusKm = 10, vehicleType } = req.query;
   if (!pickupLat || !pickupLng) throw new AppError('Please provide pickup coordinates', 400);
 
   const lat    = parseFloat(pickupLat);
   const lng    = parseFloat(pickupLng);
   const radius = parseFloat(radiusKm);
 
+  const where = {
+    isApproved: true, isOnline: true,
+    currentLat: { not: null }, currentLng: { not: null },
+    ...(vehicleType && { vehicleType: vehicleType.toUpperCase() }),
+  };
+
   const drivers = await prisma.driverProfile.findMany({
-    where: { isApproved: true, isOnline: true, currentLat: { not: null }, currentLng: { not: null } },
-    include: {
-      user: { select: { id: true, firstName: true, lastName: true, profileImage: true, phone: true } }
-    }
+    where,
+    include: { user: { select: { id: true, firstName: true, lastName: true, profileImage: true, phone: true } } }
   });
 
   const nearby = drivers
@@ -438,31 +536,40 @@ exports.getNearbyDrivers = async (req, res) => {
     .sort((a, b) => a.distanceKm - b.distanceKm)
     .slice(0, 20);
 
-  const formatted = nearby.map(d => ({
-    driverId:    d.user.id,
-    profileId:   d.id,
-    firstName:   d.user.firstName,
-    lastName:    d.user.lastName,
-    profileImage:d.user.profileImage,
-    vehicleType: d.vehicleType,
-    vehicleMake: d.vehicleMake,
-    vehicleModel:d.vehicleModel,
-    vehicleColor:d.vehicleColor,
-    vehiclePlate:d.vehiclePlate,
-    vehicleYear: d.vehicleYear,
-    rating:      parseFloat((d.rating || 0).toFixed(1)),
-    totalRides:  d.totalRides,
-    distanceKm:  d.distanceKm,
-    etaMinutes:  Math.ceil(d.distanceKm / 0.5),
-    currentLat:  d.currentLat,   // required for map pins
-    currentLng:  d.currentLng,   // required for map pins
-  }));
+  const formatted = nearby.map(d => {
+    const fareEst = estimateFare(3, d.vehicleType ?? 'CAR'); // 3km sample for display
+    return {
+      driverId:     d.user.id,
+      profileId:    d.id,
+      firstName:    d.user.firstName,
+      lastName:     d.user.lastName,
+      profileImage: d.user.profileImage,
+      vehicleType:  d.vehicleType,
+      vehicleMake:  d.vehicleMake,
+      vehicleModel: d.vehicleModel,
+      vehicleColor: d.vehicleColor,
+      vehiclePlate: d.vehiclePlate,
+      vehicleYear:  d.vehicleYear,
+      rating:       parseFloat((d.rating || 0).toFixed(1)),
+      totalRides:   d.totalRides,
+      distanceKm:   d.distanceKm,
+      etaMinutes:   Math.ceil(d.distanceKm / 0.5),
+      currentLat:   d.currentLat,
+      currentLng:   d.currentLng,
+      // Pricing preview
+      surgeMultiplier: fareEst.surgeMultiplier,
+      surgeLabel:      fareEst.surgeLabel,
+      bookingFee:      fareEst.bookingFee,
+    };
+  });
 
   res.status(200).json({ success: true, data: { drivers: formatted, total: formatted.length } });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+// POST /api/rides/request-driver
+// Supports optional driver floor price (driverFloorPrice field)
+// ─────────────────────────────────────────────────────────────────────────────
 exports.requestSpecificDriver = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
@@ -470,79 +577,80 @@ exports.requestSpecificDriver = async (req, res) => {
   const {
     pickupAddress, pickupLat, pickupLng,
     dropoffAddress, dropoffLat, dropoffLng,
-    driverId, estimatedFare, paymentMethod, carType, promoCode, notes
+    driverId, paymentMethod, vehicleType, promoCode, notes,
+    driverFloorPrice, // ← new: driver's requested minimum fare
   } = req.body;
 
-  // ── FIX: Auto-cancel any stale REQUESTED rides instead of throwing ─────────
-  // A REQUESTED ride means no driver has accepted yet — safe to cancel silently.
-  // ACCEPTED/ARRIVED/IN_PROGRESS means a real active ride exists → still throw.
+  // Auto-cancel stale REQUESTED rides
   const existingRide = await prisma.ride.findFirst({
-    where: { customerId: req.user.id, status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } }
+    where: { customerId: req.user.id, status: { in: ['REQUESTED','ACCEPTED','ARRIVED','IN_PROGRESS'] } }
   });
-
   if (existingRide) {
     if (existingRide.status === 'REQUESTED') {
-      // Stale unaccepted request — cancel it silently so this new one can proceed
-      console.log(`[requestSpecificDriver] Auto-cancelling stale REQUESTED ride ${existingRide.id} for customer ${req.user.id}`);
       await prisma.ride.update({
         where: { id: existingRide.id },
-        data: {
-          status:             'CANCELLED',
-          cancelledAt:        new Date(),
-          cancellationReason: 'Superseded by new driver request',
-        }
+        data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: 'Superseded by new driver request' }
       });
     } else {
-      // Genuinely active ride — cannot book another
-      throw new AppError(
-        `You already have an active ride (${existingRide.status}). Complete or cancel it first.`,
-        400
-      );
+      throw new AppError(`You already have an active ride (${existingRide.status}). Complete or cancel it first.`, 400);
     }
   }
 
-  // ── Driver availability checks ─────────────────────────────────────────────
+  // Driver checks
   const driverProfile = await prisma.driverProfile.findUnique({ where: { userId: driverId } });
   if (!driverProfile)            throw new AppError('Driver not found', 404);
   if (!driverProfile.isApproved) throw new AppError('Driver is not approved', 400);
   if (!driverProfile.isOnline)   throw new AppError('Driver is no longer online', 400);
 
-  // Check driver doesn't already have an active ride
   const driverActiveRide = await prisma.ride.findFirst({
-    where: { driverId, status: { in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } }
+    where: { driverId, status: { in: ['ACCEPTED','ARRIVED','IN_PROGRESS'] } }
   });
   if (driverActiveRide) throw new AppError('Driver is currently on another ride', 400);
 
-  // ── Fare ───────────────────────────────────────────────────────────────────
-  const distance  = calculateDistance(
+  // Fare calculation
+  const distance    = calculateDistance(
     parseFloat(pickupLat), parseFloat(pickupLng),
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
-  let finalFare = estimatedFare ? parseFloat(estimatedFare) : calculateFare(distance);
+  const usedVehicleType = vehicleType?.toUpperCase() ?? driverProfile.vehicleType ?? 'CAR';
+  const fareBreakdown   = estimateFare(distance, usedVehicleType);
+  let   finalFare       = fareBreakdown.estimatedFare;
 
+  // Apply driver floor price if provided
+  let driverFloorResult = null;
+  if (driverFloorPrice && parseFloat(driverFloorPrice) > 0) {
+    driverFloorResult = applyDriverFloor(parseFloat(driverFloorPrice), finalFare);
+    finalFare         = driverFloorResult.adjustedFare;
+    if (driverFloorResult.clamped) {
+      console.log(`[requestSpecificDriver] Driver floor ₦${driverFloorPrice} clamped to max ₦${finalFare}`);
+    }
+  }
+
+  // Apply promo
   if (promoCode) {
     const promo = await prisma.promoCode.findFirst({
       where: {
         code: promoCode.toUpperCase(), isActive: true,
         validFrom: { lte: new Date() }, validUntil: { gte: new Date() },
-        applicableFor: { in: ['rides', 'both'] }
+        applicableFor: { in: ['rides','both'] }
       }
     });
     if (promo) {
-      finalFare = promo.discountType === 'percentage'
-        ? finalFare * (1 - promo.discountValue / 100)
-        : Math.max(0, finalFare - promo.discountValue);
+      const discount = promo.discountType === 'percentage'
+        ? finalFare * (promo.discountValue / 100)
+        : promo.discountValue;
+      finalFare = Math.max(fareBreakdown.bookingFee + 100, finalFare - discount);
+      finalFare = Math.round(finalFare / 50) * 50;
       await prisma.promoCode.update({ where: { id: promo.id }, data: { currentUses: { increment: 1 } } });
     }
   }
 
-  // ── Fetch customer for the socket payload ──────────────────────────────────
+  // Customer name for payload
   const customer = await prisma.user.findUnique({
-    where:  { id: req.user.id },
+    where: { id: req.user.id },
     select: { id: true, firstName: true, lastName: true, profileImage: true }
   });
 
-  // ── Create the ride ────────────────────────────────────────────────────────
   const ride = await prisma.ride.create({
     data: {
       customerId:     req.user.id,
@@ -556,19 +664,23 @@ exports.requestSpecificDriver = async (req, res) => {
     }
   });
 
-  // ── Emit to the specific driver ────────────────────────────────────────────
+  // Emit to driver
   const io = getIO(req);
   if (io) {
     const payload = {
-      rideId:        ride.id,
-      pickupAddress: ride.pickupAddress,
-      dropoffAddress:ride.dropoffAddress,
-      estimatedFare: ride.estimatedFare,
-      distance:      ride.distance,
-      etaMinutes:    Math.ceil((ride.distance || 3) / 0.5),
-      carType:       carType       || null,
-      paymentMethod: paymentMethod || 'CASH',
-      targeted:      true,
+      rideId:         ride.id,
+      pickupAddress:  ride.pickupAddress,
+      dropoffAddress: ride.dropoffAddress,
+      estimatedFare:  ride.estimatedFare,
+      bookingFee:     fareBreakdown.bookingFee,
+      distance:       ride.distance,
+      etaMinutes:     fareBreakdown.estimatedMinutes,
+      surgeMultiplier:fareBreakdown.surgeMultiplier,
+      surgeLabel:     fareBreakdown.surgeLabel,
+      driverFloorApplied: driverFloorResult ? true : false,
+      vehicleType:    usedVehicleType,
+      paymentMethod:  paymentMethod || 'CASH',
+      targeted:       true,
       customer: {
         firstName:    customer.firstName,
         lastName:     customer.lastName,
@@ -576,27 +688,24 @@ exports.requestSpecificDriver = async (req, res) => {
       }
     };
 
-    const room       = `user:${driverId}`;
+    const room        = `user:${driverId}`;
     const roomSockets = await io.in(room).fetchSockets();
 
-    console.log(`[requestSpecificDriver] ride=${ride.id} → emitting ride:new_request to ${room} (${roomSockets.length} socket(s) in room)`);
-
+    console.log(`[requestSpecificDriver] ride=${ride.id} → ${room} (${roomSockets.length} socket(s))`);
     if (roomSockets.length === 0) {
-      console.warn(`[requestSpecificDriver] ⚠️  Driver ${driverId} has NO active socket in room ${room}. Event will not be received.`);
-      // Still emit — driver may reconnect and poll for missed requests
+      console.warn(`[requestSpecificDriver] ⚠️  Driver ${driverId} has no active socket`);
     }
 
     io.to(room).emit('ride:new_request', payload);
-    console.log(`[requestSpecificDriver] ✅ Emitted ride:new_request to ${room}`);
-
+    console.log(`[requestSpecificDriver] ✅ Emitted to ${room}`);
   } else {
-    console.error('[requestSpecificDriver] ❌ io is null — socket server not attached to Express app!');
+    console.error('[requestSpecificDriver] ❌ io is null');
   }
 
   res.status(201).json({
     success: true,
     message: 'Request sent to driver. Waiting for response...',
-    data: { ride }
+    data: { ride, fareBreakdown, driverFloorResult }
   });
 };
 
