@@ -1,17 +1,23 @@
 // backend/src/routes/driver.routes.js
+// Mounted at /api/drivers in app.js / server.js.
+
 const express = require('express');
-const { body } = require('express-validator');
-const driverController = require('../controllers/driver.controller');
+const { body, query } = require('express-validator');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
+const ctrl = require('../controllers/driver.controller');
 
 const router = express.Router();
 
 router.use(authenticate);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * @route   POST /api/drivers/profile
- * @desc    Create or update driver profile
- * @access  Private (DRIVER)
+ * POST /api/drivers/profile
+ * Create or update driver profile + vehicle info.
+ * Document URLs are required on first submission.
  */
 router.post(
   '/profile',
@@ -26,59 +32,17 @@ router.post(
     body('vehiclePlate').notEmpty(),
     body('licenseImageUrl').optional().isURL(),
     body('vehicleRegUrl').optional().isURL(),
-    body('insuranceUrl').optional().isURL()
+    body('insuranceUrl').optional().isURL(),
   ],
-  driverController.createOrUpdateProfile
+  ctrl.createOrUpdateProfile
 );
 
-/**
- * @route   GET /api/drivers/profile
- * @desc    Get driver profile
- * @access  Private (DRIVER)
- */
-router.get('/profile', authorize('DRIVER'), driverController.getProfile);
+/** GET /api/drivers/profile — current driver's profile + user fields */
+router.get('/profile', authorize('DRIVER'), ctrl.getProfile);
 
 /**
- * @route   PUT /api/drivers/status
- * @desc    Update online/offline status and location
- * @access  Private (DRIVER)
- */
-router.put(
-  '/status',
-  authorize('DRIVER'),
-  [
-    body('isOnline').isBoolean(),
-    body('currentLat').optional().isFloat({ min: -90, max: 90 }),
-    body('currentLng').optional().isFloat({ min: -180, max: 180 })
-  ],
-  driverController.updateStatus
-);
-
-/**
- * @route   GET /api/drivers/earnings
- * @desc    Get driver earnings (with period filter)
- * @access  Private (DRIVER)
- */
-router.get('/earnings', authorize('DRIVER'), driverController.getEarnings);
-
-/**
- * @route   GET /api/drivers/stats
- * @desc    Get driver statistics
- * @access  Private (DRIVER)
- */
-router.get('/stats', authorize('DRIVER'), driverController.getStats);
-
-/**
- * @route   GET /api/drivers/nearby-requests
- * @desc    Get nearby ride requests
- * @access  Private (DRIVER)
- */
-router.get('/nearby-requests', authorize('DRIVER'), driverController.getNearbyRequests);
-
-/**
- * @route   POST /api/drivers/documents
- * @desc    Upload driver documents
- * @access  Private (DRIVER)
+ * POST /api/drivers/documents
+ * Upload / refresh document URLs without touching vehicle data.
  */
 router.post(
   '/documents',
@@ -86,33 +50,91 @@ router.post(
   [
     body('licenseImageUrl').optional().isURL(),
     body('vehicleRegUrl').optional().isURL(),
-    body('insuranceUrl').optional().isURL()
+    body('insuranceUrl').optional().isURL(),
   ],
-  driverController.uploadDocuments
+  ctrl.uploadDocuments
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ONLINE / LOCATION STATUS
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * @route   POST /api/drivers/payout/request
- * @desc    Request wallet payout to bank
- * @access  Private (DRIVER)
+ * PUT /api/drivers/status
+ * Toggle online/offline. Requires GPS coordinates when going online.
+ * Rejects going offline while an active ride exists.
+ */
+router.put(
+  '/status',
+  authorize('DRIVER'),
+  [
+    body('isOnline').isBoolean(),
+    body('currentLat').optional().isFloat({ min: -90, max: 90 }),
+    body('currentLng').optional().isFloat({ min: -180, max: 180 }),
+  ],
+  ctrl.updateStatus
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EARNINGS & STATS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/drivers/earnings?period=today|week|month|all
+ * Returns net earnings using the stored payment.driverEarnings field
+ * (which already accounts for the booking-fee deduction before commission).
+ * Also returns wallet balance and per-ride breakdown.
+ */
+router.get(
+  '/earnings',
+  authorize('DRIVER'),
+  [
+    query('period').optional().isIn(['today', 'week', 'month', 'all']),
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+  ],
+  ctrl.getEarnings
+);
+
+/** GET /api/drivers/stats — totals, ratings, acceptance rate */
+router.get('/stats', authorize('DRIVER'), ctrl.getStats);
+
+/**
+ * GET /api/drivers/nearby-requests
+ * Returns open REQUESTED rides near the driver's current location.
+ * Driver must be online with a stored location.
+ */
+router.get('/nearby-requests', authorize('DRIVER'), ctrl.getNearbyRequests);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYOUTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/drivers/payout/request
+ * Verify bank account → create Paystack recipient → initiate transfer.
+ * Minimum payout ₦1,000. Deducts wallet balance immediately.
  */
 router.post(
   '/payout/request',
   authorize('DRIVER'),
   [
-    body('amount').isFloat({ min: 1000 }),
-    body('accountNumber').notEmpty().isLength({ min: 10, max: 10 }),
+    body('amount').isFloat({ min: 1000 }).withMessage('Minimum payout is ₦1,000'),
+    body('accountNumber').notEmpty().isLength({ min: 10, max: 10 }).withMessage('Account number must be 10 digits'),
     body('bankCode').notEmpty(),
-    body('accountName').optional().isString()
+    body('accountName').optional().isString(),
   ],
-  driverController.requestPayout
+  ctrl.requestPayout
 );
 
 /**
- * @route   GET /api/drivers/payout/history
- * @desc    Get payout history
- * @access  Private (DRIVER)
+ * GET /api/drivers/payout/history?status=PENDING|COMPLETED|FAILED
  */
-router.get('/payout/history', authorize('DRIVER'), driverController.getPayoutHistory);
+router.get(
+  '/payout/history',
+  authorize('DRIVER'),
+  [query('status').optional().isIn(['PENDING', 'COMPLETED', 'FAILED'])],
+  ctrl.getPayoutHistory
+);
 
 module.exports = router;

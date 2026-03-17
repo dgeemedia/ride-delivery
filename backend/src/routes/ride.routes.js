@@ -1,17 +1,78 @@
 // backend/src/routes/ride.routes.js
-const express = require('express');
-const { body, param } = require('express-validator');
-const rideController = require('../controllers/ride.controller');
+//
+// Mounted at /api/rides in app.js / server.js.
+//
+// ORDERING NOTE: static paths (/estimate, /active, /history, /nearby-drivers,
+// /request-driver) MUST come before the /:id wildcard or Express will try to
+// match them as a ride ID.
+
+const express       = require('express');
+const { body, query } = require('express-validator');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
+const ctrl          = require('../controllers/ride.controller');
 
 const router = express.Router();
 
+// ── Every ride route requires a valid JWT ────────────────────────────────────
 router.use(authenticate);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// STATIC ROUTES (before /:id)
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * @route   POST /api/rides/request
- * @desc    Request a new ride
- * @access  Private (CUSTOMER)
+ * GET /api/rides/estimate
+ * Full fare breakdown: surge, booking fee, driver earnings, ETA.
+ */
+router.get(
+  '/estimate',
+  [
+    query('pickupLat').isFloat({ min: -90, max: 90 }),
+    query('pickupLng').isFloat({ min: -180, max: 180 }),
+    query('dropoffLat').isFloat({ min: -90, max: 90 }),
+    query('dropoffLng').isFloat({ min: -180, max: 180 }),
+    query('vehicleType').optional().isIn(['CAR', 'BIKE', 'VAN', 'MOTORCYCLE']),
+  ],
+  ctrl.getFareEstimate
+);
+
+/**
+ * GET /api/rides/active
+ * Returns the caller's active ride (REQUESTED → IN_PROGRESS).
+ * Response now includes surgeMultiplier + surgeLabel so the frontend banner
+ * does not need a second /estimate call.
+ */
+router.get('/active', ctrl.getActiveRide);
+
+/** GET /api/rides/history — paginated COMPLETED / CANCELLED rides */
+router.get(
+  '/history',
+  [
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+  ],
+  ctrl.getRideHistory
+);
+
+/**
+ * GET /api/rides/nearby-drivers
+ * Online, approved drivers within radiusKm of pickup, with 3 km fare preview.
+ */
+router.get(
+  '/nearby-drivers',
+  authorize('CUSTOMER'),
+  [
+    query('pickupLat').isFloat({ min: -90, max: 90 }),
+    query('pickupLng').isFloat({ min: -180, max: 180 }),
+    query('radiusKm').optional().isFloat({ min: 0.5, max: 50 }),
+    query('vehicleType').optional().isIn(['CAR', 'BIKE', 'VAN', 'MOTORCYCLE']),
+  ],
+  ctrl.getNearbyDrivers
+);
+
+/**
+ * POST /api/rides/request
+ * Standard ride request — broadcast to all online drivers.
  */
 router.post(
   '/request',
@@ -23,154 +84,97 @@ router.post(
     body('dropoffAddress').notEmpty(),
     body('dropoffLat').isFloat({ min: -90, max: 90 }),
     body('dropoffLng').isFloat({ min: -180, max: 180 }),
-    body('notes').optional().isString(),
-    body('promoCode').optional().isString()
+    body('vehicleType').optional().isIn(['CAR', 'BIKE', 'VAN', 'MOTORCYCLE']),
+    body('notes').optional().isString().isLength({ max: 500 }),
+    body('promoCode').optional().isString(),
   ],
-  rideController.requestRide
+  ctrl.requestRide
 );
 
 /**
- * @route   GET /api/rides/estimate
- * @desc    Get fare estimate
- * @access  Private
- */
-router.get('/estimate', rideController.getFareEstimate);
-
-/**
- * @route   GET /api/rides/active
- * @desc    Get user's active ride
- * @access  Private
- */
-router.get('/active', rideController.getActiveRide);
-
-/**
- * @route   GET /api/rides/history
- * @desc    Get ride history
- * @access  Private
- */
-router.get('/history', rideController.getRideHistory);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ADD these two routes to backend/src/routes/ride.routes.js
-// Place them BEFORE the  router.get('/:id', ...)  line (to avoid :id catching them)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * @route   GET /api/rides/nearby-drivers
- * @desc    Get nearby online drivers for customer to choose from
- * @access  Private (CUSTOMER)
- */
-router.get('/nearby-drivers', authorize('CUSTOMER'), rideController.getNearbyDrivers);
-
-/**
- * @route   POST /api/rides/request-driver
- * @desc    Send ride request to a specific chosen driver
- * @access  Private (CUSTOMER)
+ * POST /api/rides/request-driver
+ * Request a specific driver from the nearby-drivers list.
+ * Supports driverFloorPrice (capped at +30% above platform estimate).
+ * The controller encodes the floor multiplier in the ride's notes so
+ * completeRide can recover it for accurate final-fare calculation.
  */
 router.post(
   '/request-driver',
   authorize('CUSTOMER'),
   [
     body('pickupAddress').notEmpty(),
-    body('pickupLat').isFloat({ min: -90,  max: 90  }),
+    body('pickupLat').isFloat({ min: -90, max: 90 }),
     body('pickupLng').isFloat({ min: -180, max: 180 }),
     body('dropoffAddress').notEmpty(),
-    body('dropoffLat').isFloat({ min: -90,  max: 90  }),
+    body('dropoffLat').isFloat({ min: -90, max: 90 }),
     body('dropoffLng').isFloat({ min: -180, max: 180 }),
-    body('driverId').notEmpty().isUUID(),
-    body('estimatedFare').optional().isFloat({ min: 0 }),
+    body('driverId').notEmpty().isString(),
+    body('vehicleType').optional().isIn(['CAR', 'BIKE', 'VAN', 'MOTORCYCLE']),
     body('paymentMethod').optional().isIn(['CASH', 'CARD', 'WALLET']),
-    body('carType').optional().isString(),
-    body('notes').optional().isString(),
+    body('notes').optional().isString().isLength({ max: 500 }),
     body('promoCode').optional().isString(),
+    body('driverFloorPrice').optional().isFloat({ min: 0 }),
   ],
-  rideController.requestSpecificDriver
+  ctrl.requestSpecificDriver
 );
 
-/**
- * @route   GET /api/rides/:id
- * @desc    Get ride details
- * @access  Private
- */
-router.get('/:id', param('id').isUUID(), rideController.getRideById);
+// ─────────────────────────────────────────────────────────────────────────────
+// PARAMETERISED ROUTES  (must come AFTER all static paths)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** GET /api/rides/:id — full detail; only customer or assigned driver */
+router.get('/:id', ctrl.getRideById);
+
+/** PUT /api/rides/:id/accept — driver accepts REQUESTED ride */
+router.put('/:id/accept', authorize('DRIVER'), ctrl.acceptRide);
+
+/** PUT /api/rides/:id/arrived — driver marks arrival at pickup */
+router.put('/:id/arrived', authorize('DRIVER'), ctrl.arrivedAtPickup);
+
+/** PUT /api/rides/:id/start — driver starts the ride; records startedAt */
+router.put('/:id/start', authorize('DRIVER'), ctrl.startRide);
 
 /**
- * @route   PUT /api/rides/:id/accept
- * @desc    Driver accepts ride
- * @access  Private (DRIVER)
- */
-router.put(
-  '/:id/accept',
-  authorize('DRIVER'),
-  param('id').isUUID(),
-  rideController.acceptRide
-);
-
-/**
- * @route   PUT /api/rides/:id/arrived
- * @desc    Driver marks arrived at pickup
- * @access  Private (DRIVER)
- */
-router.put(
-  '/:id/arrived',
-  authorize('DRIVER'),
-  param('id').isUUID(),
-  rideController.arrivedAtPickup
-);
-
-/**
- * @route   PUT /api/rides/:id/start
- * @desc    Driver starts ride
- * @access  Private (DRIVER)
- */
-router.put(
-  '/:id/start',
-  authorize('DRIVER'),
-  param('id').isUUID(),
-  rideController.startRide
-);
-
-/**
- * @route   PUT /api/rides/:id/complete
- * @desc    Driver completes ride
- * @access  Private (DRIVER)
+ * PUT /api/rides/:id/complete
+ * Final fare is always recalculated server-side using actual trip time
+ * (startedAt → now) so Lagos traffic is automatically captured.
+ * The driverFloorMultiplier is recovered from the ride's notes field.
+ *
+ * actualFare is OPTIONAL in the body — it is informational only and is
+ * never used for billing. The server is the single source of truth.
  */
 router.put(
   '/:id/complete',
   authorize('DRIVER'),
-  param('id').isUUID(),
   [
-    body('actualFare').isFloat({ min: 0 }),
-    body('paymentMethod').optional().isIn(['CASH', 'CARD', 'WALLET'])
+    body('actualFare').optional().isFloat({ min: 0 }),
+    body('paymentMethod').optional().isIn(['CASH', 'CARD', 'WALLET']),
   ],
-  rideController.completeRide
+  ctrl.completeRide
 );
 
 /**
- * @route   PUT /api/rides/:id/cancel
- * @desc    Cancel ride (customer or driver)
- * @access  Private
+ * PUT /api/rides/:id/cancel
+ * Customer or driver. ₦200 cancellation fee if customer cancels post-accept.
  */
 router.put(
   '/:id/cancel',
-  param('id').isUUID(),
-  [body('reason').optional().isString()],
-  rideController.cancelRide
+  [body('reason').optional().isString().isLength({ max: 300 })],
+  ctrl.cancelRide
 );
 
 /**
- * @route   POST /api/rides/:id/rate
- * @desc    Rate completed ride
- * @access  Private
+ * POST /api/rides/:id/rate
+ * Customer rates completed ride (1–5 stars).
  */
 router.post(
   '/:id/rate',
-  param('id').isUUID(),
+  authorize('CUSTOMER'),
   [
     body('rating').isInt({ min: 1, max: 5 }),
-    body('comment').optional().isString()
+    body('comment').optional().isString().isLength({ max: 1000 }),
   ],
-  rideController.rateRide
+  ctrl.rateRide
 );
 
 module.exports = router;
