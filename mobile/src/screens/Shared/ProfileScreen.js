@@ -18,9 +18,8 @@ const ROLE_META = {
 };
 
 const ACCENT_OPTIONS = [
-  { id: 'gold',  label: 'Gold',  color: '#C9A96E' },
-  { id: 'ocean', label: 'Ocean', color: '#4E8DBD' },
-  { id: 'sage',  label: 'Sage',  color: '#7EA882' },
+  { id: 'onyx',  label: 'Onyx',  color: '#FFFFFF' },
+  { id: 'chalk', label: 'Chalk', color: '#EAE5DA' },
 ];
 
 const Avatar = ({ user, theme }) => (

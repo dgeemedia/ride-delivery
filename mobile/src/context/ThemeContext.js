@@ -13,7 +13,6 @@ export function ThemeProvider({ children }) {
   const [mode,     setMode]     = useState(DEFAULT_MODE);
   const [loaded,   setLoaded]   = useState(false);
 
-  // Load saved preferences on mount
   useEffect(() => {
     (async () => {
       try {
@@ -23,11 +22,8 @@ export function ThemeProvider({ children }) {
         ]);
         if (savedAccent) setAccentId(savedAccent);
         if (savedMode)   setMode(savedMode);
-      } catch (_) {
-        // Silently fall back to defaults
-      } finally {
-        setLoaded(true);
-      }
+      } catch (_) {}
+      finally { setLoaded(true); }
     })();
   }, []);
 
@@ -52,7 +48,6 @@ export function ThemeProvider({ children }) {
   );
 }
 
-// Hook — use this everywhere instead of hardcoded colors
 export function useTheme() {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error('useTheme must be used inside ThemeProvider');

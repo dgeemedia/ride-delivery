@@ -10,9 +10,8 @@ import { useTheme } from '../../context/ThemeContext';
 const { width } = Dimensions.get('window');
 
 const ACCENT_OPTIONS = [
-  { id: 'gold',  label: 'Gold',  color: '#C9A96E' },
-  { id: 'ocean', label: 'Ocean', color: '#4E8DBD' },
-  { id: 'sage',  label: 'Sage',  color: '#7EA882' },
+  { id: 'onyx',  label: 'Onyx',  color: '#FFFFFF' },
+  { id: 'chalk', label: 'Chalk', color: '#EAE5DA' },
 ];
 
 // Resolved at module level — Metro bundler requires static require() paths
