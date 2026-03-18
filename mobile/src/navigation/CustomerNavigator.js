@@ -10,7 +10,8 @@ import { useTheme }                 from '../context/ThemeContext';
 import HomeScreen            from '../screens/Customer/HomeScreen';
 import RequestRideScreen     from '../screens/Customer/RequestRideScreen';
 import RequestDeliveryScreen from '../screens/Customer/RequestDeliveryScreen';
-import RideTrackingScreen    from '../screens/Customer/RideTrackingScreen'; // ← real screen
+import RideTrackingScreen    from '../screens/Customer/RideTrackingScreen';
+import NearbyDriversScreen   from '../screens/Customer/NearbyDriversScreen';  // ← NEW
 import HistoryScreen         from '../screens/Customer/HistoryScreen';
 import ProfileScreen         from '../screens/Shared/ProfileScreen';
 import EditProfileScreen     from '../screens/Shared/EditProfileScreen';
@@ -24,26 +25,27 @@ const Stack = createStackNavigator();
 
 const HomeStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Home"            component={HomeScreen} />
-    <Stack.Screen name="RequestRide"     component={RequestRideScreen} />
-    <Stack.Screen name="RequestDelivery" component={RequestDeliveryScreen} />
-    <Stack.Screen name="Notifications"   component={NotificationsScreen} />
-    <Stack.Screen name="Support"         component={SupportScreen} />
+    <Stack.Screen name="Home"            component={HomeScreen}           />
+    <Stack.Screen name="RequestRide"     component={RequestRideScreen}    />
+    <Stack.Screen name="RequestDelivery" component={RequestDeliveryScreen}/>
+    <Stack.Screen name="NearbyDrivers"   component={NearbyDriversScreen}  />
+    <Stack.Screen name="Notifications"   component={NotificationsScreen}  />
+    <Stack.Screen name="Support"         component={SupportScreen}        />
     {/* Real tracking screen — driver pin moves live via socket */}
-    <Stack.Screen name="RideTracking"    component={RideTrackingScreen} />
+    <Stack.Screen name="RideTracking"    component={RideTrackingScreen}   />
   </Stack.Navigator>
 );
 
 const ProfileStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="ProfileHome"    component={ProfileScreen} />
-    <Stack.Screen name="EditProfile"    component={EditProfileScreen} />
-    <Stack.Screen name="Wallet"         component={WalletScreen} />
-    <Stack.Screen name="Notifications"  component={NotificationsScreen} />
+    <Stack.Screen name="ProfileHome"    component={ProfileScreen}        />
+    <Stack.Screen name="EditProfile"    component={EditProfileScreen}    />
+    <Stack.Screen name="Wallet"         component={WalletScreen}         />
+    <Stack.Screen name="Notifications"  component={NotificationsScreen}  />
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-    <Stack.Screen name="Support"        component={SupportScreen} />
-    <Stack.Screen name="AppFeedback"    component={PlaceholderScreen} />
-    <Stack.Screen name="Terms"          component={PlaceholderScreen} />
+    <Stack.Screen name="Support"        component={SupportScreen}        />
+    <Stack.Screen name="AppFeedback"    component={PlaceholderScreen}    />
+    <Stack.Screen name="Terms"          component={PlaceholderScreen}    />
   </Stack.Navigator>
 );
 

@@ -11,6 +11,7 @@ import DriverDashboardScreen from '../screens/Driver/DriverDashboardScreen';
 import IncomingRideScreen    from '../screens/Driver/IncomingRideScreen';
 import ActiveRideScreen      from '../screens/Driver/ActiveRideScreen';
 import EarningsScreen        from '../screens/Driver/EarningsScreen';
+import FloorPriceScreen      from '../screens/Driver/FloorPriceScreen';      // ← NEW
 import ProfileScreen         from '../screens/Shared/ProfileScreen';
 import EditProfileScreen     from '../screens/Shared/EditProfileScreen';
 import NotificationsScreen   from '../screens/Shared/NotificationsScreen';
@@ -33,32 +34,31 @@ const DashboardStack = () => (
       options={{
         presentation:       'transparentModal',
         cardOverlayEnabled: true,
-        animationEnabled:   false, // IncomingRideScreen handles its own animation
-        // Prevent Android back button from dismissing without action
+        animationEnabled:   false,
         gestureEnabled:     false,
       }}
     />
 
-    {/* ActiveRide replaces IncomingRide — no back to request screen */}
-    <Stack.Screen name="ActiveRide"      component={ActiveRideScreen} />
+    <Stack.Screen name="ActiveRide"      component={ActiveRideScreen}   />
+    <Stack.Screen name="FloorPrice"      component={FloorPriceScreen}   />
     <Stack.Screen name="Notifications"   component={NotificationsScreen} />
-    <Stack.Screen name="Support"         component={SupportScreen} />
-    <Stack.Screen name="DriverDocuments" component={PlaceholderScreen} />
-    <Stack.Screen name="DriverHistory"   component={PlaceholderScreen} />
+    <Stack.Screen name="Support"         component={SupportScreen}       />
+    <Stack.Screen name="DriverDocuments" component={PlaceholderScreen}  />
+    <Stack.Screen name="DriverHistory"   component={PlaceholderScreen}  />
   </Stack.Navigator>
 );
 
 // ── Profile stack ──────────────────────────────────────────────────────────
 const ProfileStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="ProfileHome"    component={ProfileScreen} />
-    <Stack.Screen name="EditProfile"    component={EditProfileScreen} />
+    <Stack.Screen name="ProfileHome"    component={ProfileScreen}       />
+    <Stack.Screen name="EditProfile"    component={EditProfileScreen}   />
     <Stack.Screen name="Notifications"  component={NotificationsScreen} />
-    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-    <Stack.Screen name="Support"        component={SupportScreen} />
-    <Stack.Screen name="DriverEarnings" component={EarningsScreen} />
-    <Stack.Screen name="AppFeedback"    component={PlaceholderScreen} />
-    <Stack.Screen name="Terms"          component={PlaceholderScreen} />
+    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen}/>
+    <Stack.Screen name="Support"        component={SupportScreen}       />
+    <Stack.Screen name="DriverEarnings" component={EarningsScreen}      />
+    <Stack.Screen name="AppFeedback"    component={PlaceholderScreen}   />
+    <Stack.Screen name="Terms"          component={PlaceholderScreen}   />
   </Stack.Navigator>
 );
 
@@ -116,7 +116,7 @@ function PlaceholderScreen({ navigation, route }) {
       <View style={ph.center}>
         <Ionicons name="construct-outline" size={40} color={theme.hint} />
         <Text style={[ph.title, { color: theme.foreground }]}>{route.name}</Text>
-        <Text style={[ph.sub,   { color: theme.hint }]}>Coming soon</Text>
+        <Text style={[ph.sub, { color: theme.hint }]}>Coming soon</Text>
       </View>
     </View>
   );

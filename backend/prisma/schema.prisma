@@ -102,18 +102,14 @@ model User {
   suspendedBy          String?
   suspensionReason     String?
 
-  // Password reset
   passwordResetToken   String?
   passwordResetExpires DateTime?
-
-  // Email verification
   emailVerifyToken     String?
   emailVerifyExpires   DateTime?
 
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  // Relations
   customerRides        Ride[]                   @relation("CustomerRides")
   driverRides          Ride[]                   @relation("DriverRides")
   customerDeliveries   Delivery[]               @relation("CustomerDeliveries")
@@ -127,8 +123,8 @@ model User {
   activityLogs         ActivityLog[]
   wallet               Wallet?
   payouts              Payout[]
-  supportTickets       SupportTicket[]          // ← added
-  appFeedback          AppFeedback[]            // ← added
+  supportTickets       SupportTicket[]
+  appFeedback          AppFeedback[]
 
   @@index([email])
   @@index([phone])
@@ -153,20 +149,22 @@ model DriverProfile {
   vehicleColor    String
   vehiclePlate    String      @unique
 
-  // Documents — optional until uploaded via profile screen
-  licenseImageUrl String?     // ← was String (NOT NULL), now optional
-  vehicleRegUrl   String?     // ← was String (NOT NULL), now optional
-  insuranceUrl    String?     // ← was String (NOT NULL), now optional
+  licenseImageUrl String?
+  vehicleRegUrl   String?
+  insuranceUrl    String?
 
-  // Status
   isApproved      Boolean     @default(false)
   isOnline        Boolean     @default(false)
   currentLat      Float?
   currentLng      Float?
 
-  // Stats
   totalRides      Int         @default(0)
   rating          Float       @default(0)
+
+  // Driver floor price — the minimum fare the driver will accept (₦).
+  // null / 0 = no floor set (platform rate applies).
+  // Capped at platform estimate × 1.30 by the fare engine.
+  preferredFloorPrice Float?  @default(null)
 
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -185,18 +183,14 @@ model DeliveryPartnerProfile {
 
   vehicleType     VehicleType
   vehiclePlate    String?
-
-  // Documents — optional until uploaded via profile screen
-  idImageUrl      String?     // ← was String (NOT NULL), now optional
+  idImageUrl      String?
   vehicleImageUrl String?
 
-  // Status
   isApproved      Boolean     @default(false)
   isOnline        Boolean     @default(false)
   currentLat      Float?
   currentLng      Float?
 
-  // Stats
   totalDeliveries Int         @default(0)
   rating          Float       @default(0)
 
@@ -548,7 +542,7 @@ model PromoCode {
 model SupportTicket {
   id           String    @id @default(uuid())
   userId       String
-  user         User      @relation(fields: [userId], references: [id]) // ← added relation
+  user         User      @relation(fields: [userId], references: [id])
   ticketNumber String    @unique
   subject      String
   description  String
@@ -573,7 +567,7 @@ model SupportTicket {
 model AppFeedback {
   id         String   @id @default(uuid())
   userId     String
-  user       User     @relation(fields: [userId], references: [id]) // ← added relation
+  user       User     @relation(fields: [userId], references: [id])
   rating     Int
   comment    String?
   category   String

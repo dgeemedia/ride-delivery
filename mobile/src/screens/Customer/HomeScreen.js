@@ -43,9 +43,7 @@ const CrossfadeImageCycler = ({ images, intervalMs = 4500, transitionMs = 2200 }
 
   useEffect(() => {
     const timer = setInterval(() => {
-      Animated.timing(nextOpacity, {
-        toValue: 1, duration: transitionMs, useNativeDriver: true,
-      }).start(() => {
+      Animated.timing(nextOpacity, { toValue: 1, duration: transitionMs, useNativeDriver: true }).start(() => {
         setCurrentIdx(prev => {
           const newCurrent = (prev + 1) % images.length;
           setNextIdx((newCurrent + 1) % images.length);
@@ -105,7 +103,6 @@ const sp = StyleSheet.create({
 // ── ActionCard ─────────────────────────────────────────────────────────────────
 const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
   const scaleA = useRef(new Animated.Value(1)).current;
-
   const handlePress = () => {
     Animated.sequence([
       Animated.timing(scaleA, { toValue: 0.96, duration: 80, useNativeDriver: true }),
@@ -113,17 +110,12 @@ const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
     ]).start();
     onPress?.();
   };
-
   return (
     <TouchableOpacity onPress={handlePress} activeOpacity={0.92} style={{ width: CARD_W }}>
       <Animated.View style={[ac.card, { transform: [{ scale: scaleA }] }]}>
         <CrossfadeImageCycler images={images} />
         <View style={ac.overlay} />
-        {badge && (
-          <View style={[ac.badge, { backgroundColor: theme.accent }]}>
-            <Text style={ac.badgeTxt}>{badge}</Text>
-          </View>
-        )}
+        {badge && <View style={[ac.badge, { backgroundColor: theme.accent }]}><Text style={ac.badgeTxt}>{badge}</Text></View>}
         <View style={ac.content}>
           <Text style={ac.title} numberOfLines={1}>{title}</Text>
           <Text style={ac.sub}   numberOfLines={2}>{subtitle}</Text>
@@ -152,7 +144,6 @@ const ACTIVITY_STATUS_META = {
   CANCELLED:   { color: '#E05555', label: 'Cancelled' },
   IN_PROGRESS: { color: '#C9A96E', label: 'In Progress' },
 };
-
 const ActivityRow = ({ icon, title, subtitle, amount, status, theme, last }) => {
   const meta = ACTIVITY_STATUS_META[status] ?? { color: theme.accent, label: status };
   return (
@@ -219,7 +210,6 @@ const promo = StyleSheet.create({
 export default function HomeScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
-  // FIX: correct safe area insets — paddingTop uses insets.top, not Platform hack
   const insets          = useSafeAreaInsets();
 
   const [stats,      setStats]      = useState(null);
@@ -231,7 +221,6 @@ export default function HomeScreen({ navigation }) {
 
   useEffect(() => { fetchAll(); }, []);
 
-  // Refresh active ride when returning from booking screen
   useEffect(() => {
     const unsub = navigation.addListener('focus', fetchAll);
     return unsub;
@@ -243,17 +232,11 @@ export default function HomeScreen({ navigation }) {
         userAPI.getStats(),
         rideAPI.getActiveRide(),
       ]);
-
-      if (statsRes.status === 'fulfilled') {
-        setStats(statsRes.value?.data ?? statsRes.value);
-      }
-      if (rideRes.status === 'fulfilled') {
+      if (statsRes.status === 'fulfilled') setStats(statsRes.value?.data ?? statsRes.value);
+      if (rideRes.status  === 'fulfilled') {
         const ride = rideRes.value?.data?.ride ?? rideRes.value?.ride ?? null;
-        // Show banner for any non-completed, non-cancelled ride
         setActiveRide(
-          ride && ['REQUESTED','ACCEPTED','ARRIVED','IN_PROGRESS'].includes(ride.status)
-            ? ride
-            : null
+          ride && ['REQUESTED','ACCEPTED','ARRIVED','IN_PROGRESS'].includes(ride.status) ? ride : null
         );
       }
     } catch {}
@@ -266,49 +249,53 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // ── Cancel a REQUESTED ride (no driver yet) ─────────────────────────────────
   const handleCancelRide = () => {
     if (!activeRide) return;
-    Alert.alert(
-      'Cancel Ride?',
-      'Your ride request will be cancelled.',
-      [
-        { text: 'Keep', style: 'cancel' },
-        {
-          text: 'Cancel Ride',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await rideAPI.cancelRide(activeRide.id, { reason: 'Customer cancelled from home screen' });
-              setActiveRide(null);
-            } catch (err) {
-              Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
-            }
+    Alert.alert('Cancel Ride?', 'Your ride request will be cancelled.', [
+      { text: 'Keep', style: 'cancel' },
+      {
+        text: 'Cancel Ride', style: 'destructive',
+        onPress: async () => {
+          try {
+            await rideAPI.cancelRide(activeRide.id, { reason: 'Customer cancelled from home screen' });
+            setActiveRide(null);
+          } catch (err) {
+            Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
           }
-        },
-      ]
-    );
+        }
+      },
+    ]);
   };
 
-  // ── Navigate to ride tracking ───────────────────────────────────────────────
-  const handleResumeRide = () => {
-    navigation.navigate('RideTracking', { rideId: activeRide?.id });
+  const handleResumeRide = () => navigation.navigate('RideTracking', { rideId: activeRide?.id });
+
+  // ── Navigate to nearby drivers — needs pickup coords ──────────────────────
+  // We use a Lagos default when no GPS is available (same as RequestRideScreen).
+  // If the user has already typed an address in a prior session, they'll have
+  // coords stored; otherwise they land on NearbyDriversScreen and select a pickup there.
+  const handleChooseDriver = () => {
+    navigation.navigate('NearbyDrivers', {
+      // Passing empty strings prompts the user to refine on the next screen.
+      // For a better UX, hook this button up to GPS the same way RequestRideScreen does.
+      pickupAddress:  '',
+      pickupLat:      6.5244,   // Lagos centre fallback
+      pickupLng:      3.3792,
+      dropoffAddress: '',
+      dropoffLat:     6.4281,
+      dropoffLng:     3.4219,
+      vehicleType:    'CAR',
+    });
   };
 
   const hour  = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  // Safe-area top padding: insets.top (notch/status bar) + breathing room
-  // Safe-area bottom padding: insets.bottom (home indicator on iPhone) + extra
   const paddingTop    = insets.top    + 16;
   const paddingBottom = insets.bottom + 24;
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
-      <StatusBar
-        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
-        backgroundColor={theme.background}
-      />
+      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
       <ScrollView
@@ -334,28 +321,19 @@ export default function HomeScreen({ navigation }) {
                 <Ionicons name="notifications-outline" size={20} color={theme.accent} />
                 <View style={[s.notifDot, { borderColor: theme.background }]} />
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => navigation.getParent()?.navigate('ProfileTab')}
-                activeOpacity={0.85}
-              >
+              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('ProfileTab')} activeOpacity={0.85}>
                 {user?.profileImage ? (
                   <Image source={{ uri: user.profileImage }} style={[s.profileAvatar, { borderColor: theme.accent + '40' }]} />
                 ) : (
                   <View style={[s.profileAvatarFallback, { backgroundColor: theme.accent + '18', borderColor: theme.accent + '35' }]}>
-                    <Text style={[s.profileAvatarInitials, { color: theme.accent }]}>
-                      {user?.firstName?.[0]}{user?.lastName?.[0]}
-                    </Text>
+                    <Text style={[s.profileAvatarInitials, { color: theme.accent }]}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
                   </View>
                 )}
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* ── Active ride banner ─────────────────────────────────────────────
-              Shows when the customer has an ongoing ride.
-              REQUESTED: can cancel (driver not yet assigned)
-              ACCEPTED/ARRIVED/IN_PROGRESS: tap to go to tracking
-          ── */}
+          {/* ── Active ride banner ── */}
           {activeRide && (
             <ActiveRideBanner
               ride={activeRide}
@@ -367,11 +345,7 @@ export default function HomeScreen({ navigation }) {
           )}
 
           {/* ── Wallet ── */}
-          <WalletStrip
-            balance={stats?.walletBalance}
-            onTopUp={() => navigation.navigate('Wallet')}
-            theme={theme}
-          />
+          <WalletStrip balance={stats?.walletBalance} onTopUp={() => navigation.navigate('Wallet')} theme={theme} />
 
           {/* ── Stats ── */}
           {loading ? (
@@ -382,8 +356,7 @@ export default function HomeScreen({ navigation }) {
               <StatPill icon="cube-outline" value={stats?.totalDeliveries ?? 0} label="Packages" theme={theme} />
               <StatPill icon="cash-outline"
                 value={`${'\u20A6'}${((stats?.totalSpent ?? 0) / 1000).toFixed(1)}k`}
-                label="Spent"
-                theme={theme}
+                label="Spent" theme={theme}
               />
             </View>
           )}
@@ -391,22 +364,28 @@ export default function HomeScreen({ navigation }) {
           {/* ── Quick Actions ── */}
           <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
           <View style={s.actionsRow}>
-            <ActionCard
-              images={RIDE_IMAGES}
-              title="Book a Ride"
-              subtitle="Fast rides across Lagos"
-              badge="INSTANT"
-              theme={theme}
-              onPress={() => navigation.navigate('RequestRide')}
-            />
-            <ActionCard
-              images={DELIVERY_IMAGES}
-              title="Send Package"
-              subtitle="Bikes, vans & couriers"
-              theme={theme}
-              onPress={() => navigation.navigate('RequestDelivery')}
-            />
+            <ActionCard images={RIDE_IMAGES}     title="Book a Ride"   subtitle="Fast rides across Lagos" badge="INSTANT" theme={theme} onPress={() => navigation.navigate('RequestRide')} />
+            <ActionCard images={DELIVERY_IMAGES} title="Send Package"  subtitle="Bikes, vans & couriers"              theme={theme} onPress={() => navigation.navigate('RequestDelivery')} />
           </View>
+
+          {/* ── Choose a Driver button ─────────────────────────────────────────
+              Lets the customer browse nearby drivers and pick one by name/rating
+              before confirming — they also see any floor prices set by drivers.
+          ── */}
+          <TouchableOpacity
+            style={[s.chooseDriverBtn, { borderColor: theme.accent + '50', backgroundColor: theme.accent + '0D' }]}
+            onPress={handleChooseDriver}
+            activeOpacity={0.85}
+          >
+            <View style={[s.chooseDriverIcon, { backgroundColor: theme.accent + '18' }]}>
+              <Ionicons name="people-outline" size={18} color={theme.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.chooseDriverTitle, { color: theme.accent }]}>Choose Your Driver</Text>
+              <Text style={[s.chooseDriverSub, { color: theme.hint }]}>Browse nearby drivers, see ratings & fares</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={theme.accent} />
+          </TouchableOpacity>
 
           {/* ── Promo ── */}
           <PromoBanner theme={theme} onPress={() => {}} />
@@ -418,16 +397,8 @@ export default function HomeScreen({ navigation }) {
               <ActivityIndicator color={theme.accent} style={{ marginVertical: 20 }} />
             ) : (stats?.totalRides > 0 || stats?.totalDeliveries > 0) ? (
               <>
-                <ActivityRow
-                  icon="car-outline"  title="Ride to Victoria Island"
-                  subtitle="Today · 2:30 PM · 12 min"
-                  amount={`${'\u20A6'}1,200`} status="COMPLETED" theme={theme}
-                />
-                <ActivityRow
-                  icon="cube-outline" title="Package to Lekki Phase 1"
-                  subtitle="Yesterday · 10:15 AM · 3.2 km"
-                  amount={`${'\u20A6'}800`} status="COMPLETED" theme={theme} last
-                />
+                <ActivityRow icon="car-outline"  title="Ride to Victoria Island" subtitle="Today · 2:30 PM · 12 min"        amount={`${'\u20A6'}1,200`} status="COMPLETED" theme={theme} />
+                <ActivityRow icon="cube-outline" title="Package to Lekki Phase 1" subtitle="Yesterday · 10:15 AM · 3.2 km" amount={`${'\u20A6'}800`}   status="COMPLETED" theme={theme} last />
               </>
             ) : (
               <View style={s.emptyActivity}>
@@ -435,9 +406,7 @@ export default function HomeScreen({ navigation }) {
                   <Ionicons name="map-outline" size={28} color={theme.accent} />
                 </View>
                 <Text style={[s.emptyTitle, { color: theme.foreground }]}>No trips yet</Text>
-                <Text style={[s.emptySub,   { color: theme.hint }]}>
-                  Book your first ride or send a package to get started
-                </Text>
+                <Text style={[s.emptySub,   { color: theme.hint }]}>Book your first ride or send a package to get started</Text>
                 <TouchableOpacity
                   style={[s.emptyBtn, { borderColor: theme.accent + '40', backgroundColor: theme.accent + '10' }]}
                   onPress={() => navigation.navigate('RequestRide')}
@@ -458,11 +427,8 @@ export default function HomeScreen({ navigation }) {
 
 const s = StyleSheet.create({
   root:        { flex: 1 },
-  ambientGlow: {
-    position: 'absolute', width: width * 1.3, height: width * 1.3,
-    borderRadius: width * 0.65, top: -width * 0.75, alignSelf: 'center', opacity: 0.05,
-  },
-  scroll: { paddingHorizontal: H_PAD },
+  ambientGlow: { position: 'absolute', width: width * 1.3, height: width * 1.3, borderRadius: width * 0.65, top: -width * 0.75, alignSelf: 'center', opacity: 0.05 },
+  scroll:      { paddingHorizontal: H_PAD },
 
   header:                { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 },
   greet:                 { fontSize: 12, fontWeight: '600', marginBottom: 3 },
@@ -474,14 +440,15 @@ const s = StyleSheet.create({
   profileAvatarFallback: { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
   profileAvatarInitials: { fontSize: 14, fontWeight: '800' },
 
-  statsRow:     { flexDirection: 'row', gap: 10, marginBottom: 28 },
-  sectionTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 14 },
+  statsRow:    { flexDirection: 'row', gap: 10, marginBottom: 28 },
+  sectionTitle:{ fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 14 },
+  actionsRow:  { flexDirection: 'row', gap: CARD_GAP, width: width - H_PAD * 2, marginBottom: 14 },
 
-  actionsRow: {
-    flexDirection: 'row', gap: CARD_GAP,
-    width: width - H_PAD * 2,
-    marginBottom: 20,
-  },
+  // Choose a Driver button
+  chooseDriverBtn:   { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20 },
+  chooseDriverIcon:  { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  chooseDriverTitle: { fontSize: 14, fontWeight: '800', marginBottom: 2 },
+  chooseDriverSub:   { fontSize: 11, fontWeight: '500' },
 
   activityCard:  { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 6 },
   emptyActivity: { alignItems: 'center', paddingVertical: 28 },
