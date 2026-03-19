@@ -398,4 +398,233 @@ exports.withdraw = async (req, res) => {
   });
 };
 
+/**
+ * @desc    Initialize Paystack top-up for wallet
+ * @route   POST /api/wallet/topup/initialize
+ * @access  Private
+ */
+exports.initializeTopUp = async (req, res) => {
+  const { amount } = req.body;
+  if (!amount || amount < 100) throw new AppError('Minimum top-up is ₦100', 400);
+  if (amount > 1000000)        throw new AppError('Maximum top-up is ₦1,000,000', 400);
+
+  const reference = `TOPUP-${req.user.id.slice(0, 8)}-${Date.now()}`;
+
+  const paystackRes = await paymentService.paystackInitializePayment({
+    email:     req.user.email,
+    amount:    amount * 100, // kobo
+    reference,
+    metadata:  { userId: req.user.id, type: 'wallet_topup', amount },
+    callbackUrl: `${process.env.API_BASE_URL}/api/wallet/topup/verify`,
+  });
+
+  // Store pending transaction so webhook can match it
+  const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+  if (wallet) {
+    await prisma.walletTransaction.create({
+      data: {
+        walletId:    wallet.id,
+        type:        'CREDIT',
+        amount,
+        description: 'Wallet top-up via Paystack',
+        status:      'PENDING',
+        reference,
+      }
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      authorizationUrl: paystackRes.data.authorization_url,
+      reference,
+      accessCode:       paystackRes.data.access_code,
+    }
+  });
+};
+
+/**
+ * @desc    Verify Paystack top-up (called by webhook or callback)
+ * @route   POST /api/wallet/topup/verify
+ * @access  Public (Paystack webhook)
+ */
+exports.verifyTopUp = async (req, res) => {
+  const { reference } = req.body;
+  if (!reference) return res.status(400).json({ success: false });
+
+  const verified = await paymentService.paystackVerifyTransaction(reference).catch(() => null);
+  if (!verified || verified.data.status !== 'success') {
+    return res.status(400).json({ success: false, message: 'Payment not successful' });
+  }
+
+  const amount   = verified.data.amount / 100; // convert from kobo
+  const metadata = verified.data.metadata;
+  const userId   = metadata?.userId;
+
+  if (!userId) return res.status(400).json({ success: false });
+
+  // Idempotency — don't credit twice
+  const existing = await prisma.walletTransaction.findUnique({ where: { reference } });
+  if (existing?.status === 'COMPLETED') {
+    return res.status(200).json({ success: true, message: 'Already processed' });
+  }
+
+  await prisma.$transaction([
+    prisma.wallet.upsert({
+      where:  { userId },
+      update: { balance: { increment: amount } },
+      create: { userId, balance: amount },
+    }),
+    prisma.walletTransaction.updateMany({
+      where: { reference },
+      data:  { status: 'COMPLETED' },
+    }),
+  ]);
+
+  await notificationService.notify({
+    userId,
+    title:   'Wallet Credited 💰',
+    message: `₦${amount.toLocaleString('en-NG')} has been added to your wallet. Reference: ${reference}`,
+    type:    notificationService.TYPES.WALLET_CREDITED,
+    data:    { amount, reference },
+  });
+
+  res.status(200).json({ success: true });
+};
+
+/**
+ * @desc    Verify bank account (for withdrawal screen)
+ * @route   GET /api/wallet/verify-account
+ * @access  Private
+ */
+exports.verifyBankAccount = async (req, res) => {
+  const { accountNumber, bankCode } = req.query;
+  if (!accountNumber || !bankCode) throw new AppError('Account number and bank code required', 400);
+
+  const result = await paymentService.paystackVerifyAccount(accountNumber, bankCode);
+  if (!result) throw new AppError('Account not found', 404);
+
+  res.status(200).json({
+    success: true,
+    data: { accountName: result.account_name, accountNumber: result.account_number }
+  });
+};
+
+/**
+ * @desc    Admin: get all pending payout requests
+ * @route   GET /api/admin/payouts
+ * @access  Private (ADMIN)
+ */
+exports.adminGetPayouts = async (req, res) => {
+  const { status = 'PENDING', page = 1, limit = 20 } = req.query;
+  const skip = (page - 1) * limit;
+
+  const [payouts, total] = await Promise.all([
+    prisma.payout.findMany({
+      where: { status },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, role: true } }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: parseInt(skip),
+      take: parseInt(limit),
+    }),
+    prisma.payout.count({ where: { status } }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: { payouts, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } }
+  });
+};
+
+/**
+ * @desc    Admin: approve a payout (mark as PROCESSING → COMPLETED)
+ * @route   PUT /api/admin/payouts/:id/approve
+ * @access  Private (ADMIN)
+ */
+exports.adminApprovePayout = async (req, res) => {
+  const { id } = req.params;
+  const { note } = req.body;
+
+  const payout = await prisma.payout.findUnique({
+    where: { id },
+    include: { user: true }
+  });
+  if (!payout) throw new AppError('Payout not found', 404);
+  if (payout.status !== 'PENDING') throw new AppError('Payout is not in PENDING status', 400);
+
+  // Update payout status + wallet transaction
+  await prisma.$transaction([
+    prisma.payout.update({
+      where: { id },
+      data:  { status: 'COMPLETED', processedAt: new Date() }
+    }),
+    prisma.walletTransaction.updateMany({
+      where: { reference: payout.reference },
+      data:  { status: 'COMPLETED' }
+    }),
+  ]);
+
+  await notificationService.notify({
+    userId:  payout.userId,
+    title:   'Withdrawal Approved ✅',
+    message: `Your withdrawal of ₦${payout.amount.toLocaleString('en-NG')} to ${payout.accountName} has been approved and sent to your bank. ${note ?? ''}`,
+    type:    notificationService.TYPES.WALLET_WITHDRAWAL,
+    data:    { payoutId: id, amount: payout.amount, reference: payout.reference }
+  });
+
+  res.status(200).json({ success: true, message: 'Payout approved and marked as completed' });
+};
+
+/**
+ * @desc    Admin: reject a payout (refund wallet balance)
+ * @route   PUT /api/admin/payouts/:id/reject
+ * @access  Private (ADMIN)
+ */
+exports.adminRejectPayout = async (req, res) => {
+  const { id }     = req.params;
+  const { reason } = req.body;
+
+  const payout = await prisma.payout.findUnique({ where: { id } });
+  if (!payout) throw new AppError('Payout not found', 404);
+  if (payout.status !== 'PENDING') throw new AppError('Payout is not in PENDING status', 400);
+
+  // Refund wallet + update payout status
+  await prisma.$transaction([
+    prisma.wallet.update({
+      where: { userId: payout.userId },
+      data:  { balance: { increment: payout.amount } },
+    }),
+    prisma.payout.update({
+      where: { id },
+      data:  { status: 'FAILED', failureReason: reason, processedAt: new Date() }
+    }),
+    prisma.walletTransaction.updateMany({
+      where: { reference: payout.reference },
+      data:  { status: 'FAILED' }
+    }),
+    prisma.walletTransaction.create({
+      data: {
+        walletId:    (await prisma.wallet.findUnique({ where: { userId: payout.userId } })).id,
+        type:        'REFUND',
+        amount:      payout.amount,
+        description: `Withdrawal refund — ${reason ?? 'rejected by admin'}`,
+        status:      'COMPLETED',
+        reference:   `REFUND-${id}`,
+      }
+    }),
+  ]);
+
+  await notificationService.notify({
+    userId:  payout.userId,
+    title:   'Withdrawal Rejected',
+    message: `Your withdrawal of ₦${payout.amount.toLocaleString('en-NG')} was rejected. ₦${payout.amount.toLocaleString('en-NG')} has been returned to your wallet. ${reason ? `Reason: ${reason}` : ''}`,
+    type:    notificationService.TYPES.WALLET_CREDITED,
+    data:    { payoutId: id, amount: payout.amount, reason }
+  });
+
+  res.status(200).json({ success: true, message: 'Payout rejected and wallet refunded' });
+};
+
 module.exports = exports;

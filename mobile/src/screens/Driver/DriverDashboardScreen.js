@@ -22,7 +22,7 @@ const PURPLE = '#A78BFA';
 const getRealLocation = async () => {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') {
-    throw new Error('Location permission denied. Please enable location access in your phone settings to go online.');
+    throw new Error('Location permission denied. Please enable location access in settings to go online.');
   }
   const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
   return { lat: loc.coords.latitude, lng: loc.coords.longitude };
@@ -100,8 +100,14 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
       </View>
       {toggling
         ? <ActivityIndicator color={DA} size="small" />
-        : <Switch value={isOnline} onValueChange={onToggle} disabled={!isApproved}
-            trackColor={{ false: theme.border, true: DA + '70' }} thumbColor={isOnline ? DA : theme.hint} ios_backgroundColor={theme.border} />
+        : <Switch
+            value={isOnline}
+            onValueChange={onToggle}
+            disabled={!isApproved}
+            trackColor={{ false: theme.border, true: DA + '70' }}
+            thumbColor={isOnline ? DA : theme.hint}
+            ios_backgroundColor={theme.border}
+          />
       }
     </View>
   );
@@ -118,21 +124,27 @@ const ot = StyleSheet.create({
 });
 
 // ── WalletStrip ────────────────────────────────────────────────────────────────
-const WalletStrip = ({ balance, todayEarnings, onWithdraw, theme }) => (
+const WalletStrip = ({ balance, todayEarnings, onTopUp, onWithdraw, theme }) => (
   <View style={[ws.card, { backgroundColor: theme.backgroundAlt, borderColor: DA + '25' }]}>
     <View style={ws.left}>
       <Text style={[ws.lbl, { color: DA + '80' }]}>WALLET BALANCE</Text>
       <Text style={[ws.amount, { color: '#5DAA72' }]}>
-        {'\u20A6'}{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+        ₦{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
       </Text>
       <Text style={[ws.todayLbl, { color: theme.hint }]}>
-        Today: <Text style={{ color: DA }}>+{'\u20A6'}{Number(todayEarnings ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}</Text>
+        Today: <Text style={{ color: DA }}>+₦{Number(todayEarnings ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}</Text>
       </Text>
     </View>
-    <TouchableOpacity style={[ws.btn, { backgroundColor: DA }]} onPress={onWithdraw} activeOpacity={0.88}>
-      <Ionicons name="arrow-up-circle-outline" size={14} color="#080C18" />
-      <Text style={ws.btnTxt}>Withdraw</Text>
-    </TouchableOpacity>
+    <View style={ws.btns}>
+      <TouchableOpacity style={[ws.btn, { backgroundColor: theme.border }]} onPress={onTopUp} activeOpacity={0.88}>
+        <Ionicons name="add-circle-outline" size={13} color={theme.foreground} />
+        <Text style={[ws.btnTxt, { color: theme.foreground }]}>Top Up</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={[ws.btn, { backgroundColor: DA }]} onPress={onWithdraw} activeOpacity={0.88}>
+        <Ionicons name="arrow-up-circle-outline" size={13} color="#080C18" />
+        <Text style={[ws.btnTxt, { color: '#080C18' }]}>Withdraw</Text>
+      </TouchableOpacity>
+    </View>
   </View>
 );
 const ws = StyleSheet.create({
@@ -141,8 +153,9 @@ const ws = StyleSheet.create({
   lbl:      { fontSize: 9, fontWeight: '700', letterSpacing: 2, marginBottom: 4 },
   amount:   { fontSize: 22, fontWeight: '900', marginBottom: 2 },
   todayLbl: { fontSize: 11, fontWeight: '500' },
-  btn:      { borderRadius: 13, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  btnTxt:   { fontSize: 12, fontWeight: '800', color: '#080C18' },
+  btns:     { gap: 8 },
+  btn:      { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  btnTxt:   { fontSize: 11, fontWeight: '800' },
 });
 
 // ── WaitingBanner ──────────────────────────────────────────────────────────────
@@ -182,21 +195,20 @@ export default function DriverDashboardScreen({ navigation }) {
   const [todayEarnings,     setTodayEarnings]     = useState(0);
   const [loading,           setLoading]           = useState(true);
   const [activeRide,        setActiveRide]        = useState(null);
-  // ── Floor price state ──────────────────────────────────────────────────────
   const [floorPriceActive,  setFloorPriceActive]  = useState(false);
   const [activeFloorAmount, setActiveFloorAmount] = useState(0);
 
   const fadeA   = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-20)).current;
 
-  // ── Fetch data ─────────────────────────────────────────────────────────────
+  // ── Fetch all data ──────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     try {
       const [profileRes, statsRes, walletRes, earningsRes, activeRideRes] = await Promise.allSettled([
         driverAPI.getProfile(),
         userAPI.getStats(),
         walletAPI.getWallet(),
-        driverAPI.getEarnings(),
+        driverAPI.getEarnings({ period: 'today' }),
         rideAPI.getActiveRide(),
       ]);
 
@@ -204,7 +216,6 @@ export default function DriverDashboardScreen({ navigation }) {
         const p = profileRes.value?.data?.profile ?? profileRes.value?.data;
         setProfile(p);
         setIsOnline(p?.isOnline ?? false);
-        // ── Read floor price from profile ──────────────────────────────────
         const floor = p?.preferredFloorPrice ?? 0;
         setFloorPriceActive(floor > 0);
         setActiveFloorAmount(floor);
@@ -214,7 +225,7 @@ export default function DriverDashboardScreen({ navigation }) {
       if (earningsRes.status === 'fulfilled') setTodayEarnings(parseFloat(earningsRes.value?.data?.netEarnings ?? 0));
       if (activeRideRes.status === 'fulfilled') {
         const ride = activeRideRes.value?.data?.ride ?? activeRideRes.value?.ride ?? null;
-        setActiveRide(ride && ['ACCEPTED','ARRIVED','IN_PROGRESS'].includes(ride.status) ? ride : null);
+        setActiveRide(ride && ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'].includes(ride.status) ? ride : null);
       }
     } catch {}
     finally {
@@ -236,7 +247,6 @@ export default function DriverDashboardScreen({ navigation }) {
   // ── Socket ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleReq = (data) => {
-      console.log('[Dashboard] ride:new_request → IncomingRide:', data?.rideId);
       navigation.navigate('IncomingRide', { request: data });
     };
     const handleCanc = () => {
@@ -281,20 +291,25 @@ export default function DriverDashboardScreen({ navigation }) {
     }
   };
 
-  const goToProfile = () => navigation.getParent()?.navigate('ProfileTab');
-  const isApproved  = profile?.isApproved ?? false;
+  // ── Navigate to Earnings tab (correct tab name in DriverNavigator) ─────────
+  const goToEarnings  = () => navigation.getParent()?.navigate('EarningsTab');
+  const goToTopUp     = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'WalletTopUp' });
+  const goToWithdraw  = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal' });
+  const goToProfile   = () => navigation.getParent()?.navigate('ProfileTab');
 
-  // ── Quick actions — 5 items with Floor Price ───────────────────────────────
+  const isApproved = profile?.isApproved ?? false;
+
+  // ── Quick actions ──────────────────────────────────────────────────────────
   const quickActions = [
-    { icon: 'wallet-outline',      label: 'Earnings',    color: DA,         screen: 'Earnings'        },
-    { icon: 'time-outline',        label: 'Ride History',color: '#5DAA72',  screen: 'DriverHistory'   },
-    { icon: 'trending-up-outline', label: 'Floor Price', color: PURPLE,     screen: 'FloorPrice'      },
-    { icon: 'document-text-outline',label:'Documents',   color: '#4E8DBD',  screen: 'DriverDocuments' },
-    { icon: 'help-circle-outline', label: 'Support',     color: theme.hint, screen: 'Support'         },
+    { icon: 'wallet-outline',          label: 'Earnings',     color: DA,         onPress: goToEarnings   },
+    { icon: 'time-outline',            label: 'Ride History', color: '#5DAA72',  screen: 'DriverHistory' },
+    { icon: 'trending-up-outline',     label: 'Floor Price',  color: PURPLE,     screen: 'FloorPrice'    },
+    { icon: 'document-text-outline',   label: 'Documents',    color: '#4E8DBD',  screen: 'DriverDocuments'},
+    { icon: 'help-circle-outline',     label: 'Support',      color: theme.hint, screen: 'Support'       },
   ];
 
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: theme.background }]} edges={['top','left','right']}>
+    <SafeAreaView style={[s.root, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.orb, { backgroundColor: DA }]} />
 
@@ -340,9 +355,15 @@ export default function DriverDashboardScreen({ navigation }) {
           )}
 
           {/* ── Online toggle ── */}
-          <OnlineToggle isOnline={isOnline} toggling={toggling} onToggle={toggleOnline} isApproved={isApproved} theme={theme} />
+          <OnlineToggle
+            isOnline={isOnline}
+            toggling={toggling}
+            onToggle={toggleOnline}
+            isApproved={isApproved}
+            theme={theme}
+          />
 
-          {/* ── Resume active ride banner ── */}
+          {/* ── Active ride banner ── */}
           {activeRide && (
             <ActiveRideBanner
               ride={activeRide}
@@ -355,9 +376,15 @@ export default function DriverDashboardScreen({ navigation }) {
           {/* ── Waiting banner ── */}
           {isOnline && !activeRide && <WaitingBanner theme={theme} />}
 
-          {/* ── Wallet ── */}
+          {/* ── Wallet strip ── */}
           {!loading && (
-            <WalletStrip balance={walletBalance} todayEarnings={todayEarnings} onWithdraw={() => navigation.navigate('Earnings')} theme={theme} />
+            <WalletStrip
+              balance={walletBalance}
+              todayEarnings={todayEarnings}
+              onTopUp={goToTopUp}
+              onWithdraw={goToWithdraw}
+              theme={theme}
+            />
           )}
 
           {/* ── Stats ── */}
@@ -365,7 +392,7 @@ export default function DriverDashboardScreen({ navigation }) {
             <ActivityIndicator color={DA} style={{ marginBottom: 16 }} />
           ) : (
             <View style={s.statsRow}>
-              <MetricCard icon="car-sport-outline" value={stats?.completedRides ?? profile?.totalRides ?? 0} label="Rides" theme={theme} />
+              <MetricCard icon="car-sport-outline" value={stats?.completedRides ?? profile?.totalRides ?? 0} label="Rides"  theme={theme} />
               <MetricCard icon="star-outline"      value={(profile?.rating ?? stats?.rating ?? 0).toFixed(1)} label="Rating" color="#A78BFA" theme={theme} />
               <MetricCard icon="trending-up-outline" value={isApproved ? '94%' : '—'} label="Accept" color="#5DAA72" theme={theme} />
             </View>
@@ -382,14 +409,16 @@ export default function DriverDashboardScreen({ navigation }) {
                 <Ionicons name="car-outline" size={18} color={DA} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[s.vehicleName, { color: theme.foreground }]}>{profile.vehicleColor} {profile.vehicleMake} {profile.vehicleModel}</Text>
+                <Text style={[s.vehicleName, { color: theme.foreground }]}>
+                  {profile.vehicleColor} {profile.vehicleMake} {profile.vehicleModel}
+                </Text>
                 <Text style={[s.vehiclePlate, { color: DA }]}>{profile.vehiclePlate}</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={theme.hint} />
             </TouchableOpacity>
           )}
 
-          {/* ── Floor price status row (shown only when active) ── */}
+          {/* ── Floor price badge ── */}
           {floorPriceActive && !loading && (
             <TouchableOpacity
               style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: PURPLE + '30', marginBottom: 14 }]}
@@ -416,15 +445,14 @@ export default function DriverDashboardScreen({ navigation }) {
               <TouchableOpacity
                 key={item.label}
                 style={[s.actionCard, { backgroundColor: theme.backgroundAlt, borderColor: item.color + '25' }]}
-                onPress={() => navigation.navigate(item.screen)}
+                onPress={item.onPress ?? (() => navigation.navigate(item.screen))}
                 activeOpacity={0.75}
               >
                 <View style={[s.actionIcon, { backgroundColor: item.color + '18' }]}>
                   <Ionicons name={item.icon} size={20} color={item.color} />
                 </View>
                 <Text style={[s.actionLabel, { color: item.color }]}>{item.label}</Text>
-                {/* Badge showing the active floor amount on the tile */}
-                {item.screen === 'FloorPrice' && floorPriceActive && (
+                {item.label === 'Floor Price' && floorPriceActive && (
                   <View style={[s.floorBadge, { backgroundColor: PURPLE }]}>
                     <Text style={s.floorBadgeTxt}>
                       ₦{activeFloorAmount.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
@@ -437,7 +465,11 @@ export default function DriverDashboardScreen({ navigation }) {
 
           {/* ── Footer ── */}
           <View style={[s.footer, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <Ionicons name={isApproved ? 'shield-checkmark-outline' : 'shield-outline'} size={13} color={isApproved ? '#5DAA72' : theme.hint} />
+            <Ionicons
+              name={isApproved ? 'shield-checkmark-outline' : 'shield-outline'}
+              size={13}
+              color={isApproved ? '#5DAA72' : theme.hint}
+            />
             <Text style={[s.footerTxt, { color: isApproved ? '#5DAA72' : theme.hint }]}>
               {isApproved ? 'Verified & Approved Driver' : 'Verification Pending'}
             </Text>
@@ -450,9 +482,9 @@ export default function DriverDashboardScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:  { flex: 1 },
-  orb:   { position: 'absolute', width: width * 1.2, height: width * 1.2, borderRadius: width * 0.6, top: -width * 0.78, right: -width * 0.3, opacity: 0.05 },
-  scroll:{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24 },
+  root:   { flex: 1 },
+  orb:    { position: 'absolute', width: width * 1.2, height: width * 1.2, borderRadius: width * 0.6, top: -width * 0.78, right: -width * 0.3, opacity: 0.05 },
+  scroll: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24 },
 
   header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 },
   eyebrow:     { fontSize: 10, fontWeight: '800', letterSpacing: 3, marginBottom: 4 },
@@ -462,9 +494,9 @@ const s = StyleSheet.create({
   avatarBtn:   { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
   avatarTxt:   { fontSize: 14, fontWeight: '800' },
 
-  approvalBanner:{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 14 },
-  approvalTitle: { fontSize: 13, fontWeight: '800', marginBottom: 3 },
-  approvalSub:   { fontSize: 11, lineHeight: 17 },
+  approvalBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 14 },
+  approvalTitle:  { fontSize: 13, fontWeight: '800', marginBottom: 3 },
+  approvalSub:    { fontSize: 11, lineHeight: 17 },
 
   statsRow:        { flexDirection: 'row', gap: 10, marginBottom: 14 },
   vehicleCard:     { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 20 },
@@ -472,13 +504,11 @@ const s = StyleSheet.create({
   vehicleName:     { fontSize: 14, fontWeight: '700', marginBottom: 2 },
   vehiclePlate:    { fontSize: 12, fontWeight: '800', letterSpacing: 1 },
 
-  sectionTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 14 },
-  actionGrid:   { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
-  actionCard:   { width: (width - 60) / 2, borderRadius: 16, borderWidth: 1, padding: 16, alignItems: 'center', gap: 8 },
-  actionIcon:   { width: 44, height: 44, borderRadius: 13, justifyContent: 'center', alignItems: 'center' },
-  actionLabel:  { fontSize: 12, fontWeight: '700', textAlign: 'center' },
-
-  // Floor price badge on the quick-action tile
+  sectionTitle:  { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 14 },
+  actionGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
+  actionCard:    { width: (width - 60) / 2, borderRadius: 16, borderWidth: 1, padding: 16, alignItems: 'center', gap: 8 },
+  actionIcon:    { width: 44, height: 44, borderRadius: 13, justifyContent: 'center', alignItems: 'center' },
+  actionLabel:   { fontSize: 12, fontWeight: '700', textAlign: 'center' },
   floorBadge:    { borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2, marginTop: -2 },
   floorBadgeTxt: { fontSize: 9, fontWeight: '900', color: '#fff', letterSpacing: 0.3 },
 

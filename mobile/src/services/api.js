@@ -9,7 +9,7 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor — attach auth token
+// ── Request interceptor — attach auth token ───────────────────────────────────
 api.interceptors.request.use(
   async (config) => {
     const token = await AsyncStorage.getItem('authToken');
@@ -19,7 +19,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor — unwrap .data, handle 401
+// ── Response interceptor — unwrap .data, handle 401 ──────────────────────────
 api.interceptors.response.use(
   (response) => response.data,
   async (error) => {
@@ -31,7 +31,9 @@ api.interceptors.response.use(
   }
 );
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────────────────────────────────────
 export const authAPI = {
   register:       (data) => api.post('/auth/register', data),
   login:          (data) => api.post('/auth/login', data),
@@ -39,7 +41,9 @@ export const authAPI = {
   logout:         ()     => api.post('/auth/logout'),
 };
 
-// ── Ride ──────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// RIDE
+// ─────────────────────────────────────────────────────────────────────────────
 export const rideAPI = {
   getEstimate:   (params)     => api.get('/rides/estimate', { params }),
   requestRide:   (data)       => api.post('/rides/request', data),
@@ -49,7 +53,7 @@ export const rideAPI = {
 
   // Driver actions
   acceptRide:        (id)       => api.put(`/rides/${id}/accept`),
-  arrivedAtPickup:   (id)       => api.put(`/rides/${id}/arrived`),  // ← was missing
+  arrivedAtPickup:   (id)       => api.put(`/rides/${id}/arrived`),
   startRide:         (id)       => api.put(`/rides/${id}/start`),
   completeRide:      (id, data) => api.put(`/rides/${id}/complete`, data),
   cancelRide:        (id, data) => api.put(`/rides/${id}/cancel`, data),
@@ -59,49 +63,69 @@ export const rideAPI = {
   requestSpecificDriver: (data)   => api.post('/rides/request-driver', data),
 };
 
-// ── Delivery ──────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// DELIVERY
+// ─────────────────────────────────────────────────────────────────────────────
 export const deliveryAPI = {
-  getEstimate:          (params)     => api.get('/deliveries/estimate', { params }),
-  requestDelivery:      (data)       => api.post('/deliveries/request', data),
-  getActiveDelivery:    ()           => api.get('/deliveries/active'),
-  getDeliveryById:      (id)         => api.get(`/deliveries/${id}`),
-  acceptDelivery:       (id)         => api.put(`/deliveries/${id}/accept`),
-  pickupDelivery:       (id)         => api.put(`/deliveries/${id}/pickup`),
-  startTransit:         (id)         => api.put(`/deliveries/${id}/transit`),
-  completeDelivery:     (id, data)   => api.put(`/deliveries/${id}/complete`, data),
-  cancelDelivery:       (id, data)   => api.put(`/deliveries/${id}/cancel`, data),
-  rateDelivery:         (id, data)   => api.post(`/deliveries/${id}/rate`, data),
-  getDeliveryHistory:   (params)     => api.get('/deliveries/history', { params }),
-  getNearbyPartners:    (params)     => api.get('/deliveries/nearby-partners', { params }),
+  getEstimate:        (params)   => api.get('/deliveries/estimate', { params }),
+  requestDelivery:    (data)     => api.post('/deliveries/request', data),
+  getActiveDelivery:  ()         => api.get('/deliveries/active'),
+  getDeliveryById:    (id)       => api.get(`/deliveries/${id}`),
+  acceptDelivery:     (id)       => api.put(`/deliveries/${id}/accept`),
+  pickupDelivery:     (id)       => api.put(`/deliveries/${id}/pickup`),
+  startTransit:       (id)       => api.put(`/deliveries/${id}/transit`),
+  completeDelivery:   (id, data) => api.put(`/deliveries/${id}/complete`, data),
+  cancelDelivery:     (id, data) => api.put(`/deliveries/${id}/cancel`, data),
+  rateDelivery:       (id, data) => api.post(`/deliveries/${id}/rate`, data),
+  getDeliveryHistory: (params)   => api.get('/deliveries/history', { params }),
+  getNearbyPartners:  (params)   => api.get('/deliveries/nearby-partners', { params }),
 };
 
-// ── User ──────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────────────────────────────────────────
 export const userAPI = {
   getProfile:    ()     => api.get('/users/profile'),
   updateProfile: (data) => api.put('/users/profile', data),
   getStats:      ()     => api.get('/users/stats'),
 };
 
-// ── Driver ────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// DRIVER
+// ─────────────────────────────────────────────────────────────────────────────
 export const driverAPI = {
-  getProfile:        ()     => api.get('/drivers/profile'),
-  updateProfile:     (data) => api.post('/drivers/profile', data),
-  updateStatus:      (data) => api.put('/drivers/status', data),
-  getEarnings:       ()     => api.get('/drivers/earnings'),
-  getNearbyRequests: ()     => api.get('/drivers/nearby-requests'),
+  getProfile:         ()       => api.get('/drivers/profile'),
+  updateProfile:      (data)   => api.post('/drivers/profile', data),
+  updateStatus:       (data)   => api.put('/drivers/status', data),
+  getEarnings:        (params) => api.get('/drivers/earnings', { params }),
+  getStats:           ()       => api.get('/drivers/stats'),
+  getNearbyRequests:  ()       => api.get('/drivers/nearby-requests'),
+
+  // Payout (goes through admin approval flow)
+  requestPayout:      (data)   => api.post('/drivers/payout/request', data),
+  getPayoutHistory:   (params) => api.get('/drivers/payout/history', { params }),
 };
 
-// ── Partner ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// PARTNER
+// ─────────────────────────────────────────────────────────────────────────────
 export const partnerAPI = {
-  getProfile:           ()     => api.get('/partners/profile'),
-  updateProfile:        (data) => api.post('/partners/profile', data),
-  updateStatus:         (data) => api.put('/partners/status', data),
-  getEarnings:          ()     => api.get('/partners/earnings'),
-  getNearbyRequests:    ()     => api.get('/partners/nearby-requests'),
-  updateFloorPrice:     (price) => api.post('/partners/profile', { preferredFloorPrice: price }),
+  getProfile:         ()        => api.get('/partners/profile'),
+  updateProfile:      (data)    => api.post('/partners/profile', data),
+  updateStatus:       (data)    => api.put('/partners/status', data),
+  getEarnings:        (params)  => api.get('/partners/earnings', { params }),
+  getStats:           ()        => api.get('/partners/stats'),
+  getNearbyRequests:  ()        => api.get('/partners/nearby-requests'),
+  updateFloorPrice:   (price)   => api.post('/partners/profile', { preferredFloorPrice: price }),
+
+  // Payout (goes through admin approval flow)
+  requestPayout:      (data)    => api.post('/partners/payout/request', data),
+  getPayoutHistory:   (params)  => api.get('/partners/payout/history', { params }),
 };
 
-// ── Notifications ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
 export const notificationAPI = {
   getNotifications: (params) => api.get('/notifications', { params }),
   getUnreadCount:   ()       => api.get('/notifications/count'),
@@ -111,15 +135,34 @@ export const notificationAPI = {
   clearAll:         ()       => api.delete('/notifications'),
 };
 
-// ── Wallet ────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// WALLET
+// All methods that require auth — the webhook /topup/verify is public-only
+// and called directly by Paystack, not from the mobile app.
+// ─────────────────────────────────────────────────────────────────────────────
 export const walletAPI = {
+  // Balance & history
   getWallet:              ()       => api.get('/wallet'),
   getTransactions:        (params) => api.get('/wallet/transactions', { params }),
+
+  // Top-up — new unified flow (WalletTopUpScreen)
+  initializeTopUp:        (data)   => api.post('/wallet/topup/initialize', data),
+
+  // Top-up — Paystack legacy
   paystackTopup:          (data)   => api.post('/wallet/topup/paystack', data),
   verifyPaystackTopup:    (data)   => api.post('/wallet/topup/paystack/verify', data),
+
+  // Top-up — Flutterwave
   flutterwaveTopup:       (data)   => api.post('/wallet/topup/flutterwave', data),
   verifyFlutterwaveTopup: (data)   => api.post('/wallet/topup/flutterwave/verify', data),
+
+  // Bank account verification (for WithdrawalScreen)
+  verifyBankAccount:      (params) => api.get('/wallet/verify-account', { params }),
+
+  // Transfer between users
   transfer:               (data)   => api.post('/wallet/transfer', data),
+
+  // Legacy direct withdrawal
   withdraw:               (data)   => api.post('/wallet/withdraw', data),
 };
 

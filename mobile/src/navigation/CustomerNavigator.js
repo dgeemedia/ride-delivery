@@ -1,52 +1,63 @@
 // mobile/src/navigation/CustomerNavigator.js
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator }     from '@react-navigation/stack';
 import { Ionicons }                 from '@expo/vector-icons';
-import { useSafeAreaInsets }        from 'react-native-safe-area-context';
 import { useTheme }                 from '../context/ThemeContext';
 
-import HomeScreen            from '../screens/Customer/HomeScreen';
-import RequestRideScreen     from '../screens/Customer/RequestRideScreen';
-import RequestDeliveryScreen from '../screens/Customer/RequestDeliveryScreen';
-import RideTrackingScreen    from '../screens/Customer/RideTrackingScreen';
-import NearbyDriversScreen   from '../screens/Customer/NearbyDriversScreen';  // ← NEW
-import HistoryScreen         from '../screens/Customer/HistoryScreen';
-import ProfileScreen         from '../screens/Shared/ProfileScreen';
-import EditProfileScreen     from '../screens/Shared/EditProfileScreen';
-import WalletScreen          from '../screens/Customer/WalletScreen';
-import NotificationsScreen   from '../screens/Shared/NotificationsScreen';
-import ChangePasswordScreen  from '../screens/Shared/ChangePasswordScreen';
-import SupportScreen         from '../screens/Shared/SupportScreen';
+import HomeScreen             from '../screens/Customer/HomeScreen';
+import RequestRideScreen      from '../screens/Customer/RequestRideScreen';
+import RequestDeliveryScreen  from '../screens/Customer/RequestDeliveryScreen';
+import NearbyDriversScreen    from '../screens/Customer/NearbyDriversScreen';
+import RideTrackingScreen     from '../screens/Customer/RideTrackingScreen';
 import DeliveryTrackingScreen from '../screens/Customer/DeliveryTrackingScreen';
+import HistoryScreen          from '../screens/Customer/HistoryScreen';
+import WalletScreen           from '../screens/Customer/WalletScreen';
+import ProfileScreen          from '../screens/Shared/ProfileScreen';
+import EditProfileScreen      from '../screens/Shared/EditProfileScreen';
+import NotificationsScreen    from '../screens/Shared/NotificationsScreen';
+import ChangePasswordScreen   from '../screens/Shared/ChangePasswordScreen';
+import SupportScreen          from '../screens/Shared/SupportScreen';
 
+const DA  = '#FFB800';
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
 const HomeStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Home"              component={HomeScreen}              />
-    <Stack.Screen name="RequestRide"       component={RequestRideScreen}       />
-    <Stack.Screen name="RequestDelivery"   component={RequestDeliveryScreen}   />
-    <Stack.Screen name="DeliveryTracking"  component={DeliveryTrackingScreen}  />
-    <Stack.Screen name="NearbyDrivers"     component={NearbyDriversScreen}     />
-    <Stack.Screen name="Notifications"     component={NotificationsScreen}     />
-    <Stack.Screen name="Support"           component={SupportScreen}           />
-    <Stack.Screen name="RideTracking"      component={RideTrackingScreen}      />
+    <Stack.Screen name="Home"              component={HomeScreen}             />
+    <Stack.Screen name="RequestRide"       component={RequestRideScreen}      />
+    <Stack.Screen name="RequestDelivery"   component={RequestDeliveryScreen}  />
+    <Stack.Screen name="NearbyDrivers"     component={NearbyDriversScreen}    />
+    <Stack.Screen name="RideTracking"      component={RideTrackingScreen}     />
+    <Stack.Screen name="DeliveryTracking"  component={DeliveryTrackingScreen} />
+    <Stack.Screen name="Notifications"     component={NotificationsScreen}    />
+    <Stack.Screen name="Support"           component={SupportScreen}          />
+  </Stack.Navigator>
+);
+
+const HistoryStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="HistoryHome"  component={HistoryScreen}       />
+    <Stack.Screen name="Support"      component={SupportScreen}       />
+  </Stack.Navigator>
+);
+
+const WalletStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="WalletHome" component={WalletScreen}  />
+    <Stack.Screen name="Support"    component={SupportScreen} />
   </Stack.Navigator>
 );
 
 const ProfileStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="ProfileHome"    component={ProfileScreen}        />
-    <Stack.Screen name="EditProfile"    component={EditProfileScreen}    />
-    <Stack.Screen name="Wallet"         component={WalletScreen}         />
-    <Stack.Screen name="Notifications"  component={NotificationsScreen}  />
-    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-    <Stack.Screen name="Support"        component={SupportScreen}        />
-    <Stack.Screen name="AppFeedback"    component={PlaceholderScreen}    />
-    <Stack.Screen name="Terms"          component={PlaceholderScreen}    />
+    <Stack.Screen name="ProfileHome"    component={ProfileScreen}       />
+    <Stack.Screen name="EditProfile"    component={EditProfileScreen}   />
+    <Stack.Screen name="Notifications"  component={NotificationsScreen} />
+    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen}/>
+    <Stack.Screen name="Support"        component={SupportScreen}       />
   </Stack.Navigator>
 );
 
@@ -58,13 +69,14 @@ const CustomerNavigator = () => {
         headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
           const icons = {
-            HomeTab:    focused ? 'home'   : 'home-outline',
-            History:    focused ? 'time'   : 'time-outline',
-            ProfileTab: focused ? 'person' : 'person-outline',
+            HomeTab:    focused ? 'home'    : 'home-outline',
+            HistoryTab: focused ? 'time'    : 'time-outline',
+            WalletTab:  focused ? 'wallet'  : 'wallet-outline',
+            ProfileTab: focused ? 'person'  : 'person-outline',
           };
           return <Ionicons name={icons[route.name]} size={size} color={color} />;
         },
-        tabBarActiveTintColor:   theme.accent,
+        tabBarActiveTintColor:   DA,
         tabBarInactiveTintColor: theme.hint,
         tabBarStyle: {
           backgroundColor: theme.backgroundAlt,
@@ -74,38 +86,15 @@ const CustomerNavigator = () => {
           paddingBottom:   Platform.OS === 'ios' ? 24 : 8,
           paddingTop:      8,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
       })}
     >
-      <Tab.Screen name="HomeTab"    component={HomeStack}     options={{ title: 'Home'    }} />
-      <Tab.Screen name="History"    component={HistoryScreen} options={{ title: 'History' }} />
-      <Tab.Screen name="ProfileTab" component={ProfileStack}  options={{ title: 'Profile' }} />
+      <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Home'    }} />
+      <Tab.Screen name="HistoryTab" component={HistoryStack} options={{ title: 'History' }} />
+      <Tab.Screen name="WalletTab"  component={WalletStack}  options={{ title: 'Wallet'  }} />
+      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
 };
 
 export default CustomerNavigator;
-
-function PlaceholderScreen({ navigation, route }) {
-  const { theme } = useTheme();
-  const insets    = useSafeAreaInsets();
-  return (
-    <View style={[ph.root, { backgroundColor: theme.background, paddingTop: insets.top + 14 }]}>
-      <TouchableOpacity onPress={() => navigation.goBack()} style={[ph.back, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-        <Ionicons name="arrow-back" size={20} color={theme.foreground} />
-      </TouchableOpacity>
-      <View style={ph.center}>
-        <Ionicons name="construct-outline" size={40} color={theme.hint} />
-        <Text style={[ph.title, { color: theme.foreground }]}>{route.name}</Text>
-        <Text style={[ph.sub, { color: theme.hint }]}>Coming soon</Text>
-      </View>
-    </View>
-  );
-}
-const ph = StyleSheet.create({
-  root:   { flex: 1 },
-  back:   { marginHorizontal: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14, paddingHorizontal: 32, marginBottom: 60 },
-  title:  { fontSize: 20, fontWeight: '800', textAlign: 'center' },
-  sub:    { fontSize: 14, textAlign: 'center', lineHeight: 22 },
-});

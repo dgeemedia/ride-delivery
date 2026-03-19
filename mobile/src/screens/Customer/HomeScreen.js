@@ -5,12 +5,13 @@ import {
   StatusBar, Dimensions, Animated, ActivityIndicator, Image,
   ImageBackground, Platform, Alert,
 } from 'react-native';
-import { Ionicons }          from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth }           from '../../context/AuthContext';
-import { useTheme }          from '../../context/ThemeContext';
-import { userAPI, rideAPI }  from '../../services/api';
-import ActiveRideBanner      from '../../components/ActiveRideBanner';
+import { Ionicons }              from '@expo/vector-icons';
+import { useSafeAreaInsets }     from 'react-native-safe-area-context';
+import { useAuth }               from '../../context/AuthContext';
+import { useTheme }              from '../../context/ThemeContext';
+import { userAPI, rideAPI, deliveryAPI } from '../../services/api';
+import ActiveRideBanner          from '../../components/ActiveRideBanner';
+import ActiveDeliveryBanner      from '../../components/ActiveDeliveryBanner';
 
 const { width } = Dimensions.get('window');
 const H_PAD    = 24;
@@ -128,21 +129,21 @@ const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
   );
 };
 const ac = StyleSheet.create({
-  card:    { borderRadius: 18, overflow: 'hidden', height: 180, width: '100%' },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.42)' },
-  badge:   { position: 'absolute', top: 12, left: 12, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  badgeTxt:{ fontSize: 9, fontWeight: '800', color: '#FFF', letterSpacing: 0.5 },
-  content: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
-  title:   { fontSize: 13, fontWeight: '800', color: '#FFF', marginBottom: 3 },
-  sub:     { fontSize: 10, color: 'rgba(255,255,255,0.75)', marginBottom: 10, lineHeight: 14 },
-  arrowBtn:{ width: 24, height: 24, borderRadius: 7, justifyContent: 'center', alignItems: 'center' },
+  card:     { borderRadius: 18, overflow: 'hidden', height: 180, width: '100%' },
+  overlay:  { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.42)' },
+  badge:    { position: 'absolute', top: 12, left: 12, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  badgeTxt: { fontSize: 9, fontWeight: '800', color: '#FFF', letterSpacing: 0.5 },
+  content:  { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
+  title:    { fontSize: 13, fontWeight: '800', color: '#FFF', marginBottom: 3 },
+  sub:      { fontSize: 10, color: 'rgba(255,255,255,0.75)', marginBottom: 10, lineHeight: 14 },
+  arrowBtn: { width: 24, height: 24, borderRadius: 7, justifyContent: 'center', alignItems: 'center' },
 });
 
 // ── ActivityRow ────────────────────────────────────────────────────────────────
 const ACTIVITY_STATUS_META = {
-  COMPLETED:   { color: '#5DAA72', label: 'Completed' },
-  CANCELLED:   { color: '#E05555', label: 'Cancelled' },
-  IN_PROGRESS: { color: '#C9A96E', label: 'In Progress' },
+  COMPLETED:   { color: '#5DAA72', label: 'Completed'  },
+  CANCELLED:   { color: '#E05555', label: 'Cancelled'  },
+  IN_PROGRESS: { color: '#C9A96E', label: 'In Progress'},
 };
 const ActivityRow = ({ icon, title, subtitle, amount, status, theme, last }) => {
   const meta = ACTIVITY_STATUS_META[status] ?? { color: theme.accent, label: status };
@@ -212,9 +213,10 @@ export default function HomeScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
 
-  const [stats,      setStats]      = useState(null);
-  const [loading,    setLoading]    = useState(true);
-  const [activeRide, setActiveRide] = useState(null);
+  const [stats,          setStats]          = useState(null);
+  const [loading,        setLoading]        = useState(true);
+  const [activeRide,     setActiveRide]     = useState(null);
+  const [activeDelivery, setActiveDelivery] = useState(null);  // ← NEW
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(20)).current;
@@ -228,15 +230,33 @@ export default function HomeScreen({ navigation }) {
 
   const fetchAll = async () => {
     try {
-      const [statsRes, rideRes] = await Promise.allSettled([
+      // ← added deliveryAPI.getActiveDelivery()
+      const [statsRes, rideRes, deliveryRes] = await Promise.allSettled([
         userAPI.getStats(),
         rideAPI.getActiveRide(),
+        deliveryAPI.getActiveDelivery(),
       ]);
-      if (statsRes.status === 'fulfilled') setStats(statsRes.value?.data ?? statsRes.value);
-      if (rideRes.status  === 'fulfilled') {
+
+      if (statsRes.status === 'fulfilled') {
+        setStats(statsRes.value?.data ?? statsRes.value);
+      }
+
+      if (rideRes.status === 'fulfilled') {
         const ride = rideRes.value?.data?.ride ?? rideRes.value?.ride ?? null;
         setActiveRide(
-          ride && ['REQUESTED','ACCEPTED','ARRIVED','IN_PROGRESS'].includes(ride.status) ? ride : null
+          ride && ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'].includes(ride.status)
+            ? ride
+            : null
+        );
+      }
+
+      // ← NEW: handle active delivery result
+      if (deliveryRes.status === 'fulfilled') {
+        const del = deliveryRes.value?.data?.delivery ?? null;
+        setActiveDelivery(
+          del && ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(del.status)
+            ? del
+            : null
         );
       }
     } catch {}
@@ -267,18 +287,21 @@ export default function HomeScreen({ navigation }) {
     ]);
   };
 
+  const handleCancelDelivery = async () => {
+    try {
+      await deliveryAPI.cancelDelivery(activeDelivery.id, { reason: 'Customer cancelled from home screen' });
+      setActiveDelivery(null);
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel delivery.');
+    }
+  };
+
   const handleResumeRide = () => navigation.navigate('RideTracking', { rideId: activeRide?.id });
 
-  // ── Navigate to nearby drivers — needs pickup coords ──────────────────────
-  // We use a Lagos default when no GPS is available (same as RequestRideScreen).
-  // If the user has already typed an address in a prior session, they'll have
-  // coords stored; otherwise they land on NearbyDriversScreen and select a pickup there.
   const handleChooseDriver = () => {
     navigation.navigate('NearbyDrivers', {
-      // Passing empty strings prompts the user to refine on the next screen.
-      // For a better UX, hook this button up to GPS the same way RequestRideScreen does.
       pickupAddress:  '',
-      pickupLat:      6.5244,   // Lagos centre fallback
+      pickupLat:      6.5244,
       pickupLng:      3.3792,
       dropoffAddress: '',
       dropoffLat:     6.4281,
@@ -326,7 +349,9 @@ export default function HomeScreen({ navigation }) {
                   <Image source={{ uri: user.profileImage }} style={[s.profileAvatar, { borderColor: theme.accent + '40' }]} />
                 ) : (
                   <View style={[s.profileAvatarFallback, { backgroundColor: theme.accent + '18', borderColor: theme.accent + '35' }]}>
-                    <Text style={[s.profileAvatarInitials, { color: theme.accent }]}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
+                    <Text style={[s.profileAvatarInitials, { color: theme.accent }]}>
+                      {user?.firstName?.[0]}{user?.lastName?.[0]}
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -344,8 +369,23 @@ export default function HomeScreen({ navigation }) {
             />
           )}
 
+          {/* ── Active delivery banner ── */}
+          {activeDelivery && (
+            <ActiveDeliveryBanner
+              delivery={activeDelivery}
+              role="CUSTOMER"
+              theme={theme}
+              onPress={() => navigation.navigate('DeliveryTracking', { deliveryId: activeDelivery.id })}
+              onCancel={activeDelivery.status === 'PENDING' ? handleCancelDelivery : undefined}
+            />
+          )}
+
           {/* ── Wallet ── */}
-          <WalletStrip balance={stats?.walletBalance} onTopUp={() => navigation.navigate('Wallet')} theme={theme} />
+          <WalletStrip
+            balance={stats?.walletBalance}
+            onTopUp={() => navigation.getParent()?.navigate('WalletTab')}
+            theme={theme}
+          />
 
           {/* ── Stats ── */}
           {loading ? (
@@ -355,7 +395,7 @@ export default function HomeScreen({ navigation }) {
               <StatPill icon="car-outline"  value={stats?.totalRides      ?? 0} label="Rides"    theme={theme} />
               <StatPill icon="cube-outline" value={stats?.totalDeliveries ?? 0} label="Packages" theme={theme} />
               <StatPill icon="cash-outline"
-                value={`${'\u20A6'}${((stats?.totalSpent ?? 0) / 1000).toFixed(1)}k`}
+                value={`₦${((stats?.totalSpent ?? 0) / 1000).toFixed(1)}k`}
                 label="Spent" theme={theme}
               />
             </View>
@@ -364,14 +404,24 @@ export default function HomeScreen({ navigation }) {
           {/* ── Quick Actions ── */}
           <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
           <View style={s.actionsRow}>
-            <ActionCard images={RIDE_IMAGES}     title="Book a Ride"   subtitle="Fast rides across Lagos" badge="INSTANT" theme={theme} onPress={() => navigation.navigate('RequestRide')} />
-            <ActionCard images={DELIVERY_IMAGES} title="Send Package"  subtitle="Bikes, vans & couriers"              theme={theme} onPress={() => navigation.navigate('RequestDelivery')} />
+            <ActionCard
+              images={RIDE_IMAGES}
+              title="Book a Ride"
+              subtitle="Fast rides across Lagos"
+              badge="INSTANT"
+              theme={theme}
+              onPress={() => navigation.navigate('RequestRide')}
+            />
+            <ActionCard
+              images={DELIVERY_IMAGES}
+              title="Send Package"
+              subtitle="Bikes, vans & couriers"
+              theme={theme}
+              onPress={() => navigation.navigate('RequestDelivery')}
+            />
           </View>
 
-          {/* ── Choose a Driver button ─────────────────────────────────────────
-              Lets the customer browse nearby drivers and pick one by name/rating
-              before confirming — they also see any floor prices set by drivers.
-          ── */}
+          {/* ── Choose a Driver ── */}
           <TouchableOpacity
             style={[s.chooseDriverBtn, { borderColor: theme.accent + '50', backgroundColor: theme.accent + '0D' }]}
             onPress={handleChooseDriver}
@@ -382,7 +432,7 @@ export default function HomeScreen({ navigation }) {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[s.chooseDriverTitle, { color: theme.accent }]}>Choose Your Driver</Text>
-              <Text style={[s.chooseDriverSub, { color: theme.hint }]}>Browse nearby drivers, see ratings & fares</Text>
+              <Text style={[s.chooseDriverSub,   { color: theme.hint }]}>Browse nearby drivers, see ratings & fares</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={theme.accent} />
           </TouchableOpacity>
@@ -397,8 +447,8 @@ export default function HomeScreen({ navigation }) {
               <ActivityIndicator color={theme.accent} style={{ marginVertical: 20 }} />
             ) : (stats?.totalRides > 0 || stats?.totalDeliveries > 0) ? (
               <>
-                <ActivityRow icon="car-outline"  title="Ride to Victoria Island" subtitle="Today · 2:30 PM · 12 min"        amount={`${'\u20A6'}1,200`} status="COMPLETED" theme={theme} />
-                <ActivityRow icon="cube-outline" title="Package to Lekki Phase 1" subtitle="Yesterday · 10:15 AM · 3.2 km" amount={`${'\u20A6'}800`}   status="COMPLETED" theme={theme} last />
+                <ActivityRow icon="car-outline"  title="Ride to Victoria Island"  subtitle="Today · 2:30 PM · 12 min"       amount="₦1,200" status="COMPLETED" theme={theme} />
+                <ActivityRow icon="cube-outline" title="Package to Lekki Phase 1" subtitle="Yesterday · 10:15 AM · 3.2 km" amount="₦800"   status="COMPLETED" theme={theme} last />
               </>
             ) : (
               <View style={s.emptyActivity}>
@@ -406,7 +456,9 @@ export default function HomeScreen({ navigation }) {
                   <Ionicons name="map-outline" size={28} color={theme.accent} />
                 </View>
                 <Text style={[s.emptyTitle, { color: theme.foreground }]}>No trips yet</Text>
-                <Text style={[s.emptySub,   { color: theme.hint }]}>Book your first ride or send a package to get started</Text>
+                <Text style={[s.emptySub,   { color: theme.hint }]}>
+                  Book your first ride or send a package to get started
+                </Text>
                 <TouchableOpacity
                   style={[s.emptyBtn, { borderColor: theme.accent + '40', backgroundColor: theme.accent + '10' }]}
                   onPress={() => navigation.navigate('RequestRide')}
@@ -440,11 +492,10 @@ const s = StyleSheet.create({
   profileAvatarFallback: { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
   profileAvatarInitials: { fontSize: 14, fontWeight: '800' },
 
-  statsRow:    { flexDirection: 'row', gap: 10, marginBottom: 28 },
-  sectionTitle:{ fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 14 },
-  actionsRow:  { flexDirection: 'row', gap: CARD_GAP, width: width - H_PAD * 2, marginBottom: 14 },
+  statsRow:     { flexDirection: 'row', gap: 10, marginBottom: 28 },
+  sectionTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 14 },
+  actionsRow:   { flexDirection: 'row', gap: CARD_GAP, width: width - H_PAD * 2, marginBottom: 14 },
 
-  // Choose a Driver button
   chooseDriverBtn:   { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20 },
   chooseDriverIcon:  { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   chooseDriverTitle: { fontSize: 14, fontWeight: '800', marginBottom: 2 },

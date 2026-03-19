@@ -7,7 +7,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { partnerAPI, userAPI } from '../../services/api';
+import ActiveDeliveryBanner from '../../components/ActiveDeliveryBanner';
+import { partnerAPI, userAPI, deliveryAPI } from '../../services/api';
 import socketService from '../../services/socket';
 
 const { width } = Dimensions.get('window');
@@ -76,6 +77,7 @@ export default function PartnerDashboardScreen({ navigation }) {
   const [toggling, setToggling] = useState(false);
   const [stats,    setStats]    = useState(null);
   const [profile,  setProfile]  = useState(null);
+  const [activeDelivery, setActiveDelivery] = useState(null);
   const [loading,  setLoading]  = useState(true);
 
   const pulseA = useRef(new Animated.Value(1)).current;
@@ -112,9 +114,10 @@ export default function PartnerDashboardScreen({ navigation }) {
 
   const fetchData = async () => {
     try {
-      const [statsRes, profileRes] = await Promise.allSettled([
+      const [statsRes, profileRes, activeDelRes] = await Promise.allSettled([
         userAPI.getStats(),
         partnerAPI.getProfile(),
+        deliveryAPI.getActiveDelivery(),
       ]);
 
       if (statsRes.status === 'fulfilled') {
@@ -126,6 +129,14 @@ export default function PartnerDashboardScreen({ navigation }) {
         setProfile(profileData);
         setIsOnline(profileData?.isOnline ?? false);
       }
+
+      if (activeDelRes.status === 'fulfilled') {
+        const del = activeDelRes.value?.data?.delivery ?? null;
+        setActiveDelivery(
+          del && ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(del.status) ? del : null
+        );
+      }
+
     } catch {}
     finally {
       setLoading(false);
@@ -225,6 +236,15 @@ export default function PartnerDashboardScreen({ navigation }) {
               </Animated.View>
             )}
           </View>
+
+          {activeDelivery && (
+            <ActiveDeliveryBanner
+              delivery={activeDelivery}
+              role="DELIVERY_PARTNER"
+              theme={theme}
+              onPress={() => navigation.navigate('ActiveDelivery', { deliveryId: activeDelivery.id })}
+            />
+          )}
 
           {/* ── Earnings ── */}
           <EarningsCard total={stats?.totalEarnings ?? 0} today={0} />

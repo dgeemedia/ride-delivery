@@ -8,24 +8,41 @@ import { View, StyleSheet } from 'react-native';
 import { AuthProvider }     from './src/context/AuthContext';
 import { LocationProvider } from './src/context/LocationContext';
 import { RideProvider }     from './src/context/RideContext';
-import { ThemeProvider }    from './src/context/ThemeContext';
+import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import AppNavigator         from './src/navigation/AppNavigator';
 import ErrorBoundary        from './src/components/ErrorBoundary';
 
 // Keep splash visible until we explicitly hide it
-SplashScreen.preventAutoHideAsync().catch(() => {
-  // preventAutoHideAsync can throw if splash was already hidden (e.g. hot-reload)
-  // Safe to ignore.
-});
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
+// ── Inner shell — has access to ThemeContext ──────────────────────────────────
+// We separate this so NavigationContainer and StatusBar can read the live theme.
+function AppShell({ onLayout }) {
+  const { theme, mode } = useTheme();
+
+  return (
+    <NavigationContainer>
+      <View
+        style={[styles.root, { backgroundColor: theme.background }]}
+        onLayout={onLayout}
+      >
+        {/* StatusBar style follows theme mode */}
+        <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+        <AppNavigator />
+      </View>
+    </NavigationContainer>
+  );
+}
+
+// ── Root component ─────────────────────────────────────────────────────────────
 export default function App() {
   const [appIsReady, setAppIsReady] = useState(false);
 
   useEffect(() => {
     async function prepare() {
       try {
-        // Minimum splash duration — swap this for real asset pre-loading
-        await new Promise(resolve => setTimeout(resolve, 400));
+        // Minimum splash hold — replace with real asset pre-loading if needed
+        await new Promise(resolve => setTimeout(resolve, 300));
       } catch (e) {
         console.warn('[App] prepare error:', e);
       } finally {
@@ -35,6 +52,9 @@ export default function App() {
     prepare();
   }, []);
 
+  // onLayout fires once the root view is painted — safe to hide splash here.
+  // AppNavigator additionally waits for themeLoaded before rendering, so the
+  // correct background is always painted before the splash disappears.
   const onLayoutRootView = useCallback(async () => {
     if (appIsReady) {
       try {
@@ -45,8 +65,8 @@ export default function App() {
     }
   }, [appIsReady]);
 
-  // Render a dark-background placeholder while getting ready.
-  // This prevents the white flash between JS load and first render.
+  // Render a solid dark placeholder while JS initialises.
+  // This prevents the white flash between bundle load and first paint.
   if (!appIsReady) {
     return <View style={styles.splash} />;
   }
@@ -58,13 +78,7 @@ export default function App() {
           <AuthProvider>
             <RideProvider>
               <LocationProvider>
-                <NavigationContainer>
-                  {/* onLayout fires once the root view is painted — safe to hide splash here */}
-                  <View style={styles.root} onLayout={onLayoutRootView}>
-                    <StatusBar style="auto" />
-                    <AppNavigator />
-                  </View>
-                </NavigationContainer>
+                <AppShell onLayout={onLayoutRootView} />
               </LocationProvider>
             </RideProvider>
           </AuthProvider>
@@ -75,6 +89,6 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  splash: { flex: 1, backgroundColor: '#080C18' },
-  root:   { flex: 1, backgroundColor: '#080C18' },
+  splash: { flex: 1, backgroundColor: '#111111' }, // matches onyx dark background
+  root:   { flex: 1 },
 });
