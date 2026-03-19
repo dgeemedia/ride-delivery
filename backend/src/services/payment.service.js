@@ -1,6 +1,4 @@
 // backend/src/services/payment.service.js
-// Supports Paystack (primary) and Flutterwave (fallback)
-// Install: npm install axios
 
 const axios = require('axios');
 const { AppError } = require('../middleware/errorHandler');

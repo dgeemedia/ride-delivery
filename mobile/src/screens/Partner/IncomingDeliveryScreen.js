@@ -1,33 +1,34 @@
-// mobile/src/screens/Driver/IncomingRideScreen.js
+// mobile/src/screens/Partner/IncomingDeliveryScreen.js
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar,
-  Dimensions, Animated, ActivityIndicator, Alert, Vibration,
+  Dimensions, Animated, ActivityIndicator, Alert, Vibration, ScrollView,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
-import { rideAPI, walletAPI } from '../../services/api';
+import { deliveryAPI, walletAPI } from '../../services/api';
 
-const { height } = Dimensions.get('window');
-const DA         = '#FFB800';
-const GREEN      = '#5DAA72';
-const RED        = '#E05555';
-const TIMEOUT_SECS = 30;
+const { height }     = Dimensions.get('window');
+const COURIER_ACCENT = '#34D399';
+const RED            = '#E05555';
+const GREEN          = '#5DAA72';
+const GOLD           = '#FFB800';
+const TIMEOUT_SECS   = 35;
 
 // ── Countdown ring ─────────────────────────────────────────────────────────────
-const CountdownRing = ({ seconds, total, color }) => {
-  const SIZE = 80, STROKE = 5;
+const CountdownRing = ({ seconds, total }) => {
+  const SIZE = 76, STROKE = 5;
   return (
     <View style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={[cr.track, { width: SIZE, height: SIZE, borderRadius: SIZE / 2, borderColor: color + '25', borderWidth: STROKE }]} />
+      <View style={[cr.track, { width: SIZE, height: SIZE, borderRadius: SIZE / 2, borderColor: COURIER_ACCENT + '25', borderWidth: STROKE }]} />
       <View style={[cr.arc, {
         width: SIZE, height: SIZE, borderRadius: SIZE / 2,
-        borderColor: color, borderWidth: STROKE,
+        borderColor: COURIER_ACCENT, borderWidth: STROKE,
         borderRightColor: 'transparent',
         transform: [{ rotate: `${(1 - seconds / total) * 360}deg` }],
       }]} />
-      <Text style={[cr.txt, { color }]}>{seconds}</Text>
+      <Text style={[cr.txt, { color: COURIER_ACCENT }]}>{seconds}</Text>
     </View>
   );
 };
@@ -38,34 +39,36 @@ const cr = StyleSheet.create({
 });
 
 // ── Route row ──────────────────────────────────────────────────────────────────
-const RouteRow = ({ icon, iconColor, label, address, theme }) => (
+const RouteRow = ({ icon, iconColor, label, address, contact, theme }) => (
   <View style={rr.row}>
     <View style={[rr.iconWrap, { backgroundColor: iconColor + '18' }]}>
-      <Ionicons name={icon} size={16} color={iconColor} />
+      <Ionicons name={icon} size={15} color={iconColor} />
     </View>
     <View style={{ flex: 1 }}>
       <Text style={[rr.label, { color: theme.hint }]}>{label}</Text>
       <Text style={[rr.addr, { color: theme.foreground }]} numberOfLines={2}>{address}</Text>
+      {contact && <Text style={[rr.contact, { color: theme.hint }]}>{contact}</Text>}
     </View>
   </View>
 );
 const rr = StyleSheet.create({
-  row:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 14 },
-  iconWrap: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginTop: 2, flexShrink: 0 },
-  label:    { fontSize: 9, fontWeight: '700', letterSpacing: 1.5, marginBottom: 3 },
-  addr:     { fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  row:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
+  iconWrap: { width: 34, height: 34, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginTop: 2, flexShrink: 0 },
+  label:    { fontSize: 9, fontWeight: '700', letterSpacing: 1.5, marginBottom: 2 },
+  addr:     { fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  contact:  { fontSize: 11, marginTop: 1 },
 });
 
 // ── Stat pill ──────────────────────────────────────────────────────────────────
 const StatPill = ({ icon, value, theme }) => (
   <View style={[sp.pill, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-    <Ionicons name={icon} size={13} color={theme.hint} />
+    <Ionicons name={icon} size={12} color={theme.hint} />
     <Text style={[sp.txt, { color: theme.foreground }]}>{value}</Text>
   </View>
 );
 const sp = StyleSheet.create({
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 7 },
-  txt:  { fontSize: 12, fontWeight: '700' },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6 },
+  txt:  { fontSize: 11, fontWeight: '700' },
 });
 
 // ── Wallet balance strip ───────────────────────────────────────────────────────
@@ -77,29 +80,29 @@ const WalletStrip = ({ balance, required, theme, onTopUp }) => {
   return (
     <View style={[ws.wrap, { backgroundColor: color + '10', borderColor: color + '30' }]}>
       <View style={[ws.iconWrap, { backgroundColor: color + '20' }]}>
-        <Ionicons name="wallet-outline" size={16} color={color} />
+        <Ionicons name="wallet-outline" size={15} color={color} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[ws.title, { color }]}>
-          {hasSufficient ? 'Wallet OK ✓' : 'Insufficient Wallet Balance'}
+          {hasSufficient ? 'Wallet OK ✓' : 'Insufficient Balance'}
         </Text>
         <Text style={[ws.sub, { color: theme.hint }]}>
           Balance: <Text style={{ fontWeight: '800', color }}>
             ₦{Number(balance).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
           </Text>
-          {' '}/ Required: <Text style={{ fontWeight: '800' }}>
+          {'  '}Required: <Text style={{ fontWeight: '800' }}>
             ₦{Number(required).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
           </Text>
         </Text>
         {!hasSufficient && (
           <Text style={[ws.shortfall, { color: RED }]}>
-            Top up ₦{Number(shortfall).toLocaleString('en-NG', { maximumFractionDigits: 0 })} to accept
+            Need ₦{Number(shortfall).toLocaleString('en-NG', { maximumFractionDigits: 0 })} more to accept
           </Text>
         )}
       </View>
       {!hasSufficient && (
         <TouchableOpacity
-          style={[ws.topupBtn, { backgroundColor: DA }]}
+          style={[ws.topupBtn, { backgroundColor: COURIER_ACCENT }]}
           onPress={onTopUp}
           activeOpacity={0.85}
         >
@@ -110,22 +113,22 @@ const WalletStrip = ({ balance, required, theme, onTopUp }) => {
   );
 };
 const ws = StyleSheet.create({
-  wrap:     { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 16 },
-  iconWrap: { width: 34, height: 34, borderRadius: 10, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  wrap:     { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, borderWidth: 1, padding: 11, marginBottom: 14 },
+  iconWrap: { width: 32, height: 32, borderRadius: 9, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   title:    { fontSize: 12, fontWeight: '800', marginBottom: 2 },
   sub:      { fontSize: 11, lineHeight: 17 },
   shortfall:{ fontSize: 11, fontWeight: '700', marginTop: 2 },
-  topupBtn: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, flexShrink: 0 },
+  topupBtn: { borderRadius: 9, paddingHorizontal: 11, paddingVertical: 6, flexShrink: 0 },
   topupTxt: { fontSize: 12, fontWeight: '800', color: '#080C18' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
-export default function IncomingRideScreen({ route, navigation }) {
-  const { theme } = useTheme();
-  const insets    = useSafeAreaInsets();
-  const request   = route?.params?.request ?? {};
+export default function IncomingDeliveryScreen({ route, navigation }) {
+  const { theme }  = useTheme();
+  const insets     = useSafeAreaInsets();
+  const request    = route?.params?.request ?? {};
 
   const [accepting,      setAccepting]      = useState(false);
   const [countdown,      setCountdown]      = useState(TIMEOUT_SECS);
@@ -136,16 +139,16 @@ export default function IncomingRideScreen({ route, navigation }) {
   const slideA = useRef(new Animated.Value(height)).current;
   const pulseA = useRef(new Animated.Value(1)).current;
 
-  const estimatedFare = Number(request.estimatedFare ?? 0);
-  const hasSufficient = walletBalance !== null && walletBalance >= estimatedFare;
+  const estimatedFee  = Number(request.estimatedFee ?? 0);
+  const hasSufficient = walletBalance !== null && walletBalance >= estimatedFee;
 
   useEffect(() => {
-    Vibration.vibrate([0, 250, 100, 250, 100, 250]);
+    Vibration.vibrate([0, 200, 80, 200, 80, 200]);
     Animated.spring(slideA, { toValue: 0, tension: 70, friction: 11, useNativeDriver: true }).start();
 
     const pulse = Animated.loop(Animated.sequence([
-      Animated.timing(pulseA, { toValue: 1.06, duration: 600, useNativeDriver: true }),
-      Animated.timing(pulseA, { toValue: 1,    duration: 600, useNativeDriver: true }),
+      Animated.timing(pulseA, { toValue: 1.06, duration: 700, useNativeDriver: true }),
+      Animated.timing(pulseA, { toValue: 1,    duration: 700, useNativeDriver: true }),
     ]));
     pulse.start();
 
@@ -166,7 +169,7 @@ export default function IncomingRideScreen({ route, navigation }) {
   }, []);
 
   const slideOut = (cb) =>
-    Animated.timing(slideA, { toValue: height, duration: 260, useNativeDriver: true }).start(cb);
+    Animated.timing(slideA, { toValue: height, duration: 250, useNativeDriver: true }).start(cb);
 
   const doDecline = () => {
     if (isActingRef.current) return;
@@ -179,13 +182,11 @@ export default function IncomingRideScreen({ route, navigation }) {
     if (!hasSufficient) {
       Alert.alert(
         'Wallet Balance Required',
-        `You need ₦${estimatedFare.toLocaleString('en-NG')} in your wallet to accept this ride. ` +
+        `You need ₦${estimatedFee.toLocaleString('en-NG')} in your wallet to accept this delivery. ` +
         `Please top up your wallet first.`,
         [
-          { text: 'Decline Ride', style: 'cancel', onPress: doDecline },
-          { text: 'Top Up Wallet', onPress: () => {
-            slideOut(() => navigation.navigate('Earnings'));
-          }},
+          { text: 'Decline',    style: 'cancel', onPress: doDecline },
+          { text: 'Top Up Now', onPress: () => slideOut(() => navigation.navigate('EarningsHome')) },
         ]
       );
       return;
@@ -196,23 +197,22 @@ export default function IncomingRideScreen({ route, navigation }) {
     setAccepting(true);
 
     try {
-      await rideAPI.acceptRide(request.rideId);
-      navigation.replace('ActiveRide', { rideId: request.rideId });
+      await deliveryAPI.acceptDelivery(request.deliveryId);
+      navigation.replace('ActiveDelivery', { deliveryId: request.deliveryId });
     } catch (err) {
       isActingRef.current = false;
       setAccepting(false);
 
       const status  = err?.response?.status;
-      const message = err?.response?.data?.message ?? 'Ride may have been cancelled.';
+      const message = err?.response?.data?.message ?? 'This delivery may have been cancelled.';
 
       if (status === 402) {
-        // Wallet insufficient — server confirmed
         Alert.alert(
           'Wallet Top-Up Required 💰',
           message,
           [
-            { text: 'Decline Ride', style: 'cancel', onPress: () => slideOut(() => navigation.goBack()) },
-            { text: 'Top Up Now',   onPress: () => slideOut(() => navigation.navigate('Earnings')) },
+            { text: 'Decline',    style: 'cancel', onPress: () => slideOut(() => navigation.goBack()) },
+            { text: 'Top Up Now', onPress: () => slideOut(() => navigation.navigate('EarningsHome')) },
           ]
         );
       } else {
@@ -223,9 +223,9 @@ export default function IncomingRideScreen({ route, navigation }) {
     }
   };
 
-  const fareStr = estimatedFare.toLocaleString('en-NG', { maximumFractionDigits: 0 });
+  const feeStr  = estimatedFee.toLocaleString('en-NG', { maximumFractionDigits: 0 });
   const distStr = request.distance?.toFixed(1) ?? '—';
-  const etaStr  = request.etaMinutes ?? (request.distance ? Math.ceil(request.distance / 0.5) : '—');
+  const etaStr  = request.etaMinutes ?? (request.distance ? Math.ceil(request.distance / 0.4) : '—');
 
   return (
     <View style={s.root}>
@@ -239,66 +239,64 @@ export default function IncomingRideScreen({ route, navigation }) {
       }]}>
         <View style={[s.handle, { backgroundColor: theme.border }]} />
 
-        {/* Top row: badge + countdown */}
+        {/* Top row */}
         <View style={s.topRow}>
-          <Animated.View style={[s.badge, { backgroundColor: DA, transform: [{ scale: pulseA }] }]}>
+          <Animated.View style={[s.badge, { backgroundColor: COURIER_ACCENT, transform: [{ scale: pulseA }] }]}>
             <Ionicons name="flash" size={12} color="#080C18" />
-            <Text style={s.badgeTxt}>NEW RIDE REQUEST</Text>
+            <Text style={s.badgeTxt}>NEW DELIVERY</Text>
           </Animated.View>
-          <CountdownRing seconds={countdown} total={TIMEOUT_SECS} color={DA} />
+          <CountdownRing seconds={countdown} total={TIMEOUT_SECS} />
         </View>
 
-        {/* Fare */}
-        <Text style={[s.fare, { color: DA }]}>₦{fareStr}</Text>
-        <Text style={[s.fareSub, { color: theme.hint }]}>Estimated fare</Text>
+        {/* Fee */}
+        <Text style={[s.fee, { color: COURIER_ACCENT }]}>₦{feeStr}</Text>
+        <Text style={[s.feeSub, { color: theme.hint }]}>Estimated delivery fee</Text>
 
         {/* Stats */}
         <View style={s.statsRow}>
           <StatPill icon="navigate-outline" value={`${distStr} km`}  theme={theme} />
           <StatPill icon="time-outline"     value={`~${etaStr} min`} theme={theme} />
-          <StatPill icon="cash-outline"     value={request.paymentMethod ?? 'CASH'} theme={theme} />
+          {request.packageWeight && (
+            <StatPill icon="scale-outline" value={`${request.packageWeight} kg`} theme={theme} />
+          )}
         </View>
 
         {/* ── Wallet balance strip ── */}
         {loadingWallet ? (
           <View style={[s.walletLoading, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <ActivityIndicator color={DA} size="small" />
-            <Text style={[s.walletLoadingTxt, { color: theme.hint }]}>Checking wallet balance...</Text>
+            <ActivityIndicator color={COURIER_ACCENT} size="small" />
+            <Text style={[s.walletLoadingTxt, { color: theme.hint }]}>Checking wallet...</Text>
           </View>
         ) : (
           <WalletStrip
             balance={walletBalance}
-            required={estimatedFare}
+            required={estimatedFee}
             theme={theme}
-            onTopUp={() => slideOut(() => navigation.navigate('Earnings'))}
+            onTopUp={() => slideOut(() => navigation.navigate('EarningsHome'))}
           />
         )}
 
         <View style={[s.divider, { backgroundColor: theme.border }]} />
 
-        {/* Customer */}
-        {request.customer && (
-          <View style={s.customerRow}>
-            <View style={[s.cAvatar, { backgroundColor: DA + '18' }]}>
-              <Text style={[s.cInitials, { color: DA }]}>
-                {request.customer.firstName?.[0]}{request.customer.lastName?.[0]}
-              </Text>
+        {/* Package info + route */}
+        <ScrollView style={{ maxHeight: height * 0.22 }} showsVerticalScrollIndicator={false}>
+          {request.packageDescription && (
+            <View style={[s.pkgCard, { backgroundColor: COURIER_ACCENT + '10', borderColor: COURIER_ACCENT + '30' }]}>
+              <Ionicons name="cube-outline" size={15} color={COURIER_ACCENT} />
+              <Text style={[s.pkgTxt, { color: theme.foreground }]}>{request.packageDescription}</Text>
             </View>
-            <View>
-              <Text style={[s.cName, { color: theme.foreground }]}>
-                {request.customer.firstName} {request.customer.lastName}
-              </Text>
-              <View style={s.cVerified}>
-                <Ionicons name="shield-checkmark" size={11} color="#5DAA72" />
-                <Text style={[s.cVerifiedTxt, { color: '#5DAA72' }]}>Verified rider</Text>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Route */}
-        <RouteRow icon="radio-button-on" iconColor={DA}    label="PICKUP"   address={request.pickupAddress  ?? '—'} theme={theme} />
-        <RouteRow icon="location"        iconColor={RED}   label="DROP-OFF" address={request.dropoffAddress ?? '—'} theme={theme} />
+          )}
+          <RouteRow
+            icon="radio-button-on" iconColor={COURIER_ACCENT}
+            label="PICKUP" address={request.pickupAddress ?? '—'}
+            contact={request.pickupContact} theme={theme}
+          />
+          <RouteRow
+            icon="location" iconColor={RED}
+            label="DROP-OFF" address={request.dropoffAddress ?? '—'}
+            contact={request.dropoffContact} theme={theme}
+          />
+        </ScrollView>
 
         <View style={[s.divider, { backgroundColor: theme.border }]} />
 
@@ -310,14 +308,14 @@ export default function IncomingRideScreen({ route, navigation }) {
             disabled={accepting}
             activeOpacity={0.75}
           >
-            <Ionicons name="close-circle-outline" size={20} color={theme.hint} />
+            <Ionicons name="close-circle-outline" size={19} color={theme.hint} />
             <Text style={[s.declineTxt, { color: theme.hint }]}>Decline</Text>
           </TouchableOpacity>
 
           <Animated.View style={[s.acceptWrap, { transform: [{ scale: pulseA }] }]}>
             <TouchableOpacity
               style={[s.acceptBtn, {
-                backgroundColor: hasSufficient ? DA : theme.border,
+                backgroundColor: hasSufficient ? COURIER_ACCENT : theme.border,
                 opacity: accepting ? 0.7 : 1,
               }]}
               onPress={doAccept}
@@ -328,13 +326,13 @@ export default function IncomingRideScreen({ route, navigation }) {
                 <ActivityIndicator color="#080C18" size="small" />
               ) : !hasSufficient && !loadingWallet ? (
                 <>
-                  <Ionicons name="wallet-outline" size={20} color={theme.hint} />
+                  <Ionicons name="wallet-outline" size={18} color={theme.hint} />
                   <Text style={[s.acceptTxt, { color: theme.hint }]}>Top Up First</Text>
                 </>
               ) : (
                 <>
-                  <Ionicons name="checkmark-circle" size={22} color="#080C18" />
-                  <Text style={s.acceptTxt}>Accept Ride</Text>
+                  <Ionicons name="checkmark-circle" size={20} color="#080C18" />
+                  <Text style={s.acceptTxt}>Accept</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -346,29 +344,25 @@ export default function IncomingRideScreen({ route, navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:         { flex: 1, justifyContent: 'flex-end' },
-  backdrop:     { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet:        { borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 24, paddingTop: 14, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 20 },
-  handle:       { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  topRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  badge:        { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
-  badgeTxt:     { fontSize: 10, fontWeight: '900', color: '#080C18', letterSpacing: 1 },
-  fare:         { fontSize: 40, fontWeight: '900', letterSpacing: -1, marginBottom: 4 },
-  fareSub:      { fontSize: 12, fontWeight: '500', marginBottom: 16 },
-  statsRow:     { flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' },
-  walletLoading:{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 16 },
-  walletLoadingTxt: { fontSize: 12, fontWeight: '500' },
-  divider:      { height: 1, marginBottom: 18 },
-  customerRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
-  cAvatar:      { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  cInitials:    { fontSize: 16, fontWeight: '800' },
-  cName:        { fontSize: 15, fontWeight: '700', marginBottom: 3 },
-  cVerified:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  cVerifiedTxt: { fontSize: 11, fontWeight: '600' },
-  actions:      { flexDirection: 'row', gap: 12, marginTop: 4 },
-  declineBtn:   { flex: 1, height: 56, borderRadius: 16, borderWidth: 1.5, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  declineTxt:   { fontSize: 15, fontWeight: '700' },
-  acceptWrap:   { flex: 2 },
-  acceptBtn:    { height: 56, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  acceptTxt:    { fontSize: 16, fontWeight: '900', color: '#080C18' },
+  root:            { flex: 1, justifyContent: 'flex-end' },
+  backdrop:        { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet:           { borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 24, paddingTop: 14, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 20 },
+  handle:          { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  topRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  badge:           { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
+  badgeTxt:        { fontSize: 10, fontWeight: '900', color: '#080C18', letterSpacing: 1 },
+  fee:             { fontSize: 38, fontWeight: '900', letterSpacing: -1, marginBottom: 3 },
+  feeSub:          { fontSize: 12, marginBottom: 14 },
+  statsRow:        { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
+  walletLoading:   { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, borderWidth: 1, padding: 11, marginBottom: 14 },
+  walletLoadingTxt:{ fontSize: 12 },
+  divider:         { height: 1, marginBottom: 12 },
+  pkgCard:         { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, padding: 10, marginBottom: 10 },
+  pkgTxt:          { flex: 1, fontSize: 13, fontWeight: '600' },
+  actions:         { flexDirection: 'row', gap: 12, marginTop: 4 },
+  declineBtn:      { flex: 1, height: 54, borderRadius: 16, borderWidth: 1.5, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  declineTxt:      { fontSize: 14, fontWeight: '700' },
+  acceptWrap:      { flex: 2 },
+  acceptBtn:       { height: 54, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  acceptTxt:       { fontSize: 16, fontWeight: '900', color: '#080C18' },
 });

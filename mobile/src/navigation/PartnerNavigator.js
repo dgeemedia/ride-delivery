@@ -1,29 +1,103 @@
 // mobile/src/navigation/PartnerNavigator.js
 import React from 'react';
-import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
-import {Ionicons} from '@expo/vector-icons';
-import {colors} from '../theme/colors';
+import { Platform } from 'react-native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createStackNavigator }     from '@react-navigation/stack';
+import { Ionicons }                 from '@expo/vector-icons';
+import { useTheme }                 from '../context/ThemeContext';
 
-import PartnerDashboardScreen from '../screens/Partner/PartnerDashboardScreen';
-import ProfileScreen from '../screens/Shared/ProfileScreen';
+import PartnerDashboardScreen  from '../screens/Partner/PartnerDashboardScreen';
+import PartnerEarningsScreen   from '../screens/Partner/PartnerEarningsScreen';
+import IncomingDeliveryScreen  from '../screens/Partner/IncomingDeliveryScreen';
+import ActiveDeliveryScreen    from '../screens/Partner/ActiveDeliveryScreen';
+import CourierFloorPriceScreen from '../screens/Partner/CourierFloorPriceScreen';
+import ProfileScreen           from '../screens/Shared/ProfileScreen';
+import EditProfileScreen       from '../screens/Shared/EditProfileScreen';
+import NotificationsScreen     from '../screens/Shared/NotificationsScreen';
+import ChangePasswordScreen    from '../screens/Shared/ChangePasswordScreen';
+import SupportScreen           from '../screens/Shared/SupportScreen';
 
-const Tab = createBottomTabNavigator();
+const COURIER_ACCENT = '#34D399';
 
+const Tab   = createBottomTabNavigator();
+const Stack = createStackNavigator();
+
+// ── Dashboard stack ────────────────────────────────────────────────────────────
+const DashboardStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="Dashboard"        component={PartnerDashboardScreen}  />
+    <Stack.Screen name="IncomingDelivery" component={IncomingDeliveryScreen}  />
+    <Stack.Screen name="ActiveDelivery"   component={ActiveDeliveryScreen}    />
+    <Stack.Screen name="FloorPrice"       component={CourierFloorPriceScreen} />
+    <Stack.Screen name="Notifications"    component={NotificationsScreen}     />
+    <Stack.Screen name="Support"          component={SupportScreen}           />
+  </Stack.Navigator>
+);
+
+// ── Earnings stack ────────────────────────────────────────────────────────────
+const EarningsStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="EarningsHome" component={PartnerEarningsScreen} />
+    <Stack.Screen name="Support"      component={SupportScreen}         />
+  </Stack.Navigator>
+);
+
+// ── Profile stack ─────────────────────────────────────────────────────────────
+const ProfileStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="ProfileHome"    component={ProfileScreen}          />
+    <Stack.Screen name="EditProfile"    component={EditProfileScreen}      />
+    <Stack.Screen name="Notifications"  component={NotificationsScreen}    />
+    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen}   />
+    <Stack.Screen name="FloorPrice"     component={CourierFloorPriceScreen}/>
+    <Stack.Screen name="Support"        component={SupportScreen}          />
+  </Stack.Navigator>
+);
+
+// ── Root tab navigator ─────────────────────────────────────────────────────────
 const PartnerNavigator = () => {
+  const { theme } = useTheme();
+
   return (
     <Tab.Navigator
-      screenOptions={({route}) => ({
-        tabBarIcon: ({color, size}) => {
-          let iconName;
-          if (route.name === 'Dashboard') iconName = 'cube';
-          else if (route.name === 'Profile') iconName = 'person';
-          return <Ionicons name={iconName} size={size} color={color} />;
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarIcon: ({ focused, color, size }) => {
+          const icons = {
+            DashboardTab: focused ? 'cube'         : 'cube-outline',
+            EarningsTab:  focused ? 'wallet'       : 'wallet-outline',
+            ProfileTab:   focused ? 'person'       : 'person-outline',
+          };
+          return <Ionicons name={icons[route.name]} size={size} color={color} />;
         },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.text.secondary,
-      })}>
-      <Tab.Screen name="Dashboard" component={PartnerDashboardScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+        tabBarActiveTintColor:   COURIER_ACCENT,
+        tabBarInactiveTintColor: theme.hint,
+        tabBarStyle: {
+          backgroundColor: theme.backgroundAlt,
+          borderTopColor:  theme.border,
+          borderTopWidth:  1,
+          height:          Platform.OS === 'ios' ? 82 : 62,
+          paddingBottom:   Platform.OS === 'ios' ? 24 : 8,
+          paddingTop:      8,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+      })}
+    >
+      <Tab.Screen
+        name="DashboardTab"
+        component={DashboardStack}
+        options={{ title: 'Deliveries' }}
+      />
+      <Tab.Screen
+        name="EarningsTab"
+        component={EarningsStack}
+        options={{ title: 'Earnings' }}
+      />
+      <Tab.Screen
+        name="ProfileTab"
+        component={ProfileStack}
+        options={{ title: 'Profile' }}
+      />
     </Tab.Navigator>
   );
 };

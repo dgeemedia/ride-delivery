@@ -19,20 +19,21 @@ import WalletScreen          from '../screens/Customer/WalletScreen';
 import NotificationsScreen   from '../screens/Shared/NotificationsScreen';
 import ChangePasswordScreen  from '../screens/Shared/ChangePasswordScreen';
 import SupportScreen         from '../screens/Shared/SupportScreen';
+import DeliveryTrackingScreen from '../screens/Customer/DeliveryTrackingScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
 const HomeStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Home"            component={HomeScreen}           />
-    <Stack.Screen name="RequestRide"     component={RequestRideScreen}    />
-    <Stack.Screen name="RequestDelivery" component={RequestDeliveryScreen}/>
-    <Stack.Screen name="NearbyDrivers"   component={NearbyDriversScreen}  />
-    <Stack.Screen name="Notifications"   component={NotificationsScreen}  />
-    <Stack.Screen name="Support"         component={SupportScreen}        />
-    {/* Real tracking screen — driver pin moves live via socket */}
-    <Stack.Screen name="RideTracking"    component={RideTrackingScreen}   />
+    <Stack.Screen name="Home"              component={HomeScreen}              />
+    <Stack.Screen name="RequestRide"       component={RequestRideScreen}       />
+    <Stack.Screen name="RequestDelivery"   component={RequestDeliveryScreen}   />
+    <Stack.Screen name="DeliveryTracking"  component={DeliveryTrackingScreen}  />
+    <Stack.Screen name="NearbyDrivers"     component={NearbyDriversScreen}     />
+    <Stack.Screen name="Notifications"     component={NotificationsScreen}     />
+    <Stack.Screen name="Support"           component={SupportScreen}           />
+    <Stack.Screen name="RideTracking"      component={RideTrackingScreen}      />
   </Stack.Navigator>
 );
 

@@ -35,90 +35,6 @@ const sc = StyleSheet.create({
   label:   { fontSize:11, fontWeight:'600', textAlign:'center' },
 });
 
-// ── Delivery request card ────────────────────────────────────────────────────
-const DeliveryRequestCard = ({ request, onAccept, onDecline }) => {
-  const { theme } = useTheme();
-  return (
-    <View style={[dr.card, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '50' }]}>
-      <View style={dr.header}>
-        <View style={[dr.pill, { backgroundColor: COURIER_ACCENT + '20' }]}>
-          <Ionicons name="flash" size={12} color={COURIER_ACCENT} />
-          <Text style={[dr.pillTxt, { color: COURIER_ACCENT }]}>NEW DELIVERY</Text>
-        </View>
-        <Text style={[dr.fee, { color: COURIER_ACCENT }]}>₦{request.estimatedFee?.toLocaleString()}</Text>
-      </View>
-      <View style={dr.infoRow}>
-        <View style={[dr.badge, { backgroundColor: COURIER_ACCENT + '15' }]}>
-          <Ionicons name="cube-outline" size={14} color={COURIER_ACCENT} />
-          <Text style={[dr.badgeTxt, { color: COURIER_ACCENT }]}>{request.packageDescription}</Text>
-        </View>
-        {request.packageWeight && (
-          <View style={[dr.badge, { backgroundColor: '#A78BFA15' }]}>
-            <Ionicons name="scale-outline" size={14} color="#A78BFA" />
-            <Text style={[dr.badgeTxt, { color: '#A78BFA' }]}>{request.packageWeight} kg</Text>
-          </View>
-        )}
-      </View>
-      <View style={dr.routeBox}>
-        <View style={dr.routeItem}>
-          <View style={[dr.dot, { backgroundColor: COURIER_ACCENT }]} />
-          <View>
-            <Text style={[dr.routeLabel, { color: theme.hint }]}>PICKUP</Text>
-            <Text style={[dr.routeAddr, { color: theme.foreground }]} numberOfLines={1}>{request.pickupAddress}</Text>
-            <Text style={[dr.routeContact, { color: theme.muted }]}>{request.pickupContact}</Text>
-          </View>
-        </View>
-        <View style={[dr.routeLine, { backgroundColor: theme.border }]} />
-        <View style={dr.routeItem}>
-          <View style={[dr.dot, { backgroundColor: '#FF6B6B' }]} />
-          <View>
-            <Text style={[dr.routeLabel, { color: theme.hint }]}>DROP-OFF</Text>
-            <Text style={[dr.routeAddr, { color: theme.foreground }]} numberOfLines={1}>{request.dropoffAddress}</Text>
-            <Text style={[dr.routeContact, { color: theme.muted }]}>{request.dropoffContact}</Text>
-          </View>
-        </View>
-      </View>
-      <View style={dr.meta}>
-        <Ionicons name="navigate-outline" size={13} color={theme.muted} />
-        <Text style={[dr.metaTxt, { color: theme.muted }]}>{request.distance?.toFixed(1) ?? '—'} km</Text>
-      </View>
-      <View style={dr.actions}>
-        <TouchableOpacity style={[dr.decline, { borderColor: theme.border }]} onPress={onDecline}>
-          <Text style={[dr.declineTxt, { color: theme.muted }]}>Decline</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[dr.accept, { backgroundColor: COURIER_ACCENT }]} onPress={onAccept}>
-          <Ionicons name="checkmark" size={16} color="#080C18" />
-          <Text style={dr.acceptTxt}>Accept</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-const dr = StyleSheet.create({
-  card:        { borderRadius:20, borderWidth:1.5, padding:18, marginBottom:16 },
-  header:      { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:14 },
-  pill:        { flexDirection:'row', alignItems:'center', gap:5, borderRadius:8, paddingHorizontal:10, paddingVertical:5 },
-  pillTxt:     { fontSize:10, fontWeight:'800', letterSpacing:1 },
-  fee:         { fontSize:22, fontWeight:'900' },
-  infoRow:     { flexDirection:'row', gap:8, marginBottom:16 },
-  badge:       { flexDirection:'row', alignItems:'center', gap:5, borderRadius:8, paddingHorizontal:10, paddingVertical:6 },
-  badgeTxt:    { fontSize:12, fontWeight:'700' },
-  routeBox:    { gap:0, marginBottom:12 },
-  routeItem:   { flexDirection:'row', alignItems:'flex-start', gap:12 },
-  dot:         { width:10, height:10, borderRadius:5, marginTop:4 },
-  routeLine:   { width:2, height:20, marginLeft:4 },
-  routeLabel:  { fontSize:10, fontWeight:'700', letterSpacing:1 },
-  routeAddr:   { fontSize:14, fontWeight:'600', marginTop:2 },
-  routeContact:{ fontSize:12, marginTop:1 },
-  meta:        { flexDirection:'row', alignItems:'center', marginBottom:14 },
-  metaTxt:     { fontSize:12, marginLeft:4 },
-  actions:     { flexDirection:'row', gap:10 },
-  decline:     { flex:1, height:46, borderRadius:12, borderWidth:1, justifyContent:'center', alignItems:'center' },
-  declineTxt:  { fontWeight:'700' },
-  accept:      { flex:2, height:46, borderRadius:12, flexDirection:'row', justifyContent:'center', alignItems:'center', gap:6 },
-  acceptTxt:   { color:'#080C18', fontWeight:'800', fontSize:15 },
-});
-
 // ── Earnings card ────────────────────────────────────────────────────────────
 const EarningsCard = ({ total, today }) => {
   const { theme } = useTheme();
@@ -156,27 +72,26 @@ export default function PartnerDashboardScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
 
-  const [isOnline,    setIsOnline]    = useState(false);
-  const [toggling,    setToggling]    = useState(false);
-  const [stats,       setStats]       = useState(null);
-  const [profile,     setProfile]     = useState(null);  // ← holds the flat DeliveryPartnerProfile object
-  const [loading,     setLoading]     = useState(true);
-  const [incomingJob, setIncomingJob] = useState(null);
+  const [isOnline, setIsOnline] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [stats,    setStats]    = useState(null);
+  const [profile,  setProfile]  = useState(null);
+  const [loading,  setLoading]  = useState(true);
 
   const pulseA = useRef(new Animated.Value(1)).current;
   const fadeA  = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     fetchData();
-    Animated.timing(fadeA, { toValue:1, duration:600, useNativeDriver:true }).start();
+    Animated.timing(fadeA, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
   useEffect(() => {
     let anim;
     if (isOnline) {
       anim = Animated.loop(Animated.sequence([
-        Animated.timing(pulseA, { toValue:1.15, duration:900, useNativeDriver:true }),
-        Animated.timing(pulseA, { toValue:1,    duration:900, useNativeDriver:true }),
+        Animated.timing(pulseA, { toValue: 1.15, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseA, { toValue: 1,    duration: 900, useNativeDriver: true }),
       ]));
       anim.start();
     } else {
@@ -185,14 +100,15 @@ export default function PartnerDashboardScreen({ navigation }) {
     return () => anim?.stop();
   }, [isOnline]);
 
+  // ── Socket — incoming delivery navigates to dedicated full-screen sheet ──
   useEffect(() => {
-    socketService.on('delivery:request',   (data) => setIncomingJob(data));
-    socketService.on('delivery:cancelled', ()     => setIncomingJob(null));
+    socketService.on('delivery:new_request', (data) => {
+      navigation.navigate('IncomingDelivery', { request: data });
+    });
     return () => {
-      socketService.off('delivery:request');
-      socketService.off('delivery:cancelled');
+      socketService.off('delivery:new_request');
     };
-  }, []);
+  }, [navigation]);
 
   const fetchData = async () => {
     try {
@@ -206,8 +122,6 @@ export default function PartnerDashboardScreen({ navigation }) {
       }
 
       if (profileRes.status === 'fulfilled') {
-        // Backend returns: { success, data: { profile: { isApproved, vehicleType, ... } } }
-        // Axios interceptor unwraps response.data, so profileRes.value = { success, data: { profile } }
         const profileData = profileRes.value?.data?.profile;
         setProfile(profileData);
         setIsOnline(profileData?.isOnline ?? false);
@@ -223,7 +137,6 @@ export default function PartnerDashboardScreen({ navigation }) {
     try {
       const next = !isOnline;
 
-      // ← use profile.isApproved directly (no nested deliveryProfile)
       if (!profile?.isApproved && next) {
         Alert.alert(
           'Account Pending Approval',
@@ -249,7 +162,6 @@ export default function PartnerDashboardScreen({ navigation }) {
     }
   };
 
-  // ← isApproved comes from the flat profile object
   const isApproved = profile?.isApproved;
 
   return (
@@ -275,7 +187,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* ── Approval banner — only shown when not yet approved ── */}
+          {/* ── Approval banner ── */}
           {!isApproved && (
             <TouchableOpacity
               style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '30' }]}
@@ -314,18 +226,6 @@ export default function PartnerDashboardScreen({ navigation }) {
             )}
           </View>
 
-          {/* ── Incoming delivery request ── */}
-          {incomingJob && isOnline && (
-            <DeliveryRequestCard
-              request={incomingJob}
-              onAccept={() => {
-                navigation.navigate('ActiveDelivery', { deliveryId: incomingJob.id });
-                setIncomingJob(null);
-              }}
-              onDecline={() => setIncomingJob(null)}
-            />
-          )}
-
           {/* ── Earnings ── */}
           <EarningsCard total={stats?.totalEarnings ?? 0} today={0} />
 
@@ -334,9 +234,9 @@ export default function PartnerDashboardScreen({ navigation }) {
             <ActivityIndicator color={COURIER_ACCENT} style={{ marginBottom: 16 }} />
           ) : (
             <View style={s.statsRow}>
-              <StatCard icon="cube-outline"  value={stats?.completedDeliveries ?? 0}                    label="Deliveries" />
-              <StatCard icon="star-outline"  value={(stats?.rating ?? 0).toFixed(1)}                    label="Rating"     color="#FFB800" />
-              <StatCard icon="flash-outline" value={stats?.completedDeliveries > 0 ? '96%' : '—'}       label="On Time"    color="#A78BFA" />
+              <StatCard icon="cube-outline"  value={stats?.completedDeliveries ?? 0}              label="Deliveries" />
+              <StatCard icon="star-outline"  value={(stats?.rating ?? 0).toFixed(1)}              label="Rating"     color="#FFB800" />
+              <StatCard icon="flash-outline" value={stats?.completedDeliveries > 0 ? '96%' : '—'} label="On Time"    color="#A78BFA" />
             </View>
           )}
 
@@ -344,7 +244,7 @@ export default function PartnerDashboardScreen({ navigation }) {
           <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
           <View style={s.linkGrid}>
             {[
-              { icon: 'card-outline',        label: 'My Documents',     color: COURIER_ACCENT, screen: 'CourierDocuments' },
+              { icon: 'trending-up-outline', label: 'Floor Price',      color: COURIER_ACCENT, screen: 'FloorPrice'       },
               { icon: 'wallet-outline',      label: 'Earnings',         color: '#FFB800',       screen: 'PartnerEarnings'  },
               { icon: 'list-outline',        label: 'Delivery History', color: '#A78BFA',       screen: 'PartnerHistory'   },
               { icon: 'help-circle-outline', label: 'Support',          color: theme.muted,     screen: 'Support'          },
@@ -360,7 +260,24 @@ export default function PartnerDashboardScreen({ navigation }) {
             ))}
           </View>
 
-          {/* ── Vehicle info — profile is the flat DeliveryPartnerProfile ── */}
+          {/* ── Floor price badge — shown when partner has a floor set ── */}
+          {profile?.preferredFloorPrice > 0 && (
+            <TouchableOpacity
+              style={[s.floorBadge, { backgroundColor: COURIER_ACCENT + '12', borderColor: COURIER_ACCENT + '40' }]}
+              onPress={() => navigation.navigate('FloorPrice')}
+            >
+              <Ionicons name="trending-up-outline" size={16} color={COURIER_ACCENT} />
+              <View style={{ flex: 1 }}>
+                <Text style={[s.floorBadgeTitle, { color: COURIER_ACCENT }]}>Floor Price Active</Text>
+                <Text style={[s.floorBadgeSub, { color: theme.hint }]}>
+                  Minimum fee: ₦{profile.preferredFloorPrice.toLocaleString('en-NG')}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={COURIER_ACCENT} />
+            </TouchableOpacity>
+          )}
+
+          {/* ── Vehicle info ── */}
           {profile && (
             <>
               <Text style={[s.sectionTitle, { color: theme.hint }]}>YOUR VEHICLE</Text>
@@ -404,9 +321,12 @@ const s = StyleSheet.create({
   toggleSub:       { fontSize: 12 },
   statsRow:        { flexDirection: 'row', gap: 10, marginBottom: 24 },
   sectionTitle:    { fontSize: 11, fontWeight: '800', letterSpacing: 2, marginBottom: 12 },
-  linkGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
+  linkGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
   linkCard:        { width: (width - 58) / 2, borderRadius: 16, borderWidth: 1, padding: 16, alignItems: 'center', gap: 8 },
   linkLabel:       { fontSize: 13, fontWeight: '700' },
+  floorBadge:      { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 24 },
+  floorBadgeTitle: { fontSize: 13, fontWeight: '800' },
+  floorBadgeSub:   { fontSize: 11, marginTop: 2 },
   vehicleCard:     { borderRadius: 16, borderWidth: 1, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 24 },
   vehicleType:     { fontSize: 15, fontWeight: '800', marginBottom: 2 },
   vehiclePlate:    { fontSize: 12 },

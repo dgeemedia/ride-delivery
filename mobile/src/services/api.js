@@ -61,13 +61,18 @@ export const rideAPI = {
 
 // ── Delivery ──────────────────────────────────────────────────────────────────
 export const deliveryAPI = {
-  getEstimate:       (params)     => api.get('/deliveries/estimate', { params }),
-  requestDelivery:   (data)       => api.post('/deliveries/request', data),
-  getActiveDelivery: ()           => api.get('/deliveries/active'),
-  acceptDelivery:    (id)         => api.put(`/deliveries/${id}/accept`),
-  pickupDelivery:    (id)         => api.put(`/deliveries/${id}/pickup`),
-  completeDelivery:  (id, data)   => api.put(`/deliveries/${id}/complete`, data),
-  getNearbyPartners: (params)     => api.get('/deliveries/nearby-partners', { params }),
+  getEstimate:          (params)     => api.get('/deliveries/estimate', { params }),
+  requestDelivery:      (data)       => api.post('/deliveries/request', data),
+  getActiveDelivery:    ()           => api.get('/deliveries/active'),
+  getDeliveryById:      (id)         => api.get(`/deliveries/${id}`),
+  acceptDelivery:       (id)         => api.put(`/deliveries/${id}/accept`),
+  pickupDelivery:       (id)         => api.put(`/deliveries/${id}/pickup`),
+  startTransit:         (id)         => api.put(`/deliveries/${id}/transit`),
+  completeDelivery:     (id, data)   => api.put(`/deliveries/${id}/complete`, data),
+  cancelDelivery:       (id, data)   => api.put(`/deliveries/${id}/cancel`, data),
+  rateDelivery:         (id, data)   => api.post(`/deliveries/${id}/rate`, data),
+  getDeliveryHistory:   (params)     => api.get('/deliveries/history', { params }),
+  getNearbyPartners:    (params)     => api.get('/deliveries/nearby-partners', { params }),
 };
 
 // ── User ──────────────────────────────────────────────────────────────────────
@@ -88,11 +93,12 @@ export const driverAPI = {
 
 // ── Partner ───────────────────────────────────────────────────────────────────
 export const partnerAPI = {
-  getProfile:        ()     => api.get('/partners/profile'),
-  updateProfile:     (data) => api.post('/partners/profile', data),
-  updateStatus:      (data) => api.put('/partners/status', data),
-  getEarnings:       ()     => api.get('/partners/earnings'),
-  getNearbyRequests: ()     => api.get('/partners/nearby-requests'),
+  getProfile:           ()     => api.get('/partners/profile'),
+  updateProfile:        (data) => api.post('/partners/profile', data),
+  updateStatus:         (data) => api.put('/partners/status', data),
+  getEarnings:          ()     => api.get('/partners/earnings'),
+  getNearbyRequests:    ()     => api.get('/partners/nearby-requests'),
+  updateFloorPrice:     (price) => api.post('/partners/profile', { preferredFloorPrice: price }),
 };
 
 // ── Notifications ─────────────────────────────────────────────────────────────

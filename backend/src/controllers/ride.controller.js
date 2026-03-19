@@ -216,6 +216,8 @@ exports.getActiveRide = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUT /api/rides/:id/accept
+// CHANGE: wallet balance must be >= estimatedFare before driver can accept.
+// This ensures cancellation fees can always be deducted and prevents fraud.
 // ─────────────────────────────────────────────────────────────────────────────
 exports.acceptRide = async (req, res) => {
   const { id } = req.params;
@@ -232,6 +234,23 @@ exports.acceptRide = async (req, res) => {
   const ride = await prisma.ride.findUnique({ where: { id } });
   if (!ride)                       throw new AppError('Ride not found', 404);
   if (ride.status !== 'REQUESTED') throw new AppError('Ride is no longer available', 400);
+
+  // ── Wallet balance check ──────────────────────────────────────────────────
+  // Driver must hold at least the estimated fare as a security deposit.
+  // This guarantees the cancellation fee (₦200) and any platform fees
+  // can always be deducted even if the driver cancels mid-trip.
+  const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+  const walletBalance   = wallet?.balance ?? 0;
+  const requiredBalance = ride.estimatedFare;
+
+  if (walletBalance < requiredBalance) {
+    throw new AppError(
+      `Insufficient wallet balance. You need at least ₦${requiredBalance.toLocaleString('en-NG')} to accept this ride. ` +
+      `Your current balance is ₦${walletBalance.toLocaleString('en-NG')}. Please top up your wallet.`,
+      402  // 402 Payment Required — frontend uses this code to navigate to wallet
+    );
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   const updatedRide = await prisma.ride.update({
     where: { id },

@@ -160,25 +160,38 @@ exports.getActiveDelivery = async (req, res) => {
  * @desc    Accept delivery (Delivery Partner)
  * @route   PUT /api/deliveries/:id/accept
  * @access  Private (DELIVERY_PARTNER)
+ *
+ * CHANGE: wallet balance must be >= estimatedFee before partner can accept.
  */
 exports.acceptDelivery = async (req, res) => {
   const { id } = req.params;
 
   const partnerProfile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
-
   if (!partnerProfile || !partnerProfile.isApproved) throw new AppError('Delivery partner profile not approved', 403);
   if (!partnerProfile.isOnline) throw new AppError('Please go online to accept deliveries', 400);
 
   const activeDelivery = await prisma.delivery.findFirst({
     where: { partnerId: req.user.id, status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } }
   });
-
   if (activeDelivery) throw new AppError('You already have an active delivery', 400);
 
   const delivery = await prisma.delivery.findUnique({ where: { id } });
-
   if (!delivery) throw new AppError('Delivery not found', 404);
   if (delivery.status !== 'PENDING') throw new AppError('Delivery is no longer available', 400);
+
+  // ── Wallet balance check ──────────────────────────────────────────────────
+  const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+  const walletBalance   = wallet?.balance ?? 0;
+  const requiredBalance = delivery.estimatedFee;
+
+  if (walletBalance < requiredBalance) {
+    throw new AppError(
+      `Insufficient wallet balance. You need at least ₦${requiredBalance.toLocaleString('en-NG')} to accept this delivery. ` +
+      `Your current balance is ₦${walletBalance.toLocaleString('en-NG')}. Please top up your wallet.`,
+      402  // 402 Payment Required
+    );
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   const updatedDelivery = await prisma.delivery.update({
     where: { id },
@@ -189,7 +202,6 @@ exports.acceptDelivery = async (req, res) => {
     }
   });
 
-  // Notify customer
   await notificationService.notify({
     userId: delivery.customerId,
     title: 'Delivery Partner Found! 🛵',
@@ -516,6 +528,58 @@ exports.rateDelivery = async (req, res) => {
   });
 
   res.status(201).json({ success: true, message: 'Rating submitted successfully', data: { rating: newRating } });
+};
+
+/**
+ * @desc    Get nearby online delivery partners
+ * @route   GET /api/deliveries/nearby-partners
+ * @access  Private (CUSTOMER)
+ */
+exports.getNearbyPartners = async (req, res) => {
+  const { pickupLat, pickupLng, radiusKm = 15 } = req.query;
+  if (!pickupLat || !pickupLng) throw new AppError('Please provide pickup coordinates', 400);
+
+  const lat    = parseFloat(pickupLat);
+  const lng    = parseFloat(pickupLng);
+  const radius = parseFloat(radiusKm);
+
+  const partners = await prisma.deliveryPartnerProfile.findMany({
+    where: {
+      isApproved: true, isOnline: true,
+      currentLat: { not: null }, currentLng: { not: null },
+    },
+    include: {
+      user: { select: { id: true, firstName: true, lastName: true, profileImage: true, phone: true } }
+    }
+  });
+
+  const { calculateDistance } = require('../utils/helpers');
+
+  const nearby = partners
+    .map(p => ({
+      ...p,
+      distanceKm: parseFloat(calculateDistance(lat, lng, p.currentLat, p.currentLng).toFixed(2))
+    }))
+    .filter(p => p.distanceKm <= radius)
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, 20)
+    .map(p => ({
+      partnerId:           p.user.id,
+      firstName:           p.user.firstName,
+      lastName:            p.user.lastName,
+      profileImage:        p.user.profileImage,
+      vehicleType:         p.vehicleType,
+      vehiclePlate:        p.vehiclePlate,
+      rating:              parseFloat((p.rating || 0).toFixed(1)),
+      totalDeliveries:     p.totalDeliveries,
+      distanceKm:          p.distanceKm,
+      etaMinutes:          Math.ceil(p.distanceKm / 0.4),
+      currentLat:          p.currentLat,
+      currentLng:          p.currentLng,
+      preferredFloorPrice: p.preferredFloorPrice ?? 0,
+    }));
+
+  res.status(200).json({ success: true, data: { partners: nearby, total: nearby.length } });
 };
 
 module.exports = exports;

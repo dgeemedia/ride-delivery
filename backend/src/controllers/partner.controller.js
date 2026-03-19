@@ -28,7 +28,10 @@ exports.createOrUpdateProfile = async (req, res) => {
         vehicleType,
         ...(vehiclePlate && { vehiclePlate }),
         ...(idImageUrl && { idImageUrl }),
-        ...(vehicleImageUrl && { vehicleImageUrl })
+        ...(vehicleImageUrl && { vehicleImageUrl }),
+        ...(req.body.preferredFloorPrice !== undefined && {
+          preferredFloorPrice: parseFloat(req.body.preferredFloorPrice) || null
+        }),
       }
     });
   } else {
@@ -40,11 +43,13 @@ exports.createOrUpdateProfile = async (req, res) => {
         vehicleType,
         vehiclePlate,
         idImageUrl,
-        vehicleImageUrl
+        vehicleImageUrl,
+        preferredFloorPrice: req.body.preferredFloorPrice
+          ? parseFloat(req.body.preferredFloorPrice)
+          : null,
       }
     });
 
-    // Notify partner that profile is under review
     await notificationService.notify({
       userId: req.user.id,
       title: 'Profile Submitted for Review 🔍',
