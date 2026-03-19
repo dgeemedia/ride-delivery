@@ -11,8 +11,8 @@ import { useTheme } from '../../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
-const LOGO_DARK  = require('../../../assets/diakite_light.png'); // white logo → dark bg
-const LOGO_LIGHT = require('../../../assets/diakite_dark.png');  // black logo → light bg
+const LOGO_DARK  = require('../../../assets/diakite_light.png');
+const LOGO_LIGHT = require('../../../assets/diakite_dark.png');
 
 // ── FloatInput ─────────────────────────────────────────────────────────────────
 const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secureTextEntry }) => {
@@ -20,25 +20,27 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secure
   const [focused, setFocused] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
 
-  const labelY  = useRef(new Animated.Value(value ? 1 : 0)).current;
-  const borderV = useRef(new Animated.Value(0)).current;
+  const labelY = useRef(new Animated.Value(value ? 1 : 0)).current;
 
   useEffect(() => {
-    Animated.timing(labelY,  { toValue: focused || value ? 1 : 0, duration: 180, useNativeDriver: false }).start();
-    Animated.timing(borderV, { toValue: focused ? 1 : 0,          duration: 180, useNativeDriver: false }).start();
+    Animated.timing(labelY, {
+      toValue: focused || value ? 1 : 0,
+      duration: 180,
+      useNativeDriver: false,
+    }).start();
   }, [focused, value]);
 
-  const borderColor = borderV.interpolate({ inputRange: [0, 1], outputRange: [theme.border, theme.accent] });
-  const top         = labelY.interpolate({ inputRange: [0, 1], outputRange: [18, 7] });
-  const fontSize    = labelY.interpolate({ inputRange: [0, 1], outputRange: [15, 11] });
-  const lColor      = labelY.interpolate({
+  // Border is always static — no focus highlight
+  const top      = labelY.interpolate({ inputRange: [0, 1], outputRange: [18, 7] });
+  const fontSize = labelY.interpolate({ inputRange: [0, 1], outputRange: [15, 11] });
+  const lColor   = labelY.interpolate({
     inputRange:  [0, 1],
-    outputRange: [theme.hint, focused ? theme.accent : theme.muted ?? theme.hint],
+    outputRange: [theme.hint, theme.muted ?? theme.hint],
   });
 
   return (
-    <Animated.View style={[s.inputBox, { backgroundColor: theme.backgroundAlt, borderColor }]}>
-      <Ionicons name={iconName} size={16} color={focused ? theme.accent : theme.hint} style={s.inputIcon} />
+    <View style={[s.inputBox, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+      <Ionicons name={iconName} size={16} color={theme.hint} style={s.inputIcon} />
       <View style={{ flex: 1 }}>
         <Animated.Text style={[s.floatLabel, { top, fontSize, color: lColor }]}>{label}</Animated.Text>
         <TextInput
@@ -59,7 +61,7 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secure
           <Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={16} color={theme.hint} />
         </TouchableOpacity>
       )}
-    </Animated.View>
+    </View>
   );
 };
 
@@ -97,16 +99,12 @@ export default function LoginScreen({ navigation }) {
     if (!res.success) Alert.alert('Login Failed', res.message ?? 'Please check your credentials.');
   };
 
-  // accentFg is the readable text colour that sits ON TOP of the accent background.
-  // In onyx-dark, accent = #FFFFFF so accentFg = #111111 (dark text on white button).
-  // Falls back to a safe dark value if somehow not present.
   const accentFg = theme.accentFg ?? '#111111';
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      {/* Ambient glow orb */}
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -115,7 +113,7 @@ export default function LoginScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ── Back button ── */}
+          {/* ── Back ── */}
           <TouchableOpacity
             style={[s.back, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
             onPress={() => navigation.goBack()}
@@ -123,7 +121,7 @@ export default function LoginScreen({ navigation }) {
             <Ionicons name="arrow-back" size={18} color={theme.muted ?? theme.hint} />
           </TouchableOpacity>
 
-          {/* ── Header / logo ── */}
+          {/* ── Header ── */}
           <Animated.View style={[s.header, { opacity: hdrO, transform: [{ translateY: hdrY }] }]}>
             <View style={[s.logoBadge, { backgroundColor: theme.backgroundAlt, borderColor: theme.border, shadowColor: theme.accent }]}>
               <Image
@@ -132,9 +130,9 @@ export default function LoginScreen({ navigation }) {
                 resizeMode="contain"
               />
             </View>
-            <Text style={[s.eyebrow, { color: theme.accent }]}>WELCOME BACK</Text>
-            <Text style={[s.title,   { color: theme.foreground }]}>Sign in</Text>
-            <Text style={[s.subtitle,{ color: theme.muted ?? theme.hint }]}>Good to see you again.</Text>
+            <Text style={[s.eyebrow,  { color: theme.accent }]}>WELCOME BACK</Text>
+            <Text style={[s.title,    { color: theme.foreground }]}>Sign in</Text>
+            <Text style={[s.subtitle, { color: theme.muted ?? theme.hint }]}>Good to see you again.</Text>
           </Animated.View>
 
           {/* ── Form ── */}
@@ -159,16 +157,8 @@ export default function LoginScreen({ navigation }) {
               <Text style={[s.forgotTxt, { color: theme.accent }]}>Forgot password?</Text>
             </TouchableOpacity>
 
-            {/* ── Sign-in button ──
-                backgroundColor = theme.accent (could be white in onyx-dark)
-                text / icon use theme.accentFg so they are always legible
-            ── */}
             <TouchableOpacity
-              style={[
-                s.signBtn,
-                loading && s.signBtnDim,
-                { backgroundColor: theme.accent, shadowColor: theme.accent },
-              ]}
+              style={[s.signBtn, loading && s.signBtnDim, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
               activeOpacity={0.85}
               onPress={handleLogin}
               disabled={loading}
@@ -179,14 +169,12 @@ export default function LoginScreen({ navigation }) {
               {!loading && <Ionicons name="arrow-forward" size={18} color={accentFg} />}
             </TouchableOpacity>
 
-            {/* ── Divider ── */}
             <View style={s.divRow}>
               <View style={[s.divLine, { backgroundColor: theme.border }]} />
               <Text style={[s.divTxt,  { color: theme.hint }]}>or</Text>
               <View style={[s.divLine, { backgroundColor: theme.border }]} />
             </View>
 
-            {/* ── Register link ── */}
             <TouchableOpacity style={s.regLink} onPress={() => navigation.navigate('Register')}>
               <Text style={[s.regTxt, { color: theme.muted ?? theme.hint }]}>
                 New to Diakite?{'  '}
@@ -223,19 +211,17 @@ const s = StyleSheet.create({
     marginBottom: 32,
   },
 
-  // ── Header
   header:    { marginBottom: 40 },
   logoBadge: {
     width: 60, height: 60, borderRadius: 16, borderWidth: 1,
     justifyContent: 'center', alignItems: 'center', marginBottom: 24,
     shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 12, elevation: 6,
   },
-  logoImg:   { width: 38, height: 27 },
-  eyebrow:   { fontSize: 10, letterSpacing: 4, fontWeight: '700', marginBottom: 10 },
-  title:     { fontSize: 34, fontWeight: '800', letterSpacing: -0.5, marginBottom: 8 },
-  subtitle:  { fontSize: 15, fontWeight: '300' },
+  logoImg:  { width: 38, height: 27 },
+  eyebrow:  { fontSize: 10, letterSpacing: 4, fontWeight: '700', marginBottom: 10 },
+  title:    { fontSize: 34, fontWeight: '800', letterSpacing: -0.5, marginBottom: 8 },
+  subtitle: { fontSize: 15, fontWeight: '300' },
 
-  // ── Inputs
   inputBox: {
     flexDirection: 'row', alignItems: 'center',
     borderRadius: 12, borderWidth: 1.5,
@@ -246,11 +232,9 @@ const s = StyleSheet.create({
   inputText:  { fontSize: 15, paddingTop: 18, paddingBottom: 4, fontWeight: '400' },
   eyeBtn:     { padding: 6, marginLeft: 4 },
 
-  // ── Forgot
   forgot:    { alignSelf: 'flex-end', marginBottom: 28, marginTop: 4 },
   forgotTxt: { fontSize: 13, fontWeight: '500' },
 
-  // ── Sign-in button — no hardcoded color here, set inline via theme.accentFg
   signBtn: {
     borderRadius: 13, height: 54,
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10,
@@ -259,14 +243,11 @@ const s = StyleSheet.create({
   },
   signBtnDim: { opacity: 0.6 },
   signBtnTxt: { fontSize: 16, fontWeight: '700', letterSpacing: 0.2 },
-  // ↑ color intentionally omitted — applied inline as { color: accentFg }
 
-  // ── Divider
   divRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 28, gap: 12 },
   divLine:{ flex: 1, height: 1 },
   divTxt: { fontSize: 12 },
 
-  // ── Register link
   regLink: { alignItems: 'center', paddingVertical: 4 },
   regTxt:  { fontSize: 14 },
   regBold: { fontWeight: '600' },
