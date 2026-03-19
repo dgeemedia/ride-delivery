@@ -1,15 +1,7 @@
 // mobile/src/theme/theme.js
-// Diakite — monochrome only, extracted directly from brand logo
-// Dark: white mark on deep black | Light: black mark on warm cream
-
 export const ACCENT_COLORS = {
-
-  // ── Onyx — white on deep black (logo dark side) ─────────────────────────
   onyx: {
-    id: 'onyx',
-    name: 'Onyx',
-    emoji: '◼',
-    accent: '#FFFFFF',
+    id: 'onyx', name: 'Onyx', emoji: '◼', accent: '#FFFFFF',
     dark: {
       background:    '#111111',
       backgroundAlt: '#1A1A1A',
@@ -18,6 +10,7 @@ export const ACCENT_COLORS = {
       pill:          '#1D1D1D',
       pillBorder:    '#FFFFFF18',
       accent:        '#FFFFFF',
+      accentFg:      '#111111',   // ← dark text on white button
       foreground:    '#F2EEE6',
       muted:         '#6A6A6A',
       hint:          '#333333',
@@ -31,19 +24,15 @@ export const ACCENT_COLORS = {
       pill:          '#E0D8C8',
       pillBorder:    '#11111118',
       accent:        '#111111',
+      accentFg:      '#FFFFFF',   // ← white text on dark button
       foreground:    '#0F0D0A',
       muted:         '#5A5248',
       hint:          '#A89C88',
       shadow:        '#111111',
     },
   },
-
-  // ── Chalk — cream on deep black (inverted logo warmth) ──────────────────
   chalk: {
-    id: 'chalk',
-    name: 'Chalk',
-    emoji: '◻',
-    accent: '#EAE5DA',
+    id: 'chalk', name: 'Chalk', emoji: '◻', accent: '#EAE5DA',
     dark: {
       background:    '#111111',
       backgroundAlt: '#191919',
@@ -52,6 +41,7 @@ export const ACCENT_COLORS = {
       pill:          '#1D1D1D',
       pillBorder:    '#EAE5DA18',
       accent:        '#EAE5DA',
+      accentFg:      '#111111',   // ← dark text on cream button
       foreground:    '#F2EEE6',
       muted:         '#6A6A6A',
       hint:          '#333333',
@@ -65,13 +55,13 @@ export const ACCENT_COLORS = {
       pill:          '#E0D8C8',
       pillBorder:    '#11111118',
       accent:        '#2A2520',
+      accentFg:      '#FFFFFF',   // ← white text on dark brown button
       foreground:    '#0F0D0A',
       muted:         '#5A5248',
       hint:          '#A89C88',
       shadow:        '#2A2520',
     },
   },
-
 };
 
 export const DEFAULT_ACCENT = 'onyx';
