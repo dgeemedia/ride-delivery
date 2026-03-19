@@ -164,7 +164,7 @@ model DriverProfile {
   // Driver floor price — the minimum fare the driver will accept (₦).
   // null / 0 = no floor set (platform rate applies).
   // Capped at platform estimate × 1.30 by the fare engine.
-  preferredFloorPrice Float?  @default(null)
+  preferredFloorPrice Float?
 
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
