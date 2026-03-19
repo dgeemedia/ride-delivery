@@ -65,26 +65,30 @@ const CrossfadeImageCycler = ({ images, intervalMs = 4500, transitionMs = 2200 }
 };
 
 // ── WalletStrip ────────────────────────────────────────────────────────────────
-const WalletStrip = ({ balance, onTopUp, theme }) => (
-  <View style={[wl.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-    <View style={{ flex: 1, minWidth: 0 }}>
-      <Text style={[wl.label, { color: theme.hint }]}>WALLET BALANCE</Text>
-      <Text style={[wl.amount, { color: theme.foreground }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-        {'\u20A6'}{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
-      </Text>
+const WalletStrip = ({ balance, onTopUp, theme }) => {
+  const accentFg = theme.accentFg ?? '#111111';
+  return (
+    <View style={[wl.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[wl.label, { color: theme.hint }]}>WALLET BALANCE</Text>
+        <Text style={[wl.amount, { color: theme.foreground }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {'\u20A6'}{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+        </Text>
+      </View>
+      {/* backgroundColor = theme.accent → text/icon must use accentFg */}
+      <TouchableOpacity style={[wl.btn, { backgroundColor: theme.accent }]} onPress={onTopUp} activeOpacity={0.85}>
+        <Ionicons name="add" size={15} color={accentFg} />
+        <Text style={[wl.btnTxt, { color: accentFg }]}>Top Up</Text>
+      </TouchableOpacity>
     </View>
-    <TouchableOpacity style={[wl.btn, { backgroundColor: theme.accent }]} onPress={onTopUp} activeOpacity={0.85}>
-      <Ionicons name="add" size={15} color="#FFF" />
-      <Text style={wl.btnTxt}>Top Up</Text>
-    </TouchableOpacity>
-  </View>
-);
+  );
+};
 const wl = StyleSheet.create({
   wrap:   { borderRadius: 16, borderWidth: 1, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 22 },
   label:  { fontSize: 10, fontWeight: '700', letterSpacing: 2, marginBottom: 5 },
   amount: { fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
   btn:    { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, flexShrink: 0 },
-  btnTxt: { fontSize: 13, fontWeight: '700', color: '#FFF' },
+  btnTxt: { fontSize: 13, fontWeight: '700' }, // ← color removed, set inline
 });
 
 // ── StatPill ───────────────────────────────────────────────────────────────────
@@ -103,7 +107,9 @@ const sp = StyleSheet.create({
 
 // ── ActionCard ─────────────────────────────────────────────────────────────────
 const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
-  const scaleA = useRef(new Animated.Value(1)).current;
+  const accentFg = theme.accentFg ?? '#111111';
+  const scaleA   = useRef(new Animated.Value(1)).current;
+
   const handlePress = () => {
     Animated.sequence([
       Animated.timing(scaleA, { toValue: 0.96, duration: 80, useNativeDriver: true }),
@@ -111,17 +117,24 @@ const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
     ]).start();
     onPress?.();
   };
+
   return (
     <TouchableOpacity onPress={handlePress} activeOpacity={0.92} style={{ width: CARD_W }}>
       <Animated.View style={[ac.card, { transform: [{ scale: scaleA }] }]}>
         <CrossfadeImageCycler images={images} />
         <View style={ac.overlay} />
-        {badge && <View style={[ac.badge, { backgroundColor: theme.accent }]}><Text style={ac.badgeTxt}>{badge}</Text></View>}
+        {badge && (
+          // badge bg = theme.accent → text needs accentFg
+          <View style={[ac.badge, { backgroundColor: theme.accent }]}>
+            <Text style={[ac.badgeTxt, { color: accentFg }]}>{badge}</Text>
+          </View>
+        )}
         <View style={ac.content}>
           <Text style={ac.title} numberOfLines={1}>{title}</Text>
           <Text style={ac.sub}   numberOfLines={2}>{subtitle}</Text>
+          {/* arrow button bg = theme.accent → icon needs accentFg */}
           <View style={[ac.arrowBtn, { backgroundColor: theme.accent }]}>
-            <Ionicons name="arrow-forward" size={13} color="#FFF" />
+            <Ionicons name="arrow-forward" size={13} color={accentFg} />
           </View>
         </View>
       </Animated.View>
@@ -132,9 +145,9 @@ const ac = StyleSheet.create({
   card:     { borderRadius: 18, overflow: 'hidden', height: 180, width: '100%' },
   overlay:  { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.42)' },
   badge:    { position: 'absolute', top: 12, left: 12, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  badgeTxt: { fontSize: 9, fontWeight: '800', color: '#FFF', letterSpacing: 0.5 },
+  badgeTxt: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 }, // color set inline
   content:  { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
-  title:    { fontSize: 13, fontWeight: '800', color: '#FFF', marginBottom: 3 },
+  title:    { fontSize: 13, fontWeight: '800', color: '#FFF', marginBottom: 3 },   // white on dark photo overlay — fine
   sub:      { fontSize: 10, color: 'rgba(255,255,255,0.75)', marginBottom: 10, lineHeight: 14 },
   arrowBtn: { width: 24, height: 24, borderRadius: 7, justifyContent: 'center', alignItems: 'center' },
 });
@@ -176,24 +189,28 @@ const ar = StyleSheet.create({
 });
 
 // ── PromoBanner ────────────────────────────────────────────────────────────────
-const PromoBanner = ({ theme, onPress }) => (
-  <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={promo.wrap}>
-    <ImageBackground source={{ uri: PROMO_IMAGE }} style={promo.bg} imageStyle={promo.bgStyle} resizeMode="cover">
-      <View style={promo.overlay} />
-      <View style={promo.content}>
-        <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
-          <Text style={promo.eyebrow}>LIMITED OFFER</Text>
-          <Text style={promo.title} numberOfLines={1}>First Ride Free</Text>
-          <Text style={promo.sub}   numberOfLines={1}>Use code WELCOME at checkout</Text>
+const PromoBanner = ({ theme, onPress }) => {
+  const accentFg = theme.accentFg ?? '#111111';
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={promo.wrap}>
+      <ImageBackground source={{ uri: PROMO_IMAGE }} style={promo.bg} imageStyle={promo.bgStyle} resizeMode="cover">
+        <View style={promo.overlay} />
+        <View style={promo.content}>
+          <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
+            <Text style={promo.eyebrow}>LIMITED OFFER</Text>
+            <Text style={promo.title} numberOfLines={1}>First Ride Free</Text>
+            <Text style={promo.sub}   numberOfLines={1}>Use code WELCOME at checkout</Text>
+          </View>
+          {/* bg = theme.accent → text/icon must use accentFg */}
+          <View style={[promo.btn, { backgroundColor: theme.accent }]}>
+            <Text style={[promo.btnTxt, { color: accentFg }]}>Claim</Text>
+            <Ionicons name="arrow-forward" size={13} color={accentFg} />
+          </View>
         </View>
-        <View style={[promo.btn, { backgroundColor: theme.accent }]}>
-          <Text style={promo.btnTxt}>Claim</Text>
-          <Ionicons name="arrow-forward" size={13} color="#FFF" />
-        </View>
-      </View>
-    </ImageBackground>
-  </TouchableOpacity>
-);
+      </ImageBackground>
+    </TouchableOpacity>
+  );
+};
 const promo = StyleSheet.create({
   wrap:    { borderRadius: 18, overflow: 'hidden', marginBottom: 28, height: 110 },
   bg:      { width: '100%', height: '100%' },
@@ -201,10 +218,10 @@ const promo = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.52)' },
   content: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18 },
   eyebrow: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.65)', letterSpacing: 2, marginBottom: 4 },
-  title:   { fontSize: 18, fontWeight: '900', color: '#FFF', marginBottom: 3 },
+  title:   { fontSize: 18, fontWeight: '900', color: '#FFF', marginBottom: 3 },    // white on dark photo overlay — fine
   sub:     { fontSize: 11, color: 'rgba(255,255,255,0.7)' },
   btn:     { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, flexShrink: 0 },
-  btnTxt:  { fontSize: 13, fontWeight: '700', color: '#FFF' },
+  btnTxt:  { fontSize: 13, fontWeight: '700' }, // color set inline
 });
 
 // ── MAIN ───────────────────────────────────────────────────────────────────────
@@ -216,7 +233,7 @@ export default function HomeScreen({ navigation }) {
   const [stats,          setStats]          = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [activeRide,     setActiveRide]     = useState(null);
-  const [activeDelivery, setActiveDelivery] = useState(null);  // ← NEW
+  const [activeDelivery, setActiveDelivery] = useState(null);
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(20)).current;
@@ -230,7 +247,6 @@ export default function HomeScreen({ navigation }) {
 
   const fetchAll = async () => {
     try {
-      // ← added deliveryAPI.getActiveDelivery()
       const [statsRes, rideRes, deliveryRes] = await Promise.allSettled([
         userAPI.getStats(),
         rideAPI.getActiveRide(),
@@ -240,23 +256,16 @@ export default function HomeScreen({ navigation }) {
       if (statsRes.status === 'fulfilled') {
         setStats(statsRes.value?.data ?? statsRes.value);
       }
-
       if (rideRes.status === 'fulfilled') {
         const ride = rideRes.value?.data?.ride ?? rideRes.value?.ride ?? null;
         setActiveRide(
-          ride && ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'].includes(ride.status)
-            ? ride
-            : null
+          ride && ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'].includes(ride.status) ? ride : null
         );
       }
-
-      // ← NEW: handle active delivery result
       if (deliveryRes.status === 'fulfilled') {
         const del = deliveryRes.value?.data?.delivery ?? null;
         setActiveDelivery(
-          del && ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(del.status)
-            ? del
-            : null
+          del && ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(del.status) ? del : null
         );
       }
     } catch {}
@@ -282,7 +291,7 @@ export default function HomeScreen({ navigation }) {
           } catch (err) {
             Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
           }
-        }
+        },
       },
     ]);
   };
@@ -394,9 +403,11 @@ export default function HomeScreen({ navigation }) {
             <View style={s.statsRow}>
               <StatPill icon="car-outline"  value={stats?.totalRides      ?? 0} label="Rides"    theme={theme} />
               <StatPill icon="cube-outline" value={stats?.totalDeliveries ?? 0} label="Packages" theme={theme} />
-              <StatPill icon="cash-outline"
+              <StatPill
+                icon="cash-outline"
                 value={`₦${((stats?.totalSpent ?? 0) / 1000).toFixed(1)}k`}
-                label="Spent" theme={theme}
+                label="Spent"
+                theme={theme}
               />
             </View>
           )}

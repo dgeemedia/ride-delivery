@@ -1,13 +1,4 @@
 // mobile/src/screens/Customer/RideTrackingScreen.js
-//
-// Customer-facing live tracking screen.
-// Shows:
-//  - Full-screen map with driver pin (live via socket), pickup & dropoff markers
-//  - Bottom sheet with ride status, driver info, route, fare
-//  - Cancel button (REQUESTED/ACCEPTED only)
-//  - Auto-advances status as socket events arrive
-//  - Navigates to Home when ride completes or is cancelled
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
@@ -35,14 +26,13 @@ const DARK_MAP_STYLE = [
   { featureType: 'transit',            elementType: 'labels',           stylers: [{ visibility: 'off' }] },
 ];
 
-// Status config — colours and labels for each ride phase
 const STATUS_CONFIG = {
-  REQUESTED:   { label: 'Finding your driver...',  color: '#4E8DBD', icon: 'time-outline'            },
-  ACCEPTED:    { label: 'Driver is on the way',    color: '#FFB800', icon: 'car-outline'             },
-  ARRIVED:     { label: 'Driver has arrived!',     color: '#A78BFA', icon: 'location-outline'        },
-  IN_PROGRESS: { label: 'Ride in progress',        color: '#5DAA72', icon: 'navigate-outline'        },
-  COMPLETED:   { label: 'Ride completed!',         color: '#5DAA72', icon: 'checkmark-circle-outline'},
-  CANCELLED:   { label: 'Ride cancelled',          color: '#E05555', icon: 'close-circle-outline'    },
+  REQUESTED:   { label: 'Finding your driver...',  color: '#4E8DBD', icon: 'time-outline'             },
+  ACCEPTED:    { label: 'Driver is on the way',    color: '#FFB800', icon: 'car-outline'              },
+  ARRIVED:     { label: 'Driver has arrived!',     color: '#A78BFA', icon: 'location-outline'         },
+  IN_PROGRESS: { label: 'Ride in progress',        color: '#5DAA72', icon: 'navigate-outline'         },
+  COMPLETED:   { label: 'Ride completed!',         color: '#5DAA72', icon: 'checkmark-circle-outline' },
+  CANCELLED:   { label: 'Ride cancelled',          color: '#E05555', icon: 'close-circle-outline'     },
 };
 
 // ── DriverInfoCard ─────────────────────────────────────────────────────────────
@@ -54,14 +44,11 @@ const DriverInfoCard = ({ ride, theme }) => {
 
   return (
     <View style={[di.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-      {/* Avatar */}
       <View style={[di.avatar, { backgroundColor: accent + '18' }]}>
         <Text style={[di.avatarTxt, { color: accent }]}>
           {driver.firstName?.[0]}{driver.lastName?.[0]}
         </Text>
       </View>
-
-      {/* Name + vehicle */}
       <View style={{ flex: 1 }}>
         <Text style={[di.name, { color: theme.foreground }]}>
           {driver.firstName} {driver.lastName}
@@ -78,8 +65,6 @@ const DriverInfoCard = ({ ride, theme }) => {
           </View>
         )}
       </View>
-
-      {/* Call button */}
       {driver.phone && (
         <TouchableOpacity style={[di.callBtn, { backgroundColor: accent + '18', borderColor: accent + '40' }]}>
           <Ionicons name="call-outline" size={17} color={accent} />
@@ -134,8 +119,12 @@ export default function RideTrackingScreen({ route, navigation }) {
   const insets          = useSafeAreaInsets();
   const rideId          = route?.params?.rideId;
 
+  // accentFg = readable text/icon colour that sits ON TOP of theme.accent background.
+  // In onyx-dark, accent = #FFFFFF so accentFg = #111111. Always safe.
+  const accentFg = theme.accentFg ?? '#111111';
+
   const [ride,           setRide]           = useState(null);
-  const [driverLocation, setDriverLocation] = useState(null); // live GPS from socket
+  const [driverLocation, setDriverLocation] = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [cancelling,     setCancelling]     = useState(false);
 
@@ -145,11 +134,10 @@ export default function RideTrackingScreen({ route, navigation }) {
   // ── Load ride ───────────────────────────────────────────────────────────────
   const loadRide = useCallback(async () => {
     try {
-      const res  = await rideAPI.getActiveRide();
-      const r    = res?.data?.ride ?? res?.ride ?? null;
+      const res = await rideAPI.getActiveRide();
+      const r   = res?.data?.ride ?? res?.ride ?? null;
       setRide(r);
 
-      // Seed driver location from profile if already accepted
       if (r?.driver?.driverProfile?.currentLat) {
         setDriverLocation({
           latitude:  r.driver.driverProfile.currentLat,
@@ -157,7 +145,6 @@ export default function RideTrackingScreen({ route, navigation }) {
         });
       }
 
-      // Join ride room so status updates arrive
       if (r?.id) socketService.joinRide(r.id);
     } catch (err) {
       console.error('[RideTracking] loadRide:', err?.message);
@@ -170,7 +157,6 @@ export default function RideTrackingScreen({ route, navigation }) {
     loadRide();
     Animated.spring(sheetA, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }).start();
 
-    // ── Socket listeners ──────────────────────────────────────────────────
     const handleStatus = (data) => {
       if (!data.rideId || data.rideId !== rideId) return;
       console.log('[RideTracking] status update:', data.status);
@@ -178,14 +164,12 @@ export default function RideTrackingScreen({ route, navigation }) {
       setRide(prev => prev ? { ...prev, status: data.status, driver: data.driver ?? prev.driver } : prev);
 
       if (data.status === 'COMPLETED') {
-        // Brief delay so user sees the completed state before going home
         setTimeout(() => {
           Alert.alert('Ride Completed 🎉', 'Your ride has been completed. Thank you!', [
             { text: 'OK', onPress: () => navigation.navigate('Home') }
           ]);
         }, 500);
       }
-
       if (data.status === 'CANCELLED') {
         Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [
           { text: 'OK', onPress: () => navigation.navigate('Home') }
@@ -200,29 +184,27 @@ export default function RideTrackingScreen({ route, navigation }) {
       ]);
     };
 
-    // Live driver location — emitted by server when driver moves
     const handleDriverLoc = (data) => {
       const loc = { latitude: data.lat, longitude: data.lng };
       setDriverLocation(loc);
-      // Gently pan map to keep driver in view
       mapRef.current?.animateToRegion({
         ...loc, latitudeDelta: 0.03, longitudeDelta: 0.03,
       }, 800);
     };
 
-    socketService.on('ride:status:update',    handleStatus);
-    socketService.on('ride:cancelled',        handleCancelled);
+    socketService.on('ride:status:update',     handleStatus);
+    socketService.on('ride:cancelled',         handleCancelled);
     socketService.on('driver:location:update', handleDriverLoc);
 
     return () => {
-      socketService.off('ride:status:update',    handleStatus);
-      socketService.off('ride:cancelled',        handleCancelled);
+      socketService.off('ride:status:update',     handleStatus);
+      socketService.off('ride:cancelled',         handleCancelled);
       socketService.off('driver:location:update', handleDriverLoc);
       if (rideId) socketService.leaveRide(rideId);
     };
   }, [rideId]);
 
-  // ── Cancel ride ─────────────────────────────────────────────────────────────
+  // ── Cancel ─────────────────────────────────────────────────────────────────
   const handleCancel = () => {
     Alert.alert(
       'Cancel Ride?',
@@ -248,7 +230,7 @@ export default function RideTrackingScreen({ route, navigation }) {
     );
   };
 
-  // ── Derived ──────────────────────────────────────────────────────────────────
+  // ── Derived ─────────────────────────────────────────────────────────────────
   const status    = ride?.status ?? 'REQUESTED';
   const statusCfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.ACCEPTED;
 
@@ -257,7 +239,6 @@ export default function RideTrackingScreen({ route, navigation }) {
   const dropoffLat = ride?.dropoffLat;
   const dropoffLng = ride?.dropoffLng;
 
-  // Map centers on driver if known, otherwise on pickup
   const mapRegion = driverLocation
     ? { ...driverLocation, latitudeDelta: 0.03, longitudeDelta: 0.03 }
     : pickupLat
@@ -267,10 +248,9 @@ export default function RideTrackingScreen({ route, navigation }) {
   const sheetTranslate = sheetA.interpolate({ inputRange: [0, 1], outputRange: [300, 0] });
   const backBtnTop     = insets.top + 14;
   const sheetPadBottom = insets.bottom + 12;
+  const canCancel      = ['REQUESTED', 'ACCEPTED'].includes(status);
 
-  const canCancel = ['REQUESTED', 'ACCEPTED'].includes(status);
-
-  // ── Loading ──────────────────────────────────────────────────────────────────
+  // ── Loading ─────────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={[s.center, { backgroundColor: theme.background }]}>
@@ -347,7 +327,7 @@ export default function RideTrackingScreen({ route, navigation }) {
           />
         )}
 
-        {/* Driver → pickup line (when ACCEPTED/ARRIVED) */}
+        {/* Driver → pickup dashed line (ACCEPTED / ARRIVED) */}
         {driverLocation && pickupLat && ['ACCEPTED', 'ARRIVED'].includes(status) && (
           <Polyline
             coordinates={[
@@ -395,6 +375,7 @@ export default function RideTrackingScreen({ route, navigation }) {
           <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <View style={s.fareItem}>
               <Text style={[s.fareLabel, { color: theme.hint }]}>FARE</Text>
+              {/* fare value shown in accent colour — this is TEXT on a card bg, not a button, so no accentFg needed */}
               <Text style={[s.fareValue, { color: theme.accent }]}>
                 {'\u20A6'}{Number(ride.estimatedFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
               </Text>
@@ -413,13 +394,10 @@ export default function RideTrackingScreen({ route, navigation }) {
             </View>
           </View>
 
-          {/* Driver info */}
           <DriverInfoCard ride={ride} theme={theme} />
+          <RouteCard      ride={ride} theme={theme} />
 
-          {/* Route */}
-          <RouteCard ride={ride} theme={theme} />
-
-          {/* Cancel button — only while driver hasn't started trip */}
+          {/* Cancel — only while driver hasn't started trip */}
           {canCancel && (
             <TouchableOpacity
               style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
@@ -439,15 +417,16 @@ export default function RideTrackingScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* Completed / cancelled nav */}
+          {/* Completed / cancelled — "Back to Home" button
+              backgroundColor = theme.accent → text/icon must use accentFg     */}
           {(status === 'COMPLETED' || status === 'CANCELLED') && (
             <TouchableOpacity
               style={[s.homeBtn, { backgroundColor: theme.accent }]}
               onPress={() => navigation.navigate('Home')}
               activeOpacity={0.88}
             >
-              <Ionicons name="home-outline" size={18} color="#FFF" />
-              <Text style={s.homeBtnTxt}>Back to Home</Text>
+              <Ionicons name="home-outline" size={18} color={accentFg} />
+              <Text style={[s.homeBtnTxt, { color: accentFg }]}>Back to Home</Text>
             </TouchableOpacity>
           )}
 
@@ -458,24 +437,25 @@ export default function RideTrackingScreen({ route, navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:        { flex: 1 },
-  center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
-  centerTxt:   { fontSize: 14 },
-  goHomeBtn:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
-  goHomeTxt:   { fontSize: 14, fontWeight: '600' },
-  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
-  backBtn:     { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
-  driverPin:   { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
-  statusPill:  { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
+  root:          { flex: 1 },
+  center:        { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
+  centerTxt:     { fontSize: 14 },
+  goHomeBtn:     { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
+  goHomeTxt:     { fontSize: 14, fontWeight: '600' },
+  topGradient:   { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
+  backBtn:       { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
+  driverPin:     { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
+  statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
-  sheet:       { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, paddingHorizontal: 20, paddingTop: 20, maxHeight: height * 0.52 },
-  fareStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
-  fareItem:    { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
-  fareLabel:   { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
-  fareValue:   { fontSize: 14, fontWeight: '900' },
-  fareDivider: { width: 1 },
-  cancelBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, marginBottom: 8 },
-  cancelTxt:   { fontSize: 14, fontWeight: '700', color: '#E05555' },
-  homeBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8 },
-  homeBtnTxt:  { fontSize: 15, fontWeight: '800', color: '#FFF' },
+  sheet:         { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, paddingHorizontal: 20, paddingTop: 20, maxHeight: height * 0.52 },
+  fareStrip:     { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
+  fareItem:      { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
+  fareLabel:     { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
+  fareValue:     { fontSize: 14, fontWeight: '900' },
+  fareDivider:   { width: 1 },
+  cancelBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, marginBottom: 8 },
+  cancelTxt:     { fontSize: 14, fontWeight: '700', color: '#E05555' },
+  // homeBtn: color intentionally omitted — set inline via accentFg
+  homeBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8 },
+  homeBtnTxt:    { fontSize: 15, fontWeight: '800' },
 });
