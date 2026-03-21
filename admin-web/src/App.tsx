@@ -25,6 +25,7 @@ import DriverDetails from '@/pages/Drivers/DriverDetails';
 // Partner Pages
 import PartnerList from '@/pages/Partners/PartnerList';
 import PartnerApproval from '@/pages/Partners/PartnerApproval';
+import PartnerDetails from '@/pages/Partners/PartnerDetails';   // ← was missing
 
 // Ride Pages
 import RideList from '@/pages/Rides/RideList';
@@ -47,11 +48,11 @@ import GeneralSettings from '@/pages/Settings/GeneralSettings';
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  
+
   return <Layout>{children}</Layout>;
 };
 
@@ -63,73 +64,58 @@ function App() {
       <Router>
         <Routes>
           {/* Public Routes */}
-          <Route 
-            path="/login" 
-            element={!isAuthenticated ? <Login /> : <Navigate to="/" replace />} 
+          <Route
+            path="/login"
+            element={!isAuthenticated ? <Login /> : <Navigate to="/" replace />}
           />
 
           {/* Protected Routes */}
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          
+
           {/* User Routes */}
-          <Route path="/users" element={<ProtectedRoute><UserList /></ProtectedRoute>} />
+          <Route path="/users"     element={<ProtectedRoute><UserList /></ProtectedRoute>} />
           <Route path="/users/:id" element={<ProtectedRoute><UserDetails /></ProtectedRoute>} />
-          
+
           {/* Driver Routes */}
-          <Route path="/drivers" element={<ProtectedRoute><DriverList /></ProtectedRoute>} />
-          <Route path="/drivers/pending" element={<ProtectedRoute><DriverApproval /></ProtectedRoute>} />
-          <Route path="/drivers/:id" element={<ProtectedRoute><DriverDetails /></ProtectedRoute>} />
-          
+          <Route path="/drivers"          element={<ProtectedRoute><DriverList /></ProtectedRoute>} />
+          <Route path="/drivers/pending"  element={<ProtectedRoute><DriverApproval /></ProtectedRoute>} />
+          <Route path="/drivers/:id"      element={<ProtectedRoute><DriverDetails /></ProtectedRoute>} />
+
           {/* Partner Routes */}
-          <Route path="/partners" element={<ProtectedRoute><PartnerList /></ProtectedRoute>} />
+          <Route path="/partners"         element={<ProtectedRoute><PartnerList /></ProtectedRoute>} />
           <Route path="/partners/pending" element={<ProtectedRoute><PartnerApproval /></ProtectedRoute>} />
-          
+          <Route path="/partners/:id"     element={<ProtectedRoute><PartnerDetails /></ProtectedRoute>} />  {/* ← THE FIX */}
+
           {/* Ride Routes */}
-          <Route path="/rides" element={<ProtectedRoute><RideList /></ProtectedRoute>} />
+          <Route path="/rides"      element={<ProtectedRoute><RideList /></ProtectedRoute>} />
           <Route path="/rides/live" element={<ProtectedRoute><LiveRides /></ProtectedRoute>} />
-          <Route path="/rides/:id" element={<ProtectedRoute><RideDetails /></ProtectedRoute>} />
-          
+          <Route path="/rides/:id"  element={<ProtectedRoute><RideDetails /></ProtectedRoute>} />
+
           {/* Delivery Routes */}
-          <Route path="/deliveries" element={<ProtectedRoute><DeliveryList /></ProtectedRoute>} />
-          <Route path="/deliveries/:id" element={<ProtectedRoute><DeliveryDetails /></ProtectedRoute>} />
-          
+          <Route path="/deliveries"      element={<ProtectedRoute><DeliveryList /></ProtectedRoute>} />
+          <Route path="/deliveries/:id"  element={<ProtectedRoute><DeliveryDetails /></ProtectedRoute>} />
+
           {/* Payment Routes */}
           <Route path="/payments" element={<ProtectedRoute><PaymentList /></ProtectedRoute>} />
-          
+
           {/* Analytics Routes */}
           <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-          
+
           {/* Settings Routes */}
           <Route path="/settings" element={<ProtectedRoute><GeneralSettings /></ProtectedRoute>} />
-          
-          {/* 404 Route */}
+
+          {/* 404 — must be last */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
-      
-      {/* Toast Notifications */}
-      <Toaster 
+
+      <Toaster
         position="top-right"
         toastOptions={{
           duration: 4000,
-          style: {
-            background: '#fff',
-            color: '#363636',
-          },
-          success: {
-            duration: 3000,
-            iconTheme: {
-              primary: '#34C759',
-              secondary: '#fff',
-            },
-          },
-          error: {
-            duration: 4000,
-            iconTheme: {
-              primary: '#FF3B30',
-              secondary: '#fff',
-            },
-          },
+          style: { background: '#fff', color: '#363636' },
+          success: { duration: 3000, iconTheme: { primary: '#34C759', secondary: '#fff' } },
+          error:   { duration: 4000, iconTheme: { primary: '#FF3B30', secondary: '#fff' } },
         }}
       />
     </>

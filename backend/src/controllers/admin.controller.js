@@ -621,4 +621,384 @@ exports.disburseOnboardingBonuses = async (req, res) => {
   res.status(200).json({ success: true, message: `Onboarding bonus disbursed to ${driverCount} driver(s) and ${partnerCount} delivery partner(s).`, data: { drivers: driverCount, partners: partnerCount, driverBonus, partnerBonus, totalDisbursed: (driverBonus * driverCount) + (partnerBonus * partnerCount), currency: 'NGN' } });
 };
 
+// ─── DRIVER LIST + DETAIL ────────────────────────────────────────────────────
+
+exports.getDrivers = async (req, res) => {
+  const { page = 1, limit = 20, search, isApproved, vehicleType } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+ 
+  const where = {};
+  if (isApproved !== undefined) where.isApproved = isApproved === 'true';
+  if (vehicleType) where.vehicleType = vehicleType.toUpperCase();
+  if (search) {
+    where.user = {
+      OR: [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName:  { contains: search, mode: 'insensitive' } },
+        { email:     { contains: search, mode: 'insensitive' } },
+        { phone:     { contains: search, mode: 'insensitive' } },
+      ],
+    };
+  }
+ 
+  const [drivers, total] = await Promise.all([
+    prisma.driverProfile.findMany({
+      where,
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true, createdAt: true, isActive: true, isSuspended: true, isVerified: true },
+        },
+      },
+      skip,
+      take: parseInt(limit),
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.driverProfile.count({ where }),
+  ]);
+ 
+  res.status(200).json({
+    success: true,
+    data: { drivers, pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) } },
+  });
+};
+
+exports.getDriverById = async (req, res) => {
+  const { id } = req.params;
+ 
+  const driver = await prisma.driverProfile.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: {
+          id: true, firstName: true, lastName: true, email: true, phone: true,
+          profileImage: true, isActive: true, isSuspended: true, createdAt: true,
+          wallet: { select: { balance: true, currency: true } },
+          _count: { select: { driverRides: true } },
+        },
+      },
+    },
+  });
+ 
+  if (!driver) throw new AppError('Driver not found', 404);
+ 
+  // Recent rides
+  const recentRides = await prisma.ride.findMany({
+    where: { driverId: driver.userId },
+    include: { customer: { select: { firstName: true, lastName: true } }, payment: { select: { amount: true, method: true, driverEarnings: true } } },
+    orderBy: { requestedAt: 'desc' },
+    take: 10,
+  });
+ 
+  res.status(200).json({ success: true, data: { driver, recentRides } });
+};
+
+// ─── PARTNER LIST + DETAIL ───────────────────────────────────────────────────
+
+exports.getPartners = async (req, res) => {
+  const { page = 1, limit = 20, search, isApproved, vehicleType } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+ 
+  const where = {};
+  if (isApproved !== undefined) where.isApproved = isApproved === 'true';
+  if (vehicleType) where.vehicleType = vehicleType.toUpperCase();
+  if (search) {
+    where.user = {
+      OR: [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName:  { contains: search, mode: 'insensitive' } },
+        { email:     { contains: search, mode: 'insensitive' } },
+        { phone:     { contains: search, mode: 'insensitive' } },
+      ],
+    };
+  }
+ 
+  const [partners, total] = await Promise.all([
+    prisma.deliveryPartnerProfile.findMany({
+      where,
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true, createdAt: true, isActive: true, isSuspended: true, isVerified: true },
+        },
+      },
+      skip,
+      take: parseInt(limit),
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.deliveryPartnerProfile.count({ where }),
+  ]);
+ 
+  res.status(200).json({
+    success: true,
+    data: { partners, pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) } },
+  });
+};
+
+exports.getPartnerById = async (req, res) => {
+  const { id } = req.params;
+ 
+  const partner = await prisma.deliveryPartnerProfile.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: {
+          id: true, firstName: true, lastName: true, email: true, phone: true,
+          profileImage: true, isActive: true, isSuspended: true, isVerified: true,
+          suspensionReason: true, createdAt: true,
+          wallet: { select: { balance: true, currency: true } },
+          _count: { select: { partnerDeliveries: true } },
+        },
+      },
+    },
+  });
+ 
+  if (!partner) throw new AppError('Delivery partner not found', 404);
+ 
+  const recentDeliveries = await prisma.delivery.findMany({
+    where: { partnerId: partner.userId },
+    include: { customer: { select: { firstName: true, lastName: true } }, payment: { select: { amount: true, method: true, driverEarnings: true } } },
+    orderBy: { requestedAt: 'desc' },
+    take: 10,
+  });
+ 
+  res.status(200).json({ success: true, data: { partner, recentDeliveries } });
+};
+
+// ─── RIDE DETAIL ─────────────────────────────────────────────────────────────
+
+exports.getRideById = async (req, res) => {
+  const { id } = req.params;
+ 
+  const ride = await prisma.ride.findUnique({
+    where: { id },
+    include: {
+      customer: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, profileImage: true } },
+      driver: {
+        select: {
+          id: true, firstName: true, lastName: true, email: true, phone: true, profileImage: true,
+          driverProfile: {
+            select: { vehicleType: true, vehicleMake: true, vehicleModel: true, vehicleColor: true, vehiclePlate: true, rating: true, currentLat: true, currentLng: true },
+          },
+        },
+      },
+      payment: true,
+      rating: true,
+    },
+  });
+ 
+  if (!ride) throw new AppError('Ride not found', 404);
+ 
+  res.status(200).json({ success: true, data: { ride } });
+};
+
+// ─── DELIVERY DETAIL + LIVE + CANCEL ─────────────────────────────────────────
+
+exports.getDeliveryById = async (req, res) => {
+  const { id } = req.params;
+ 
+  const delivery = await prisma.delivery.findUnique({
+    where: { id },
+    include: {
+      customer: {
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true, profileImage: true },
+      },
+      partner: {
+        select: {
+          id: true, firstName: true, lastName: true, email: true, phone: true, profileImage: true,
+          deliveryProfile: {
+            select: {
+              vehicleType: true, vehiclePlate: true, rating: true,
+              currentLat: true, currentLng: true, // live location
+            },
+          },
+        },
+      },
+      payment: true,
+      rating: true,
+    },
+  });
+ 
+  if (!delivery) throw new AppError('Delivery not found', 404);
+ 
+  // Build a timeline from status-change timestamps
+  const timeline = [
+    { event: 'Requested',   at: delivery.requestedAt,  done: !!delivery.requestedAt },
+    { event: 'Assigned',    at: delivery.assignedAt,   done: !!delivery.assignedAt  },
+    { event: 'Picked Up',   at: delivery.pickedUpAt,   done: !!delivery.pickedUpAt  },
+    { event: 'In Transit',  at: delivery.inTransitAt,  done: !!delivery.inTransitAt },
+    { event: 'Delivered',   at: delivery.deliveredAt,  done: !!delivery.deliveredAt },
+  ].filter(t => t.at);
+ 
+  res.status(200).json({ success: true, data: { delivery, timeline } });
+};
+
+exports.getLiveDeliveries = async (req, res) => {
+  const deliveries = await prisma.delivery.findMany({
+    where: { status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } },
+    include: {
+      customer: { select: { id: true, firstName: true, lastName: true, phone: true } },
+      partner: {
+        select: {
+          id: true, firstName: true, lastName: true, phone: true, profileImage: true,
+          deliveryProfile: {
+            select: { vehicleType: true, vehiclePlate: true, currentLat: true, currentLng: true },
+          },
+        },
+      },
+    },
+    orderBy: { assignedAt: 'desc' },
+  });
+ 
+  res.status(200).json({ success: true, data: { deliveries, total: deliveries.length } });
+};
+
+exports.cancelDelivery = async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  const delivery = await prisma.delivery.findUnique({ where: { id } });
+  if (!delivery) throw new AppError('Delivery not found', 404);
+  if (['DELIVERED', 'CANCELLED'].includes(delivery.status)) {
+    throw new AppError('Cannot cancel this delivery', 400);
+  }
+
+  const updated = await prisma.delivery.update({
+    where: { id },
+    data:  { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason || 'Cancelled by admin' },
+  });
+
+  // Notify both parties
+  const notifyIds = [delivery.customerId, delivery.partnerId].filter(Boolean);
+  await Promise.all(notifyIds.map(userId =>
+    notificationService.notify({
+      userId,
+      title:   'Delivery Cancelled by Admin',
+      message: `Your delivery has been cancelled by an admin.${reason ? ` Reason: ${reason}` : ''}`,
+      type:    'delivery_cancelled',
+      data:    { deliveryId: id, reason, cancelledBy: 'admin' },
+    })
+  ));
+
+  await logActivity({
+    userId: req.user.id, action: 'delivery_cancelled',
+    entityType: 'Delivery', entityId: id,
+    details: { reason }, req,
+  });
+
+  res.status(200).json({ success: true, message: 'Delivery cancelled', data: { delivery: updated } });
+};
+
+/**
+ * @desc    Get all currently active (live) rides with driver GPS locations
+ * @route   GET /api/admin/rides/live
+ *
+ * NOTE: This route must be registered BEFORE /rides/:id in admin.routes.js
+ *       so Express doesn't treat "live" as a UUID parameter.
+ */
+exports.getLiveRides = async (req, res) => {
+  const rides = await prisma.ride.findMany({
+    where: { status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } },
+    include: {
+      customer: {
+        select: { id: true, firstName: true, lastName: true, phone: true },
+      },
+      driver: {
+        select: {
+          id: true, firstName: true, lastName: true, phone: true, profileImage: true,
+          driverProfile: {
+            select: {
+              vehicleType: true, vehicleMake: true, vehicleModel: true,
+              vehicleColor: true, vehiclePlate: true,
+              currentLat: true, currentLng: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { requestedAt: 'desc' },
+  });
+
+  res.status(200).json({ success: true, data: { rides, total: rides.length } });
+};
+
+/**
+ * @desc    Get single ride detail — admin view (no ownership check)
+ *          Returns full customer, driver, payment, rating data.
+ *          Used for both live tracking and historical audit.
+ * @route   GET /api/admin/rides/:id
+ */
+exports.getAdminRideById = async (req, res) => {
+  const { id } = req.params;
+
+  const ride = await prisma.ride.findUnique({
+    where: { id },
+    include: {
+      customer: {
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true, profileImage: true },
+      },
+      driver: {
+        select: {
+          id: true, firstName: true, lastName: true, email: true, phone: true, profileImage: true,
+          driverProfile: {
+            select: {
+              vehicleType: true, vehicleMake: true, vehicleModel: true,
+              vehicleColor: true, vehiclePlate: true, vehicleYear: true,
+              rating: true, licenseNumber: true,
+              currentLat: true, currentLng: true,
+            },
+          },
+        },
+      },
+      payment: true,
+      rating:  true,
+    },
+  });
+
+  if (!ride) throw new AppError('Ride not found', 404);
+
+  res.status(200).json({ success: true, data: { ride } });
+};
+
+/**
+ * @desc    Admin force-cancel a ride
+ * @route   PUT /api/admin/rides/:id/cancel
+ */
+exports.adminCancelRide = async (req, res) => {
+  const { id }     = req.params;
+  const { reason } = req.body;
+
+  const ride = await prisma.ride.findUnique({ where: { id } });
+  if (!ride) throw new AppError('Ride not found', 404);
+  if (['COMPLETED', 'CANCELLED'].includes(ride.status)) {
+    throw new AppError('Cannot cancel a completed or already cancelled ride', 400);
+  }
+
+  const updated = await prisma.ride.update({
+    where: { id },
+    data:  { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason || 'Cancelled by admin' },
+  });
+
+  // Notify both parties
+  const notifyIds = [ride.customerId, ride.driverId].filter(Boolean);
+  await Promise.all(notifyIds.map(userId =>
+    notificationService.notify({
+      userId,
+      title:   'Ride Cancelled by Admin',
+      message: `Your ride has been cancelled by an admin.${reason ? ` Reason: ${reason}` : ''}`,
+      type:    'ride_cancelled',
+      data:    { rideId: id, reason, cancelledBy: 'admin' },
+    })
+  ));
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'ride_cancelled',
+    entityType: 'Ride',
+    entityId:   id,
+    details:    { reason },
+    req,
+  });
+
+  res.status(200).json({ success: true, message: 'Ride cancelled', data: { ride: updated } });
+};
+
 module.exports = exports;

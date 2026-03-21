@@ -1,3 +1,4 @@
+// admin-web/src/services/socket/index.ts
 import { io, Socket } from 'socket.io-client';
 
 class SocketService {

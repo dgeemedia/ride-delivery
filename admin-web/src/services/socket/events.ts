@@ -1,3 +1,4 @@
+// admin-web/src/services/socket/events.ts
 export const SOCKET_EVENTS = {
   // Ride events
   RIDE_REQUESTED: 'ride:requested',

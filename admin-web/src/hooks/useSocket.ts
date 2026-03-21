@@ -1,3 +1,4 @@
+// admin-web/src/hooks/useSocket.ts
 import { useEffect, useCallback } from 'react';
 import socketService from '@/services/socket';
 import { useAuthStore } from '@/store/authStore';
