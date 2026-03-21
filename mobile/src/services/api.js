@@ -166,4 +166,24 @@ export const walletAPI = {
   withdraw:               (data)   => api.post('/wallet/withdraw', data),
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SUPPORT TICKETS
+// ─────────────────────────────────────────────────────────────────────────────
+export const supportAPI = {
+  /** POST /api/users/support-ticket */
+  submitTicket: (data) => api.post('/users/support-ticket', data),
+ 
+  /** GET /api/users/support-tickets */
+  getMyTickets: (params) => api.get('/users/support-tickets', { params }),
+ 
+  /** GET /api/users/support-tickets/:id */
+  getTicketById: (id) => api.get(`/users/support-tickets/${id}`),
+ 
+  /** POST /api/users/support-tickets/:id/reply
+   *  Allows the customer to add a follow-up message to their own ticket.
+   *  Backend endpoint needs to be added — see note below.
+   */
+  addReply: (id, message) => api.post(`/users/support-tickets/${id}/reply`, { message }),
+};
+
 export default api;

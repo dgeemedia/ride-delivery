@@ -19,6 +19,9 @@ import EditProfileScreen       from '../screens/Shared/EditProfileScreen';
 import NotificationsScreen     from '../screens/Shared/NotificationsScreen';
 import ChangePasswordScreen    from '../screens/Shared/ChangePasswordScreen';
 import SupportScreen           from '../screens/Shared/SupportScreen';
+import SubmitTicketScreen      from '../screens/Shared/SubmitTicketScreen';
+import MyTicketsScreen         from '../screens/Shared/MyTicketsScreen';
+import TicketDetailScreen      from '../screens/Shared/TicketDetailScreen';
 
 const COURIER_ACCENT = '#34D399';
 const Tab   = createBottomTabNavigator();
@@ -32,27 +35,36 @@ const DashboardStack = () => (
     <Stack.Screen name="FloorPrice"       component={CourierFloorPriceScreen} />
     <Stack.Screen name="Notifications"    component={NotificationsScreen}     />
     <Stack.Screen name="Support"          component={SupportScreen}           />
+    <Stack.Screen name="SubmitTicket"     component={SubmitTicketScreen}      />
+    <Stack.Screen name="MyTickets"        component={MyTicketsScreen}         />
+    <Stack.Screen name="TicketDetail"     component={TicketDetailScreen}      />
   </Stack.Navigator>
 );
 
 const EarningsStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="EarningsHome"   component={PartnerEarningsScreen}  />
-    <Stack.Screen name="PartnerHistory" component={PartnerHistoryScreen}   />
-    <Stack.Screen name="WalletTopUp"    component={WalletTopUpScreen}      />
-    <Stack.Screen name="Withdrawal"     component={WithdrawalScreen}       />
-    <Stack.Screen name="Support"        component={SupportScreen}          />
+    <Stack.Screen name="EarningsHome"   component={PartnerEarningsScreen}   />
+    <Stack.Screen name="PartnerHistory" component={PartnerHistoryScreen}    />
+    <Stack.Screen name="WalletTopUp"    component={WalletTopUpScreen}       />
+    <Stack.Screen name="Withdrawal"     component={WithdrawalScreen}        />
+    <Stack.Screen name="Support"        component={SupportScreen}           />
+    <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}      />
+    <Stack.Screen name="MyTickets"      component={MyTicketsScreen}         />
+    <Stack.Screen name="TicketDetail"   component={TicketDetailScreen}      />
   </Stack.Navigator>
 );
 
 const ProfileStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="ProfileHome"    component={ProfileScreen}           />
-    <Stack.Screen name="EditProfile"    component={EditProfileScreen}       />
-    <Stack.Screen name="Notifications"  component={NotificationsScreen}     />
-    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen}    />
-    <Stack.Screen name="FloorPrice"     component={CourierFloorPriceScreen} />
-    <Stack.Screen name="Support"        component={SupportScreen}           />
+    <Stack.Screen name="ProfileHome"    component={ProfileScreen}            />
+    <Stack.Screen name="EditProfile"    component={EditProfileScreen}        />
+    <Stack.Screen name="Notifications"  component={NotificationsScreen}      />
+    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen}     />
+    <Stack.Screen name="FloorPrice"     component={CourierFloorPriceScreen}  />
+    <Stack.Screen name="Support"        component={SupportScreen}            />
+    <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}       />
+    <Stack.Screen name="MyTickets"      component={MyTicketsScreen}          />
+    <Stack.Screen name="TicketDetail"   component={TicketDetailScreen}       />
   </Stack.Navigator>
 );
 

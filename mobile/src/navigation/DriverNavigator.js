@@ -11,7 +11,7 @@ import IncomingRideScreen    from '../screens/Driver/IncomingRideScreen';
 import ActiveRideScreen      from '../screens/Driver/ActiveRideScreen';
 import FloorPriceScreen      from '../screens/Driver/FloorPriceScreen';
 import DriverHistoryScreen   from '../screens/Driver/DriverHistoryScreen';
-import EarningsScreen        from '../screens/Driver/EarningsScreen';        // ← correct filename
+import EarningsScreen        from '../screens/Driver/EarningsScreen';
 import WalletTopUpScreen     from '../screens/Shared/WalletTopUpScreen';
 import WithdrawalScreen      from '../screens/Shared/WithdrawalScreen';
 import ProfileScreen         from '../screens/Shared/ProfileScreen';
@@ -19,6 +19,9 @@ import EditProfileScreen     from '../screens/Shared/EditProfileScreen';
 import NotificationsScreen   from '../screens/Shared/NotificationsScreen';
 import ChangePasswordScreen  from '../screens/Shared/ChangePasswordScreen';
 import SupportScreen         from '../screens/Shared/SupportScreen';
+import SubmitTicketScreen    from '../screens/Shared/SubmitTicketScreen';
+import MyTicketsScreen       from '../screens/Shared/MyTicketsScreen';
+import TicketDetailScreen    from '../screens/Shared/TicketDetailScreen';
 
 const DA  = '#FFB800';
 const Tab   = createBottomTabNavigator();
@@ -37,32 +40,41 @@ const DashboardStack = () => (
         gestureEnabled:     false,
       }}
     />
-    <Stack.Screen name="ActiveRide"      component={ActiveRideScreen}    />
-    <Stack.Screen name="FloorPrice"      component={FloorPriceScreen}    />
-    <Stack.Screen name="Notifications"   component={NotificationsScreen} />
-    <Stack.Screen name="DriverDocuments" component={SupportScreen}       />
-    <Stack.Screen name="Support"         component={SupportScreen}       />
+    <Stack.Screen name="ActiveRide"      component={ActiveRideScreen}      />
+    <Stack.Screen name="FloorPrice"      component={FloorPriceScreen}      />
+    <Stack.Screen name="Notifications"   component={NotificationsScreen}   />
+    <Stack.Screen name="DriverDocuments" component={SupportScreen}         />
+    <Stack.Screen name="Support"         component={SupportScreen}         />
+    <Stack.Screen name="SubmitTicket"    component={SubmitTicketScreen}    />
+    <Stack.Screen name="MyTickets"       component={MyTicketsScreen}       />
+    <Stack.Screen name="TicketDetail"    component={TicketDetailScreen}    />
   </Stack.Navigator>
 );
 
 const EarningsStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="EarningsHome"  component={EarningsScreen}       /> {/* ← fixed */}
-    <Stack.Screen name="DriverHistory" component={DriverHistoryScreen}  />
-    <Stack.Screen name="WalletTopUp"   component={WalletTopUpScreen}    />
-    <Stack.Screen name="Withdrawal"    component={WithdrawalScreen}     />
-    <Stack.Screen name="Support"       component={SupportScreen}        />
+    <Stack.Screen name="EarningsHome"  component={EarningsScreen}        />
+    <Stack.Screen name="DriverHistory" component={DriverHistoryScreen}   />
+    <Stack.Screen name="WalletTopUp"   component={WalletTopUpScreen}     />
+    <Stack.Screen name="Withdrawal"    component={WithdrawalScreen}      />
+    <Stack.Screen name="Support"       component={SupportScreen}         />
+    <Stack.Screen name="SubmitTicket"  component={SubmitTicketScreen}    />
+    <Stack.Screen name="MyTickets"     component={MyTicketsScreen}       />
+    <Stack.Screen name="TicketDetail"  component={TicketDetailScreen}    />
   </Stack.Navigator>
 );
 
 const ProfileStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="ProfileHome"    component={ProfileScreen}        />
-    <Stack.Screen name="EditProfile"    component={EditProfileScreen}    />
-    <Stack.Screen name="Notifications"  component={NotificationsScreen}  />
-    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-    <Stack.Screen name="FloorPrice"     component={FloorPriceScreen}     />
-    <Stack.Screen name="Support"        component={SupportScreen}        />
+    <Stack.Screen name="ProfileHome"    component={ProfileScreen}         />
+    <Stack.Screen name="EditProfile"    component={EditProfileScreen}     />
+    <Stack.Screen name="Notifications"  component={NotificationsScreen}   />
+    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen}  />
+    <Stack.Screen name="FloorPrice"     component={FloorPriceScreen}      />
+    <Stack.Screen name="Support"        component={SupportScreen}         />
+    <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}    />
+    <Stack.Screen name="MyTickets"      component={MyTicketsScreen}       />
+    <Stack.Screen name="TicketDetail"   component={TicketDetailScreen}    />
   </Stack.Navigator>
 );
 

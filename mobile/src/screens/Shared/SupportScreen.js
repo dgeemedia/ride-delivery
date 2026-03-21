@@ -11,7 +11,6 @@ import { useAuth }               from '../../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 
-// ── Section wrapper — same pattern as ProfileScreen ───────────────────────────
 const Section = ({ title, children, theme }) => (
   <View style={[sec.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     {title && <Text style={[sec.title, { color: theme.hint }]}>{title}</Text>}
@@ -23,8 +22,7 @@ const sec = StyleSheet.create({
   title: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 6 },
 });
 
-// ── MenuItem — identical to ProfileScreen ─────────────────────────────────────
-const MenuItem = ({ icon, label, onPress, danger, value, theme, last }) => {
+const MenuItem = ({ icon, label, onPress, danger, value, theme, last, badge }) => {
   const color = danger ? '#E05555' : theme.foreground;
   return (
     <TouchableOpacity
@@ -37,7 +35,12 @@ const MenuItem = ({ icon, label, onPress, danger, value, theme, last }) => {
       </View>
       <Text style={[mi.label, { color }]}>{label}</Text>
       <View style={mi.right}>
-        {value && <Text style={[mi.value, { color: theme.hint }]}>{value}</Text>}
+        {value  && <Text style={[mi.value, { color: theme.hint }]}>{value}</Text>}
+        {badge  && (
+          <View style={[mi.badge, { backgroundColor: theme.accent }]}>
+            <Text style={[mi.badgeTxt, { color: theme.accentFg ?? '#111' }]}>{badge}</Text>
+          </View>
+        )}
         <Ionicons name="chevron-forward" size={15} color={theme.hint} />
       </View>
     </TouchableOpacity>
@@ -49,23 +52,18 @@ const mi = StyleSheet.create({
   label:   { flex: 1, fontSize: 14, fontWeight: '500' },
   right:   { flexDirection: 'row', alignItems: 'center', gap: 6 },
   value:   { fontSize: 13, fontWeight: '600' },
+  badge:   { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 },
+  badgeTxt:{ fontSize: 10, fontWeight: '800' },
 });
 
-// ── Safe open URL ─────────────────────────────────────────────────────────────
 const openURL = async (url) => {
   try {
     const supported = await Linking.canOpenURL(url);
-    if (supported) {
-      await Linking.openURL(url);
-    } else {
-      Alert.alert('Cannot Open', `Unable to open: ${url}`);
-    }
-  } catch {
-    Alert.alert('Error', 'Could not open the link.');
-  }
+    if (supported) await Linking.openURL(url);
+    else Alert.alert('Cannot Open', `Unable to open: ${url}`);
+  } catch { Alert.alert('Error', 'Could not open the link.'); }
 };
 
-// ── MAIN ───────────────────────────────────────────────────────────────────────
 export default function SupportScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const { user }        = useAuth();
@@ -82,17 +80,10 @@ export default function SupportScreen({ navigation }) {
         barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
         backgroundColor={theme.background}
       />
-
-      {/* Ambient glow matching ProfileScreen */}
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
-      {/* Back button — respects safe area top inset */}
       <TouchableOpacity
-        style={[s.backBtn, {
-          top: insets.top + 14,
-          backgroundColor: theme.backgroundAlt + 'EE',
-          borderColor: theme.border,
-        }]}
+        style={[s.backBtn, { top: insets.top + 14, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
         onPress={() => navigation.goBack()}
         activeOpacity={0.85}
       >
@@ -100,15 +91,12 @@ export default function SupportScreen({ navigation }) {
       </TouchableOpacity>
 
       <ScrollView
-        contentContainerStyle={[
-          s.scroll,
-          { paddingTop: insets.top + 70, paddingBottom: insets.bottom + 32 },
-        ]}
+        contentContainerStyle={[s.scroll, { paddingTop: insets.top + 70, paddingBottom: insets.bottom + 32 }]}
         showsVerticalScrollIndicator={false}
       >
         <Animated.View style={{ opacity: fadeA }}>
 
-          {/* ── Hero ── */}
+          {/* Hero */}
           <View style={s.hero}>
             <View style={[s.heroIcon, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '30' }]}>
               <Ionicons name="headset-outline" size={32} color={theme.accent} />
@@ -119,7 +107,24 @@ export default function SupportScreen({ navigation }) {
             </Text>
           </View>
 
-          {/* ── Contact ── */}
+          {/* ── SUPPORT TICKETS — new primary section ── */}
+          <Section title="SUPPORT TICKETS" theme={theme}>
+            <MenuItem
+              icon="chatbubble-ellipses-outline"
+              label="Submit a Ticket"
+              theme={theme}
+              onPress={() => navigation.navigate('SubmitTicket')}
+            />
+            <MenuItem
+              icon="list-outline"
+              label="My Tickets"
+              theme={theme}
+              last
+              onPress={() => navigation.navigate('MyTickets')}
+            />
+          </Section>
+
+          {/* Contact */}
           <Section title="CONTACT US" theme={theme}>
             <MenuItem
               icon="mail-outline"
@@ -144,7 +149,7 @@ export default function SupportScreen({ navigation }) {
             />
           </Section>
 
-          {/* ── Self-service ── */}
+          {/* Self-service */}
           <Section title="SELF-SERVICE" theme={theme}>
             <MenuItem
               icon="help-buoy-outline"
@@ -153,7 +158,7 @@ export default function SupportScreen({ navigation }) {
               onPress={() => openURL('https://diakite.app/help')}
             />
             <MenuItem
-              icon="chatbubble-ellipses-outline"
+              icon="chatbubble-outline"
               label="Live Chat"
               theme={theme}
               onPress={() => Alert.alert('Coming Soon', 'Live chat will be available in the next update.')}
@@ -163,20 +168,11 @@ export default function SupportScreen({ navigation }) {
               label="Report an Issue"
               theme={theme}
               last
-              onPress={() =>
-                Alert.alert(
-                  'Report an Issue',
-                  'Describe your issue and we will investigate within 24 hours.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Email Us', onPress: () => openURL('mailto:support@diakite.app?subject=Issue Report') },
-                  ]
-                )
-              }
+              onPress={() => navigation.navigate('SubmitTicket')}   // ← was Alert, now navigates
             />
           </Section>
 
-          {/* ── Legal ── */}
+          {/* Legal */}
           <Section title="LEGAL" theme={theme}>
             <MenuItem
               icon="document-text-outline"
@@ -193,8 +189,7 @@ export default function SupportScreen({ navigation }) {
             />
           </Section>
 
-          {/* ── App info — matches ProfileScreen version line ── */}
-          <Text style={[s.version, { color: theme.hint }]}>Diakite v1.0.0</Text>
+          <Text style={[s.version,   { color: theme.hint }]}>Diakite v1.0.0</Text>
           <Text style={[s.copyright, { color: theme.hint }]}>
             © {new Date().getFullYear()} Diakite. All rights reserved.
           </Text>
@@ -217,12 +212,10 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   scroll: { paddingHorizontal: 24 },
-
   hero:      { alignItems: 'center', paddingBottom: 28 },
   heroIcon:  { width: 72, height: 72, borderRadius: 36, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   heroTitle: { fontSize: 22, fontWeight: '800', marginBottom: 8, letterSpacing: -0.3 },
   heroSub:   { fontSize: 13, textAlign: 'center', lineHeight: 20 },
-
   version:   { textAlign: 'center', fontSize: 11, fontWeight: '500', marginBottom: 4 },
   copyright: { textAlign: 'center', fontSize: 11, marginBottom: 12 },
 });
