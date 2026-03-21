@@ -1,4 +1,4 @@
-// Very similar structure to DriverList.tsx but for delivery partners
+// admin-web/src/pages/Partners/PartnerList.tsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Badge } from '@/components/common';

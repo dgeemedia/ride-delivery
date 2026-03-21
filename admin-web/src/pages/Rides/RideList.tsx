@@ -1,3 +1,4 @@
+// admin-web/src/pages/Rides/RideList.tsx
 import React, { useEffect, useState } from 'react';
 import { ridesAPI } from '@/services/api/rides';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Badge, Card } from '@/components/common';

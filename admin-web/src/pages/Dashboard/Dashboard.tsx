@@ -1,3 +1,4 @@
+// admin-web/src/pages/Dashboard/Dashboard.tsx
 import React, { useEffect, useState } from 'react';
 import { Users, Car, Package, DollarSign, TrendingUp, Activity } from 'lucide-react';
 import { Card } from '@/components/common';

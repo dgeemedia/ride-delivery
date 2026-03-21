@@ -1,3 +1,4 @@
+// admin-web/src/pages/Users/UserDetails.tsx
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mail, Phone, Calendar, Shield } from 'lucide-react';
