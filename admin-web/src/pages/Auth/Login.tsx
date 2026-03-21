@@ -1,3 +1,4 @@
+// admin-web/src/Auth/Login.tsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
@@ -44,7 +45,7 @@ const Login: React.FC = () => {
             <div className="w-16 h-16 bg-primary-500 rounded-lg flex items-center justify-center mx-auto mb-4">
               <span className="text-white font-bold text-2xl">D</span>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">DuoRide Admin</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Diakite Admin</h2>
             <p className="text-gray-600 mt-2">Sign in to your account</p>
           </div>
 
@@ -89,7 +90,7 @@ const Login: React.FC = () => {
         </div>
 
         <div className="text-center mt-4 text-sm text-gray-600">
-          © 2024 DuoRide. All rights reserved.
+          © 2026 Diakite. All rights reserved.
         </div>
       </div>
     </div>

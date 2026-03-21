@@ -1,4 +1,4 @@
-// Similar to UserDetails but for partners
+// admin-web/src/pages/Partners/PartnerDetails.tsx
 import React from 'react';
 import { useParams } from 'react-router-dom';
 

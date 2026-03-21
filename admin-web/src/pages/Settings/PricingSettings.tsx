@@ -1,3 +1,4 @@
+// admin-web/src/pages/Settings/PricingSettings.tsx
 import React from 'react';
 import { Card, Input, Button } from '@/components/common';
 

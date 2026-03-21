@@ -1,3 +1,4 @@
+// admin-web/src/types/driver.ts
 import { User } from './user';
 
 export interface Driver {

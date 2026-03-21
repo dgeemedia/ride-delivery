@@ -145,4 +145,28 @@ router.post(
   adminController.broadcastNotification
 );
 
+// ─────────────────────────────────────────────
+// ONBOARDING BONUS  (SUPER_ADMIN only)
+// POST /api/admin/bonuses/onboarding
+//
+// Credits every approved driver / delivery partner whose wallet is ₦0
+// with the configured onboarding bonus so they can immediately accept
+// their first ride or delivery (wallet balance >= fare is required).
+// ─────────────────────────────────────────────
+router.post(
+  '/bonuses/onboarding',
+  authorize('SUPER_ADMIN'),   // tighter restriction — overrides the outer ADMIN/SUPER_ADMIN middleware
+  [
+    body('driverBonus')
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage('Driver bonus must be a positive number'),
+    body('partnerBonus')
+      .optional()
+      .isFloat({ min: 0 })
+      .withMessage('Partner bonus must be a positive number'),
+  ],
+  adminController.disburseOnboardingBonuses
+);
+
 module.exports = router;

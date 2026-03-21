@@ -1,3 +1,4 @@
+// admin-web/src/services/api/drivers.ts
 import api from './index';
 import { ApiResponse, PaginatedResponse, Driver } from '@/types';
 
@@ -17,8 +18,17 @@ export const driversAPI = {
     return response.data;
   },
 
-  approveDriver: async (id: string): Promise<ApiResponse<{ driver: Driver }>> => {
-    const response = await api.put(`/admin/drivers/${id}/approve`);
+  /**
+   * Approve driver.
+   * SUPER_ADMIN can optionally pass grantBonus + bonusAmount.
+   * The bonus is credited to the driver's wallet as a non-withdrawable
+   * onboarding balance — only usable to accept ride requests.
+   */
+  approveDriver: async (
+    id: string,
+    options?: { grantBonus?: boolean; bonusAmount?: number }
+  ): Promise<ApiResponse<{ driver: Driver }>> => {
+    const response = await api.put(`/admin/drivers/${id}/approve`, options ?? {});
     return response.data;
   },
 

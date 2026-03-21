@@ -1,84 +1,242 @@
 // backend/src/utils/fareEngine.js
 //
-// Diakite Fare Engine — Lagos-tuned pricing model
+// Diakite Fare Engine — fully dynamic, DB-backed pricing
+//
+// Rates are loaded from SystemSettings on first call, then cached for
+// CACHE_TTL_MS (60 seconds). When an admin updates a setting via
+// PUT /api/admin/settings/:key the cache is busted automatically via
+// invalidateFareCache() which admin.controller.js calls after every save.
 //
 // FORMULA (per ride):
-//   fare = base_fare
-//        + (per_km_rate × distance_km)
-//        + (per_minute_rate × duration_minutes)   ← captures holdups
-//        + booking_fee
-//        + surge_multiplier adjustment
-//        - promo discount
-//
-// PLATFORM REVENUE SOURCES:
-//   1. Commission (20% of fare) — every ride
-//   2. Booking fee (₦100 flat) — every ride, non-negotiable
-//   3. Surge premium — during peak hours platform keeps 5% extra above driver normal rate
-//   4. Cancellation fee (₦200) — customer cancels after driver accepted
-//   5. Driver subscriptions (future) — ₦5,000/mo for 15% commission tier
+//   fare = baseFare
+//        + (perKm × distanceKm)
+//        + (perMinute × durationMinutes)   ← captures traffic holdups
+//        + bookingFee
+//        × surgeMultiplier
+//        − promoDiscount
+
+'use strict';
+
+const prisma = require('../lib/prisma');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RATE TABLES — tweak these per vehicle category
+// HARDCODED FALLBACKS
+// Used when a setting has never been saved to the DB.
+// These must match the PRICING_DEFAULTS in GeneralSettings.tsx.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const RATES = {
+const FALLBACK_RATES = {
   CAR: {
-    baseFare:      500,    // ₦ flat start
-    perKm:         130,    // ₦ per kilometre
-    perMinute:     15,     // ₦ per minute (traffic meter)
-    minimumFare:   500,    // floor — no ride below this
-    bookingFee:    100,    // platform booking fee (non-refundable)
-    cancellationFee: 200,  // charged if customer cancels after acceptance
+    baseFare:        500,
+    perKm:           130,
+    perMinute:       15,
+    minimumFare:     500,
+    bookingFee:      100,
+    cancellationFee: 200,
   },
   BIKE: {
-    baseFare:      200,
-    perKm:         80,
-    perMinute:     8,
-    minimumFare:   250,
-    bookingFee:    50,
+    baseFare:        200,
+    perKm:           80,
+    perMinute:       8,
+    minimumFare:     250,
+    bookingFee:      50,
     cancellationFee: 100,
   },
   VAN: {
-    baseFare:      800,
-    perKm:         180,
-    perMinute:     20,
-    minimumFare:   1000,
-    bookingFee:    150,
+    baseFare:        800,
+    perKm:           180,
+    perMinute:       20,
+    minimumFare:     1000,
+    bookingFee:      150,
     cancellationFee: 300,
   },
   MOTORCYCLE: {
-    baseFare:      200,
-    perKm:         80,
-    perMinute:     8,
-    minimumFare:   250,
-    bookingFee:    50,
+    baseFare:        200,
+    perKm:           80,
+    perMinute:       8,
+    minimumFare:     250,
+    bookingFee:      50,
     cancellationFee: 100,
   },
 };
 
+const FALLBACK_DELIVERY = {
+  baseFee:          500,
+  perKm:            80,
+  weightFeePerKg:   50,
+  platformCommission: 0.15,
+};
+
+const FALLBACK_PLATFORM = {
+  ridesCommission:     0.20,
+  deliveryCommission:  0.15,
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
-// SURGE — multipliers applied to base + distance + time components
-// Booking fee is never surged (customers hate it)
+// IN-MEMORY CACHE
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+let _cache = null;       // { rates, delivery, platform, loadedAt }
+let _loading = false;    // prevent stampede
+let _waiters = [];       // promises waiting for first load
+
+/**
+ * Bust the cache — called by admin.controller.js after any settings update.
+ * Next call to getRates() will re-query the DB.
+ */
+const invalidateFareCache = () => {
+  _cache = null;
+};
+
+/**
+ * Load all pricing settings from SystemSettings and build the RATES map.
+ * Falls back to hardcoded values for any missing key.
+ */
+const _loadFromDB = async () => {
+  const rows = await prisma.systemSettings.findMany({
+    where: {
+      key: {
+        in: [
+          // Rides
+          'ride_base_fare_car',   'ride_per_km_car',
+          'ride_base_fare_bike',  'ride_per_km_bike',
+          'ride_base_fare_van',   'ride_per_km_van',
+          'ride_booking_fee',
+          'platform_commission_rides',
+
+          // Deliveries
+          'delivery_base_fee',
+          'delivery_per_km',
+          'delivery_weight_fee_per_kg',
+          'platform_commission_deliveries',
+        ],
+      },
+    },
+  });
+
+  const s = {};
+  rows.forEach(r => { s[r.key] = parseFloat(r.value); });
+
+  const n = (key, fallback) => (isNaN(s[key]) ? fallback : s[key]);
+
+  const bookingFee = n('ride_booking_fee', 100);
+
+  const rates = {
+    CAR: {
+      baseFare:        n('ride_base_fare_car',  500),
+      perKm:           n('ride_per_km_car',     130),
+      perMinute:       FALLBACK_RATES.CAR.perMinute,   // not yet in admin UI
+      minimumFare:     n('ride_base_fare_car',  500),   // min = baseFare
+      bookingFee,
+      cancellationFee: FALLBACK_RATES.CAR.cancellationFee,
+    },
+    BIKE: {
+      baseFare:        n('ride_base_fare_bike', 200),
+      perKm:           n('ride_per_km_bike',    80),
+      perMinute:       FALLBACK_RATES.BIKE.perMinute,
+      minimumFare:     n('ride_base_fare_bike', 250),
+      bookingFee:      Math.round(bookingFee * 0.5),   // bikes get half booking fee
+      cancellationFee: FALLBACK_RATES.BIKE.cancellationFee,
+    },
+    VAN: {
+      baseFare:        n('ride_base_fare_van',  800),
+      perKm:           n('ride_per_km_van',     180),
+      perMinute:       FALLBACK_RATES.VAN.perMinute,
+      minimumFare:     n('ride_base_fare_van',  1000),
+      bookingFee:      Math.round(bookingFee * 1.5),   // vans pay 1.5× booking fee
+      cancellationFee: FALLBACK_RATES.VAN.cancellationFee,
+    },
+    MOTORCYCLE: {
+      baseFare:        n('ride_base_fare_bike', 200),  // shares bike rates
+      perKm:           n('ride_per_km_bike',    80),
+      perMinute:       FALLBACK_RATES.MOTORCYCLE.perMinute,
+      minimumFare:     250,
+      bookingFee:      Math.round(bookingFee * 0.5),
+      cancellationFee: FALLBACK_RATES.MOTORCYCLE.cancellationFee,
+    },
+  };
+
+  const delivery = {
+    baseFee:           n('delivery_base_fee',          500),
+    perKm:             n('delivery_per_km',            80),
+    weightFeePerKg:    n('delivery_weight_fee_per_kg', 50),
+    platformCommission: n('platform_commission_deliveries', 15) / 100,
+  };
+
+  const platform = {
+    ridesCommission:    n('platform_commission_rides',       20) / 100,
+    deliveryCommission: n('platform_commission_deliveries',  15) / 100,
+  };
+
+  return { rates, delivery, platform, loadedAt: Date.now() };
+};
+
+/**
+ * Get current rates — from cache if fresh, otherwise re-load from DB.
+ * Handles concurrent calls safely (no thundering herd).
+ */
+const getSettings = async () => {
+  // Cache hit
+  if (_cache && Date.now() - _cache.loadedAt < CACHE_TTL_MS) {
+    return _cache;
+  }
+
+  // Someone else is already loading — wait for them
+  if (_loading) {
+    return new Promise((resolve, reject) => {
+      _waiters.push({ resolve, reject });
+    });
+  }
+
+  _loading = true;
+  try {
+    const data = await _loadFromDB();
+    _cache = data;
+
+    // Resolve all waiters
+    _waiters.forEach(w => w.resolve(data));
+    _waiters = [];
+
+    return data;
+  } catch (err) {
+    // On DB error fall back to hardcoded values, don't crash requests
+    console.error('[fareEngine] Failed to load settings from DB, using fallbacks:', err.message);
+
+    const fallback = {
+      rates:    FALLBACK_RATES,
+      delivery: FALLBACK_DELIVERY,
+      platform: FALLBACK_PLATFORM,
+      loadedAt: Date.now(),
+    };
+    _cache = fallback;
+
+    _waiters.forEach(w => w.resolve(fallback));
+    _waiters = [];
+
+    return fallback;
+  } finally {
+    _loading = false;
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SURGE WINDOWS (time-based, not in admin settings — change here)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SURGE_WINDOWS = [
-  // { label, days (0=Sun..6=Sat), hourStart (24h), hourEnd, multiplier }
-  { label: 'Morning Rush',   days: [1,2,3,4,5], hourStart: 6,  hourEnd: 9,  multiplier: 1.4 },
-  { label: 'Evening Rush',   days: [1,2,3,4,5], hourStart: 16, hourEnd: 20, multiplier: 1.5 },
-  { label: 'Friday Night',   days: [5],         hourStart: 18, hourEnd: 23, multiplier: 1.6 },
-  { label: 'Late Night',     days: [0,1,2,3,4,5,6], hourStart: 23, hourEnd: 24, multiplier: 1.3 },
-  { label: 'Early Morning',  days: [0,1,2,3,4,5,6], hourStart: 0,  hourEnd: 5,  multiplier: 1.3 },
-  { label: 'Weekend Day',    days: [0,6],        hourStart: 10, hourEnd: 20, multiplier: 1.2 },
+  { label: 'Morning Rush',  days: [1,2,3,4,5], hourStart: 6,  hourEnd: 9,  multiplier: 1.4 },
+  { label: 'Evening Rush',  days: [1,2,3,4,5], hourStart: 16, hourEnd: 20, multiplier: 1.5 },
+  { label: 'Friday Night',  days: [5],         hourStart: 18, hourEnd: 23, multiplier: 1.6 },
+  { label: 'Late Night',    days: [0,1,2,3,4,5,6], hourStart: 23, hourEnd: 24, multiplier: 1.3 },
+  { label: 'Early Morning', days: [0,1,2,3,4,5,6], hourStart: 0,  hourEnd: 5,  multiplier: 1.3 },
+  { label: 'Weekend Day',   days: [0,6],        hourStart: 10, hourEnd: 20, multiplier: 1.2 },
 ];
 
-/**
- * Returns the current surge multiplier (1.0 = no surge).
- * Pass a Date for testing, omit for live.
- */
 const getSurgeMultiplier = (atTime = new Date()) => {
-  const day  = atTime.getDay();   // 0=Sun
+  const day  = atTime.getDay();
   const hour = atTime.getHours();
-
   for (const w of SURGE_WINDOWS) {
     if (w.days.includes(day) && hour >= w.hourStart && hour < w.hourEnd) {
       return { multiplier: w.multiplier, label: w.label };
@@ -88,88 +246,60 @@ const getSurgeMultiplier = (atTime = new Date()) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAIN ESTIMATE — called before the ride starts (no time known yet)
-// Uses estimated duration = distanceKm / averageSpeedKmph
+// FARE ESTIMATE — called before ride starts
 // ─────────────────────────────────────────────────────────────────────────────
 
-const AVERAGE_SPEED_KMPH = 18; // Lagos average (heavy traffic city)
+const AVERAGE_SPEED_KMPH = 18; // Lagos average
 
 /**
  * Estimate fare before ride starts.
- *
- * @param {number}  distanceKm
- * @param {string}  vehicleType  'CAR' | 'BIKE' | 'VAN' | 'MOTORCYCLE'
- * @param {Date}    [atTime]     When is the ride? (default: now)
- * @param {number}  [driverFloorMultiplier]  1.0 = standard, >1 = driver markup
- *
- * @returns {FareEstimate}
+ * async because it reads live settings from DB (with cache).
  */
-const estimateFare = (distanceKm, vehicleType = 'CAR', atTime = new Date(), driverFloorMultiplier = 1.0) => {
-  const rates  = RATES[vehicleType] ?? RATES.CAR;
-  const surge  = getSurgeMultiplier(atTime);
+const estimateFare = async (distanceKm, vehicleType = 'CAR', atTime = new Date(), driverFloorMultiplier = 1.0) => {
+  const { rates } = await getSettings();
+  const r     = rates[vehicleType] ?? rates.CAR;
+  const surge = getSurgeMultiplier(atTime);
   const estMin = (distanceKm / AVERAGE_SPEED_KMPH) * 60;
 
-  // Core components
-  const distanceCharge = rates.perKm    * distanceKm;
-  const timeCharge     = rates.perMinute * estMin;
-  const coreCharge     = (rates.baseFare + distanceCharge + timeCharge) * surge.multiplier * driverFloorMultiplier;
+  const distanceCharge = r.perKm     * distanceKm;
+  const timeCharge     = r.perMinute * estMin;
+  const coreCharge     = (r.baseFare + distanceCharge + timeCharge) * surge.multiplier * driverFloorMultiplier;
 
-  // Platform booking fee — not surged, not discountable
-  const bookingFee = rates.bookingFee;
+  let total = Math.max(r.minimumFare, coreCharge) + r.bookingFee;
+  total     = Math.round(total / 50) * 50;
 
-  // Total before minimum check
-  let total = Math.max(rates.minimumFare, coreCharge) + bookingFee;
-
-  // Round to nearest 50 (cleaner UX)
-  total = Math.round(total / 50) * 50;
-
-  // Platform breakdown (for display, not charged twice)
-  const platformCommission = (total - bookingFee) * 0.20;
-  const surgeBonus         = surge.multiplier > 1 ? (total - bookingFee) * (surge.multiplier - 1) * 0.05 : 0;
-  const driverEarnings     = total - bookingFee - platformCommission;
+  const { platform } = await getSettings();
+  const platformCommission = (total - r.bookingFee) * platform.ridesCommission;
+  const surgeBonus         = surge.multiplier > 1 ? (total - r.bookingFee) * (surge.multiplier - 1) * 0.05 : 0;
+  const driverEarnings     = total - r.bookingFee - platformCommission;
 
   return {
     estimatedFare:    total,
-    bookingFee,
+    bookingFee:       r.bookingFee,
     distanceCharge:   Math.round(distanceCharge),
     timeCharge:       Math.round(timeCharge),
-    baseFare:         rates.baseFare,
+    baseFare:         r.baseFare,
     surgeMultiplier:  surge.multiplier,
     surgeLabel:       surge.label,
     estimatedMinutes: Math.ceil(estMin),
     distanceKm:       parseFloat(distanceKm.toFixed(2)),
     vehicleType,
     currency:         'NGN',
-    // Platform revenue breakdown (informational)
     platformRevenue: {
-      bookingFee,
-      commission:    Math.round(platformCommission),
-      surgeBonus:    Math.round(surgeBonus),
-      total:         Math.round(bookingFee + platformCommission + surgeBonus),
+      bookingFee:  r.bookingFee,
+      commission:  Math.round(platformCommission),
+      surgeBonus:  Math.round(surgeBonus),
+      total:       Math.round(r.bookingFee + platformCommission + surgeBonus),
     },
-    driverEarnings:  Math.round(driverEarnings),
+    driverEarnings: Math.round(driverEarnings),
   };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FINAL FARE — called at ride completion (actual time is known)
-// This is what gets charged.
+// FINAL FARE — called at ride completion (actual time known)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Calculate final fare using actual trip data.
- *
- * @param {object} params
- * @param {number}  params.distanceKm       GPS-measured actual distance
- * @param {Date}    params.startedAt        When ride started (IN_PROGRESS)
- * @param {Date}    params.completedAt      When ride ended
- * @param {string}  params.vehicleType
- * @param {Date}    params.requestedAt      For surge calculation
- * @param {number}  [params.driverFloorMultiplier]  Driver markup if feature enabled
- *
- * @returns {FinalFare}
- */
-const calculateFinalFare = ({
+const calculateFinalFare = async ({
   distanceKm,
   startedAt,
   completedAt,
@@ -177,67 +307,85 @@ const calculateFinalFare = ({
   requestedAt,
   driverFloorMultiplier = 1.0,
 }) => {
-  const rates    = RATES[vehicleType] ?? RATES.CAR;
-  const surge    = getSurgeMultiplier(requestedAt ?? startedAt ?? new Date());
+  const { rates, platform } = await getSettings();
+  const r      = rates[vehicleType] ?? rates.CAR;
+  const surge  = getSurgeMultiplier(requestedAt ?? startedAt ?? new Date());
   const actualMin = startedAt && completedAt
     ? (new Date(completedAt) - new Date(startedAt)) / 60000
     : (distanceKm / AVERAGE_SPEED_KMPH) * 60;
 
-  const distanceCharge = rates.perKm     * distanceKm;
-  const timeCharge     = rates.perMinute  * actualMin;
-  const coreCharge     = (rates.baseFare + distanceCharge + timeCharge) * surge.multiplier * driverFloorMultiplier;
+  const distanceCharge = r.perKm     * distanceKm;
+  const timeCharge     = r.perMinute * actualMin;
+  const coreCharge     = (r.baseFare + distanceCharge + timeCharge) * surge.multiplier * driverFloorMultiplier;
 
-  const bookingFee = rates.bookingFee;
-  let total        = Math.max(rates.minimumFare, coreCharge) + bookingFee;
-  total            = Math.round(total / 50) * 50;
+  let total = Math.max(r.minimumFare, coreCharge) + r.bookingFee;
+  total     = Math.round(total / 50) * 50;
 
-  const platformCommission = (total - bookingFee) * 0.20;
-  const driverEarnings     = total - bookingFee - platformCommission;
+  const platformCommission = (total - r.bookingFee) * platform.ridesCommission;
+  const driverEarnings     = total - r.bookingFee - platformCommission;
 
   return {
     finalFare:       total,
-    bookingFee,
+    bookingFee:      r.bookingFee,
     distanceCharge:  Math.round(distanceCharge),
     timeCharge:      Math.round(timeCharge),
     actualMinutes:   Math.round(actualMin),
     surgeMultiplier: surge.multiplier,
     surgeLabel:      surge.label,
     platformRevenue: {
-      bookingFee,
-      commission:   Math.round(platformCommission),
-      total:        Math.round(bookingFee + platformCommission),
+      bookingFee:  r.bookingFee,
+      commission:  Math.round(platformCommission),
+      total:       Math.round(r.bookingFee + platformCommission),
     },
-    driverEarnings:  Math.round(driverEarnings),
+    driverEarnings: Math.round(driverEarnings),
   };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DRIVER FLOOR PRICE — allows driver to set minimum acceptable fare
-// The customer sees a range: platform estimate ↔ driver floor (if higher)
+// DELIVERY FEE — replaces helpers.js calculateDeliveryFee
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Validate and apply a driver-set floor price.
- * Returns the multiplier to apply to the platform estimate.
- *
- * @param {number} driverFloorNgn  The minimum fare the driver will accept (₦)
- * @param {number} platformEstimateNgn  What the platform calculated
- * @returns {{ multiplier: number, allowed: boolean, adjustedFare: number }}
+ * Calculate delivery fee from DB-backed settings.
+ * Returns { estimatedFee, baseFee, distanceCharge, weightCharge, platformFee, partnerEarnings }
  */
-const applyDriverFloor = (driverFloorNgn, platformEstimateNgn) => {
-  const MAX_DRIVER_MARKUP = 1.30; // driver can charge up to 30% above platform rate
+const calculateDeliveryFee = async (distanceKm, packageWeightKg = 0) => {
+  const { delivery } = await getSettings();
 
+  const baseFee       = delivery.baseFee;
+  const distCharge    = delivery.perKm * distanceKm;
+  const weightCharge  = delivery.weightFeePerKg * packageWeightKg;
+  let total           = baseFee + distCharge + weightCharge;
+  total               = Math.round(total / 50) * 50;
+
+  const platformFee    = Math.round(total * delivery.platformCommission);
+  const partnerEarnings = total - platformFee;
+
+  return {
+    estimatedFee:    total,
+    baseFee,
+    distanceCharge:  Math.round(distCharge),
+    weightCharge:    Math.round(weightCharge),
+    platformFee,
+    partnerEarnings,
+    currency:        'NGN',
+  };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DRIVER FLOOR PRICE (unchanged logic, no DB dependency)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const applyDriverFloor = (driverFloorNgn, platformEstimateNgn) => {
+  const MAX_DRIVER_MARKUP = 1.30;
   if (!driverFloorNgn || driverFloorNgn <= platformEstimateNgn) {
     return { multiplier: 1.0, allowed: true, adjustedFare: platformEstimateNgn };
   }
-
   const requestedMultiplier = driverFloorNgn / platformEstimateNgn;
   if (requestedMultiplier > MAX_DRIVER_MARKUP) {
-    // Clamp to max allowed
     const clampedFare = Math.round((platformEstimateNgn * MAX_DRIVER_MARKUP) / 50) * 50;
     return { multiplier: MAX_DRIVER_MARKUP, allowed: true, adjustedFare: clampedFare, clamped: true };
   }
-
   return {
     multiplier:   requestedMultiplier,
     allowed:      true,
@@ -246,62 +394,79 @@ const applyDriverFloor = (driverFloorNgn, platformEstimateNgn) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PLATFORM REVENUE SUMMARY — useful for admin dashboard
+// PLATFORM REVENUE SUMMARY (admin analytics)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Given an array of completed rides, return platform revenue breakdown.
- */
-const summarizePlatformRevenue = (rides) => {
-  let totalFares    = 0;
-  let totalBooking  = 0;
-  let totalCommission = 0;
-  let totalDriverPay  = 0;
+const summarizePlatformRevenue = async (rides) => {
+  const { rates } = await getSettings();
+  let totalFares = 0, totalBooking = 0, totalCommission = 0, totalDriverPay = 0;
 
   for (const ride of rides) {
-    const fare       = ride.actualFare || ride.estimatedFare || 0;
-    const booking    = RATES[ride.vehicleType]?.bookingFee ?? RATES.CAR.bookingFee;
-    const commission = (fare - booking) * 0.20;
-    const driver     = fare - booking - commission;
+    const fare     = ride.actualFare || ride.estimatedFare || 0;
+    const r        = rates[ride.vehicleType] ?? rates.CAR;
+    const commission = (fare - r.bookingFee) * 0.20;
     totalFares      += fare;
-    totalBooking    += booking;
+    totalBooking    += r.bookingFee;
     totalCommission += commission;
-    totalDriverPay  += driver;
+    totalDriverPay  += fare - r.bookingFee - commission;
   }
 
   return {
-    totalFares:      Math.round(totalFares),
-    totalBookingFees:Math.round(totalBooking),
-    totalCommission: Math.round(totalCommission),
+    totalFares:           Math.round(totalFares),
+    totalBookingFees:     Math.round(totalBooking),
+    totalCommission:      Math.round(totalCommission),
     totalPlatformRevenue: Math.round(totalBooking + totalCommission),
     totalDriverPayouts:   Math.round(totalDriverPay),
-    platformMargin: totalFares > 0
+    platformMargin:       totalFares > 0
       ? ((totalBooking + totalCommission) / totalFares * 100).toFixed(1) + '%'
       : '0%',
-    rides: rides.length,
+    rides:    rides.length,
     currency: 'NGN',
   };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BACKWARD-COMPATIBLE EXPORTS — drop-in replacements for calculateFare
+// BACKWARD-COMPATIBLE SYNC WRAPPER
+// Some older callers do calculateFare(dist, type) without await.
+// This returns the CACHED value synchronously when cache is warm,
+// or falls back to hardcoded FALLBACK_RATES if cache is cold.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Simple fare for backward compatibility with existing controllers.
- * Returns a single number (₦).
- */
 const calculateFare = (distanceKm, vehicleType = 'CAR') => {
-  return estimateFare(distanceKm, vehicleType).estimatedFare;
+  // If cache is warm, use it synchronously
+  if (_cache) {
+    const r = _cache.rates[vehicleType] ?? _cache.rates.CAR;
+    const estMin = (distanceKm / AVERAGE_SPEED_KMPH) * 60;
+    const { multiplier } = getSurgeMultiplier();
+    const core  = (r.baseFare + r.perKm * distanceKm + r.perMinute * estMin) * multiplier;
+    let   total = Math.max(r.minimumFare, core) + r.bookingFee;
+    return Math.round(total / 50) * 50;
+  }
+
+  // Cold cache fallback (first request before DB load)
+  const r = FALLBACK_RATES[vehicleType] ?? FALLBACK_RATES.CAR;
+  const estMin = (distanceKm / AVERAGE_SPEED_KMPH) * 60;
+  const { multiplier } = getSurgeMultiplier();
+  const core  = (r.baseFare + r.perKm * distanceKm + r.perMinute * estMin) * multiplier;
+  let   total = Math.max(r.minimumFare, core) + r.bookingFee;
+  return Math.round(total / 50) * 50;
 };
 
 module.exports = {
+  // Primary async API (use these everywhere)
   estimateFare,
   calculateFinalFare,
+  calculateDeliveryFee,
   applyDriverFloor,
   getSurgeMultiplier,
   summarizePlatformRevenue,
-  calculateFare,   // backward compat
-  RATES,
+  invalidateFareCache,   // call this from admin.controller after updateSetting
+  getSettings,           // expose for testing / admin analytics
+
+  // Legacy sync compat
+  calculateFare,
+
+  // Expose fallbacks for tests
+  FALLBACK_RATES,
   SURGE_WINDOWS,
 };
