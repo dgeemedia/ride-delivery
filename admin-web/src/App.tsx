@@ -21,11 +21,12 @@ import UserDetails from '@/pages/Users/UserDetails';
 import DriverList from '@/pages/Drivers/DriverList';
 import DriverApproval from '@/pages/Drivers/DriverApproval';
 import DriverDetails from '@/pages/Drivers/DriverDetails';
+import DriverDocuments from '@/pages/Drivers/DriverDocuments';  // ← add this import
 
 // Partner Pages
 import PartnerList from '@/pages/Partners/PartnerList';
 import PartnerApproval from '@/pages/Partners/PartnerApproval';
-import PartnerDetails from '@/pages/Partners/PartnerDetails';   // ← was missing
+import PartnerDetails from '@/pages/Partners/PartnerDetails';
 
 // Ride Pages
 import RideList from '@/pages/Rides/RideList';
@@ -48,11 +49,7 @@ import GeneralSettings from '@/pages/Settings/GeneralSettings';
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <Layout>{children}</Layout>;
 };
 
@@ -63,48 +60,50 @@ function App() {
     <>
       <Router>
         <Routes>
-          {/* Public Routes */}
+          {/* Public */}
           <Route
             path="/login"
             element={!isAuthenticated ? <Login /> : <Navigate to="/" replace />}
           />
 
-          {/* Protected Routes */}
+          {/* Dashboard */}
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
 
-          {/* User Routes */}
+          {/* Users */}
           <Route path="/users"     element={<ProtectedRoute><UserList /></ProtectedRoute>} />
           <Route path="/users/:id" element={<ProtectedRoute><UserDetails /></ProtectedRoute>} />
 
-          {/* Driver Routes */}
-          <Route path="/drivers"          element={<ProtectedRoute><DriverList /></ProtectedRoute>} />
-          <Route path="/drivers/pending"  element={<ProtectedRoute><DriverApproval /></ProtectedRoute>} />
-          <Route path="/drivers/:id"      element={<ProtectedRoute><DriverDetails /></ProtectedRoute>} />
+          {/* Drivers
+              Order matters: more-specific static segments before :id wildcards */}
+          <Route path="/drivers"                   element={<ProtectedRoute><DriverList /></ProtectedRoute>} />
+          <Route path="/drivers/pending"            element={<ProtectedRoute><DriverApproval /></ProtectedRoute>} />
+          <Route path="/drivers/:id"               element={<ProtectedRoute><DriverDetails /></ProtectedRoute>} />
+          <Route path="/drivers/:id/documents"     element={<ProtectedRoute><DriverDocuments /></ProtectedRoute>} />  {/* ← THE FIX */}
 
-          {/* Partner Routes */}
+          {/* Partners */}
           <Route path="/partners"         element={<ProtectedRoute><PartnerList /></ProtectedRoute>} />
           <Route path="/partners/pending" element={<ProtectedRoute><PartnerApproval /></ProtectedRoute>} />
-          <Route path="/partners/:id"     element={<ProtectedRoute><PartnerDetails /></ProtectedRoute>} />  {/* ← THE FIX */}
+          <Route path="/partners/:id"     element={<ProtectedRoute><PartnerDetails /></ProtectedRoute>} />
 
-          {/* Ride Routes */}
+          {/* Rides */}
           <Route path="/rides"      element={<ProtectedRoute><RideList /></ProtectedRoute>} />
           <Route path="/rides/live" element={<ProtectedRoute><LiveRides /></ProtectedRoute>} />
           <Route path="/rides/:id"  element={<ProtectedRoute><RideDetails /></ProtectedRoute>} />
 
-          {/* Delivery Routes */}
-          <Route path="/deliveries"      element={<ProtectedRoute><DeliveryList /></ProtectedRoute>} />
-          <Route path="/deliveries/:id"  element={<ProtectedRoute><DeliveryDetails /></ProtectedRoute>} />
+          {/* Deliveries */}
+          <Route path="/deliveries"     element={<ProtectedRoute><DeliveryList /></ProtectedRoute>} />
+          <Route path="/deliveries/:id" element={<ProtectedRoute><DeliveryDetails /></ProtectedRoute>} />
 
-          {/* Payment Routes */}
+          {/* Payments */}
           <Route path="/payments" element={<ProtectedRoute><PaymentList /></ProtectedRoute>} />
 
-          {/* Analytics Routes */}
+          {/* Analytics */}
           <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
 
-          {/* Settings Routes */}
+          {/* Settings */}
           <Route path="/settings" element={<ProtectedRoute><GeneralSettings /></ProtectedRoute>} />
 
-          {/* 404 — must be last */}
+          {/* 404 catch-all — must be last */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
