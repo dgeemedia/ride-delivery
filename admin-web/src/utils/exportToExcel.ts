@@ -1,13 +1,4 @@
 // admin-web/src/utils/exportToExcel.ts
-//
-// Client-side Excel export using SheetJS (the 'xlsx' package).
-// Install if not already present:  pnpm add xlsx
-//
-// Usage:
-//   exportToExcel(rows, columns, 'drivers-export')
-//
-// columns is an array of { header, key, width? } objects.
-
 import * as XLSX from 'xlsx';
 
 export interface ExcelColumn<T = any> {
@@ -146,3 +137,56 @@ export const PARTNER_EXPORT_COLUMNS: ExcelColumn[] = [
   { header: 'Joined',            key: 'createdAt',       width: 20,
     format: v => (v ? new Date(v).toLocaleDateString('en-GB') : '') },
 ];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CSV EXPORT
+// Same column definitions work for both Excel and CSV.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Export an array of objects to a .csv file and trigger a download.
+ * Uses the same ExcelColumn definitions as exportToExcel — no duplication needed.
+ *
+ * Differences vs XLSX:
+ *   • No formatting (bold, colors, column widths)
+ *   • Universally compatible — any app, any OS can open it
+ *   • Smaller file size
+ *   • Values with commas/newlines are automatically quoted
+ */
+export const exportToCSV = <T = any>(
+  data: T[],
+  columns: ExcelColumn<T>[],
+  filename: string,
+): void => {
+  // Build rows using the same getNestedValue logic
+  const escape = (val: any): string => {
+    const str = val == null ? '' : String(val);
+    // Wrap in quotes if the value contains a comma, quote, or newline
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const headerRow = columns.map(c => escape(c.header)).join(',');
+
+  const dataRows = data.map(row =>
+    columns.map(col => {
+      const raw = col.key.split('.').reduce((acc: any, part) => (acc != null ? acc[part] : ''), row);
+      const val = col.format ? col.format(raw, row) : (raw ?? '');
+      return escape(val);
+    }).join(',')
+  );
+
+  const csvContent = [headerRow, ...dataRows].join('\n');
+
+  // UTF-8 BOM so Excel opens it correctly on Windows without garbling special chars
+  const bom  = '\uFEFF';
+  const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `${filename.replace(/[^a-z0-9_-]/gi, '-')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
