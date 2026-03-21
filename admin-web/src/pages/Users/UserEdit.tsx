@@ -1,4 +1,4 @@
-// Similar to UserCreate but with pre-filled data
+// admin-web/src/pages/Users/UserEdit.tsx
 import React from 'react';
 import { useParams } from 'react-router-dom';
 
