@@ -1,6 +1,3 @@
-// backend/prisma/schema.prisma
-// Learn more: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,9 +8,404 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ─────────────────────────────────────────────
-// ENUMS
-// ─────────────────────────────────────────────
+model User {
+  id                   String                  @id @default(dbgenerated("(gen_random_uuid())::text"))
+  email                String                  @unique
+  phone                String                  @unique
+  password             String
+  firstName            String
+  lastName             String
+  role                 UserRole                @default(CUSTOMER)
+  profileImage         String?
+  isVerified           Boolean                 @default(false)
+  isActive             Boolean                 @default(true)
+  isSuspended          Boolean                 @default(false)
+  suspendedAt          DateTime?
+  suspendedBy          String?
+  suspensionReason     String?
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
+  emailVerifyToken     String?
+  emailVerifyExpires   DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @default(now()) @updatedAt
+  adminDepartment      String?
+  activityLogs         ActivityLog[]
+  adminProfile         AdminProfile?
+  appFeedback          AppFeedback[]
+  customerDeliveries   Delivery[]              @relation("CustomerDeliveries")
+  partnerDeliveries    Delivery[]              @relation("PartnerDeliveries")
+  deliveryProfile      DeliveryPartnerProfile?
+  driverProfile        DriverProfile?
+  notifications        Notification[]
+  payments             Payment[]
+  payouts              Payout[]
+  ratings              Rating[]
+  customerRides        Ride[]                  @relation("CustomerRides")
+  driverRides          Ride[]                  @relation("DriverRides")
+  supportTickets       SupportTicket[]
+  ticketReplies        TicketReply[]           @relation("TicketReplyAuthor")
+  wallet               Wallet?
+
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+  @@index([isActive])
+  @@index([adminDepartment])
+}
+
+model DriverProfile {
+  id                  String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId              String      @unique
+  licenseNumber       String      @unique
+  vehicleType         VehicleType
+  vehicleMake         String
+  vehicleModel        String
+  vehicleYear         Int
+  vehicleColor        String
+  vehiclePlate        String      @unique
+  licenseImageUrl     String?
+  vehicleRegUrl       String?
+  insuranceUrl        String?
+  isApproved          Boolean     @default(false)
+  isOnline            Boolean     @default(false)
+  currentLat          Float?
+  currentLng          Float?
+  totalRides          Int         @default(0)
+  rating              Float       @default(0)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @default(now()) @updatedAt
+  preferredFloorPrice Float?
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([isApproved])
+  @@index([isOnline, currentLat, currentLng])
+}
+
+model DeliveryPartnerProfile {
+  id                  String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId              String      @unique
+  vehicleType         VehicleType
+  vehiclePlate        String?
+  idImageUrl          String?
+  vehicleImageUrl     String?
+  isApproved          Boolean     @default(false)
+  isOnline            Boolean     @default(false)
+  currentLat          Float?
+  currentLng          Float?
+  totalDeliveries     Int         @default(0)
+  rating              Float       @default(0)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @default(now()) @updatedAt
+  preferredFloorPrice Float?
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([isApproved])
+  @@index([isOnline, currentLat, currentLng])
+}
+
+model Ride {
+  id                 String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  customerId         String
+  driverId           String?
+  pickupAddress      String
+  pickupLat          Float
+  pickupLng          Float
+  dropoffAddress     String
+  dropoffLat         Float
+  dropoffLng         Float
+  status             RideStatus @default(REQUESTED)
+  distance           Float?
+  duration           Int?
+  estimatedFare      Float
+  actualFare         Float?
+  promoCode          String?
+  requestedAt        DateTime   @default(now())
+  acceptedAt         DateTime?
+  arrivedAt          DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  notes              String?
+  cancellationReason String?
+  payment            Payment?
+  rating             Rating?
+  customer           User       @relation("CustomerRides", fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  driver             User?      @relation("DriverRides", fields: [driverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([customerId])
+  @@index([driverId])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+model Delivery {
+  id                 String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  customerId         String
+  partnerId          String?
+  pickupAddress      String
+  pickupLat          Float
+  pickupLng          Float
+  pickupContact      String
+  dropoffAddress     String
+  dropoffLat         Float
+  dropoffLng         Float
+  dropoffContact     String
+  packageDescription String
+  packageWeight      Float?
+  packageValue       Float?
+  status             DeliveryStatus @default(PENDING)
+  distance           Float?
+  estimatedFee       Float
+  actualFee          Float?
+  deliveryImageUrl   String?
+  recipientName      String?
+  recipientSignature String?
+  promoCode          String?
+  requestedAt        DateTime       @default(now())
+  assignedAt         DateTime?
+  pickedUpAt         DateTime?
+  deliveredAt        DateTime?
+  cancelledAt        DateTime?
+  notes              String?
+  cancellationReason String?
+  inTransitAt        DateTime?      @db.Timestamptz(6)
+  customer           User           @relation("CustomerDeliveries", fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  partner            User?          @relation("PartnerDeliveries", fields: [partnerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payment            Payment?
+  rating             Rating?
+
+  @@index([customerId])
+  @@index([partnerId])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+model Payment {
+  id             String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId         String
+  rideId         String?       @unique
+  deliveryId     String?       @unique
+  amount         Float
+  currency       String        @default("NGN")
+  method         PaymentMethod
+  status         PaymentStatus @default(PENDING)
+  transactionId  String?       @unique
+  receiptUrl     String?
+  platformFee    Float?
+  driverEarnings Float?
+  refundAmount   Float?
+  refundedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @default(now()) @updatedAt
+  delivery       Delivery?     @relation(fields: [deliveryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ride           Ride?         @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user           User          @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Rating {
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId     String
+  rideId     String?   @unique
+  deliveryId String?   @unique
+  rating     Int
+  comment    String?
+  createdAt  DateTime  @default(now())
+  delivery   Delivery? @relation(fields: [deliveryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ride       Ride?     @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user       User      @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([userId])
+}
+
+model Wallet {
+  id           String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId       String              @unique
+  balance      Float               @default(0)
+  currency     String              @default("NGN")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @default(now()) @updatedAt
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  transactions WalletTransaction[]
+
+  @@index([userId])
+}
+
+model WalletTransaction {
+  id          String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  walletId    String
+  type        WalletTxType
+  amount      Float
+  description String
+  status      String       @default("COMPLETED")
+  reference   String?      @unique
+  createdAt   DateTime     @default(now())
+  wallet      Wallet       @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([walletId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Payout {
+  id            String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId        String
+  amount        Float
+  currency      String       @default("NGN")
+  status        PayoutStatus @default(PENDING)
+  accountNumber String
+  bankCode      String
+  accountName   String
+  reference     String?      @unique
+  recipientCode String?
+  processedAt   DateTime?
+  failureReason String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now()) @updatedAt
+  user          User         @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model AdminProfile {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId      String    @unique
+  permissions Json
+  department  String?
+  lastLoginAt DateTime?
+  loginCount  Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([userId])
+}
+
+model Notification {
+  id        String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId    String
+  title     String
+  message   String
+  type      String
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model ActivityLog {
+  id         String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  details    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onUpdate: NoAction)
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+}
+
+model SystemSettings {
+  id          String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  key         String   @unique
+  value       Json
+  category    String
+  description String?
+  updatedBy   String?
+  updatedAt   DateTime @default(now()) @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@index([category])
+}
+
+model PromoCode {
+  id                String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  code              String   @unique
+  description       String?
+  discountType      String
+  discountValue     Float
+  maxUses           Int?
+  currentUses       Int      @default(0)
+  maxUsesPerUser    Int      @default(1)
+  minPurchaseAmount Float?
+  validFrom         DateTime
+  validUntil        DateTime
+  isActive          Boolean  @default(true)
+  applicableFor     String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+
+  @@index([code])
+  @@index([isActive])
+}
+
+model SupportTicket {
+  id           String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId       String
+  ticketNumber String        @unique
+  subject      String
+  description  String
+  category     String
+  priority     String        @default("medium")
+  status       String        @default("open")
+  assignedTo   String?
+  resolvedAt   DateTime?
+  resolution   String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @default(now()) @updatedAt
+  user         User          @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies      TicketReply[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([priority])
+  @@index([assignedTo])
+  @@index([createdAt])
+}
+
+model TicketReply {
+  id        String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  ticketId  String
+  authorId  String
+  message   String
+  isAdmin   Boolean       @default(true)
+  createdAt DateTime      @default(now()) @db.Timestamptz(6)
+  author    User          @relation("TicketReplyAuthor", fields: [authorId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([ticketId])
+  @@index([authorId])
+}
+
+model AppFeedback {
+  id         String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId     String
+  rating     Int
+  comment    String?
+  category   String
+  platform   String
+  appVersion String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([userId])
+  @@index([rating])
+  @@index([createdAt])
+}
 
 enum UserRole {
   CUSTOMER
@@ -80,504 +472,4 @@ enum PayoutStatus {
   PROCESSING
   COMPLETED
   FAILED
-}
-
-// ─────────────────────────────────────────────
-// USER
-// ─────────────────────────────────────────────
-
-model User {
-  id                   String    @id @default(uuid())
-  email                String    @unique
-  phone                String    @unique
-  password             String
-  firstName            String
-  lastName             String
-  role                 UserRole  @default(CUSTOMER)
-  profileImage         String?
-  isVerified           Boolean   @default(false)
-  isActive             Boolean   @default(true)
-  isSuspended          Boolean   @default(false)
-  suspendedAt          DateTime?
-  suspendedBy          String?
-  suspensionReason     String?
-
-  passwordResetToken   String?
-  passwordResetExpires DateTime?
-  emailVerifyToken     String?
-  emailVerifyExpires   DateTime?
-
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-
-  customerRides        Ride[]                   @relation("CustomerRides")
-  driverRides          Ride[]                   @relation("DriverRides")
-  customerDeliveries   Delivery[]               @relation("CustomerDeliveries")
-  partnerDeliveries    Delivery[]               @relation("PartnerDeliveries")
-  driverProfile        DriverProfile?
-  deliveryProfile      DeliveryPartnerProfile?
-  adminProfile         AdminProfile?
-  payments             Payment[]
-  ratings              Rating[]
-  notifications        Notification[]
-  activityLogs         ActivityLog[]
-  wallet               Wallet?
-  payouts              Payout[]
-  supportTickets       SupportTicket[]
-  appFeedback          AppFeedback[]
-
-  @@index([email])
-  @@index([phone])
-  @@index([role])
-  @@index([isActive])
-}
-
-// ─────────────────────────────────────────────
-// DRIVER PROFILE
-// ─────────────────────────────────────────────
-
-model DriverProfile {
-  id              String      @id @default(uuid())
-  userId          String      @unique
-  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  licenseNumber   String      @unique
-  vehicleType     VehicleType
-  vehicleMake     String
-  vehicleModel    String
-  vehicleYear     Int
-  vehicleColor    String
-  vehiclePlate    String      @unique
-
-  licenseImageUrl String?
-  vehicleRegUrl   String?
-  insuranceUrl    String?
-
-  isApproved      Boolean     @default(false)
-  isOnline        Boolean     @default(false)
-  currentLat      Float?
-  currentLng      Float?
-
-  totalRides      Int         @default(0)
-  rating          Float       @default(0)
-
-  // Driver floor price — the minimum fare the driver will accept (₦).
-  // null / 0 = no floor set (platform rate applies).
-  // Capped at platform estimate × 1.30 by the fare engine.
-  preferredFloorPrice Float?
-
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  @@index([isOnline, currentLat, currentLng])
-}
-
-// ─────────────────────────────────────────────
-// DELIVERY PARTNER PROFILE
-// ─────────────────────────────────────────────
-
-model DeliveryPartnerProfile {
-  id              String      @id @default(uuid())
-  userId          String      @unique
-  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  vehicleType     VehicleType
-  vehiclePlate    String?
-  idImageUrl      String?
-  vehicleImageUrl String?
-
-  isApproved      Boolean     @default(false)
-  isOnline        Boolean     @default(false)
-  currentLat      Float?
-  currentLng      Float?
-
-  totalDeliveries Int         @default(0)
-  rating          Float       @default(0)
-
-  preferredFloorPrice Float?
-  
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  @@index([isOnline, currentLat, currentLng])
-}
-
-// ─────────────────────────────────────────────
-// RIDE
-// ─────────────────────────────────────────────
-
-model Ride {
-  id                 String     @id @default(uuid())
-
-  customerId         String
-  customer           User       @relation("CustomerRides", fields: [customerId], references: [id])
-  driverId           String?
-  driver             User?      @relation("DriverRides", fields: [driverId], references: [id])
-
-  pickupAddress      String
-  pickupLat          Float
-  pickupLng          Float
-  dropoffAddress     String
-  dropoffLat         Float
-  dropoffLng         Float
-
-  status             RideStatus @default(REQUESTED)
-  distance           Float?
-  duration           Int?
-  estimatedFare      Float
-  actualFare         Float?
-
-  promoCode          String?
-
-  requestedAt        DateTime   @default(now())
-  acceptedAt         DateTime?
-  arrivedAt          DateTime?
-  startedAt          DateTime?
-  completedAt        DateTime?
-  cancelledAt        DateTime?
-
-  notes              String?
-  cancellationReason String?
-
-  payment            Payment?
-  rating             Rating?
-
-  @@index([customerId])
-  @@index([driverId])
-  @@index([status])
-  @@index([requestedAt])
-}
-
-// ─────────────────────────────────────────────
-// DELIVERY
-// ─────────────────────────────────────────────
-
-model Delivery {
-  id                 String         @id @default(uuid())
-
-  customerId         String
-  customer           User           @relation("CustomerDeliveries", fields: [customerId], references: [id])
-  partnerId          String?
-  partner            User?          @relation("PartnerDeliveries", fields: [partnerId], references: [id])
-
-  pickupAddress      String
-  pickupLat          Float
-  pickupLng          Float
-  pickupContact      String
-  dropoffAddress     String
-  dropoffLat         Float
-  dropoffLng         Float
-  dropoffContact     String
-
-  packageDescription String
-  packageWeight      Float?
-  packageValue       Float?
-
-  status             DeliveryStatus @default(PENDING)
-  distance           Float?
-  estimatedFee       Float
-  actualFee          Float?
-
-  deliveryImageUrl   String?
-  recipientName      String?
-  recipientSignature String?
-
-  promoCode          String?
-
-  requestedAt        DateTime       @default(now())
-  assignedAt         DateTime?
-  pickedUpAt         DateTime?
-  deliveredAt        DateTime?
-  cancelledAt        DateTime?
-
-  notes              String?
-  cancellationReason String?
-
-  payment            Payment?
-  rating             Rating?
-
-  @@index([customerId])
-  @@index([partnerId])
-  @@index([status])
-  @@index([requestedAt])
-}
-
-// ─────────────────────────────────────────────
-// PAYMENT
-// ─────────────────────────────────────────────
-
-model Payment {
-  id              String        @id @default(uuid())
-
-  userId          String
-  user            User          @relation(fields: [userId], references: [id])
-
-  rideId          String?       @unique
-  ride            Ride?         @relation(fields: [rideId], references: [id])
-  deliveryId      String?       @unique
-  delivery        Delivery?     @relation(fields: [deliveryId], references: [id])
-
-  amount          Float
-  currency        String        @default("NGN")
-  method          PaymentMethod
-  status          PaymentStatus @default(PENDING)
-
-  transactionId   String?       @unique
-  receiptUrl      String?
-
-  platformFee     Float?
-  driverEarnings  Float?
-
-  refundAmount    Float?
-  refundedAt      DateTime?
-
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  @@index([userId])
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────
-// RATING
-// ─────────────────────────────────────────────
-
-model Rating {
-  id         String    @id @default(uuid())
-
-  userId     String
-  user       User      @relation(fields: [userId], references: [id])
-
-  rideId     String?   @unique
-  ride       Ride?     @relation(fields: [rideId], references: [id])
-  deliveryId String?   @unique
-  delivery   Delivery? @relation(fields: [deliveryId], references: [id])
-
-  rating     Int
-  comment    String?
-
-  createdAt  DateTime  @default(now())
-
-  @@index([userId])
-}
-
-// ─────────────────────────────────────────────
-// WALLET
-// ─────────────────────────────────────────────
-
-model Wallet {
-  id           String              @id @default(uuid())
-  userId       String              @unique
-  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  balance      Float               @default(0)
-  currency     String              @default("NGN")
-
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-
-  transactions WalletTransaction[]
-
-  @@index([userId])
-}
-
-model WalletTransaction {
-  id          String       @id @default(uuid())
-  walletId    String
-  wallet      Wallet       @relation(fields: [walletId], references: [id], onDelete: Cascade)
-
-  type        WalletTxType
-  amount      Float
-  description String
-  status      String       @default("COMPLETED")
-  reference   String?      @unique
-
-  createdAt   DateTime     @default(now())
-
-  @@index([walletId])
-  @@index([type])
-  @@index([createdAt])
-}
-
-// ─────────────────────────────────────────────
-// PAYOUT
-// ─────────────────────────────────────────────
-
-model Payout {
-  id             String       @id @default(uuid())
-  userId         String
-  user           User         @relation(fields: [userId], references: [id])
-
-  amount         Float
-  currency       String       @default("NGN")
-  status         PayoutStatus @default(PENDING)
-
-  accountNumber  String
-  bankCode       String
-  accountName    String
-  reference      String?      @unique
-  recipientCode  String?
-
-  processedAt    DateTime?
-  failureReason  String?
-
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  @@index([userId])
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────
-// ADMIN PROFILE
-// ─────────────────────────────────────────────
-
-model AdminProfile {
-  id          String    @id @default(uuid())
-  userId      String    @unique
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  permissions Json
-  department  String?
-  lastLoginAt DateTime?
-  loginCount  Int       @default(0)
-
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  @@index([userId])
-}
-
-// ─────────────────────────────────────────────
-// NOTIFICATION
-// ─────────────────────────────────────────────
-
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  title     String
-  message   String
-  type      String
-  data      Json?
-  isRead    Boolean  @default(false)
-
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@index([isRead])
-  @@index([createdAt])
-}
-
-// ─────────────────────────────────────────────
-// ACTIVITY LOG
-// ─────────────────────────────────────────────
-
-model ActivityLog {
-  id         String    @id @default(uuid())
-  userId     String?
-  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  action     String
-  entityType String
-  entityId   String?
-  details    Json?
-  ipAddress  String?
-  userAgent  String?
-
-  createdAt  DateTime  @default(now())
-
-  @@index([userId])
-  @@index([action])
-  @@index([entityType])
-  @@index([createdAt])
-}
-
-// ─────────────────────────────────────────────
-// SYSTEM SETTINGS
-// ─────────────────────────────────────────────
-
-model SystemSettings {
-  id          String   @id @default(uuid())
-  key         String   @unique
-  value       Json
-  category    String
-  description String?
-  updatedBy   String?
-  updatedAt   DateTime @updatedAt
-  createdAt   DateTime @default(now())
-
-  @@index([category])
-}
-
-// ─────────────────────────────────────────────
-// PROMO CODE
-// ─────────────────────────────────────────────
-
-model PromoCode {
-  id                String   @id @default(uuid())
-  code              String   @unique
-  description       String?
-  discountType      String
-  discountValue     Float
-  maxUses           Int?
-  currentUses       Int      @default(0)
-  maxUsesPerUser    Int      @default(1)
-  minPurchaseAmount Float?
-  validFrom         DateTime
-  validUntil        DateTime
-  isActive          Boolean  @default(true)
-  applicableFor     String
-
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  @@index([code])
-  @@index([isActive])
-}
-
-// ─────────────────────────────────────────────
-// SUPPORT TICKET
-// ─────────────────────────────────────────────
-
-model SupportTicket {
-  id           String    @id @default(uuid())
-  userId       String
-  user         User      @relation(fields: [userId], references: [id])
-  ticketNumber String    @unique
-  subject      String
-  description  String
-  category     String
-  priority     String    @default("medium")
-  status       String    @default("open")
-  assignedTo   String?
-  resolvedAt   DateTime?
-  resolution   String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  @@index([userId])
-  @@index([status])
-  @@index([assignedTo])
-}
-
-// ─────────────────────────────────────────────
-// APP FEEDBACK
-// ─────────────────────────────────────────────
-
-model AppFeedback {
-  id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  rating     Int
-  comment    String?
-  category   String
-  platform   String
-  appVersion String?
-  createdAt  DateTime @default(now())
-
-  @@index([userId])
-  @@index([rating])
-  @@index([createdAt])
 }

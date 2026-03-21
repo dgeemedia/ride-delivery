@@ -1,60 +1,81 @@
 // backend/src/routes/admin.routes.js
+'use strict';
 const express = require('express');
 const { body, param } = require('express-validator');
 const adminController = require('../controllers/admin.controller');
-const { authenticate, authorize } = require('../middleware/auth.middleware');
+const { authenticate, authorize, requireScope } = require('../middleware/auth.middleware');
 
 const router = express.Router();
-router.use(authenticate);
-router.use(authorize('ADMIN', 'SUPER_ADMIN'));
 
-// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+// Base auth — must be logged in + have an admin-level role
+router.use(authenticate);
+router.use((req, res, next) => {
+  if (!['ADMIN', 'SUPER_ADMIN', 'SUPPORT'].includes(req.user.role))
+    return res.status(403).json({ success: false, message: 'Admin access required.' });
+  next();
+});
+
+// DASHBOARD
 router.get('/dashboard/stats', adminController.getDashboardStats);
 
-// ─── USER MANAGEMENT ─────────────────────────────────────────────────────────
-router.get('/users', adminController.getUsers);
+// USER MANAGEMENT
+router.get('/users',     adminController.getUsers);
 router.get('/users/:id', param('id').isUUID(), adminController.getUserById);
-router.put('/users/:id/suspend', param('id').isUUID(), body('reason').optional().isString(), adminController.suspendUser);
-router.put('/users/:id/activate', param('id').isUUID(), adminController.activateUser);
+router.put('/users/:id/suspend',  param('id').isUUID(), body('reason').optional().isString(), authorize('ADMIN','SUPER_ADMIN'), adminController.suspendUser);
+router.put('/users/:id/activate', param('id').isUUID(), authorize('ADMIN','SUPER_ADMIN'), adminController.activateUser);
+router.delete('/users/:id',       param('id').isUUID(), authorize('SUPER_ADMIN'), adminController.deleteUser);
 
-// ─── DRIVER MANAGEMENT ───────────────────────────────────────────────────────
-router.get('/drivers', adminController.getDrivers);           // ← list all drivers
-router.get('/drivers/pending', adminController.getPendingDrivers);
-router.get('/drivers/:id', param('id').isUUID(), adminController.getDriverById);
-router.put('/drivers/:id/approve', param('id').isUUID(), adminController.approveDriver);
-router.put('/drivers/:id/reject', param('id').isUUID(), body('reason').notEmpty(), adminController.rejectDriver);
+// Create admin/staff users — SUPER_ADMIN only
+router.post('/users/create-admin', authorize('SUPER_ADMIN'), [
+  body('email').isEmail().normalizeEmail(),
+  body('phone').isMobilePhone(),
+  body('password').isLength({ min: 8 }),
+  body('firstName').trim().notEmpty(),
+  body('lastName').trim().notEmpty(),
+  body('role').isIn(['ADMIN', 'SUPPORT', 'MODERATOR']),
+  body('adminDepartment').optional().isIn(['RIDES', 'DELIVERIES', 'SUPPORT']),
+], adminController.createAdminUser);
 
-// ─── PARTNER MANAGEMENT ──────────────────────────────────────────────────────
-router.get('/partners', adminController.getPartners);          // ← FIX: was 404
-router.get('/partners/pending', adminController.getPendingPartners);
-router.get('/partners/:id', param('id').isUUID(), adminController.getPartnerById);
-router.put('/partners/:id/approve', param('id').isUUID(), adminController.approvePartner);
-router.put('/partners/:id/reject', param('id').isUUID(), body('reason').notEmpty(), adminController.rejectPartner);
+// DRIVER MANAGEMENT — RIDES scope
+router.get('/drivers',          requireScope('RIDES'),           adminController.getDrivers);
+router.get('/drivers/pending',  requireScope('RIDES'),           adminController.getPendingDrivers);
+router.get('/drivers/:id',      param('id').isUUID(), requireScope('RIDES'), adminController.getDriverById);
+router.put('/drivers/:id/approve', param('id').isUUID(), requireScope('RIDES'), adminController.approveDriver);
+router.put('/drivers/:id/reject',  param('id').isUUID(), body('reason').notEmpty(), requireScope('RIDES'), adminController.rejectDriver);
 
-// ─── RIDE MANAGEMENT ─────────────────────────────────────────────────────────
-router.get('/rides', adminController.getRides);
-router.get('/rides/:id', param('id').isUUID(), adminController.getRideById);
+// PARTNER MANAGEMENT — DELIVERIES scope
+router.get('/partners',         requireScope('DELIVERIES'),           adminController.getPartners);
+router.get('/partners/pending', requireScope('DELIVERIES'),           adminController.getPendingPartners);
+router.get('/partners/:id',     param('id').isUUID(), requireScope('DELIVERIES'), adminController.getPartnerById);
+router.put('/partners/:id/approve', param('id').isUUID(), requireScope('DELIVERIES'), adminController.approvePartner);
+router.put('/partners/:id/reject',  param('id').isUUID(), body('reason').notEmpty(), requireScope('DELIVERIES'), adminController.rejectPartner);
 
-// ─── DELIVERY MANAGEMENT — /live MUST come before /:id ───────────────────────
-router.get('/deliveries/live', adminController.getLiveDeliveries);
-router.get('/deliveries', adminController.getDeliveries);
-router.get('/deliveries/:id', param('id').isUUID(), adminController.getDeliveryById);
-router.put('/deliveries/:id/cancel', param('id').isUUID(), body('reason').optional().isString(), adminController.cancelDelivery);
+// RIDE MANAGEMENT — RIDES scope (/live before /:id)
+router.get('/rides/live', requireScope('RIDES'),           adminController.getLiveRides);
+router.get('/rides',      requireScope('RIDES','SUPPORT'), adminController.getRides);
+router.get('/rides/:id',  param('id').isUUID(), requireScope('RIDES','SUPPORT'), adminController.getAdminRideById);
+router.put('/rides/:id/cancel', param('id').isUUID(), body('reason').optional().isString(), requireScope('RIDES'), adminController.adminCancelRide);
 
-// ─── PAYMENT MANAGEMENT ──────────────────────────────────────────────────────
-router.get('/payments', adminController.getPayments);
+// DELIVERY MANAGEMENT — DELIVERIES scope (/live before /:id)
+router.get('/deliveries/live', requireScope('DELIVERIES'),           adminController.getLiveDeliveries);
+router.get('/deliveries',      requireScope('DELIVERIES','SUPPORT'), adminController.getDeliveries);
+router.get('/deliveries/:id',  param('id').isUUID(), requireScope('DELIVERIES','SUPPORT'), adminController.getDeliveryById);
+router.put('/deliveries/:id/cancel', param('id').isUUID(), body('reason').optional().isString(), requireScope('DELIVERIES'), adminController.cancelDelivery);
 
-// ─── ANALYTICS ───────────────────────────────────────────────────────────────
-router.get('/analytics/revenue', adminController.getRevenueAnalytics);
-router.get('/analytics/user-growth', adminController.getUserGrowth);
+// PAYMENTS
+router.get('/payments', authorize('ADMIN','SUPER_ADMIN'), adminController.getPayments);
 
-// ─── SYSTEM SETTINGS ─────────────────────────────────────────────────────────
-router.get('/settings', adminController.getSettings);
-router.put('/settings/:key', [body('value').notEmpty()], adminController.updateSetting);
+// ANALYTICS
+router.get('/analytics/revenue',     authorize('ADMIN','SUPER_ADMIN'), adminController.getRevenueAnalytics);
+router.get('/analytics/user-growth', authorize('ADMIN','SUPER_ADMIN'), adminController.getUserGrowth);
 
-// ─── PROMO CODES ─────────────────────────────────────────────────────────────
-router.get('/promo-codes', adminController.getPromoCodes);
-router.post('/promo-codes', [
+// SETTINGS
+router.get('/settings',      authorize('ADMIN','SUPER_ADMIN'), adminController.getSettings);
+router.put('/settings/:key', [body('value').notEmpty()], authorize('SUPER_ADMIN'), adminController.updateSetting);
+
+// PROMO CODES
+router.get('/promo-codes', authorize('ADMIN','SUPER_ADMIN'), adminController.getPromoCodes);
+router.post('/promo-codes', authorize('ADMIN','SUPER_ADMIN'), [
   body('code').notEmpty().isLength({ min: 3, max: 20 }),
   body('discountType').isIn(['percentage', 'fixed']),
   body('discountValue').isFloat({ min: 0 }),
@@ -62,35 +83,37 @@ router.post('/promo-codes', [
   body('validUntil').isISO8601(),
   body('applicableFor').isIn(['rides', 'deliveries', 'both']),
 ], adminController.createPromoCode);
-router.put('/promo-codes/:id/toggle', param('id').isUUID(), adminController.togglePromoCode);
+router.put('/promo-codes/:id/toggle', param('id').isUUID(), authorize('ADMIN','SUPER_ADMIN'), adminController.togglePromoCode);
 
-// ─── SUPPORT TICKETS ─────────────────────────────────────────────────────────
-router.get('/tickets', adminController.getTickets);
+// SUPPORT TICKETS — all admin roles can read; SUPPORT + ADMIN + SUPER_ADMIN can update
+router.get('/tickets',     adminController.getTickets);
+router.get('/tickets/:id', param('id').isUUID(), adminController.getTicketById);
 router.put('/tickets/:id', param('id').isUUID(), [
   body('status').optional().isIn(['open', 'in_progress', 'resolved', 'closed']),
   body('assignedTo').optional().isString(),
   body('resolution').optional().isString(),
+  body('replyMessage').optional().isString(),
 ], adminController.updateTicket);
 
-// ─── ACTIVITY LOGS ───────────────────────────────────────────────────────────
-router.get('/logs', adminController.getActivityLogs);
+// LOGS
+router.get('/logs', authorize('ADMIN','SUPER_ADMIN'), adminController.getActivityLogs);
 
-// ─── WALLET MANAGEMENT ───────────────────────────────────────────────────────
-router.get('/wallets', adminController.getWallets);
-router.post('/wallets/:userId/adjust', param('userId').isUUID(), [
+// WALLETS
+router.get('/wallets', authorize('ADMIN','SUPER_ADMIN'), adminController.getWallets);
+router.post('/wallets/:userId/adjust', param('userId').isUUID(), authorize('ADMIN','SUPER_ADMIN'), [
   body('amount').isFloat({ min: 0.01 }),
   body('type').isIn(['credit', 'debit']),
   body('reason').optional().isString(),
 ], adminController.adjustWallet);
 
-// ─── BROADCAST NOTIFICATIONS ─────────────────────────────────────────────────
-router.post('/notifications/broadcast', [
+// NOTIFICATIONS
+router.post('/notifications/broadcast', authorize('ADMIN','SUPER_ADMIN'), [
   body('title').notEmpty(),
   body('message').notEmpty(),
   body('role').optional().isIn(['CUSTOMER', 'DRIVER', 'DELIVERY_PARTNER']),
 ], adminController.broadcastNotification);
 
-// ─── ONBOARDING BONUS (SUPER_ADMIN only) ─────────────────────────────────────
+// ONBOARDING BONUS
 router.post('/bonuses/onboarding', authorize('SUPER_ADMIN'), [
   body('driverBonus').optional().isFloat({ min: 0 }),
   body('partnerBonus').optional().isFloat({ min: 0 }),

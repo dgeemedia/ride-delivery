@@ -5,6 +5,7 @@ const prisma = require('../lib/prisma');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const { invalidateFareCache } = require('../utils/fareEngine');
+const bcrypt = require('bcryptjs');
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -999,6 +1000,206 @@ exports.adminCancelRide = async (req, res) => {
   });
 
   res.status(200).json({ success: true, message: 'Ride cancelled', data: { ride: updated } });
+};
+
+// ─── CREATE ADMIN / STAFF USER (SUPER_ADMIN only) ────────────────────────────
+
+exports.createAdminUser = async (req, res) => {
+  const {
+    email, phone, password, firstName, lastName,
+    role, adminDepartment,
+  } = req.body;
+ 
+  // Only ADMIN, SUPPORT, MODERATOR can be created here (not CUSTOMER/DRIVER/etc.)
+  const allowedRoles = ['ADMIN', 'SUPPORT', 'MODERATOR'];
+  if (!allowedRoles.includes(role))
+    throw new AppError(`Role must be one of: ${allowedRoles.join(', ')}`, 400);
+ 
+  const existing = await prisma.user.findFirst({
+    where: { OR: [{ email }, { phone }] },
+  });
+  if (existing) throw new AppError('A user with this email or phone already exists', 400);
+ 
+  const hashed = await bcrypt.hash(password, 10);
+ 
+  const user = await prisma.user.create({
+    data: {
+      email, phone, firstName, lastName,
+      password:        hashed,
+      role,
+      adminDepartment: adminDepartment ?? null,
+      isVerified:      true,   // admin accounts are pre-verified
+      isActive:        true,
+    },
+    select: {
+      id: true, email: true, phone: true, firstName: true, lastName: true,
+      role: true, adminDepartment: true, isActive: true, createdAt: true,
+    },
+  });
+ 
+  // Create wallet
+  await prisma.wallet.create({
+    data: { userId: user.id, balance: 0, currency: 'NGN' },
+  });
+ 
+  await logActivity({
+    userId: req.user.id,
+    action: 'admin_user_created',
+    entityType: 'User',
+    entityId: user.id,
+    details: { role, adminDepartment, createdEmail: email },
+    req,
+  });
+ 
+  res.status(201).json({
+    success: true,
+    message: `${role} account created successfully${adminDepartment ? ` with ${adminDepartment} department access` : ''}`,
+    data: { user },
+  });
+};
+
+// ─── DELETE USER (SUPER_ADMIN only — soft delete) ────────────────────────────
+
+exports.deleteUser = async (req, res) => {
+  const { id } = req.params;
+ 
+  if (id === req.user.id)
+    throw new AppError('You cannot delete your own account', 400);
+ 
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new AppError('User not found', 404);
+ 
+  // Prevent deleting other super admins
+  if (user.role === 'SUPER_ADMIN')
+    throw new AppError('Super admin accounts cannot be deleted', 403);
+ 
+  // Soft delete: deactivate + anonymise PII
+  const anonymisedEmail = `deleted_${id}@diakite.internal`;
+  const anonymisedPhone = `+000000000000${id.slice(0, 4)}`;
+ 
+  const deleted = await prisma.user.update({
+    where: { id },
+    data: {
+      isActive:    false,
+      isSuspended: true,
+      email:       anonymisedEmail,
+      phone:       anonymisedPhone,
+      firstName:   'Deleted',
+      lastName:    'User',
+      profileImage: null,
+      suspensionReason: 'Account deleted by admin',
+    },
+    select: { id: true, role: true, createdAt: true },
+  });
+ 
+  await logActivity({
+    userId: req.user.id,
+    action: 'user_deleted',
+    entityType: 'User',
+    entityId: id,
+    details: { originalRole: user.role, originalEmail: user.email },
+    req,
+  });
+ 
+  res.status(200).json({
+    success: true,
+    message: 'User account deleted and PII anonymised',
+    data: { user: deleted },
+  });
+};
+
+// ─── GET SINGLE TICKET ────────────────────────────────────────────────────────
+
+exports.getTicketById = async (req, res) => {
+  const { id } = req.params;
+ 
+  const ticket = await prisma.supportTicket.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true, role: true },
+      },
+      replies: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          author: {
+            select: { id: true, firstName: true, lastName: true, role: true },
+          },
+        },
+      },
+    },
+  });
+ 
+  if (!ticket) throw new AppError('Ticket not found', 404);
+ 
+  res.status(200).json({ success: true, data: { ticket } });
+};
+
+// ─── UPDATE TICKET (with reply support) ──────────────────────────────────────
+
+exports.updateTicket = async (req, res) => {
+  const { id } = req.params;
+  const { status, assignedTo, resolution, replyMessage } = req.body;
+ 
+  const ticket = await prisma.supportTicket.findUnique({ where: { id } });
+  if (!ticket) throw new AppError('Ticket not found', 404);
+ 
+  // Update ticket fields
+  const updated = await prisma.supportTicket.update({
+    where: { id },
+    data: {
+      ...(status      && { status }),
+      ...(assignedTo  && { assignedTo }),
+      ...(resolution  && { resolution }),
+      ...(status === 'resolved' && { resolvedAt: new Date() }),
+    },
+  });
+ 
+  // Add reply if provided
+  if (replyMessage?.trim()) {
+    try {
+      await prisma.ticketReply.create({
+        data: {
+          ticketId: id,
+          authorId: req.user.id,
+          message:  replyMessage.trim(),
+          isAdmin:  true,
+        },
+      });
+    } catch {
+      // TicketReply model may not exist yet — skip gracefully
+    }
+ 
+    // Notify the ticket creator
+    await notificationService.notify({
+      userId:  ticket.userId,
+      title:   `Update on Ticket #${ticket.ticketNumber}`,
+      message: replyMessage.trim(),
+      type:    'ticket_reply',
+      data:    { ticketId: id, ticketNumber: ticket.ticketNumber, repliedBy: req.user.id },
+    });
+  }
+ 
+  if (status === 'resolved') {
+    await notificationService.notify({
+      userId:  ticket.userId,
+      title:   `Ticket #${ticket.ticketNumber} Resolved ✅`,
+      message: `Your support ticket has been resolved.${resolution ? ` Resolution: ${resolution}` : ''}`,
+      type:    'ticket_resolved',
+      data:    { ticketId: id, ticketNumber: ticket.ticketNumber },
+    });
+  }
+ 
+  await logActivity({
+    userId: req.user.id,
+    action: 'ticket_updated',
+    entityType: 'SupportTicket',
+    entityId: id,
+    details: { status, assignedTo, hasReply: !!replyMessage },
+    req,
+  });
+ 
+  res.status(200).json({ success: true, message: 'Ticket updated', data: { ticket: updated } });
 };
 
 module.exports = exports;

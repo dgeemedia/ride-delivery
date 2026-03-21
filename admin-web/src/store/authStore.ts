@@ -7,33 +7,35 @@ interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
-  login: (user: User, token: string) => void;
-  logout: () => void;
+  login:   (user: User, token: string) => void;
+  logout:  () => void;
   setUser: (user: User) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      user: null,
-      token: null,
+      user:            null,
+      token:           null,
       isAuthenticated: false,
 
-      login: (user: User, token: string) => {
-        set({ user, token, isAuthenticated: true });
-      },
+      login: (user, token) => set({ user, token, isAuthenticated: true }),
 
       logout: () => {
         set({ user: null, token: null, isAuthenticated: false });
         localStorage.removeItem('auth-storage');
       },
 
-      setUser: (user: User) => {
-        set({ user });
-      },
+      setUser: (user) => set({ user }),
     }),
     {
       name: 'auth-storage',
+      // Persist the full user object including adminDepartment
+      partialize: (state) => ({
+        user:  state.user,
+        token: state.token,
+        isAuthenticated: state.isAuthenticated,
+      }),
     }
   )
 );
