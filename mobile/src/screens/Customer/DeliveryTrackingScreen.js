@@ -8,8 +8,8 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
-import { deliveryAPI }       from '../../services/api';
-import socketService         from '../../services/socket';
+import { deliveryAPI, shieldAPI } from '../../services/api';
+import socketService              from '../../services/socket';
 
 const { height } = Dimensions.get('window');
 const COURIER_ACCENT = '#34D399';
@@ -26,12 +26,12 @@ const DARK_MAP_STYLE = [
 ];
 
 const STATUS_CONFIG = {
-  PENDING:    { label: 'Finding a delivery partner...',  color: '#4E8DBD', icon: 'time-outline'            },
-  ASSIGNED:   { label: 'Partner is on the way',         color: COURIER_ACCENT, icon: 'bicycle-outline'   },
-  PICKED_UP:  { label: 'Package has been picked up!',   color: '#FFB800', icon: 'cube-outline'            },
-  IN_TRANSIT: { label: 'Package is in transit',         color: '#A78BFA', icon: 'navigate-outline'        },
-  DELIVERED:  { label: 'Package delivered! ✅',          color: COURIER_ACCENT, icon: 'checkmark-circle-outline' },
-  CANCELLED:  { label: 'Delivery cancelled',            color: '#E05555', icon: 'close-circle-outline'    },
+  PENDING:    { label: 'Finding a delivery partner...',  color: '#4E8DBD',     icon: 'time-outline'             },
+  ASSIGNED:   { label: 'Partner is on the way',         color: COURIER_ACCENT, icon: 'bicycle-outline'         },
+  PICKED_UP:  { label: 'Package has been picked up!',   color: '#FFB800',     icon: 'cube-outline'             },
+  IN_TRANSIT: { label: 'Package is in transit',         color: '#A78BFA',     icon: 'navigate-outline'         },
+  DELIVERED:  { label: 'Package delivered! ✅',          color: COURIER_ACCENT, icon: 'checkmark-circle-outline'},
+  CANCELLED:  { label: 'Delivery cancelled',            color: '#E05555',     icon: 'close-circle-outline'     },
 };
 
 // ── Partner info card ──────────────────────────────────────────────────────────
@@ -80,13 +80,11 @@ const pi = StyleSheet.create({
 // ── Package & route card ───────────────────────────────────────────────────────
 const DeliveryDetailCard = ({ delivery, theme }) => (
   <View style={[dd.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-    {/* Package */}
     <View style={dd.pkgRow}>
       <Ionicons name="cube-outline" size={14} color={COURIER_ACCENT} />
       <Text style={[dd.pkgTxt, { color: theme.foreground }]}>{delivery?.packageDescription}</Text>
     </View>
     <View style={[dd.divider, { backgroundColor: theme.border }]} />
-    {/* Route */}
     <View style={dd.routeRow}>
       <View style={[dd.dot, { backgroundColor: COURIER_ACCENT }]} />
       <View style={{ flex: 1 }}>
@@ -105,15 +103,15 @@ const DeliveryDetailCard = ({ delivery, theme }) => (
   </View>
 );
 const dd = StyleSheet.create({
-  card:     { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 12 },
-  pkgRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  pkgTxt:   { flex: 1, fontSize: 13, fontWeight: '600' },
-  divider:  { height: 1, marginBottom: 12 },
-  routeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  dot:      { width: 10, height: 10, borderRadius: 5, marginTop: 3, flexShrink: 0 },
-  routeLine:{ width: 1.5, height: 14, marginLeft: 4.5, marginVertical: 3 },
-  lbl:      { fontSize: 9, fontWeight: '700', letterSpacing: 1.5, marginBottom: 2 },
-  addr:     { fontSize: 13, fontWeight: '600' },
+  card:      { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 12 },
+  pkgRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  pkgTxt:    { flex: 1, fontSize: 13, fontWeight: '600' },
+  divider:   { height: 1, marginBottom: 12 },
+  routeRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  dot:       { width: 10, height: 10, borderRadius: 5, marginTop: 3, flexShrink: 0 },
+  routeLine: { width: 1.5, height: 14, marginLeft: 4.5, marginVertical: 3 },
+  lbl:       { fontSize: 9, fontWeight: '700', letterSpacing: 1.5, marginBottom: 2 },
+  addr:      { fontSize: 13, fontWeight: '600' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -124,10 +122,11 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
   const insets          = useSafeAreaInsets();
   const deliveryId      = route?.params?.deliveryId;
 
-  const [delivery,         setDelivery]         = useState(null);
-  const [partnerLocation,  setPartnerLocation]  = useState(null);
-  const [loading,          setLoading]          = useState(true);
-  const [cancelling,       setCancelling]       = useState(false);
+  const [delivery,        setDelivery]        = useState(null);
+  const [partnerLocation, setPartnerLocation] = useState(null);
+  const [loading,         setLoading]         = useState(true);
+  const [cancelling,      setCancelling]      = useState(false);
+  const [shieldActive,    setShieldActive]    = useState(false);
 
   const mapRef = useRef(null);
   const sheetA = useRef(new Animated.Value(0)).current;
@@ -138,14 +137,21 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
       const d   = res?.data?.delivery ?? null;
       setDelivery(d);
 
-      // Seed partner location from profile
       if (d?.partner?.deliveryProfile?.currentLat) {
         setPartnerLocation({
           latitude:  d.partner.deliveryProfile.currentLat,
           longitude: d.partner.deliveryProfile.currentLng,
         });
       }
-      if (d?.id) socketService.joinDelivery?.(d.id);
+
+      if (d?.id) {
+        socketService.joinDelivery?.(d.id);
+        // Check if SHIELD is already active for this delivery
+        try {
+          const sRes = await shieldAPI.getSession({ deliveryId: d.id });
+          setShieldActive(!!sRes?.data?.session);
+        } catch {}
+      }
     } catch (err) {
       console.error('[DeliveryTracking] load error:', err?.message);
     } finally {
@@ -157,7 +163,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     loadDelivery();
     Animated.spring(sheetA, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }).start();
 
-    // Socket listeners
     const handleStatus = (data) => {
       if (data.deliveryId && data.deliveryId !== deliveryId) return;
       setDelivery(prev => prev ? { ...prev, status: data.status, partner: data.partner ?? prev.partner } : prev);
@@ -166,7 +171,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         setTimeout(() => {
           Alert.alert('Package Delivered! 🎉', 'Your package has been delivered successfully!', [
             { text: 'Rate Partner', onPress: () => navigation.navigate('Home') },
-            { text: 'Done', onPress: () => navigation.navigate('Home') },
+            { text: 'Done',        onPress: () => navigation.navigate('Home') },
           ]);
         }, 500);
       }
@@ -177,21 +182,25 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
       }
     };
 
-    // Partner location update — emitted by server when partner moves
     const handlePartnerLoc = (data) => {
       const loc = { latitude: data.lat, longitude: data.lng };
       setPartnerLocation(loc);
-      mapRef.current?.animateToRegion({
-        ...loc, latitudeDelta: 0.03, longitudeDelta: 0.03,
-      }, 800);
+      mapRef.current?.animateToRegion({ ...loc, latitudeDelta: 0.03, longitudeDelta: 0.03 }, 800);
     };
+
+    const handleShieldActivated   = () => setShieldActive(true);
+    const handleShieldDeactivated = () => setShieldActive(false);
 
     socketService.on('delivery:status:update',  handleStatus);
     socketService.on('partner:location:update', handlePartnerLoc);
+    socketService.on('shield:activated',        handleShieldActivated);
+    socketService.on('shield:deactivated',      handleShieldDeactivated);
 
     return () => {
       socketService.off('delivery:status:update',  handleStatus);
       socketService.off('partner:location:update', handlePartnerLoc);
+      socketService.off('shield:activated',        handleShieldActivated);
+      socketService.off('shield:deactivated',      handleShieldDeactivated);
       if (deliveryId) socketService.leaveDelivery?.(deliveryId);
     };
   }, [deliveryId]);
@@ -235,6 +244,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
 
   const sheetTranslate = sheetA.interpolate({ inputRange: [0, 1], outputRange: [300, 0] });
   const canCancel      = ['PENDING', 'ASSIGNED'].includes(status);
+  const isActiveTrip   = ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(status);
 
   if (loading) {
     return (
@@ -276,7 +286,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         showsCompass={false}
         toolbarEnabled={false}
       >
-        {/* Partner pin */}
         {partnerLocation && (
           <Marker coordinate={partnerLocation} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={[s.partnerPin, { backgroundColor: statusCfg.color }]}>
@@ -284,19 +293,16 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
             </View>
           </Marker>
         )}
-        {/* Pickup */}
         {pickupLat && (
           <Marker coordinate={{ latitude: pickupLat, longitude: pickupLng }} anchor={{ x: 0.5, y: 1 }}>
             <Ionicons name="radio-button-on" size={24} color={COURIER_ACCENT} />
           </Marker>
         )}
-        {/* Dropoff */}
         {dropoffLat && (
           <Marker coordinate={{ latitude: dropoffLat, longitude: dropoffLng }} anchor={{ x: 0.5, y: 1 }}>
             <Ionicons name="location" size={28} color="#E05555" />
           </Marker>
         )}
-        {/* Route line */}
         {pickupLat && dropoffLat && (
           <Polyline
             coordinates={[
@@ -306,7 +312,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
             strokeColor={COURIER_ACCENT} strokeWidth={3} lineDashPattern={[8, 5]}
           />
         )}
-        {/* Partner → pickup line (while ASSIGNED) */}
         {partnerLocation && pickupLat && status === 'ASSIGNED' && (
           <Polyline
             coordinates={[partnerLocation, { latitude: pickupLat, longitude: pickupLng }]}
@@ -364,8 +369,26 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
             </View>
           </View>
 
-          <PartnerInfoCard   delivery={delivery} theme={theme} />
+          <PartnerInfoCard    delivery={delivery} theme={theme} />
           <DeliveryDetailCard delivery={delivery} theme={theme} />
+
+          {/* SHIELD button — only shown during active deliveries */}
+          {isActiveTrip && (
+            <TouchableOpacity
+              style={[s.shieldBtn, {
+                backgroundColor: shieldActive ? '#4CAF5020' : '#4CAF5010',
+                borderColor:     shieldActive ? '#4CAF50'   : '#4CAF5050',
+              }]}
+              onPress={() => navigation.navigate('Shield', { deliveryId: delivery.id })}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="shield-checkmark" size={16} color="#4CAF50" />
+              <Text style={s.shieldBtnTxt}>
+                {shieldActive ? '🛡️ SHIELD Active — Tap to manage' : 'Activate SHIELD Safety'}
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color="#4CAF50" />
+            </TouchableOpacity>
+          )}
 
           {/* Cancel */}
           {canCancel && (
@@ -405,24 +428,26 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:        { flex: 1 },
-  center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
-  centerTxt:   { fontSize: 14 },
-  goHomeBtn:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
-  goHomeTxt:   { fontSize: 14, fontWeight: '600' },
-  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
-  backBtn:     { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
-  partnerPin:  { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
-  statusPill:  { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
-  statusPillTxt:{ fontSize: 12, fontWeight: '700' },
-  sheet:       { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, paddingHorizontal: 20, paddingTop: 20, maxHeight: height * 0.52 },
-  feeStrip:    { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
-  feeItem:     { flex: 1, alignItems: 'center', paddingVertical: 11, gap: 3 },
-  feeLabel:    { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
-  feeValue:    { fontSize: 14, fontWeight: '900' },
-  feeDivider:  { width: 1 },
-  cancelBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, marginBottom: 8 },
-  cancelTxt:   { fontSize: 14, fontWeight: '700', color: '#E05555' },
-  homeBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8 },
-  homeBtnTxt:  { fontSize: 15, fontWeight: '800', color: '#FFF' },
+  root:          { flex: 1 },
+  center:        { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
+  centerTxt:     { fontSize: 14 },
+  goHomeBtn:     { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
+  goHomeTxt:     { fontSize: 14, fontWeight: '600' },
+  topGradient:   { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
+  backBtn:       { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
+  partnerPin:    { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
+  statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
+  statusPillTxt: { fontSize: 12, fontWeight: '700' },
+  sheet:         { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, paddingHorizontal: 20, paddingTop: 20, maxHeight: height * 0.52 },
+  feeStrip:      { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
+  feeItem:       { flex: 1, alignItems: 'center', paddingVertical: 11, gap: 3 },
+  feeLabel:      { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
+  feeValue:      { fontSize: 14, fontWeight: '900' },
+  feeDivider:    { width: 1 },
+  shieldBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
+  shieldBtnTxt:  { flex: 1, fontSize: 13, fontWeight: '700', color: '#4CAF50' },
+  cancelBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, marginBottom: 8 },
+  cancelTxt:     { fontSize: 14, fontWeight: '700', color: '#E05555' },
+  homeBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8 },
+  homeBtnTxt:    { fontSize: 15, fontWeight: '800', color: '#FFF' },
 });

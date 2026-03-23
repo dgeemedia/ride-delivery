@@ -1,17 +1,4 @@
 // backend/src/controllers/ride.controller.js
-// Uses the fareEngine for proper Lagos-tuned pricing.
-//
-// KEY FIXES vs the original:
-//
-// 1. requestSpecificDriver — encodes driverFloorMultiplier in the notes field
-//    as  |FLOORX:<multiplier>  so completeRide can recover it.
-//
-// 2. completeRide — parses FLOORX from notes and passes the correct
-//    driverFloorMultiplier to calculateFinalFare (was always 1.0 before).
-//
-// 3. getActiveRide — appends a live surgeContext block so the frontend
-//    ActiveRideBanner / RideTracking screen doesn't need a second API call.
-
 const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError }         = require('../middleware/errorHandler');
@@ -21,10 +8,10 @@ const {
   calculateFinalFare,
   applyDriverFloor,
   getSurgeMultiplier,
-  calculateFare,
 } = require('../utils/fareEngine');
 const notificationService = require('../services/notification.service');
 const { broadcastToDrivers } = require('../services/socket.service');
+const shieldService = require('../services/shield.service');
 
 const getIO = (req) => req.app.get('io');
 
@@ -36,29 +23,14 @@ const emitRideStatus = (io, customerId, rideId, status, extra = {}) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS — floor multiplier encoding / decoding in ride.notes
-//
-// Format appended to notes:  |FLOORX:1.18
-// We use this rather than a schema migration so the fix is zero-downtime.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const FLOOR_TAG = '|FLOORX:';
 
-/**
- * Encode the driver floor multiplier into the notes string.
- * Only written when multiplier > 1.0 (i.e. driver asked for more).
- */
 const encodeFloorMultiplier = (notes, multiplier) => {
   if (!multiplier || multiplier <= 1.0) return notes;
   const base = (notes ?? '').replace(/\|FLOORX:[0-9.]+/g, '').trimEnd();
   return `${base}${FLOOR_TAG}${multiplier.toFixed(6)}`;
 };
 
-/**
- * Parse the driver floor multiplier back out of a notes string.
- * Returns 1.0 if not present (standard platform rate).
- */
 const decodeFloorMultiplier = (notes) => {
   if (!notes) return 1.0;
   const idx = notes.indexOf(FLOOR_TAG);
@@ -67,9 +39,6 @@ const decodeFloorMultiplier = (notes) => {
   return isNaN(raw) || raw < 1.0 ? 1.0 : raw;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/rides/estimate
-// ─────────────────────────────────────────────────────────────────────────────
 exports.getFareEstimate = async (req, res) => {
   const { pickupLat, pickupLng, dropoffLat, dropoffLng, vehicleType = 'CAR' } = req.query;
   if (!pickupLat || !pickupLng || !dropoffLat || !dropoffLng)
@@ -79,18 +48,11 @@ exports.getFareEstimate = async (req, res) => {
     parseFloat(pickupLat), parseFloat(pickupLng),
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
-
   const estimate = estimateFare(distance, vehicleType.toUpperCase());
 
-  res.status(200).json({
-    success: true,
-    data: { ...estimate, distance: distance.toFixed(2) }
-  });
+  res.status(200).json({ success: true, data: { ...estimate, distance: distance.toFixed(2) } });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/rides/request
-// ─────────────────────────────────────────────────────────────────────────────
 exports.requestRide = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
@@ -164,6 +126,31 @@ exports.requestRide = async (req, res) => {
     }
   });
 
+  // Auto-SHIELD for night rides
+  try {
+    const autoShield = await shieldService.shouldAutoShield(req.user.id);
+    if (autoShield.should && autoShield.beneficiary) {
+      const result = await shieldService.createSession({
+        userId:           req.user.id,
+        rideId:           ride.id,
+        beneficiaryName:  autoShield.beneficiary.name,
+        beneficiaryPhone: autoShield.beneficiary.phone,
+        beneficiaryEmail: autoShield.beneficiary.email,
+        autoTriggered:    true,
+      });
+      await notificationService.notify({
+        userId:  req.user.id,
+        title:   '🛡️ SHIELD Auto-Activated',
+        message: `It's after 9 PM. ${autoShield.beneficiary.name} has been notified to watch over your ride.`,
+        type:    'shield_auto_activated',
+        data:    { viewUrl: result.viewUrl },
+      });
+    }
+  } catch (shieldErr) {
+    // Non-critical — do not fail the ride request
+    console.error('[SHIELD] Auto-SHIELD error:', shieldErr.message);
+  }
+
   res.status(201).json({
     success: true,
     message: 'Ride requested successfully. Looking for nearby drivers...',
@@ -171,10 +158,6 @@ exports.requestRide = async (req, res) => {
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/rides/active
-// FIX: appends surgeContext so frontend doesn't need a second /estimate call.
-// ─────────────────────────────────────────────────────────────────────────────
 exports.getActiveRide = async (req, res) => {
   const whereClause = req.user.role === 'DRIVER'
     ? { driverId: req.user.id }
@@ -199,7 +182,6 @@ exports.getActiveRide = async (req, res) => {
     }
   });
 
-  // Append live surge context — used by ActiveRideBanner + RideTracking screen
   const surgeContext = ride ? getSurgeMultiplier() : null;
 
   res.status(200).json({
@@ -214,11 +196,6 @@ exports.getActiveRide = async (req, res) => {
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/rides/:id/accept
-// CHANGE: wallet balance must be >= estimatedFare before driver can accept.
-// This ensures cancellation fees can always be deducted and prevents fraud.
-// ─────────────────────────────────────────────────────────────────────────────
 exports.acceptRide = async (req, res) => {
   const { id } = req.params;
 
@@ -235,10 +212,6 @@ exports.acceptRide = async (req, res) => {
   if (!ride)                       throw new AppError('Ride not found', 404);
   if (ride.status !== 'REQUESTED') throw new AppError('Ride is no longer available', 400);
 
-  // ── Wallet balance check ──────────────────────────────────────────────────
-  // Driver must hold at least the estimated fare as a security deposit.
-  // This guarantees the cancellation fee (₦200) and any platform fees
-  // can always be deducted even if the driver cancels mid-trip.
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   const walletBalance   = wallet?.balance ?? 0;
   const requiredBalance = ride.estimatedFare;
@@ -247,10 +220,9 @@ exports.acceptRide = async (req, res) => {
     throw new AppError(
       `Insufficient wallet balance. You need at least ₦${requiredBalance.toLocaleString('en-NG')} to accept this ride. ` +
       `Your current balance is ₦${walletBalance.toLocaleString('en-NG')}. Please top up your wallet.`,
-      402  // 402 Payment Required — frontend uses this code to navigate to wallet
+      402
     );
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
   const updatedRide = await prisma.ride.update({
     where: { id },
@@ -279,9 +251,6 @@ exports.acceptRide = async (req, res) => {
   res.status(200).json({ success: true, message: 'Ride accepted', data: { ride: updatedRide } });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/rides/:id/arrived
-// ─────────────────────────────────────────────────────────────────────────────
 exports.arrivedAtPickup = async (req, res) => {
   const { id } = req.params;
   const ride   = await prisma.ride.findUnique({ where: { id } });
@@ -303,9 +272,6 @@ exports.arrivedAtPickup = async (req, res) => {
   res.status(200).json({ success: true, message: 'Arrived at pickup', data: { ride: updatedRide } });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/rides/:id/start
-// ─────────────────────────────────────────────────────────────────────────────
 exports.startRide = async (req, res) => {
   const { id } = req.params;
   const ride   = await prisma.ride.findUnique({ where: { id } });
@@ -331,10 +297,6 @@ exports.startRide = async (req, res) => {
   res.status(200).json({ success: true, message: 'Ride started', data: { ride: updatedRide } });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/rides/:id/complete
-// FIX: recovers driverFloorMultiplier from ride.notes (encoded by requestSpecificDriver).
-// ─────────────────────────────────────────────────────────────────────────────
 exports.completeRide = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
@@ -350,19 +312,16 @@ exports.completeRide = async (req, res) => {
   if (ride.driverId !== req.user.id) throw new AppError('Unauthorized', 403);
   if (ride.status !== 'IN_PROGRESS') throw new AppError('Ride is not in progress', 400);
 
-  const completedAt = new Date();
-
-  // ── Recover floor multiplier from notes (zero-downtime, no schema change) ──
+  const completedAt           = new Date();
   const driverFloorMultiplier = decodeFloorMultiplier(ride.notes);
 
-  // ── FINAL FARE using actual trip time + correct floor multiplier ────────────
   const finalFareBreakdown = calculateFinalFare({
     distanceKm:           ride.distance,
     startedAt:            ride.startedAt,
     completedAt,
     vehicleType:          ride.driver?.driverProfile?.vehicleType ?? 'CAR',
     requestedAt:          ride.requestedAt,
-    driverFloorMultiplier,               // ← WAS ALWAYS 1.0 BEFORE THIS FIX
+    driverFloorMultiplier,
   });
 
   const finalFare      = finalFareBreakdown.finalFare;
@@ -413,6 +372,9 @@ exports.completeRide = async (req, res) => {
   await prisma.driverProfile.update({ where: { userId: req.user.id }, data: { totalRides: { increment: 1 } } });
   emitRideStatus(getIO(req), ride.customerId, id, 'COMPLETED');
 
+  // Close any active SHIELD session for this ride
+  await shieldService.closeSessionsForRide(id).catch(() => {});
+
   const surgeNote   = finalFareBreakdown.surgeLabel ? ` (${finalFareBreakdown.surgeLabel} pricing applied)` : '';
   const trafficNote = finalFareBreakdown.actualMinutes > (ride.distance / 18 * 60 * 1.2)
     ? ' Traffic surcharge included.' : '';
@@ -439,9 +401,6 @@ exports.completeRide = async (req, res) => {
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/rides/:id/cancel
-// ─────────────────────────────────────────────────────────────────────────────
 exports.cancelRide = async (req, res) => {
   const { id }     = req.params;
   const { reason } = req.body;
@@ -472,6 +431,9 @@ exports.cancelRide = async (req, res) => {
     data:  { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason }
   });
 
+  // Close any active SHIELD session for this ride
+  await shieldService.closeSessionsForRide(id).catch(() => {});
+
   const io = getIO(req);
   if (io) {
     io.to(`ride:${id}`).emit('ride:cancelled',  { rideId: id, reason, cancelledBy: req.user.id });
@@ -495,9 +457,6 @@ exports.cancelRide = async (req, res) => {
   res.status(200).json({ success: true, message: 'Ride cancelled', data: { ride: updatedRide, cancellationFee } });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/rides/history
-// ─────────────────────────────────────────────────────────────────────────────
 exports.getRideHistory = async (req, res) => {
   const { page = 1, limit = 20 } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -531,9 +490,6 @@ exports.getRideHistory = async (req, res) => {
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/rides/:id
-// ─────────────────────────────────────────────────────────────────────────────
 exports.getRideById = async (req, res) => {
   const { id } = req.params;
   const ride   = await prisma.ride.findUnique({
@@ -551,9 +507,6 @@ exports.getRideById = async (req, res) => {
   res.status(200).json({ success: true, data: { ride } });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/rides/:id/rate
-// ─────────────────────────────────────────────────────────────────────────────
 exports.rateRide = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
@@ -584,9 +537,6 @@ exports.rateRide = async (req, res) => {
   res.status(201).json({ success: true, message: 'Rating submitted', data: { rating: newRating } });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/rides/nearby-drivers
-// ─────────────────────────────────────────────────────────────────────────────
 exports.getNearbyDrivers = async (req, res) => {
   const { pickupLat, pickupLng, radiusKm = 10, vehicleType } = req.query;
   if (!pickupLat || !pickupLng) throw new AppError('Please provide pickup coordinates', 400);
@@ -641,10 +591,6 @@ exports.getNearbyDrivers = async (req, res) => {
   res.status(200).json({ success: true, data: { drivers: formatted, total: formatted.length } });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/rides/request-driver
-// FIX: encodes driverFloorMultiplier into ride.notes so completeRide can recover it.
-// ─────────────────────────────────────────────────────────────────────────────
 exports.requestSpecificDriver = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
@@ -656,7 +602,6 @@ exports.requestSpecificDriver = async (req, res) => {
     driverFloorPrice,
   } = req.body;
 
-  // Auto-cancel stale REQUESTED rides
   const existingRide = await prisma.ride.findFirst({
     where: { customerId: req.user.id, status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } }
   });
@@ -689,17 +634,12 @@ exports.requestSpecificDriver = async (req, res) => {
   const fareBreakdown   = estimateFare(distance, usedVehicleType);
   let   finalFare       = fareBreakdown.estimatedFare;
 
-  // ── Driver floor price ─────────────────────────────────────────────────────
   let driverFloorResult = null;
   if (driverFloorPrice && parseFloat(driverFloorPrice) > 0) {
     driverFloorResult = applyDriverFloor(parseFloat(driverFloorPrice), finalFare);
     finalFare         = driverFloorResult.adjustedFare;
-    if (driverFloorResult.clamped) {
-      console.log(`[requestSpecificDriver] Driver floor ₦${driverFloorPrice} clamped to max ₦${finalFare}`);
-    }
   }
 
-  // ── Promo ──────────────────────────────────────────────────────────────────
   if (promoCode) {
     const promo = await prisma.promoCode.findFirst({
       where: {
@@ -723,8 +663,6 @@ exports.requestSpecificDriver = async (req, res) => {
     select: { id: true, firstName: true, lastName: true, profileImage: true }
   });
 
-  // ── Encode floor multiplier into notes so completeRide can recover it ──────
-  // Format: TARGETED:<driverId>|FLOORX:<multiplier>[|<user notes>]
   const floorMultiplier = driverFloorResult?.multiplier ?? 1.0;
   let   rideNotes       = `TARGETED:${driverId}`;
   rideNotes = encodeFloorMultiplier(rideNotes, floorMultiplier);
@@ -765,16 +703,8 @@ exports.requestSpecificDriver = async (req, res) => {
         profileImage: customer.profileImage,
       }
     };
-
-    const room        = `user:${driverId}`;
-    const roomSockets = await io.in(room).fetchSockets();
-    console.log(`[requestSpecificDriver] ride=${ride.id} → ${room} (${roomSockets.length} socket(s))`);
-    if (roomSockets.length === 0) {
-      console.warn(`[requestSpecificDriver] ⚠️  Driver ${driverId} has no active socket`);
-    }
+    const room = `user:${driverId}`;
     io.to(room).emit('ride:new_request', payload);
-  } else {
-    console.error('[requestSpecificDriver] ❌ io is null');
   }
 
   res.status(201).json({

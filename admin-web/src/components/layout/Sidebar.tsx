@@ -147,7 +147,7 @@ const Sidebar: React.FC = () => {
             <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center flex-shrink-0">
               <span className="text-white font-bold text-sm">D</span>
             </div>
-            <span className="text-xl font-bold text-gray-900">DuoRide</span>
+            <span className="text-xl font-bold text-gray-900">Diakite</span>
           </div>
           {isMobile && (
             <button
@@ -272,7 +272,7 @@ const Sidebar: React.FC = () => {
             <LogOut className="h-5 w-5" />
             Sign out
           </button>
-          <p className="text-xs text-gray-500 text-center">DuoRide Admin v1.0.0</p>
+          <p className="text-xs text-gray-500 text-center">Diakite Admin v1.0.0</p>
         </div>
       </aside>
     </>

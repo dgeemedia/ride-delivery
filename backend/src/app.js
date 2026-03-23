@@ -20,6 +20,7 @@ const notificationRoutes = require('./routes/notification.routes');
 const walletRoutes       = require('./routes/wallet.routes');
 const callRoutes         = require('./routes/call.routes');
 const debugRoutes        = require('./routes/debug.route');
+const shieldRoutes       = require('./routes/shield.routes');
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 const { errorHandler } = require('./middleware/errorHandler');
@@ -121,7 +122,8 @@ app.use('/api/admin',         adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/wallet',        walletRoutes);
 app.use('/api/calls',         callRoutes);
-app.use('/api/debug',         debugRoutes);   // ← must be BEFORE 404 handler
+app.use('/api/debug',         debugRoutes);   
+app.use('/api/shield',        shieldRoutes);   
 
 // ─── API index ────────────────────────────────────────────────────────────────
 app.get('/api', (_req, res) => {

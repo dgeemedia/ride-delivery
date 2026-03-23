@@ -36,7 +36,6 @@ const DELIVERY_IMAGES = [
 
 const PROMO_IMAGE = 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=900&q=80';
 
-// ── CrossfadeImageCycler ───────────────────────────────────────────────────────
 const CrossfadeImageCycler = ({ images, intervalMs = 4500, transitionMs = 2200 }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [nextIdx,    setNextIdx]    = useState(1);
@@ -64,7 +63,6 @@ const CrossfadeImageCycler = ({ images, intervalMs = 4500, transitionMs = 2200 }
   );
 };
 
-// ── WalletStrip ────────────────────────────────────────────────────────────────
 const WalletStrip = ({ balance, onTopUp, theme }) => {
   const accentFg = theme.accentFg ?? '#111111';
   return (
@@ -75,7 +73,6 @@ const WalletStrip = ({ balance, onTopUp, theme }) => {
           {'\u20A6'}{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
         </Text>
       </View>
-      {/* backgroundColor = theme.accent → text/icon must use accentFg */}
       <TouchableOpacity style={[wl.btn, { backgroundColor: theme.accent }]} onPress={onTopUp} activeOpacity={0.85}>
         <Ionicons name="add" size={15} color={accentFg} />
         <Text style={[wl.btnTxt, { color: accentFg }]}>Top Up</Text>
@@ -88,10 +85,9 @@ const wl = StyleSheet.create({
   label:  { fontSize: 10, fontWeight: '700', letterSpacing: 2, marginBottom: 5 },
   amount: { fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
   btn:    { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, flexShrink: 0 },
-  btnTxt: { fontSize: 13, fontWeight: '700' }, // ← color removed, set inline
+  btnTxt: { fontSize: 13, fontWeight: '700' },
 });
 
-// ── StatPill ───────────────────────────────────────────────────────────────────
 const StatPill = ({ icon, value, label, theme }) => (
   <View style={[sp.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <Ionicons name={icon} size={16} color={theme.accent} />
@@ -105,7 +101,6 @@ const sp = StyleSheet.create({
   lbl:  { fontSize: 9, fontWeight: '600' },
 });
 
-// ── ActionCard ─────────────────────────────────────────────────────────────────
 const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
   const accentFg = theme.accentFg ?? '#111111';
   const scaleA   = useRef(new Animated.Value(1)).current;
@@ -124,7 +119,6 @@ const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
         <CrossfadeImageCycler images={images} />
         <View style={ac.overlay} />
         {badge && (
-          // badge bg = theme.accent → text needs accentFg
           <View style={[ac.badge, { backgroundColor: theme.accent }]}>
             <Text style={[ac.badgeTxt, { color: accentFg }]}>{badge}</Text>
           </View>
@@ -132,7 +126,6 @@ const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
         <View style={ac.content}>
           <Text style={ac.title} numberOfLines={1}>{title}</Text>
           <Text style={ac.sub}   numberOfLines={2}>{subtitle}</Text>
-          {/* arrow button bg = theme.accent → icon needs accentFg */}
           <View style={[ac.arrowBtn, { backgroundColor: theme.accent }]}>
             <Ionicons name="arrow-forward" size={13} color={accentFg} />
           </View>
@@ -145,14 +138,13 @@ const ac = StyleSheet.create({
   card:     { borderRadius: 18, overflow: 'hidden', height: 180, width: '100%' },
   overlay:  { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.42)' },
   badge:    { position: 'absolute', top: 12, left: 12, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  badgeTxt: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 }, // color set inline
+  badgeTxt: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
   content:  { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 },
-  title:    { fontSize: 13, fontWeight: '800', color: '#FFF', marginBottom: 3 },   // white on dark photo overlay — fine
+  title:    { fontSize: 13, fontWeight: '800', color: '#FFF', marginBottom: 3 },
   sub:      { fontSize: 10, color: 'rgba(255,255,255,0.75)', marginBottom: 10, lineHeight: 14 },
   arrowBtn: { width: 24, height: 24, borderRadius: 7, justifyContent: 'center', alignItems: 'center' },
 });
 
-// ── ActivityRow ────────────────────────────────────────────────────────────────
 const ACTIVITY_STATUS_META = {
   COMPLETED:   { color: '#5DAA72', label: 'Completed'  },
   CANCELLED:   { color: '#E05555', label: 'Cancelled'  },
@@ -188,7 +180,6 @@ const ar = StyleSheet.create({
   statusTxt:  { fontSize: 9, fontWeight: '700', letterSpacing: 0.4 },
 });
 
-// ── PromoBanner ────────────────────────────────────────────────────────────────
 const PromoBanner = ({ theme, onPress }) => {
   const accentFg = theme.accentFg ?? '#111111';
   return (
@@ -201,7 +192,6 @@ const PromoBanner = ({ theme, onPress }) => {
             <Text style={promo.title} numberOfLines={1}>First Ride Free</Text>
             <Text style={promo.sub}   numberOfLines={1}>Use code WELCOME at checkout</Text>
           </View>
-          {/* bg = theme.accent → text/icon must use accentFg */}
           <View style={[promo.btn, { backgroundColor: theme.accent }]}>
             <Text style={[promo.btnTxt, { color: accentFg }]}>Claim</Text>
             <Ionicons name="arrow-forward" size={13} color={accentFg} />
@@ -218,13 +208,12 @@ const promo = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.52)' },
   content: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18 },
   eyebrow: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.65)', letterSpacing: 2, marginBottom: 4 },
-  title:   { fontSize: 18, fontWeight: '900', color: '#FFF', marginBottom: 3 },    // white on dark photo overlay — fine
+  title:   { fontSize: 18, fontWeight: '900', color: '#FFF', marginBottom: 3 },
   sub:     { fontSize: 11, color: 'rgba(255,255,255,0.7)' },
   btn:     { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, flexShrink: 0 },
-  btnTxt:  { fontSize: 13, fontWeight: '700' }, // color set inline
+  btnTxt:  { fontSize: 13, fontWeight: '700' },
 });
 
-// ── MAIN ───────────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
@@ -337,7 +326,7 @@ export default function HomeScreen({ navigation }) {
       >
         <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
 
-          {/* ── Header ── */}
+          {/* Header */}
           <View style={s.header}>
             <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
               <Text style={[s.greet, { color: theme.hint }]}>{greet}</Text>
@@ -367,7 +356,7 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* ── Active ride banner ── */}
+          {/* Active ride banner */}
           {activeRide && (
             <ActiveRideBanner
               ride={activeRide}
@@ -378,7 +367,7 @@ export default function HomeScreen({ navigation }) {
             />
           )}
 
-          {/* ── Active delivery banner ── */}
+          {/* Active delivery banner */}
           {activeDelivery && (
             <ActiveDeliveryBanner
               delivery={activeDelivery}
@@ -389,14 +378,14 @@ export default function HomeScreen({ navigation }) {
             />
           )}
 
-          {/* ── Wallet ── */}
+          {/* Wallet */}
           <WalletStrip
             balance={stats?.walletBalance}
             onTopUp={() => navigation.getParent()?.navigate('WalletTab')}
             theme={theme}
           />
 
-          {/* ── Stats ── */}
+          {/* Stats */}
           {loading ? (
             <ActivityIndicator color={theme.accent} style={{ marginBottom: 24 }} />
           ) : (
@@ -412,7 +401,7 @@ export default function HomeScreen({ navigation }) {
             </View>
           )}
 
-          {/* ── Quick Actions ── */}
+          {/* Quick Actions */}
           <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
           <View style={s.actionsRow}>
             <ActionCard
@@ -432,7 +421,7 @@ export default function HomeScreen({ navigation }) {
             />
           </View>
 
-          {/* ── Choose a Driver ── */}
+          {/* Choose a Driver */}
           <TouchableOpacity
             style={[s.chooseDriverBtn, { borderColor: theme.accent + '50', backgroundColor: theme.accent + '0D' }]}
             onPress={handleChooseDriver}
@@ -448,18 +437,41 @@ export default function HomeScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={16} color={theme.accent} />
           </TouchableOpacity>
 
-          {/* ── Promo ── */}
+          {/* SHIELD Safety Button */}
+          <TouchableOpacity
+            style={[s.shieldBtn, { borderColor: '#4CAF5050', backgroundColor: '#4CAF5010' }]}
+            onPress={() => navigation.navigate('Shield')}
+            activeOpacity={0.85}
+          >
+            <View style={[s.shieldIcon, { backgroundColor: '#4CAF5020' }]}>
+              <Ionicons name="shield-checkmark" size={18} color="#4CAF50" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[s.shieldTitle, { color: '#4CAF50' }]}>SHIELD</Text>
+                <View style={s.shieldBadge}>
+                  <Text style={s.shieldBadgeTxt}>SAFETY</Text>
+                </View>
+              </View>
+              <Text style={[s.shieldSub, { color: theme.hint }]}>
+                Let a guardian track your ride live — no app needed
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#4CAF50" />
+          </TouchableOpacity>
+
+          {/* Promo */}
           <PromoBanner theme={theme} onPress={() => {}} />
 
-          {/* ── Recent Activity ── */}
+          {/* Recent Activity */}
           <Text style={[s.sectionTitle, { color: theme.hint }]}>RECENT ACTIVITY</Text>
           <View style={[s.activityCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             {loading ? (
               <ActivityIndicator color={theme.accent} style={{ marginVertical: 20 }} />
             ) : (stats?.totalRides > 0 || stats?.totalDeliveries > 0) ? (
               <>
-                <ActivityRow icon="car-outline"  title="Ride to Victoria Island"  subtitle="Today · 2:30 PM · 12 min"       amount="₦1,200" status="COMPLETED" theme={theme} />
-                <ActivityRow icon="cube-outline" title="Package to Lekki Phase 1" subtitle="Yesterday · 10:15 AM · 3.2 km" amount="₦800"   status="COMPLETED" theme={theme} last />
+                <ActivityRow icon="car-outline"  title="Ride to Victoria Island"  subtitle="Today • 2:30 PM • 12 min"       amount="₦1,200" status="COMPLETED" theme={theme} />
+                <ActivityRow icon="cube-outline" title="Package to Lekki Phase 1" subtitle="Yesterday • 10:15 AM • 3.2 km" amount="₦800"   status="COMPLETED" theme={theme} last />
               </>
             ) : (
               <View style={s.emptyActivity}>
@@ -507,10 +519,17 @@ const s = StyleSheet.create({
   sectionTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 14 },
   actionsRow:   { flexDirection: 'row', gap: CARD_GAP, width: width - H_PAD * 2, marginBottom: 14 },
 
-  chooseDriverBtn:   { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20 },
+  chooseDriverBtn:   { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 14 },
   chooseDriverIcon:  { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   chooseDriverTitle: { fontSize: 14, fontWeight: '800', marginBottom: 2 },
   chooseDriverSub:   { fontSize: 11, fontWeight: '500' },
+
+  shieldBtn:    { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20 },
+  shieldIcon:   { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  shieldTitle:  { fontSize: 14, fontWeight: '900', marginBottom: 2 },
+  shieldSub:    { fontSize: 11, fontWeight: '500' },
+  shieldBadge:  { backgroundColor: '#4CAF5025', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 },
+  shieldBadgeTxt: { fontSize: 9, fontWeight: '800', color: '#4CAF50', letterSpacing: 0.5 },
 
   activityCard:  { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 6 },
   emptyActivity: { alignItems: 'center', paddingVertical: 28 },

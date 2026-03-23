@@ -1,5 +1,5 @@
 // backend/src/services/socket.service.js
-const jwt = require('jsonwebtoken');
+const jwt    = require('jsonwebtoken');
 const prisma = require('../lib/prisma');
 const { logger } = require('../utils/logger');
 
@@ -18,7 +18,7 @@ const verifySocketAuth = async (socket, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where:  { id: decoded.userId },
       select: { id: true, role: true, firstName: true, lastName: true, isActive: true },
     });
 
@@ -80,7 +80,7 @@ const initializeSocketHandlers = (io) => {
       try {
         await prisma.driverProfile.update({
           where: { userId: socket.userId },
-          data: { isOnline: false },
+          data:  { isOnline: false },
         });
         socket.leave('drivers:online');
         logger.info(`[Socket] Driver offline: ${socket.userId}`);
@@ -94,23 +94,42 @@ const initializeSocketHandlers = (io) => {
       try {
         await prisma.driverProfile.update({
           where: { userId: socket.userId },
-          data: { currentLat: data.lat, currentLng: data.lng },
+          data:  { currentLat: data.lat, currentLng: data.lng },
         });
 
         const activeRide = await prisma.ride.findFirst({
           where: {
             driverId: socket.userId,
-            status: { in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] },
+            status:   { in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] },
           },
         });
 
         if (activeRide) {
+          // Emit to customer
           io.to(`user:${activeRide.customerId}`).emit('driver:location:update', {
             lat:       data.lat,
             lng:       data.lng,
             heading:   data.heading ?? null,
             timestamp: new Date(),
           });
+
+          // ── SHIELD: also broadcast to beneficiary's browser tab ──────────
+          try {
+            const shieldSession = await prisma.shieldSession.findFirst({
+              where: { rideId: activeRide.id, isActive: true },
+            });
+            if (shieldSession) {
+              io.to(`shield:${shieldSession.token}`).emit('driver:location:update', {
+                lat:       data.lat,
+                lng:       data.lng,
+                heading:   data.heading ?? null,
+                timestamp: new Date(),
+              });
+            }
+          } catch (shieldErr) {
+            logger.error('[Socket] SHIELD ride location broadcast error:', shieldErr.message);
+          }
+          // ────────────────────────────────────────────────────────────────
         }
       } catch (err) {
         logger.error('[Socket] driver:location error:', err.message);
@@ -142,7 +161,7 @@ const initializeSocketHandlers = (io) => {
       try {
         await prisma.deliveryPartnerProfile.update({
           where: { userId: socket.userId },
-          data: { isOnline: false },
+          data:  { isOnline: false },
         });
         socket.leave('partners:online');
       } catch (err) {
@@ -155,23 +174,42 @@ const initializeSocketHandlers = (io) => {
       try {
         await prisma.deliveryPartnerProfile.update({
           where: { userId: socket.userId },
-          data: { currentLat: data.lat, currentLng: data.lng },
+          data:  { currentLat: data.lat, currentLng: data.lng },
         });
 
         const activeDelivery = await prisma.delivery.findFirst({
           where: {
             partnerId: socket.userId,
-            status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] },
+            status:    { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] },
           },
         });
 
         if (activeDelivery) {
+          // Emit to customer
           io.to(`user:${activeDelivery.customerId}`).emit('partner:location:update', {
             lat:       data.lat,
             lng:       data.lng,
             heading:   data.heading ?? null,
             timestamp: new Date(),
           });
+
+          // ── SHIELD: also broadcast to beneficiary's browser tab ──────────
+          try {
+            const shieldSession = await prisma.shieldSession.findFirst({
+              where: { deliveryId: activeDelivery.id, isActive: true },
+            });
+            if (shieldSession) {
+              io.to(`shield:${shieldSession.token}`).emit('partner:location:update', {
+                lat:       data.lat,
+                lng:       data.lng,
+                heading:   data.heading ?? null,
+                timestamp: new Date(),
+              });
+            }
+          } catch (shieldErr) {
+            logger.error('[Socket] SHIELD delivery location broadcast error:', shieldErr.message);
+          }
+          // ────────────────────────────────────────────────────────────────
         }
       } catch (err) {
         logger.error('[Socket] partner:location error:', err.message);
@@ -180,25 +218,61 @@ const initializeSocketHandlers = (io) => {
 
     // ── RIDE ROOM ──────────────────────────────────
 
-    socket.on('ride:join',  (rideId) => socket.join(`ride:${rideId}`));
-    socket.on('ride:leave', (rideId) => socket.leave(`ride:${rideId}`));
+    socket.on('ride:join',  (rideId)  => socket.join(`ride:${rideId}`));
+    socket.on('ride:leave', (rideId)  => socket.leave(`ride:${rideId}`));
 
     // ── DELIVERY ROOM ──────────────────────────────
 
     socket.on('delivery:join',  (deliveryId) => socket.join(`delivery:${deliveryId}`));
     socket.on('delivery:leave', (deliveryId) => socket.leave(`delivery:${deliveryId}`));
 
-    // ── CALL SIGNALING ─────────────────────────────
+    // ── SHIELD ROOM ────────────────────────────────
     //
-    // Flow:
-    //   caller  → call:initiate  → server → call:incoming  → callee
-    //   callee  → call:accept    → server → call:accepted  → caller
-    //   callee  → call:reject    → server → call:rejected  → caller
-    //   either  → call:end       → server → call:ended     → other party
-    //   either  → call:toggle_video → server → call:video_toggled → other party
+    // Beneficiary browsers join shield:<token>.
+    // The customer's app also joins when SHIELD is active on their ride
+    // so it can receive shield:arrived_safe and shield:driver_confirmed_safe events.
+
+    socket.on('shield:join', (token) => {
+      if (!token || typeof token !== 'string') return;
+      socket.join(`shield:${token}`);
+      logger.info(`[Socket] shield:join token=${token} user=${socket.userId ?? 'anon'}`);
+    });
+
+    socket.on('shield:leave', (token) => {
+      if (!token || typeof token !== 'string') return;
+      socket.leave(`shield:${token}`);
+    });
+
+    // Driver taps "All Good" from the in-app safety check notification
+    socket.on('shield:driver_safe_ack', async (data) => {
+      // data: { sessionId, token }
+      if (!data?.token) return;
+      try {
+        io.to(`shield:${data.token}`).emit('shield:driver_confirmed_safe', {
+          confirmedBy: socket.userName,
+          timestamp:   new Date(),
+        });
+        logger.info(`[Socket] shield:driver_safe_ack by ${socket.userId} token=${data.token}`);
+      } catch (err) {
+        logger.error('[Socket] shield:driver_safe_ack error:', err.message);
+      }
+    });
+
+    // Customer broadcasts their own location to the shield room
+    // (optional — useful if customer is on foot after being dropped off)
+    socket.on('customer:location', (data) => {
+      // data: { token, lat, lng }
+      if (!data?.token) return;
+      io.to(`shield:${data.token}`).emit('customer:location:update', {
+        lat:       data.lat,
+        lng:       data.lng,
+        timestamp: new Date(),
+      });
+    });
+
+    // ── CALL SIGNALING ─────────────────────────────
 
     socket.on('call:initiate', async (data) => {
-      // data: { targetUserId, channelName, callType, callerImage }
       try {
         const caller = await prisma.user.findUnique({
           where:  { id: socket.userId },
@@ -220,7 +294,6 @@ const initializeSocketHandlers = (io) => {
     });
 
     socket.on('call:accept', (data) => {
-      // data: { callerId, channelName }
       io.to(`user:${data.callerId}`).emit('call:accepted', {
         acceptedBy:  socket.userId,
         channelName: data.channelName,
@@ -229,7 +302,6 @@ const initializeSocketHandlers = (io) => {
     });
 
     socket.on('call:reject', (data) => {
-      // data: { callerId, channelName, reason }
       io.to(`user:${data.callerId}`).emit('call:rejected', {
         rejectedBy:  socket.userId,
         channelName: data.channelName,
@@ -239,7 +311,6 @@ const initializeSocketHandlers = (io) => {
     });
 
     socket.on('call:end', (data) => {
-      // data: { targetUserId, channelName }
       io.to(`user:${data.targetUserId}`).emit('call:ended', {
         endedBy:     socket.userId,
         channelName: data.channelName,
@@ -248,7 +319,6 @@ const initializeSocketHandlers = (io) => {
     });
 
     socket.on('call:toggle_video', (data) => {
-      // data: { targetUserId, videoEnabled }
       io.to(`user:${data.targetUserId}`).emit('call:video_toggled', {
         byUserId:     socket.userId,
         videoEnabled: data.videoEnabled,
@@ -311,10 +381,13 @@ const initializeSocketHandlers = (io) => {
 // UTILITY EXPORTS
 // ─────────────────────────────────────────────
 
-const emitToUser         = (io, userId, event, data) => io?.to(`user:${userId}`).emit(event, data);
-const broadcastToDrivers = (io, event, data)          => io?.to('drivers:online').emit(event, data);
-const broadcastToPartners= (io, event, data)          => io?.to('partners:online').emit(event, data);
-const getSocketId        = (userId)                   => activeSockets.get(userId) || null;
+const emitToUser          = (io, userId, event, data) => io?.to(`user:${userId}`).emit(event, data);
+const broadcastToDrivers  = (io, event, data)          => io?.to('drivers:online').emit(event, data);
+const broadcastToPartners = (io, event, data)          => io?.to('partners:online').emit(event, data);
+const getSocketId         = (userId)                   => activeSockets.get(userId) || null;
+
+// SHIELD helper — emit to a beneficiary's live tracker room
+const emitToShieldRoom    = (io, token, event, data)   => io?.to(`shield:${token}`).emit(event, data);
 
 module.exports = {
   initializeSocketHandlers,
@@ -322,4 +395,5 @@ module.exports = {
   broadcastToDrivers,
   broadcastToPartners,
   getSocketId,
+  emitToShieldRoom,
 };

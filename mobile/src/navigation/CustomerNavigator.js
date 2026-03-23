@@ -6,22 +6,24 @@ import { createStackNavigator }     from '@react-navigation/stack';
 import { Ionicons }                 from '@expo/vector-icons';
 import { useTheme }                 from '../context/ThemeContext';
 
-import HomeScreen             from '../screens/Customer/HomeScreen';
-import RequestRideScreen      from '../screens/Customer/RequestRideScreen';
-import RequestDeliveryScreen  from '../screens/Customer/RequestDeliveryScreen';
-import NearbyDriversScreen    from '../screens/Customer/NearbyDriversScreen';
-import RideTrackingScreen     from '../screens/Customer/RideTrackingScreen';
-import DeliveryTrackingScreen from '../screens/Customer/DeliveryTrackingScreen';
-import HistoryScreen          from '../screens/Customer/HistoryScreen';
-import WalletScreen           from '../screens/Customer/WalletScreen';
-import ProfileScreen          from '../screens/Shared/ProfileScreen';
-import EditProfileScreen      from '../screens/Shared/EditProfileScreen';
-import NotificationsScreen    from '../screens/Shared/NotificationsScreen';
-import ChangePasswordScreen   from '../screens/Shared/ChangePasswordScreen';
-import SupportScreen          from '../screens/Shared/SupportScreen';
-import SubmitTicketScreen     from '../screens/Shared/SubmitTicketScreen';
-import MyTicketsScreen        from '../screens/Shared/MyTicketsScreen';
-import TicketDetailScreen     from '../screens/Shared/TicketDetailScreen';
+import HomeScreen                from '../screens/Customer/HomeScreen';
+import RequestRideScreen         from '../screens/Customer/RequestRideScreen';
+import RequestDeliveryScreen     from '../screens/Customer/RequestDeliveryScreen';
+import NearbyDriversScreen       from '../screens/Customer/NearbyDriversScreen';
+import RideTrackingScreen        from '../screens/Customer/RideTrackingScreen';
+import DeliveryTrackingScreen    from '../screens/Customer/DeliveryTrackingScreen';
+import HistoryScreen             from '../screens/Customer/HistoryScreen';
+import WalletScreen              from '../screens/Customer/WalletScreen';
+import ShieldScreen              from '../screens/Customer/ShieldScreen';
+import ShieldBeneficiariesScreen from '../screens/Customer/ShieldBeneficiariesScreen';
+import ProfileScreen             from '../screens/Shared/ProfileScreen';
+import EditProfileScreen         from '../screens/Shared/EditProfileScreen';
+import NotificationsScreen       from '../screens/Shared/NotificationsScreen';
+import ChangePasswordScreen      from '../screens/Shared/ChangePasswordScreen';
+import SupportScreen             from '../screens/Shared/SupportScreen';
+import SubmitTicketScreen        from '../screens/Shared/SubmitTicketScreen';
+import MyTicketsScreen           from '../screens/Shared/MyTicketsScreen';
+import TicketDetailScreen        from '../screens/Shared/TicketDetailScreen';
 
 const DA  = '#FFB800';
 const Tab   = createBottomTabNavigator();
@@ -29,37 +31,39 @@ const Stack = createStackNavigator();
 
 const HomeStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Home"             component={HomeScreen}             />
-    <Stack.Screen name="RequestRide"      component={RequestRideScreen}      />
-    <Stack.Screen name="RequestDelivery"  component={RequestDeliveryScreen}  />
-    <Stack.Screen name="NearbyDrivers"    component={NearbyDriversScreen}    />
-    <Stack.Screen name="RideTracking"     component={RideTrackingScreen}     />
-    <Stack.Screen name="DeliveryTracking" component={DeliveryTrackingScreen} />
-    <Stack.Screen name="Notifications"    component={NotificationsScreen}    />
-    <Stack.Screen name="Support"          component={SupportScreen}          />
-    <Stack.Screen name="SubmitTicket"     component={SubmitTicketScreen}     />
-    <Stack.Screen name="MyTickets"        component={MyTicketsScreen}        />
-    <Stack.Screen name="TicketDetail"     component={TicketDetailScreen}     />
+    <Stack.Screen name="Home"                 component={HomeScreen}                />
+    <Stack.Screen name="RequestRide"          component={RequestRideScreen}         />
+    <Stack.Screen name="RequestDelivery"      component={RequestDeliveryScreen}     />
+    <Stack.Screen name="NearbyDrivers"        component={NearbyDriversScreen}       />
+    <Stack.Screen name="RideTracking"         component={RideTrackingScreen}        />
+    <Stack.Screen name="DeliveryTracking"     component={DeliveryTrackingScreen}    />
+    <Stack.Screen name="Shield"               component={ShieldScreen}              />
+    <Stack.Screen name="ShieldBeneficiaries"  component={ShieldBeneficiariesScreen} />
+    <Stack.Screen name="Notifications"        component={NotificationsScreen}       />
+    <Stack.Screen name="Support"              component={SupportScreen}             />
+    <Stack.Screen name="SubmitTicket"         component={SubmitTicketScreen}        />
+    <Stack.Screen name="MyTickets"            component={MyTicketsScreen}           />
+    <Stack.Screen name="TicketDetail"         component={TicketDetailScreen}        />
   </Stack.Navigator>
 );
 
 const HistoryStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="HistoryHome"  component={HistoryScreen}         />
-    <Stack.Screen name="Support"      component={SupportScreen}         />
-    <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen}    />
-    <Stack.Screen name="MyTickets"    component={MyTicketsScreen}       />
-    <Stack.Screen name="TicketDetail" component={TicketDetailScreen}    />
+    <Stack.Screen name="HistoryHome"  component={HistoryScreen}      />
+    <Stack.Screen name="Support"      component={SupportScreen}      />
+    <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen} />
+    <Stack.Screen name="MyTickets"    component={MyTicketsScreen}    />
+    <Stack.Screen name="TicketDetail" component={TicketDetailScreen} />
   </Stack.Navigator>
 );
 
 const WalletStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="WalletHome"   component={WalletScreen}          />
-    <Stack.Screen name="Support"      component={SupportScreen}         />
-    <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen}    />
-    <Stack.Screen name="MyTickets"    component={MyTicketsScreen}       />
-    <Stack.Screen name="TicketDetail" component={TicketDetailScreen}    />
+    <Stack.Screen name="WalletHome"   component={WalletScreen}       />
+    <Stack.Screen name="Support"      component={SupportScreen}      />
+    <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen} />
+    <Stack.Screen name="MyTickets"    component={MyTicketsScreen}    />
+    <Stack.Screen name="TicketDetail" component={TicketDetailScreen} />
   </Stack.Navigator>
 );
 

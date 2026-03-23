@@ -178,12 +178,31 @@ export const supportAPI = {
  
   /** GET /api/users/support-tickets/:id */
   getTicketById: (id) => api.get(`/users/support-tickets/${id}`),
- 
-  /** POST /api/users/support-tickets/:id/reply
-   *  Allows the customer to add a follow-up message to their own ticket.
-   *  Backend endpoint needs to be added — see note below.
-   */
+  /** POST /api/users/support-tickets/:id/reply */
   addReply: (id, message) => api.post(`/users/support-tickets/${id}/reply`, { message }),
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHIELD
+// ─────────────────────────────────────────────────────────────────────────────
+export const shieldAPI = {
+  // Beneficiary management
+  listBeneficiaries:   ()       => api.get('/shield/beneficiaries'),
+  addBeneficiary:      (data)   => api.post('/shield/beneficiaries', data),
+  updateBeneficiary:   (id, d)  => api.put(`/shield/beneficiaries/${id}`, d),
+  deleteBeneficiary:   (id)     => api.delete(`/shield/beneficiaries/${id}`),
+ 
+  // Session lifecycle
+  activate:       (data) => api.post('/shield/activate', data),
+  deactivate:     (data) => api.post('/shield/deactivate', data),
+  arrivedSafe:    (data) => api.post('/shield/arrived-safe', data),
+  getSession:     (params) => api.get('/shield/session', { params }),
+ 
+  // Driver confirms safe
+  driverConfirmSafe: (sessionId) => api.post('/shield/driver/confirm-safe', { sessionId }),
+ 
+  // Public view (no token needed — used by web viewer, but useful for testing)
+  getView:  (token) => api.get(`/shield/view/${token}`),
 };
 
 export default api;
