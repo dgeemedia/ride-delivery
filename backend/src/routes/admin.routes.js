@@ -119,4 +119,10 @@ router.post('/bonuses/onboarding', authorize('SUPER_ADMIN'), [
   body('partnerBonus').optional().isFloat({ min: 0 }),
 ], adminController.disburseOnboardingBonuses);
 
+// SHIELD MONITORING — all admin roles can read; SUPER_ADMIN can close sessions
+router.get('/shield/stats',            adminController.getShieldStats);
+router.get('/shield/sessions',         adminController.getShieldSessions);
+router.get('/shield/sessions/:id',     param('id').isUUID(), adminController.getShieldSessionById);
+router.put('/shield/sessions/:id/close', param('id').isUUID(), authorize('ADMIN', 'SUPER_ADMIN'), adminController.closeShieldSession);
+ 
 module.exports = router;

@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SHIELD — Live Safety Tracker</title>
+  <meta name="description" content="DuoRide SHIELD — Real-time safety tracking for your loved one's ride." />
+  <!-- Google Maps (replace YOUR_KEY with your actual Maps API key) -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=geometry"></script>
+  <!-- Socket.IO client -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f1117;
+      --bg-alt:  #1a1d27;
+      --border:  #2a2d3e;
+      --text:    #f0f1f5;
+      --hint:    #6b7280;
+      --green:   #4CAF50;
+      --amber:   #FFB800;
+      --red:     #E05555;
+      --purple:  #7B68EE;
+      --card-r:  18px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      overflow-x: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--bg-alt);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .shield-icon {
+      width: 36px; height: 36px;
+      background: var(--green);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .header-info h1 { font-size: 15px; font-weight: 800; }
+    .header-info p  { font-size: 11px; color: var(--hint); }
+    .status-dot {
+      margin-left: auto;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--hint);
+      flex-shrink: 0;
+    }
+    .status-dot.live { background: var(--green); animation: pulse 1.4s infinite; }
+    @keyframes pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: 0.5; transform: scale(1.3); }
+    }
+
+    /* ── Map ── */
+    #map {
+      width: 100%;
+      height: 55vh;
+      background: #1a1d27;
+    }
+
+    /* ── Content ── */
+    .content { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--card-r);
+      padding: 16px;
+    }
+    .card-title {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      color: var(--hint);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    /* ── Driver info ── */
+    .driver-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .driver-avatar {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--border);
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; font-weight: 800; color: var(--amber);
+    }
+    .driver-name { font-size: 17px; font-weight: 800; margin-bottom: 4px; }
+    .driver-meta { font-size: 12px; color: var(--hint); }
+    .driver-meta span { color: var(--text); font-weight: 600; }
+    .rating { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+    .rating .star { color: var(--amber); font-size: 13px; }
+    .rating .val  { font-size: 13px; font-weight: 700; }
+
+    /* ── Vehicle badge ── */
+    .vehicle-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 10px;
+    }
+
+    /* ── Route ── */
+    .route-row {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .route-point {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .route-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+    .route-dot.pickup  { background: var(--green); }
+    .route-dot.dropoff { background: var(--red); }
+    .route-label { font-size: 10px; font-weight: 700; color: var(--hint); letter-spacing: 1px; margin-bottom: 2px; }
+    .route-addr  { font-size: 13px; font-weight: 600; }
+
+    /* ── Status pill ── */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 20px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .status-pill.requested  { background: var(--amber)20; color: var(--amber); }
+    .status-pill.accepted   { background: #3B82F620;       color: #3B82F6;     }
+    .status-pill.arrived    { background: var(--purple)20;  color: var(--purple);}
+    .status-pill.in_progress{ background: var(--green)20;  color: var(--green); }
+    .status-pill.completed  { background: var(--green)20;  color: var(--green); }
+
+    /* ── Arrived safe banner ── */
+    .arrived-banner {
+      background: var(--green)15;
+      border: 1px solid var(--green);
+      border-radius: var(--card-r);
+      padding: 16px;
+      text-align: center;
+      display: none;
+    }
+    .arrived-banner.show { display: block; }
+    .arrived-banner .emoji { font-size: 36px; margin-bottom: 8px; }
+    .arrived-banner h2 { font-size: 17px; font-weight: 800; color: var(--green); margin-bottom: 4px; }
+    .arrived-banner p  { font-size: 13px; color: var(--hint); }
+
+    /* ── Alert button ── */
+    .alert-btn {
+      width: 100%;
+      background: var(--red);
+      color: #FFF;
+      border: none;
+      border-radius: 14px;
+      padding: 15px;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity 0.2s;
+    }
+    .alert-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .alert-sent { background: var(--hint); }
+
+    /* ── Loading / error ── */
+    .center-msg {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      padding: 24px;
+      text-align: center;
+      gap: 12px;
+    }
+    .center-msg .emoji { font-size: 48px; }
+    .center-msg h2 { font-size: 18px; font-weight: 800; }
+    .center-msg p  { font-size: 13px; color: var(--hint); line-height: 1.6; }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 11px;
+      color: var(--hint);
+    }
+    .footer a { color: var(--amber); text-decoration: none; font-weight: 700; }
+
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- Loading state -->
+<div id="loading-state" class="center-msg">
+  <div class="spinner"></div>
+  <p>Loading safety tracker…</p>
+</div>
+
+<!-- Error state -->
+<div id="error-state" class="center-msg" style="display:none">
+  <div class="emoji">🛡️</div>
+  <h2>Link Expired</h2>
+  <p>This SHIELD link is no longer active. The trip has likely ended safely.</p>
+</div>
+
+<!-- Main view (hidden until data loads) -->
+<div id="main-view" style="display:none">
+  <div class="header">
+    <div class="shield-icon">🛡️</div>
+    <div class="header-info">
+      <h1>SHIELD Active</h1>
+      <p id="header-sub">Loading trip info…</p>
+    </div>
+    <div class="status-dot live" id="live-dot" title="Live tracking"></div>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="content">
+
+    <!-- Arrived safe banner -->
+    <div class="arrived-banner" id="arrived-banner">
+      <div class="emoji">✅</div>
+      <h2 id="arrived-name">They arrived safely!</h2>
+      <p>Your loved one confirmed they reached their destination.</p>
+    </div>
+
+    <!-- Status -->
+    <div class="card">
+      <div class="card-title">Trip Status</div>
+      <span class="status-pill" id="status-pill">–</span>
+    </div>
+
+    <!-- Driver / Partner info -->
+    <div class="card" id="driver-card">
+      <div class="card-title" id="driver-card-title">Driver</div>
+      <div class="driver-row">
+        <div class="driver-avatar" id="driver-avatar">?</div>
+        <div>
+          <div class="driver-name" id="driver-name">Finding driver…</div>
+          <div class="driver-meta" id="driver-meta">Awaiting assignment</div>
+          <div class="rating" id="driver-rating" style="display:none">
+            <span class="star">⭐</span>
+            <span class="val" id="rating-val">–</span>
+          </div>
+          <div class="vehicle-badge" id="vehicle-badge" style="display:none">
+            <span id="vehicle-icon">🚗</span>
+            <span id="vehicle-text">–</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Route -->
+    <div class="card">
+      <div class="card-title">Route</div>
+      <div class="route-row">
+        <div class="route-point">
+          <div class="route-dot pickup"></div>
+          <div>
+            <div class="route-label">Pickup</div>
+            <div class="route-addr" id="pickup-addr">–</div>
+          </div>
+        </div>
+        <div class="route-point">
+          <div class="route-dot dropoff"></div>
+          <div>
+            <div class="route-label">Destination</div>
+            <div class="route-addr" id="dropoff-addr">–</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert button -->
+    <button class="alert-btn" id="alert-btn" onclick="sendAlert()">
+      🚨 Check on Passenger
+    </button>
+    <p style="font-size:11px;color:var(--hint);text-align:center;margin-top:-8px">
+      Sends a safety notification directly to the driver
+    </p>
+
+  </div>
+
+  <div class="footer">
+    Powered by <a href="https://duoride.app">DuoRide</a> · SHIELD Safety System
+  </div>
+</div>
+
+<script>
+  // ── Extract token from URL ────────────────────────────────────────────────
+  const token = location.pathname.split('/').pop();
+  const API_BASE = '/api'; // Same origin
+  const SOCKET_URL = location.origin;
+
+  let sessionData  = null;
+  let map          = null;
+  let driverMarker = null;
+  let pickupMarker = null;
+  let dropoffMarker= null;
+  let directionsRenderer = null;
+  let alertSent    = false;
+
+  // ── Vehicle type → emoji map ──────────────────────────────────────────────
+  const vehicleEmoji = { CAR: '🚗', BIKE: '🛵', MOTORCYCLE: '🏍️', VAN: '🚐' };
+  const statusLabels = {
+    REQUESTED:   ['requested',   'Finding driver…'],
+    ACCEPTED:    ['accepted',    'Driver on the way'],
+    ARRIVED:     ['arrived',     'Driver at pickup'],
+    IN_PROGRESS: ['in_progress', 'Ride in progress'],
+    COMPLETED:   ['completed',   'Trip completed'],
+    PENDING:     ['requested',   'Finding partner…'],
+    ASSIGNED:    ['accepted',    'Partner on the way'],
+    PICKED_UP:   ['arrived',     'Package picked up'],
+    IN_TRANSIT:  ['in_progress', 'Package in transit'],
+    DELIVERED:   ['completed',   'Package delivered'],
+  };
+
+  // ── Initialise map ────────────────────────────────────────────────────────
+  function initMap() {
+    map = new google.maps.Map(document.getElementById('map'), {
+      center: { lat: 6.5244, lng: 3.3792 }, // Lagos default
+      zoom: 13,
+      styles: [
+        { elementType: 'geometry',        stylers: [{ color: '#1a1d27' }] },
+        { elementType: 'labels.text.fill',stylers: [{ color: '#6b7280' }] },
+        { featureType: 'road',            elementType: 'geometry', stylers: [{ color: '#2a2d3e' }] },
+        { featureType: 'water',           elementType: 'geometry', stylers: [{ color: '#0f1117' }] },
+        { featureType: 'poi',             stylers: [{ visibility: 'off' }] },
+      ],
+      disableDefaultUI: true,
+      zoomControl: true,
+    });
+    directionsRenderer = new google.maps.DirectionsRenderer({
+      suppressMarkers: true,
+      polylineOptions: { strokeColor: '#4CAF50', strokeWeight: 4 },
+    });
+    directionsRenderer.setMap(map);
+  }
+
+  function placeMarker(lat, lng, icon, title) {
+    return new google.maps.Marker({
+      position: { lat, lng },
+      map,
+      title,
+      icon: {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(icon)}`,
+        scaledSize: new google.maps.Size(36, 36),
+        anchor: new google.maps.Point(18, 18),
+      },
+    });
+  }
+
+  const pickupSVG   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><circle cx="18" cy="18" r="17" fill="#4CAF50"/><text x="18" y="23" text-anchor="middle" font-size="16" fill="#fff">📍</text></svg>`;
+  const dropoffSVG  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><circle cx="18" cy="18" r="17" fill="#E05555"/><text x="18" y="23" text-anchor="middle" font-size="16" fill="#fff">🏁</text></svg>`;
+  const driverSVG   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><circle cx="18" cy="18" r="17" fill="#FFB800"/><text x="18" y="23" text-anchor="middle" font-size="16" fill="#111">🚗</text></svg>`;
+
+  // ── Render session data ───────────────────────────────────────────────────
+  function render(data) {
+    const driver = data.driver ?? data.partner;
+    const [statusClass, statusLabel] = statusLabels[data.status] ?? ['requested', data.status];
+
+    // Header
+    document.getElementById('header-sub').textContent = `Tracking ${data.customer?.firstName ?? 'your loved one'}`;
+
+    // Status
+    const pill = document.getElementById('status-pill');
+    pill.className = `status-pill ${statusClass}`;
+    pill.textContent = statusLabel;
+
+    // Driver card
+    if (driver) {
+      document.getElementById('driver-card-title').textContent = data.type === 'DELIVERY' ? 'Delivery Partner' : 'Driver';
+      document.getElementById('driver-name').textContent = `${driver.firstName} ${driver.lastName}`;
+
+      if (driver.profileImage) {
+        const img = document.createElement('img');
+        img.src   = driver.profileImage;
+        img.style.cssText = 'width:52px;height:52px;border-radius:50%;object-fit:cover;';
+        document.getElementById('driver-avatar').replaceWith(img);
+      } else {
+        document.getElementById('driver-avatar').textContent = driver.firstName?.[0] ?? '?';
+      }
+
+      if (driver.rating) {
+        document.getElementById('driver-rating').style.display = 'flex';
+        document.getElementById('rating-val').textContent      = Number(driver.rating).toFixed(1);
+      }
+
+      const vehicle = data.type === 'DELIVERY' ? driver : driver;
+      if (vehicle.vehiclePlate) {
+        const badge = document.getElementById('vehicle-badge');
+        badge.style.display = 'inline-flex';
+        document.getElementById('vehicle-icon').textContent = vehicleEmoji[vehicle.vehicleType] ?? '🚗';
+        document.getElementById('vehicle-text').textContent =
+          `${vehicle.vehicleColor ?? ''} ${vehicle.vehicleMake ?? ''} ${vehicle.vehicleModel ?? ''} · ${vehicle.vehiclePlate}`.trim();
+      }
+
+      const metaEl = document.getElementById('driver-meta');
+      metaEl.innerHTML = `Vehicle: <span>${vehicle.vehicleType?.toLowerCase() ?? 'vehicle'}</span>`;
+    }
+
+    // Route addresses
+    document.getElementById('pickup-addr').textContent  = data.pickupAddress  ?? '–';
+    document.getElementById('dropoff-addr').textContent = data.dropoffAddress ?? '–';
+
+    // Map markers
+    if (driver?.currentLat && driver?.currentLng) {
+      const dPos = { lat: driver.currentLat, lng: driver.currentLng };
+      if (!driverMarker) {
+        driverMarker = placeMarker(driver.currentLat, driver.currentLng, driverSVG, 'Driver');
+      } else {
+        driverMarker.setPosition(dPos);
+      }
+      map.panTo(dPos);
+    }
+
+    if (!pickupMarker && data.pickupAddress) {
+      // Geocode pickup
+      new google.maps.Geocoder().geocode({ address: data.pickupAddress }, (results, status) => {
+        if (status === 'OK' && results[0]) {
+          pickupMarker = placeMarker(results[0].geometry.location.lat(), results[0].geometry.location.lng(), pickupSVG, 'Pickup');
+        }
+      });
+    }
+
+    // Arrived safe
+    if (data.arrivedSafe) {
+      const banner = document.getElementById('arrived-banner');
+      banner.classList.add('show');
+      document.getElementById('arrived-name').textContent =
+        `${data.customer?.firstName ?? 'They'} arrived safely! ✅`;
+    }
+  }
+
+  // ── Fetch initial session ─────────────────────────────────────────────────
+  async function loadSession() {
+    try {
+      const res  = await fetch(`${API_BASE}/shield/view/${token}`);
+      const json = await res.json();
+
+      if (!json.success) throw new Error('expired');
+
+      sessionData = json.data;
+      document.getElementById('loading-state').style.display = 'none';
+      document.getElementById('main-view').style.display     = 'block';
+
+      initMap();
+      render(sessionData);
+      startSocket();
+      startPing();
+    } catch {
+      document.getElementById('loading-state').style.display = 'none';
+      document.getElementById('error-state').style.display   = 'flex';
+    }
+  }
+
+  // ── Socket for live updates ───────────────────────────────────────────────
+  function startSocket() {
+    const socket = io(SOCKET_URL, { transports: ['websocket'] });
+    socket.emit('shield:join', token);
+
+    socket.on('driver:location:update', (data) => {
+      const pos = { lat: data.lat, lng: data.lng };
+      if (!driverMarker) {
+        driverMarker = placeMarker(data.lat, data.lng, driverSVG, 'Driver');
+      } else {
+        driverMarker.setPosition(pos);
+      }
+      map.panTo(pos);
+    });
+
+    socket.on('partner:location:update', (data) => {
+      const pos = { lat: data.lat, lng: data.lng };
+      if (!driverMarker) {
+        driverMarker = placeMarker(data.lat, data.lng, driverSVG, 'Partner');
+      } else {
+        driverMarker.setPosition(pos);
+      }
+      map.panTo(pos);
+    });
+
+    socket.on('shield:arrived_safe', (data) => {
+      document.getElementById('arrived-banner').classList.add('show');
+      document.getElementById('arrived-name').textContent =
+        `${data.customerName ?? 'They'} arrived safely! ✅`;
+    });
+
+    socket.on('shield:driver_confirmed_safe', (data) => {
+      const btn     = document.getElementById('alert-btn');
+      btn.textContent = `✅ Driver confirmed all is well`;
+      btn.disabled    = false;
+      btn.classList.remove('alert-sent');
+      alertSent = false;
+    });
+
+    socket.on('ride:status:update', (data) => {
+      const [statusClass, statusLabel] = statusLabels[data.status] ?? ['requested', data.status];
+      const pill = document.getElementById('status-pill');
+      pill.className = `status-pill ${statusClass}`;
+      pill.textContent = statusLabel;
+
+      if (data.status === 'COMPLETED' || data.status === 'CANCELLED' || data.status === 'DELIVERED') {
+        document.getElementById('live-dot').classList.remove('live');
+        document.getElementById('alert-btn').disabled = true;
+      }
+    });
+
+    socket.on('shield:deactivated', () => {
+      document.getElementById('live-dot').classList.remove('live');
+      document.getElementById('alert-btn').disabled = true;
+      document.getElementById('alert-btn').textContent = '🛡️ SHIELD has ended';
+    });
+  }
+
+  // ── Heartbeat ping ────────────────────────────────────────────────────────
+  function startPing() {
+    setInterval(async () => {
+      try {
+        await fetch(`${API_BASE}/shield/view/${token}/ping`, { method: 'POST' });
+      } catch {}
+    }, 30_000); // every 30 s
+  }
+
+  // ── Alert button ──────────────────────────────────────────────────────────
+  async function sendAlert() {
+    if (alertSent) return;
+    const btn = document.getElementById('alert-btn');
+    btn.disabled    = true;
+    btn.textContent = '⏳ Sending alert…';
+    try {
+      const res  = await fetch(`${API_BASE}/shield/view/${token}/alert`, { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        alertSent = true;
+        btn.classList.add('alert-sent');
+        btn.textContent = '✅ Alert sent — driver notified';
+      } else {
+        btn.disabled    = false;
+        btn.textContent = '🚨 Check on Passenger';
+        alert(json.message ?? 'Could not send alert.');
+      }
+    } catch {
+      btn.disabled    = false;
+      btn.textContent = '🚨 Check on Passenger';
+    }
+  }
+
+  // ── Bootstrap ─────────────────────────────────────────────────────────────
+  loadSession();
+</script>
+</body>
+</html>

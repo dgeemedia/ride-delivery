@@ -4,6 +4,7 @@
 const prisma = require('../lib/prisma');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
+const shieldService = require('../services/shield.service');
 const { invalidateFareCache } = require('../utils/fareEngine');
 const bcrypt = require('bcryptjs');
 
@@ -1200,6 +1201,177 @@ exports.updateTicket = async (req, res) => {
   });
  
   res.status(200).json({ success: true, message: 'Ticket updated', data: { ticket: updated } });
+};
+
+// ─── SHIELD MONITORING ───────────────────────────────────────────────────────
+ 
+/**
+ * @desc  SHIELD stats for dashboard — active sessions, total today, alert count
+ * @route GET /api/admin/shield/stats
+ */
+exports.getShieldStats = async (req, res) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+ 
+  const [
+    activeSessions,
+    sessionsToday,
+    alertsTriggered,
+    autoTriggered,
+    arrivedSafe,
+  ] = await Promise.all([
+    prisma.shieldSession.count({ where: { isActive: true } }),
+    prisma.shieldSession.count({ where: { createdAt: { gte: today } } }),
+    prisma.shieldSession.count({ where: { driverAlerted: true } }),
+    prisma.shieldSession.count({ where: { autoTriggered: true, createdAt: { gte: today } } }),
+    prisma.shieldSession.count({ where: { arrivedSafe: true, createdAt: { gte: today } } }),
+  ]);
+ 
+  res.status(200).json({
+    success: true,
+    data: {
+      activeSessions,
+      sessionsToday,
+      alertsTriggered,
+      autoTriggered,
+      arrivedSafe,
+    },
+  });
+};
+ 
+/**
+ * @desc  List all SHIELD sessions (paginated, filterable)
+ * @route GET /api/admin/shield/sessions?isActive=true&page=1&limit=20
+ */
+exports.getShieldSessions = async (req, res) => {
+  const { page = 1, limit = 20, isActive, autoTriggered } = req.query;
+  const skip  = (parseInt(page) - 1) * parseInt(limit);
+  const where = {};
+ 
+  if (isActive !== undefined)      where.isActive      = isActive === 'true';
+  if (autoTriggered !== undefined) where.autoTriggered = autoTriggered === 'true';
+ 
+  const [sessions, total] = await Promise.all([
+    prisma.shieldSession.findMany({
+      where,
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, phone: true },
+        },
+        ride: {
+          select: {
+            id: true, status: true, pickupAddress: true, dropoffAddress: true,
+            driver: { select: { firstName: true, lastName: true } },
+          },
+        },
+        delivery: {
+          select: {
+            id: true, status: true, pickupAddress: true, dropoffAddress: true,
+            partner: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: parseInt(limit),
+    }),
+    prisma.shieldSession.count({ where }),
+  ]);
+ 
+  res.status(200).json({
+    success: true,
+    data: {
+      sessions,
+      pagination: {
+        total,
+        page:  parseInt(page),
+        pages: Math.ceil(total / parseInt(limit)),
+      },
+    },
+  });
+};
+ 
+/**
+ * @desc  Single SHIELD session detail
+ * @route GET /api/admin/shield/sessions/:id
+ */
+exports.getShieldSessionById = async (req, res) => {
+  const { id } = req.params;
+ 
+  const session = await prisma.shieldSession.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: {
+          id: true, firstName: true, lastName: true,
+          phone: true, email: true, profileImage: true,
+        },
+      },
+      ride: {
+        include: {
+          customer: { select: { firstName: true, lastName: true, phone: true } },
+          driver: {
+            select: {
+              firstName: true, lastName: true, phone: true,
+              driverProfile: {
+                select: {
+                  vehicleType: true, vehicleMake: true, vehicleModel: true,
+                  vehiclePlate: true, currentLat: true, currentLng: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      delivery: {
+        include: {
+          customer: { select: { firstName: true, lastName: true, phone: true } },
+          partner: {
+            select: {
+              firstName: true, lastName: true, phone: true,
+              deliveryProfile: {
+                select: {
+                  vehicleType: true, vehiclePlate: true,
+                  currentLat: true, currentLng: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+ 
+  if (!session) throw new AppError('SHIELD session not found', 404);
+ 
+  res.status(200).json({ success: true, data: { session } });
+};
+ 
+/**
+ * @desc  Admin force-close a SHIELD session (e.g. trip already ended manually)
+ * @route PUT /api/admin/shield/sessions/:id/close
+ */
+exports.closeShieldSession = async (req, res) => {
+  const { id } = req.params;
+ 
+  const session = await prisma.shieldSession.findUnique({ where: { id } });
+  if (!session) throw new AppError('SHIELD session not found', 404);
+ 
+  await prisma.shieldSession.update({
+    where: { id },
+    data:  { isActive: false },
+  });
+ 
+  await logActivity({
+    userId:     req.user.id,
+    action:     'shield_session_closed',
+    entityType: 'ShieldSession',
+    entityId:   id,
+    details:    { closedBy: req.user.id },
+    req,
+  });
+ 
+  res.status(200).json({ success: true, message: 'SHIELD session closed' });
 };
 
 module.exports = exports;

@@ -5,28 +5,30 @@ import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
 import Layout from '@/components/layout/Layout';
 
-import Login from '@/pages/Auth/Login';
-import Dashboard from '@/pages/Dashboard/Dashboard';
-import UserList from '@/pages/Users/UserList';
-import UserDetails from '@/pages/Users/UserDetails';
-import CreateAdminUser from '@/pages/Users/CreateAdminUser';
-import DriverList from '@/pages/Drivers/DriverList';
-import DriverApproval from '@/pages/Drivers/DriverApproval';
-import DriverDetails from '@/pages/Drivers/DriverDetails';
-import DriverDocuments from '@/pages/Drivers/DriverDocuments';
-import PartnerList from '@/pages/Partners/PartnerList';
-import PartnerApproval from '@/pages/Partners/PartnerApproval';
-import PartnerDetails from '@/pages/Partners/PartnerDetails';
-import RideList from '@/pages/Rides/RideList';
-import RideDetails from '@/pages/Rides/RideDetails';
-import LiveRides from '@/pages/Rides/LiveRides';
-import DeliveryList from '@/pages/Deliveries/DeliveryList';
-import DeliveryDetails from '@/pages/Deliveries/DeliveryDetails';
-import TicketList from '@/pages/Support/TicketList';
-import TicketDetail from '@/pages/Support/TicketDetail';
-import PaymentList from '@/pages/Payments/PaymentList';
-import Analytics from '@/pages/Analytics/Overview';
-import GeneralSettings from '@/pages/Settings/GeneralSettings';
+import Login            from '@/pages/Auth/Login';
+import Dashboard        from '@/pages/Dashboard/Dashboard';
+import UserList         from '@/pages/Users/UserList';
+import UserDetails      from '@/pages/Users/UserDetails';
+import CreateAdminUser  from '@/pages/Users/CreateAdminUser';
+import DriverList       from '@/pages/Drivers/DriverList';
+import DriverApproval   from '@/pages/Drivers/DriverApproval';
+import DriverDetails    from '@/pages/Drivers/DriverDetails';
+import DriverDocuments  from '@/pages/Drivers/DriverDocuments';
+import PartnerList      from '@/pages/Partners/PartnerList';
+import PartnerApproval  from '@/pages/Partners/PartnerApproval';
+import PartnerDetails   from '@/pages/Partners/PartnerDetails';
+import RideList         from '@/pages/Rides/RideList';
+import RideDetails      from '@/pages/Rides/RideDetails';
+import LiveRides        from '@/pages/Rides/LiveRides';
+import DeliveryList     from '@/pages/Deliveries/DeliveryList';
+import DeliveryDetails  from '@/pages/Deliveries/DeliveryDetails';
+import TicketList       from '@/pages/Support/TicketList';
+import TicketDetail     from '@/pages/Support/TicketDetail';
+import PaymentList      from '@/pages/Payments/PaymentList';
+import Analytics        from '@/pages/Analytics/Overview';
+import GeneralSettings  from '@/pages/Settings/GeneralSettings';
+import ShieldMonitor    from '@/pages/Shield/ShieldMonitor';
+import ShieldSession    from '@/pages/Shield/ShieldSession';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
@@ -78,6 +80,10 @@ function App() {
           {/* Support */}
           <Route path="/support/tickets"     element={<ProtectedRoute><TicketList /></ProtectedRoute>} />
           <Route path="/support/tickets/:id" element={<ProtectedRoute><TicketDetail /></ProtectedRoute>} />
+
+          {/* SHIELD Safety Monitor */}
+          <Route path="/shield"      element={<ProtectedRoute><ShieldMonitor /></ProtectedRoute>} />
+          <Route path="/shield/:id"  element={<ProtectedRoute><ShieldSession /></ProtectedRoute>} />
 
           {/* Other */}
           <Route path="/payments"  element={<ProtectedRoute><PaymentList /></ProtectedRoute>} />

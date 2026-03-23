@@ -1,8 +1,10 @@
 // backend/src/app.js
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
+const express  = require('express');
+const cors     = require('cors');
+const helmet   = require('helmet');
+const morgan   = require('morgan');
+const path     = require('path');
+const fs       = require('fs');
 const rateLimit = require('express-rate-limit');
 require('express-async-errors');
 
@@ -29,7 +31,25 @@ const { logger }       = require('./utils/logger');
 const app = express();
 
 // ─── Security headers ─────────────────────────────────────────────────────────
-app.use(helmet());
+// The SHIELD public viewer page needs Google Maps + Socket.IO from CDN,
+// so we relax CSP only for /shield/* paths. All other routes use strict helmet.
+app.use((req, res, next) => {
+  if (req.path.startsWith('/shield/')) {
+    return helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc:  ["'self'", "'unsafe-inline'", 'https://maps.googleapis.com', 'https://cdn.socket.io'],
+          styleSrc:   ["'self'", "'unsafe-inline'"],
+          imgSrc:     ["'self'", 'data:', 'https://*.googleapis.com', 'https://*.gstatic.com'],
+          connectSrc: ["'self'", 'https://maps.googleapis.com', 'wss:', 'ws:'],
+          frameSrc:   ["'none'"],
+        },
+      },
+    })(req, res, next);
+  }
+  helmet()(req, res, next);
+});
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
@@ -63,6 +83,16 @@ const globalLimiter = rateLimit({
   legacyHeaders:   false,
 });
 app.use('/api/', globalLimiter);
+
+// Lighter limit for the public SHIELD viewer pings (beneficiary browser calls every 30 s)
+const shieldViewLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max:      60,
+  message:  'Too many SHIELD pings.',
+  standardHeaders: true,
+  legacyHeaders:   false,
+});
+app.use('/api/shield/view', shieldViewLimiter);
 
 // ─── Stricter limit on auth endpoints ────────────────────────────────────────
 const authLimiter = rateLimit({
@@ -102,11 +132,30 @@ if (process.env.NODE_ENV === 'development') {
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.status(200).json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
+    status:      'ok',
+    timestamp:   new Date().toISOString(),
+    uptime:      process.uptime(),
     environment: process.env.NODE_ENV || 'development',
   });
+});
+
+// ─── SHIELD public web viewer ─────────────────────────────────────────────────
+// Served at /shield/:token — no auth, opened in the beneficiary's browser.
+// The Google Maps API key is injected from .env at serve time so it never
+// appears hardcoded in the repo. Restrict the key in Google Cloud Console
+// to HTTP referrers matching your domain (e.g. https://duoride.app/shield/*)
+// so it cannot be abused even if someone reads the page source.
+app.get('/shield/:token', (req, res) => {
+  const viewerPath = path.join(__dirname, '..', 'public', 'shield_viewer.html');
+  try {
+    let html = fs.readFileSync(viewerPath, 'utf8');
+    html = html.replace('YOUR_GOOGLE_MAPS_API_KEY', process.env.GOOGLE_MAPS_API_KEY || '');
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err) {
+    logger.error('[SHIELD] Could not serve viewer HTML:', err.message);
+    res.status(404).json({ success: false, message: 'SHIELD viewer not available.' });
+  }
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
@@ -122,8 +171,8 @@ app.use('/api/admin',         adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/wallet',        walletRoutes);
 app.use('/api/calls',         callRoutes);
-app.use('/api/debug',         debugRoutes);   
-app.use('/api/shield',        shieldRoutes);   
+app.use('/api/debug',         debugRoutes);
+app.use('/api/shield',        shieldRoutes);
 
 // ─── API index ────────────────────────────────────────────────────────────────
 app.get('/api', (_req, res) => {
@@ -142,6 +191,7 @@ app.get('/api', (_req, res) => {
       upload:        '/api/upload',
       admin:         '/api/admin',
       calls:         '/api/calls',
+      shield:        '/api/shield',
       debug:         '/api/debug',
     },
   });
