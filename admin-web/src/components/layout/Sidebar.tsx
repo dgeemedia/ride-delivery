@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Car, Package, Navigation,
   CreditCard, BarChart3, Settings, X, Truck,
-  MessageCircle, MapPin, Shield, LogOut,
+  MessageCircle, Shield, LogOut, Building2, Zap,
 } from 'lucide-react';
 import { useUIStore } from '@/store/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -15,6 +15,7 @@ interface Counts {
   pendingDrivers:  number;
   pendingPartners: number;
   openTickets:     number;
+  shieldActive:    number;
 }
 
 interface NavItem {
@@ -23,6 +24,7 @@ interface NavItem {
   icon:      React.ElementType;
   show:      boolean;
   badge?:    number;
+  badgeColor?: string;
   end?:      boolean;
   children?: { name: string; href: string; show: boolean }[];
 }
@@ -33,21 +35,23 @@ const Sidebar: React.FC = () => {
   const navigate = useNavigate();
 
   const [counts, setCounts] = useState<Counts>({
-    pendingDrivers: 0, pendingPartners: 0, openTickets: 0,
+    pendingDrivers: 0, pendingPartners: 0, openTickets: 0, shieldActive: 0,
   });
 
-  // Fetch pending counts once — non-critical, fails silently
   useEffect(() => {
-    api.get('/admin/dashboard/stats')
-      .then(res => {
-        const d = res.data?.data;
-        setCounts({
-          pendingDrivers:  d?.pending?.drivers     ?? 0,
-          pendingPartners: d?.pending?.partners    ?? 0,
-          openTickets:     d?.support?.openTickets ?? 0,
-        });
-      })
-      .catch(() => {});
+    Promise.allSettled([
+      api.get('/admin/dashboard/stats'),
+      api.get('/admin/shield/stats'),
+    ]).then(([statsRes, shieldRes]) => {
+      const d = statsRes.status === 'fulfilled' ? statsRes.value.data?.data : null;
+      const s = shieldRes.status === 'fulfilled' ? shieldRes.value.data?.data : null;
+      setCounts({
+        pendingDrivers:  d?.pending?.drivers     ?? 0,
+        pendingPartners: d?.pending?.partners    ?? 0,
+        openTickets:     d?.support?.openTickets ?? 0,
+        shieldActive:    s?.activeSessions       ?? 0,
+      });
+    });
   }, []);
 
   const handleLogout = () => {
@@ -107,6 +111,31 @@ const Sidebar: React.FC = () => {
       children: [
         { name: 'All Deliveries', href: '/deliveries',      show: can.viewDeliveries   },
         { name: 'Live Map',       href: '/deliveries/live', show: can.manageDeliveries },
+      ],
+    },
+    {
+      // SHIELD — visible to all admin roles, badge shows live session count
+      name: 'SHIELD',  href: '/shield', icon: Shield,
+      show: true,
+      badge:      counts.shieldActive || undefined,
+      badgeColor: 'bg-green-500',
+    },
+    {
+      // Corporate Accounts — all admin roles can view
+      name: 'Corporate', href: '/corporate', icon: Building2,
+      show: can.viewUsers,
+      children: [
+        { name: 'Companies',  href: '/corporate',          show: can.viewUsers },
+        { name: 'Trips',      href: '/corporate/trips',    show: can.viewUsers },
+      ],
+    },
+    {
+      // DuoPay — finance / super admin focus
+      name: 'DuoPay', href: '/duopay', icon: Zap,
+      show: can.viewPayments,
+      children: [
+        { name: 'Accounts',    href: '/duopay',           show: can.viewPayments },
+        { name: 'Defaults',    href: '/duopay/defaults',  show: can.viewPayments },
       ],
     },
     {
@@ -206,12 +235,14 @@ const Sidebar: React.FC = () => {
             if (visibleChildren.length > 0) {
               return (
                 <div key={item.name} className="mb-1">
-                  {/* Group header — not clickable, just a label */}
                   <div className="flex items-center px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
                     <item.icon className="mr-3 h-4 w-4" />
                     <span className="flex-1">{item.name}</span>
                     {item.badge !== undefined && (
-                      <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none">
+                      <span className={cn(
+                        'text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none',
+                        item.badgeColor ?? 'bg-red-500',
+                      )}>
                         {item.badge > 99 ? '99+' : item.badge}
                       </span>
                     )}
@@ -254,7 +285,10 @@ const Sidebar: React.FC = () => {
                 <item.icon className="mr-3 h-5 w-5 flex-shrink-0" />
                 <span className="flex-1">{item.name}</span>
                 {item.badge !== undefined && (
-                  <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none">
+                  <span className={cn(
+                    'text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none',
+                    item.badgeColor ?? 'bg-red-500',
+                  )}>
                     {item.badge > 99 ? '99+' : item.badge}
                   </span>
                 )}
