@@ -205,4 +205,44 @@ export const shieldAPI = {
   getView:  (token) => api.get(`/shield/view/${token}`),
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CORPORATE
+// ─────────────────────────────────────────────────────────────────────────────
+export const corporateAPI = {
+  // Company admin
+  register:      (data)         => api.post('/corporate/register', data),
+  getProfile:    ()             => api.get('/corporate/profile'),
+  updateProfile: (data)         => api.put('/corporate/profile', data),
+ 
+  // Wallet
+  getWallet:     ()             => api.get('/corporate/wallet'),
+  initiateTopUp: (data)         => api.post('/corporate/wallet/topup', data),
+  verifyTopUp:   (data)         => api.post('/corporate/wallet/verify', data),
+ 
+  // Employees (admin view)
+  listEmployees: (params)       => api.get('/corporate/employees', { params }),
+  inviteEmployee:(data)         => api.post('/corporate/employees/invite', data),
+  updateEmployee:(id, data)     => api.put(`/corporate/employees/${id}`, data),
+  removeEmployee:(id)           => api.delete(`/corporate/employees/${id}`),
+ 
+  // Employee self-service
+  getMyAccount:  ()             => api.get('/corporate/my-account'),
+  respondInvite: (data)         => api.post('/corporate/invite/respond', data),
+ 
+  // Trips & reporting
+  getTrips:      (params)       => api.get('/corporate/trips', { params }),
+  getInvoice:    (params)       => api.get('/corporate/invoice', { params }),
+};
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// DUOPAY
+// ─────────────────────────────────────────────────────────────────────────────
+export const duopayAPI = {
+  getEligibility:  ()     => api.get('/duopay/eligibility'),
+  getAccount:      ()     => api.get('/duopay/account'),
+  activate:        (data) => api.post('/duopay/activate', data),
+  manualRepay:     (data) => api.post('/duopay/repay', data),
+  getTransactions: (p)    => api.get('/duopay/transactions', { params: p }),
+};
+
 export default api;

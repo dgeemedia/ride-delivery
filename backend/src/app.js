@@ -23,6 +23,8 @@ const walletRoutes       = require('./routes/wallet.routes');
 const callRoutes         = require('./routes/call.routes');
 const debugRoutes        = require('./routes/debug.route');
 const shieldRoutes       = require('./routes/shield.routes');
+const corporateRoutes    = require('./routes/corporate.routes');
+const duopayRoutes       = require('./routes/duopay.routes');
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 const { errorHandler } = require('./middleware/errorHandler');
@@ -115,6 +117,12 @@ app.use(
   express.raw({ type: 'application/json' }),
   (req, _res, next) => { req.rawBody = req.body; next(); }
 );
+// DuoPay Paystack subscription charge webhook
+app.use(
+  '/api/duopay/webhook/paystack',
+  express.raw({ type: 'application/json' }),
+  (req, _res, next) => { req.rawBody = req.body; next(); }
+);
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
@@ -173,6 +181,8 @@ app.use('/api/wallet',        walletRoutes);
 app.use('/api/calls',         callRoutes);
 app.use('/api/debug',         debugRoutes);
 app.use('/api/shield',        shieldRoutes);
+app.use('/api/corporate',     corporateRoutes);
+app.use('/api/duopay',        duopayRoutes);
 
 // ─── API index ────────────────────────────────────────────────────────────────
 app.get('/api', (_req, res) => {
@@ -192,6 +202,8 @@ app.get('/api', (_req, res) => {
       admin:         '/api/admin',
       calls:         '/api/calls',
       shield:        '/api/shield',
+      corporate:     '/api/corporate',
+      duopay:        '/api/duopay',
       debug:         '/api/debug',
     },
   });

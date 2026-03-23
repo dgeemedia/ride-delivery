@@ -5,7 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator }     from '@react-navigation/stack';
 import { Ionicons }                 from '@expo/vector-icons';
 import { useTheme }                 from '../context/ThemeContext';
-
+ 
 import HomeScreen                from '../screens/Customer/HomeScreen';
 import RequestRideScreen         from '../screens/Customer/RequestRideScreen';
 import RequestDeliveryScreen     from '../screens/Customer/RequestDeliveryScreen';
@@ -16,6 +16,8 @@ import HistoryScreen             from '../screens/Customer/HistoryScreen';
 import WalletScreen              from '../screens/Customer/WalletScreen';
 import ShieldScreen              from '../screens/Customer/ShieldScreen';
 import ShieldBeneficiariesScreen from '../screens/Customer/ShieldBeneficiariesScreen';
+import CorporateScreen           from '../screens/Customer/CorporateScreen';
+import DuoPayScreen              from '../screens/Customer/DuoPayScreen';
 import ProfileScreen             from '../screens/Shared/ProfileScreen';
 import EditProfileScreen         from '../screens/Shared/EditProfileScreen';
 import NotificationsScreen       from '../screens/Shared/NotificationsScreen';
@@ -24,11 +26,11 @@ import SupportScreen             from '../screens/Shared/SupportScreen';
 import SubmitTicketScreen        from '../screens/Shared/SubmitTicketScreen';
 import MyTicketsScreen           from '../screens/Shared/MyTicketsScreen';
 import TicketDetailScreen        from '../screens/Shared/TicketDetailScreen';
-
+ 
 const DA  = '#FFB800';
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
-
+ 
 const HomeStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="Home"                 component={HomeScreen}                />
@@ -39,6 +41,8 @@ const HomeStack = () => (
     <Stack.Screen name="DeliveryTracking"     component={DeliveryTrackingScreen}    />
     <Stack.Screen name="Shield"               component={ShieldScreen}              />
     <Stack.Screen name="ShieldBeneficiaries"  component={ShieldBeneficiariesScreen} />
+    <Stack.Screen name="Corporate"            component={CorporateScreen}           />
+    <Stack.Screen name="DuoPay"               component={DuoPayScreen}              />
     <Stack.Screen name="Notifications"        component={NotificationsScreen}       />
     <Stack.Screen name="Support"              component={SupportScreen}             />
     <Stack.Screen name="SubmitTicket"         component={SubmitTicketScreen}        />
@@ -46,7 +50,7 @@ const HomeStack = () => (
     <Stack.Screen name="TicketDetail"         component={TicketDetailScreen}        />
   </Stack.Navigator>
 );
-
+ 
 const HistoryStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="HistoryHome"  component={HistoryScreen}      />
@@ -56,30 +60,33 @@ const HistoryStack = () => (
     <Stack.Screen name="TicketDetail" component={TicketDetailScreen} />
   </Stack.Navigator>
 );
-
+ 
 const WalletStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="WalletHome"   component={WalletScreen}       />
+    <Stack.Screen name="DuoPay"       component={DuoPayScreen}       />
     <Stack.Screen name="Support"      component={SupportScreen}      />
     <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen} />
     <Stack.Screen name="MyTickets"    component={MyTicketsScreen}    />
     <Stack.Screen name="TicketDetail" component={TicketDetailScreen} />
   </Stack.Navigator>
 );
-
+ 
 const ProfileStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="ProfileHome"    component={ProfileScreen}         />
     <Stack.Screen name="EditProfile"    component={EditProfileScreen}     />
     <Stack.Screen name="Notifications"  component={NotificationsScreen}   />
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen}  />
+    <Stack.Screen name="Corporate"      component={CorporateScreen}       />
+    <Stack.Screen name="DuoPay"         component={DuoPayScreen}          />
     <Stack.Screen name="Support"        component={SupportScreen}         />
     <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}    />
     <Stack.Screen name="MyTickets"      component={MyTicketsScreen}       />
     <Stack.Screen name="TicketDetail"   component={TicketDetailScreen}    />
   </Stack.Navigator>
 );
-
+ 
 const CustomerNavigator = () => {
   const { theme } = useTheme();
   return (
@@ -115,5 +122,5 @@ const CustomerNavigator = () => {
     </Tab.Navigator>
   );
 };
-
+ 
 export default CustomerNavigator;

@@ -437,7 +437,7 @@ export default function HomeScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={16} color={theme.accent} />
           </TouchableOpacity>
 
-          {/* SHIELD Safety Button */}
+          {/* SHIELD Safety */}
           <TouchableOpacity
             style={[s.shieldBtn, { borderColor: '#4CAF5050', backgroundColor: '#4CAF5010' }]}
             onPress={() => navigation.navigate('Shield')}
@@ -455,6 +455,52 @@ export default function HomeScreen({ navigation }) {
               </View>
               <Text style={[s.shieldSub, { color: theme.hint }]}>
                 Let a guardian track your ride live — no app needed
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#4CAF50" />
+          </TouchableOpacity>
+
+          {/* Corporate */}
+          <TouchableOpacity
+            style={[s.featureBtn, { borderColor: '#2563EB50', backgroundColor: '#2563EB10' }]}
+            onPress={() => navigation.navigate('Corporate')}
+            activeOpacity={0.85}
+          >
+            <View style={[s.featureIcon, { backgroundColor: '#2563EB20' }]}>
+              <Ionicons name="business-outline" size={18} color="#2563EB" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[s.featureTitle, { color: '#2563EB' }]}>Corporate</Text>
+                <View style={[s.featureBadge, { backgroundColor: '#2563EB25' }]}>
+                  <Text style={[s.featureBadgeTxt, { color: '#2563EB' }]}>B2B</Text>
+                </View>
+              </View>
+              <Text style={[s.featureSub, { color: theme.hint }]}>
+                Company transport with spend controls & invoicing
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#2563EB" />
+          </TouchableOpacity>
+
+          {/* DuoPay */}
+          <TouchableOpacity
+            style={[s.featureBtn, { borderColor: '#4CAF5050', backgroundColor: '#4CAF5010' }]}
+            onPress={() => navigation.navigate('DuoPay')}
+            activeOpacity={0.85}
+          >
+            <View style={[s.featureIcon, { backgroundColor: '#4CAF5020' }]}>
+              <Ionicons name="flash-outline" size={18} color="#4CAF50" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[s.featureTitle, { color: '#4CAF50' }]}>DuoPay</Text>
+                <View style={[s.featureBadge, { backgroundColor: '#4CAF5025' }]}>
+                  <Text style={[s.featureBadgeTxt, { color: '#4CAF50' }]}>BNPL</Text>
+                </View>
+              </View>
+              <Text style={[s.featureSub, { color: theme.hint }]}>
+                Ride now, pay later — up to ₦15,000 credit
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color="#4CAF50" />
@@ -524,12 +570,19 @@ const s = StyleSheet.create({
   chooseDriverTitle: { fontSize: 14, fontWeight: '800', marginBottom: 2 },
   chooseDriverSub:   { fontSize: 11, fontWeight: '500' },
 
-  shieldBtn:    { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20 },
-  shieldIcon:   { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  shieldTitle:  { fontSize: 14, fontWeight: '900', marginBottom: 2 },
-  shieldSub:    { fontSize: 11, fontWeight: '500' },
-  shieldBadge:  { backgroundColor: '#4CAF5025', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 },
+  shieldBtn:      { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 14 },
+  shieldIcon:     { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  shieldTitle:    { fontSize: 14, fontWeight: '900', marginBottom: 2 },
+  shieldSub:      { fontSize: 11, fontWeight: '500' },
+  shieldBadge:    { backgroundColor: '#4CAF5025', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 },
   shieldBadgeTxt: { fontSize: 9, fontWeight: '800', color: '#4CAF50', letterSpacing: 0.5 },
+
+  featureBtn:      { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 14 },
+  featureIcon:     { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  featureTitle:    { fontSize: 14, fontWeight: '900', marginBottom: 2 },
+  featureSub:      { fontSize: 11, fontWeight: '500' },
+  featureBadge:    { borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 },
+  featureBadgeTxt: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
 
   activityCard:  { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 6 },
   emptyActivity: { alignItems: 'center', paddingVertical: 28 },

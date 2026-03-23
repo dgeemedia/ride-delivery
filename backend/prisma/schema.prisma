@@ -43,11 +43,17 @@ model User {
   ratings              Rating[]
   customerRides        Ride[]                  @relation("CustomerRides")
   driverRides          Ride[]                  @relation("DriverRides")
-  shieldBeneficiaries  ShieldBeneficiary[]
-  shieldSessions       ShieldSession[]
   supportTickets       SupportTicket[]
   ticketReplies        TicketReply[]           @relation("TicketReplyAuthor")
   wallet               Wallet?
+  // ── SHIELD ──────────────────────────────────────
+  shieldBeneficiaries  ShieldBeneficiary[]
+  shieldSessions       ShieldSession[]
+  // ── CORPORATE ───────────────────────────────────
+  company              Company?                @relation("CompanyAdmin")
+  companyEmployments   CompanyEmployee[]       @relation("CompanyEmployees")
+  // ── DUOPAY ──────────────────────────────────────
+  duoPayAccount        DuoPayAccount?
 
   @@index([email])
   @@index([phone])
@@ -130,16 +136,23 @@ model Ride {
   cancelledAt        DateTime?
   notes              String?
   cancellationReason String?
+  // ── CORPORATE ───────────────────────────────────
+  isCorporate        Boolean        @default(false)
+  corporateTrip      CorporateTrip?
+  // ── SHIELD ──────────────────────────────────────
+  shieldSession      ShieldSession?
+  // ── DUOPAY ──────────────────────────────────────
+  duoPayTransaction  DuoPayTransaction?
   payment            Payment?
   rating             Rating?
   customer           User           @relation("CustomerRides", fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   driver             User?          @relation("DriverRides", fields: [driverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  shieldSession      ShieldSession?
 
   @@index([customerId])
   @@index([driverId])
   @@index([status])
   @@index([requestedAt])
+  @@index([isCorporate])
 }
 
 model Delivery {
@@ -173,11 +186,15 @@ model Delivery {
   notes              String?
   cancellationReason String?
   inTransitAt        DateTime?      @db.Timestamptz(6)
+  // ── CORPORATE ───────────────────────────────────
+  isCorporate        Boolean        @default(false)
+  corporateTrip      CorporateTrip?
+  // ── SHIELD ──────────────────────────────────────
+  shieldSession      ShieldSession?
   customer           User           @relation("CustomerDeliveries", fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   partner            User?          @relation("PartnerDeliveries", fields: [partnerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   payment            Payment?
   rating             Rating?
-  shieldSession      ShieldSession?
 
   @@index([customerId])
   @@index([partnerId])
@@ -411,6 +428,10 @@ model AppFeedback {
   @@index([createdAt])
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SHIELD — Safety Guardian Feature
+// ─────────────────────────────────────────────────────────────────────────────
+
 model ShieldBeneficiary {
   id        String   @id @default(dbgenerated("(gen_random_uuid())::text"))
   userId    String
@@ -418,9 +439,9 @@ model ShieldBeneficiary {
   phone     String
   email     String?
   isDefault Boolean  @default(false)
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -439,19 +460,180 @@ model ShieldSession {
   autoTriggered    Boolean   @default(false)
   driverAlerted    Boolean   @default(false)
   arrivedSafe      Boolean   @default(false)
-  lastPingAt       DateTime? @db.Timestamptz(6)
-  expiresAt        DateTime  @db.Timestamptz(6)
-  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
-  delivery         Delivery? @relation(fields: [deliveryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  ride             Ride?     @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lastPingAt       DateTime?
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ride             Ride?     @relation(fields: [rideId], references: [id], onDelete: NoAction)
+  delivery         Delivery? @relation(fields: [deliveryId], references: [id], onDelete: NoAction)
 
   @@index([token])
   @@index([userId])
   @@index([isActive])
   @@index([expiresAt])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CORPORATE ACCOUNTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Company {
+  id                 String            @id @default(dbgenerated("(gen_random_uuid())::text"))
+  name               String
+  rcNumber           String?           @unique
+  email              String            @unique
+  phone              String
+  address            String?
+  logoUrl            String?
+  adminUserId        String            @unique
+  billingType        BillingType       @default(PREPAID)
+  status             CompanyStatus     @default(PENDING)
+  commissionRate     Float             @default(0.18)
+  onboardingFeePaid  Boolean           @default(false)
+  onboardingPaidAt   DateTime?
+  monthlyMinimum     Float             @default(100000)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @default(now()) @updatedAt
+  admin              User              @relation("CompanyAdmin", fields: [adminUserId], references: [id], onDelete: NoAction)
+  wallet             CompanyWallet?
+  employees          CompanyEmployee[]
+  trips              CorporateTrip[]
+
+  @@index([status])
+  @@index([adminUserId])
+}
+
+model CompanyWallet {
+  id                   String                     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  companyId            String                     @unique
+  balance              Float                      @default(0)
+  currency             String                     @default("NGN")
+  lowBalanceThreshold  Float                      @default(50000)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @default(now()) @updatedAt
+  company              Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transactions         CompanyWalletTransaction[]
+
+  @@index([companyId])
+}
+
+model CompanyWalletTransaction {
+  id          String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  walletId    String
+  type        String
+  amount      Float
+  description String
+  reference   String?       @unique
+  status      String        @default("COMPLETED")
+  createdAt   DateTime      @default(now())
+  wallet      CompanyWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@index([createdAt])
+}
+
+model CompanyEmployee {
+  id                       String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  companyId                String
+  userId                   String
+  monthlyLimit             Float         @default(30000)
+  currentMonthSpend        Float         @default(0)
+  spendResetDate           DateTime?
+  department               String?
+  jobTitle                 String?
+  isActive                 Boolean       @default(true)
+  restrictToBusinessHours  Boolean       @default(false)
+  requireTripPurpose       Boolean       @default(false)
+  inviteStatus             InviteStatus  @default(PENDING)
+  invitedAt                DateTime      @default(now())
+  joinedAt                 DateTime?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @default(now()) @updatedAt
+  company                  Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user                     User          @relation("CompanyEmployees", fields: [userId], references: [id], onDelete: NoAction)
+  trips                    CorporateTrip[]
+
+  @@unique([companyId, userId])
+  @@index([companyId])
+  @@index([userId])
+  @@index([inviteStatus])
+}
+
+model CorporateTrip {
+  id               String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  rideId           String?         @unique
+  deliveryId       String?         @unique
+  companyId        String
+  employeeId       String
+  purpose          String?
+  fare             Float
+  commissionAmount Float
+  billedAt         DateTime?
+  invoiceId        String?
+  createdAt        DateTime        @default(now())
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  employee         CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: NoAction)
+  ride             Ride?           @relation(fields: [rideId], references: [id], onDelete: NoAction)
+  delivery         Delivery?       @relation(fields: [deliveryId], references: [id], onDelete: NoAction)
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DUOPAY — Ride Now, Pay Later
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DuoPayAccount {
+  id                       String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId                   String              @unique
+  creditLimit              Float               @default(2000)
+  usedBalance              Float               @default(0)
+  status                   DuoPayStatus        @default(INACTIVE)
+  repaymentDay             Int                 @default(1)
+  consecutiveOnTime        Int                 @default(0)
+  paystackSubscriptionCode String?
+  paystackCustomerCode     String?
+  cardLast4                String?
+  cardBrand                String?
+  activatedAt              DateTime?
+  suspendedAt              DateTime?
+  nextRepaymentDate        DateTime?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @default(now()) @updatedAt
+  user                     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions             DuoPayTransaction[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([nextRepaymentDate])
+}
+
+model DuoPayTransaction {
+  id                 String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  duoPayAccountId    String
+  rideId             String?          @unique
+  amount             Float
+  dueDate            DateTime
+  paidAt             DateTime?
+  status             DuoPayTxStatus   @default(PENDING)
+  repaymentReference String?          @unique
+  reminderSentAt     DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @default(now()) @updatedAt
+  account            DuoPayAccount    @relation(fields: [duoPayAccountId], references: [id], onDelete: Cascade)
+  ride               Ride?            @relation(fields: [rideId], references: [id], onDelete: NoAction)
+
+  @@index([duoPayAccountId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────────────────────
 
 enum UserRole {
   CUSTOMER
@@ -497,6 +679,8 @@ enum PaymentMethod {
   CASH
   CARD
   WALLET
+  CORPORATE
+  DUOPAY
 }
 
 enum VehicleType {
@@ -518,4 +702,35 @@ enum PayoutStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+enum BillingType {
+  PREPAID
+  POSTPAID
+}
+
+enum CompanyStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum InviteStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+}
+
+enum DuoPayStatus {
+  INACTIVE
+  ACTIVE
+  SUSPENDED
+  DEFAULTED
+}
+
+enum DuoPayTxStatus {
+  PENDING
+  PAID
+  OVERDUE
+  WAIVED
 }
