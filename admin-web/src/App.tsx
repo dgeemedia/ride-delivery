@@ -29,6 +29,10 @@ import Analytics        from '@/pages/Analytics/Overview';
 import GeneralSettings  from '@/pages/Settings/GeneralSettings';
 import ShieldMonitor    from '@/pages/Shield/ShieldMonitor';
 import ShieldSession    from '@/pages/Shield/ShieldSession';
+import CompanyList      from '@/pages/Corporate/CompanyList';
+import CompanyDetails   from '@/pages/Corporate/CompanyDetails';
+import DuoPayMonitor    from '@/pages/DuoPay/DuoPayMonitor';
+import DuoPayDefaults   from '@/pages/DuoPay/DuoPayDefaults';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
@@ -58,10 +62,10 @@ function App() {
           <Route path="/users/:id"          element={<ProtectedRoute><UserDetails /></ProtectedRoute>} />
 
           {/* Drivers — statics before :id wildcard */}
-          <Route path="/drivers"               element={<ProtectedRoute><DriverList /></ProtectedRoute>} />
-          <Route path="/drivers/pending"        element={<ProtectedRoute><DriverApproval /></ProtectedRoute>} />
-          <Route path="/drivers/:id/documents" element={<ProtectedRoute><DriverDocuments /></ProtectedRoute>} />
-          <Route path="/drivers/:id"           element={<ProtectedRoute><DriverDetails /></ProtectedRoute>} />
+          <Route path="/drivers"                element={<ProtectedRoute><DriverList /></ProtectedRoute>} />
+          <Route path="/drivers/pending"         element={<ProtectedRoute><DriverApproval /></ProtectedRoute>} />
+          <Route path="/drivers/:id/documents"  element={<ProtectedRoute><DriverDocuments /></ProtectedRoute>} />
+          <Route path="/drivers/:id"            element={<ProtectedRoute><DriverDetails /></ProtectedRoute>} />
 
           {/* Partners */}
           <Route path="/partners"         element={<ProtectedRoute><PartnerList /></ProtectedRoute>} />
@@ -81,9 +85,18 @@ function App() {
           <Route path="/support/tickets"     element={<ProtectedRoute><TicketList /></ProtectedRoute>} />
           <Route path="/support/tickets/:id" element={<ProtectedRoute><TicketDetail /></ProtectedRoute>} />
 
-          {/* SHIELD Safety Monitor */}
-          <Route path="/shield"      element={<ProtectedRoute><ShieldMonitor /></ProtectedRoute>} />
-          <Route path="/shield/:id"  element={<ProtectedRoute><ShieldSession /></ProtectedRoute>} />
+          {/* SHIELD — /shield before /shield/:id */}
+          <Route path="/shield"     element={<ProtectedRoute><ShieldMonitor /></ProtectedRoute>} />
+          <Route path="/shield/:id" element={<ProtectedRoute><ShieldSession /></ProtectedRoute>} />
+
+          {/* Corporate — /corporate/trips is a static route; must come before /:id */}
+          <Route path="/corporate"       element={<ProtectedRoute><CompanyList /></ProtectedRoute>} />
+          <Route path="/corporate/trips" element={<ProtectedRoute><CompanyList /></ProtectedRoute>} />
+          <Route path="/corporate/:id"   element={<ProtectedRoute><CompanyDetails /></ProtectedRoute>} />
+
+          {/* DuoPay — /duopay/defaults is static; must come before /:id if we ever add one */}
+          <Route path="/duopay"          element={<ProtectedRoute><DuoPayMonitor /></ProtectedRoute>} />
+          <Route path="/duopay/defaults" element={<ProtectedRoute><DuoPayDefaults /></ProtectedRoute>} />
 
           {/* Other */}
           <Route path="/payments"  element={<ProtectedRoute><PaymentList /></ProtectedRoute>} />
@@ -93,12 +106,16 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
-      <Toaster position="top-right" toastOptions={{
-        duration: 4000,
-        style: { background: '#fff', color: '#363636' },
-        success: { duration: 3000, iconTheme: { primary: '#34C759', secondary: '#fff' } },
-        error:   { duration: 4000, iconTheme: { primary: '#FF3B30', secondary: '#fff' } },
-      }} />
+
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: { background: '#fff', color: '#363636' },
+          success: { duration: 3000, iconTheme: { primary: '#34C759', secondary: '#fff' } },
+          error:   { duration: 4000, iconTheme: { primary: '#FF3B30', secondary: '#fff' } },
+        }}
+      />
     </>
   );
 }
