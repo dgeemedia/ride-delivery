@@ -4,7 +4,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
   Dimensions, Animated, ScrollView, ActivityIndicator,
   StatusBar, Platform, KeyboardAvoidingView, Alert,
-  FlatList, Image,
+  FlatList, Image, Modal, SafeAreaView,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }   from '../../context/ThemeContext';
 import { rideAPI }    from '../../services/api';
 import socketService  from '../../services/socket';
+import { GOOGLE_MAPS_API_KEY } from '../../config/constants'; // add this to your constants
 
 const { width, height } = Dimensions.get('window');
 
@@ -101,15 +102,15 @@ const DriverCard = ({ driver, selected, onSelect, accentColor, theme }) => (
         </View>
       </View>
       <Text style={[dc.vehicle, { color: theme.hint }]} numberOfLines={1}>
-        {driver.vehicleColor} {driver.vehicleMake} {driver.vehicleModel} · {driver.vehiclePlate}
+        {driver.vehicleColor} {driver.vehicleMake} {driver.vehicleModel} • {driver.vehiclePlate}
       </Text>
       <View style={dc.meta}>
         <Ionicons name="star" size={11} color="#C9A96E" />
         <Text style={[dc.metaTxt, { color: theme.hint }]}> {driver.rating?.toFixed(1) ?? '–'}</Text>
-        <Text style={[dc.dot, { color: theme.border }]}>  ·  </Text>
+        <Text style={[dc.dot, { color: theme.border }]}>  •  </Text>
         <Ionicons name="time-outline" size={11} color={theme.hint} />
         <Text style={[dc.metaTxt, { color: theme.hint }]}> {driver.etaMinutes} min</Text>
-        <Text style={[dc.dot, { color: theme.border }]}>  ·  </Text>
+        <Text style={[dc.dot, { color: theme.border }]}>  •  </Text>
         <Ionicons name="location-outline" size={11} color={theme.hint} />
         <Text style={[dc.metaTxt, { color: theme.hint }]}> {driver.distanceKm?.toFixed(1)} km</Text>
       </View>
@@ -202,6 +203,148 @@ const wt = StyleSheet.create({
   cancelTxt: { fontSize: 14, fontWeight: '600' },
 });
 
+// ── LocationSearchModal ────────────────────────────────────────────────────────
+const LocationSearchModal = ({
+  visible, type, query, results, loading,
+  onChangeText, onSelect, onClose, onSwitchToPin,
+  accentColor,
+}) => {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (visible) {
+      // Small delay so modal is fully rendered before focusing
+      const t = setTimeout(() => inputRef.current?.focus(), 150);
+      return () => clearTimeout(t);
+    }
+  }, [visible]);
+
+  const pinColor = type === 'dropoff' ? '#E05555' : accentColor;
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={lsm.root}>
+        {/* ── Header ── */}
+        <View style={lsm.header}>
+          <TouchableOpacity onPress={onClose} style={lsm.backBtn} activeOpacity={0.7}>
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={[lsm.inputWrap, { borderColor: pinColor + '60' }]}>
+            <Ionicons
+              name={type === 'pickup' ? 'radio-button-on' : 'location'}
+              size={16}
+              color={pinColor}
+            />
+            <TextInput
+              ref={inputRef}
+              style={lsm.input}
+              placeholder={type === 'pickup' ? 'Search pickup location…' : 'Search drop-off location…'}
+              placeholderTextColor="#5A5A5A"
+              value={query}
+              onChangeText={onChangeText}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              autoCorrect={false}
+            />
+            {loading && <ActivityIndicator color={pinColor} size="small" />}
+            {!loading && query.length > 0 && (
+              <TouchableOpacity onPress={() => onChangeText('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle" size={18} color="#5A5A5A" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* ── Switch to map pin ── */}
+        <TouchableOpacity style={lsm.mapPinRow} onPress={onSwitchToPin} activeOpacity={0.8}>
+          <View style={[lsm.mapPinIcon, { backgroundColor: pinColor + '18' }]}>
+            <Ionicons name="map-outline" size={16} color={pinColor} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[lsm.mapPinLabel, { color: pinColor }]}>Place pin on map</Text>
+            <Text style={lsm.mapPinSub}>Drag the map to set your exact location</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="#5A5A5A" />
+        </TouchableOpacity>
+
+        <View style={lsm.divider} />
+
+        {/* ── Results ── */}
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.place_id}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 40 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={lsm.resultRow}
+              onPress={() => onSelect(item)}
+              activeOpacity={0.7}
+            >
+              <View style={lsm.resultIcon}>
+                <Ionicons name="location-outline" size={16} color="#6A6A6A" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={lsm.resultMain} numberOfLines={1}>
+                  {item.structured_formatting?.main_text ?? item.description}
+                </Text>
+                {item.structured_formatting?.secondary_text ? (
+                  <Text style={lsm.resultSub} numberOfLines={1}>
+                    {item.structured_formatting.secondary_text}
+                  </Text>
+                ) : null}
+              </View>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            query.length === 0 ? (
+              <View style={lsm.emptyWrap}>
+                <Ionicons name="search-outline" size={40} color="#2A2A2A" />
+                <Text style={lsm.emptyTitle}>Search for a location</Text>
+                <Text style={lsm.emptySub}>Type an address, landmark, or area</Text>
+              </View>
+            ) : query.length < 3 ? (
+              <Text style={lsm.hintTxt}>Keep typing to see results…</Text>
+            ) : !loading ? (
+              <View style={lsm.emptyWrap}>
+                <Ionicons name="alert-circle-outline" size={36} color="#2A2A2A" />
+                <Text style={lsm.emptyTitle}>No results found</Text>
+                <Text style={lsm.emptySub}>Try a different search or use the map pin</Text>
+              </View>
+            ) : null
+          }
+        />
+      </SafeAreaView>
+    </Modal>
+  );
+};
+
+const lsm = StyleSheet.create({
+  root:       { flex: 1, backgroundColor: '#111111' },
+  header:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1E1E1E' },
+  backBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  inputWrap:  { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#1A1A1A', borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 12, height: 44 },
+  input:      { flex: 1, fontSize: 14, fontWeight: '500', color: '#F2EEE6', height: 44 },
+  mapPinRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  mapPinIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  mapPinLabel:{ fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  mapPinSub:  { fontSize: 11, color: '#5A5A5A' },
+  divider:    { height: 1, backgroundColor: '#1E1E1E', marginHorizontal: 16 },
+  resultRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#161616' },
+  resultIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  resultMain: { fontSize: 14, fontWeight: '600', color: '#F2EEE6', marginBottom: 2 },
+  resultSub:  { fontSize: 12, color: '#5A5A5A' },
+  emptyWrap:  { alignItems: 'center', paddingTop: 60, paddingHorizontal: 40 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#3A3A3A', marginTop: 16, marginBottom: 6 },
+  emptySub:   { fontSize: 13, color: '#3A3A3A', textAlign: 'center', lineHeight: 19 },
+  hintTxt:    { fontSize: 13, color: '#3A3A3A', textAlign: 'center', paddingTop: 40 },
+});
+
 // ── MAIN ───────────────────────────────────────────────────────────────────────
 export default function RequestRideScreen({ navigation }) {
   const { theme }   = useTheme();
@@ -220,6 +363,13 @@ export default function RequestRideScreen({ navigation }) {
   const [resolvingAddr, setResolvingAddr] = useState(false);
   const [liveAddress,   setLiveAddress]   = useState('');
   const [mapCenter,     setMapCenter]     = useState(null);
+
+  // ── Location search modal ──────────────────────────────────────────────────
+  const [searchModal,   setSearchModal]   = useState(null); // 'pickup' | 'dropoff' | null
+  const [searchQuery,   setSearchQuery]   = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchTimer = useRef(null);
 
   // ── Drivers & ride ─────────────────────────────────────────────────────────
   const mapRef           = useRef(null);
@@ -241,29 +391,29 @@ export default function RequestRideScreen({ navigation }) {
   const fadeA     = useRef(new Animated.Value(1)).current;
   const pinBounce = useRef(new Animated.Value(0)).current;
 
-// ── GPS on mount (update here) ─────────────────────────────────────────────
-useEffect(() => {
-  (async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
+  // ── GPS on mount ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          const coords = { lat: 6.5244, lng: 3.3792 };
+          setPickupCoords(coords);
+          setPickupAddress('Lagos, Nigeria');
+          return;
+        }
+        const loc    = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+        setPickupCoords(coords);
+        reverseGeocode(coords.lat, coords.lng, setPickupAddress);
+      } catch {
         const coords = { lat: 6.5244, lng: 3.3792 };
         setPickupCoords(coords);
-        setPickupAddress(formatAddrWithCoords('Lagos, Nigeria', coords.lat, coords.lng));
-        return;
+        setPickupAddress('Lagos, Nigeria');
       }
-      const loc    = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
-      setPickupCoords(coords);
-      reverseGeocode(coords.lat, coords.lng, setPickupAddress);
-    } catch {
-      const coords = { lat: 6.5244, lng: 3.3792 };
-      setPickupCoords(coords);
-      setPickupAddress(formatAddrWithCoords('Lagos, Nigeria', coords.lat, coords.lng));
-    }
-  })();
-  socketService.connect().catch(() => {});
-}, []);
+    })();
+    socketService.connect().catch(() => {});
+  }, []);
 
   // ── Animate map to pickup once GPS lands ──────────────────────────────────
   useEffect(() => {
@@ -295,14 +445,12 @@ useEffect(() => {
   // ── Socket listeners ───────────────────────────────────────────────────────
   useEffect(() => {
     const handleStatus = (data) => {
-      console.log('[RequestRide] ride:status:update', data);
       if (data.rideId === pendingRideId && data.status === 'ACCEPTED') {
         setRideAccepted(true);
         setTimeout(() => navigation.replace('RideTracking', { rideId: data.rideId }), 1800);
       }
     };
     const handleCancelled = (data) => {
-      console.log('[RequestRide] ride:cancelled', data);
       if (data.rideId === pendingRideId) {
         setPendingRideId(null); setRideAccepted(false); setStep(2);
         Alert.alert('Request Cancelled', 'The driver cancelled this request. Please choose another driver.');
@@ -315,6 +463,103 @@ useEffect(() => {
       socketService.off('ride:cancelled',     handleCancelled);
     };
   }, [pendingRideId, navigation]);
+
+  // ── Places text search ─────────────────────────────────────────────────────
+  const searchPlaces = useCallback(async (text) => {
+    setSearchQuery(text);
+    if (text.length < 3) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+    clearTimeout(searchTimer.current);
+    setSearchLoading(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const locationBias = pickupCoords
+          ? `&location=${pickupCoords.lat},${pickupCoords.lng}&radius=50000`
+          : '&components=country:ng';
+        const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&key=${GOOGLE_MAPS_API_KEY}${locationBias}&language=en`;
+        const res  = await fetch(url);
+        const data = await res.json();
+        setSearchResults(data.predictions ?? []);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 350);
+  }, [pickupCoords]);
+
+  // ── Resolve place_id → coords + address ───────────────────────────────────
+  const selectPlace = useCallback(async (place) => {
+    try {
+      const url  = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&key=${GOOGLE_MAPS_API_KEY}&fields=geometry,formatted_address`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      const loc  = data.result?.geometry?.location;
+      if (!loc) {
+        Alert.alert('Error', 'Could not get location details. Please try again.');
+        return;
+      }
+      const coords  = { lat: loc.lat, lng: loc.lng };
+      const address = data.result.formatted_address ?? place.description;
+
+      if (searchModal === 'pickup') {
+        setPickupCoords(coords);
+        setPickupAddress(address);
+        mapRef.current?.animateToRegion({
+          latitude: coords.lat, longitude: coords.lng,
+          latitudeDelta: 0.012, longitudeDelta: 0.012,
+        }, 500);
+      } else {
+        setDropoffCoords(coords);
+        setDropoffAddress(address);
+        if (pickupCoords) {
+          setTimeout(() => {
+            mapRef.current?.fitToCoordinates(
+              [
+                { latitude: pickupCoords.lat, longitude: pickupCoords.lng },
+                { latitude: coords.lat,       longitude: coords.lng       },
+              ],
+              { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true }
+            );
+          }, 300);
+        }
+      }
+    } catch {
+      Alert.alert('Error', 'Could not load location. Please try again.');
+    } finally {
+      setSearchModal(null);
+      setSearchQuery('');
+      setSearchResults([]);
+    }
+  }, [searchModal, pickupCoords]);
+
+  // ── Open search modal ──────────────────────────────────────────────────────
+  const openSearchModal = useCallback((type) => {
+    setSearchModal(type);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchLoading(false);
+  }, []);
+
+  // ── Close search modal ─────────────────────────────────────────────────────
+  const closeSearchModal = useCallback(() => {
+    clearTimeout(searchTimer.current);
+    setSearchModal(null);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchLoading(false);
+  }, []);
+
+  // ── Switch from search modal → map pin ────────────────────────────────────
+  const switchToMapPin = useCallback(() => {
+    const type = searchModal;
+    closeSearchModal();
+    // Small delay so modal fully dismisses before map pin mode starts
+    setTimeout(() => startPickingLocation(type), 300);
+  }, [searchModal]);
 
   // ── Map drag handlers ──────────────────────────────────────────────────────
   const onRegionChange = useCallback((region) => {
@@ -371,7 +616,7 @@ useEffect(() => {
   };
 
   // ── Start placing a pin ────────────────────────────────────────────────────
-  const startPickingLocation = (type) => {
+  const startPickingLocation = useCallback((type) => {
     setPlacingPin(type);
     const current = type === 'pickup' ? pickupCoords : dropoffCoords;
     const center  = current ?? pickupCoords ?? { lat: 6.5244, lng: 3.3792 };
@@ -381,13 +626,12 @@ useEffect(() => {
       latitude: center.lat, longitude: center.lng,
       latitudeDelta: 0.008, longitudeDelta: 0.008,
     }, 500);
-  };
+  }, [pickupCoords, dropoffCoords, pickupAddress, dropoffAddress]);
 
   // ── Set a quick destination directly ──────────────────────────────────────
   const setQuickDestination = (dest) => {
     setDropoffCoords({ lat: dest.lat, lng: dest.lng });
     setDropoffAddress(dest.label);
-    // Animate map to show both points
     if (pickupCoords) {
       setTimeout(() => {
         mapRef.current?.fitToCoordinates(
@@ -404,7 +648,7 @@ useEffect(() => {
   // ── Find drivers ───────────────────────────────────────────────────────────
   const proceedToMap = useCallback(async () => {
     if (!pickupCoords || !dropoffCoords) {
-      Alert.alert('Set both locations', 'Please set both pickup and drop-off locations on the map.');
+      Alert.alert('Set both locations', 'Please set both pickup and drop-off locations.');
       return;
     }
 
@@ -417,14 +661,9 @@ useEffect(() => {
     try {
       const res  = await rideAPI.getNearbyDrivers({ pickupLat: pickupCoords.lat, pickupLng: pickupCoords.lng, radiusKm: 50 });
       const list = res?.data?.drivers ?? res?.drivers ?? [];
-      console.log('[RequestRide] API returned', list.length, 'drivers');
-      list.forEach((d, i) =>
-        console.log(`  [${i}] id=${d.driverId} name=${d.firstName} ${d.lastName} lat=${d.currentLat} lng=${d.currentLng}`)
-      );
       const realDrivers = list.filter(d => !String(d.driverId).startsWith('mock-'));
       setDrivers(realDrivers);
     } catch (err) {
-      console.error('[RequestRide] getNearbyDrivers error:', err?.response?.data ?? err.message);
       Alert.alert('Drivers unavailable', err?.response?.data?.message ?? 'Could not load nearby drivers.');
       setDrivers([]);
     } finally {
@@ -453,7 +692,6 @@ useEffect(() => {
     if (String(selectedDriver.driverId).startsWith('mock-')) {
       Alert.alert('Error', 'Invalid driver. Please retry.'); return;
     }
-    console.log('[RequestRide] Booking driver:', selectedDriver.driverId, selectedDriver.firstName);
     setRequesting(true);
     try {
       const res = await rideAPI.requestSpecificDriver({
@@ -464,7 +702,6 @@ useEffect(() => {
         paymentMethod: 'CASH',
       });
       const rideId = res?.data?.ride?.id ?? res?.ride?.id;
-      console.log('[RequestRide] Request sent, rideId:', rideId);
       setPendingRideId(rideId);
       if (rideId) socketService.joinRide(rideId);
       Animated.timing(fadeA, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
@@ -574,7 +811,6 @@ useEffect(() => {
       ══════════════════════════════════════════════════════════════════════ */}
       {isPickingLocation && (
         <>
-          {/* Fixed crosshair pin at screen centre */}
           <View style={s.crosshairWrap} pointerEvents="none">
             <View style={[s.pinShadow, { backgroundColor: pinColor + '40' }]} />
             <Animated.View style={[s.pinAnimWrap, { transform: [{ translateY: pinBounce }] }]}>
@@ -585,7 +821,6 @@ useEffect(() => {
             </Animated.View>
           </View>
 
-          {/* Top label */}
           <View style={[s.pinLabelBar, { top: backBtnTop, backgroundColor: '#111111EE' }]}>
             <View style={[s.pinLabelDot, { backgroundColor: pinColor }]} />
             <Text style={s.pinLabelTxt}>
@@ -593,7 +828,6 @@ useEffect(() => {
             </Text>
           </View>
 
-          {/* Bottom confirm bar */}
           <View style={[s.confirmBar, { backgroundColor: '#111111', paddingBottom: sheetPadBottom }]}>
             <View style={s.confirmBarInner}>
               <View style={[s.confirmBarDot, { backgroundColor: pinColor }]} />
@@ -636,7 +870,7 @@ useEffect(() => {
           {step === 1 && (
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
               <Text style={s.sheetTitle}>Where to?</Text>
-              <Text style={[s.sheetSub, { color: '#6A6A6A' }]}>Tap a pin to set your location on the map</Text>
+              <Text style={[s.sheetSub, { color: '#6A6A6A' }]}>Search or tap the map icon to pin your location</Text>
 
               {/* Location pickers */}
               <View style={s.locationRow}>
@@ -646,40 +880,57 @@ useEffect(() => {
                   <View style={[s.routeDot, { backgroundColor: '#E05555' }]} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  {/* Pickup button */}
+
+                  {/* ── Pickup field ── */}
                   <TouchableOpacity
                     style={[s.locBtn, { backgroundColor: '#1A1A1A', borderColor: accentColor + '50' }]}
-                    onPress={() => startPickingLocation('pickup')}
+                    onPress={() => openSearchModal('pickup')}
                     activeOpacity={0.85}
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={[s.locBtnLabel, { color: accentColor }]}>PICKUP</Text>
                       <Text style={[s.locBtnAddr, { color: pickupCoords ? '#F2EEE6' : '#6A6A6A' }]} numberOfLines={1}>
-                        {pickupAddress || 'Tap to set pickup on map'}
+                        {pickupAddress || 'Search or pin pickup location'}
                       </Text>
                     </View>
+                    {/* Search icon — opens modal */}
                     <View style={[s.locBtnIcon, { backgroundColor: accentColor + '18' }]}>
-                      <Ionicons name="map-outline" size={14} color={accentColor} />
+                      <Ionicons name="search" size={14} color={accentColor} />
                     </View>
+                    {/* Map pin icon — opens pin mode */}
+                    <TouchableOpacity
+                      style={[s.locBtnIconSecondary, { backgroundColor: accentColor + '10' }]}
+                      onPress={(e) => { e.stopPropagation(); startPickingLocation('pickup'); }}
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                    >
+                      <Ionicons name="map-outline" size={14} color={accentColor} />
+                    </TouchableOpacity>
                   </TouchableOpacity>
 
                   <View style={{ height: 6 }} />
 
-                  {/* Dropoff button */}
+                  {/* ── Dropoff field ── */}
                   <TouchableOpacity
                     style={[s.locBtn, { backgroundColor: '#1A1A1A', borderColor: '#E05555' + '50' }]}
-                    onPress={() => startPickingLocation('dropoff')}
+                    onPress={() => openSearchModal('dropoff')}
                     activeOpacity={0.85}
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={[s.locBtnLabel, { color: '#E05555' }]}>DROP-OFF</Text>
                       <Text style={[s.locBtnAddr, { color: dropoffCoords ? '#F2EEE6' : '#6A6A6A' }]} numberOfLines={1}>
-                        {dropoffAddress || 'Tap to set destination on map'}
+                        {dropoffAddress || 'Search or pin drop-off location'}
                       </Text>
                     </View>
                     <View style={[s.locBtnIcon, { backgroundColor: '#E05555' + '18' }]}>
-                      <Ionicons name="map-outline" size={14} color="#E05555" />
+                      <Ionicons name="search" size={14} color="#E05555" />
                     </View>
+                    <TouchableOpacity
+                      style={[s.locBtnIconSecondary, { backgroundColor: '#E05555' + '10' }]}
+                      onPress={(e) => { e.stopPropagation(); startPickingLocation('dropoff'); }}
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                    >
+                      <Ionicons name="map-outline" size={14} color="#E05555" />
+                    </TouchableOpacity>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -807,12 +1058,12 @@ useEffect(() => {
                       {selectedDriver.firstName} {selectedDriver.lastName}
                     </Text>
                     <Text style={[s.confirmVehicle, { color: '#6A6A6A' }]}>
-                      {selectedDriver.vehicleColor} {selectedDriver.vehicleMake} · {selectedDriver.vehiclePlate}
+                      {selectedDriver.vehicleColor} {selectedDriver.vehicleMake} • {selectedDriver.vehiclePlate}
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
                       <Ionicons name="star" size={12} color="#C9A96E" />
                       <Text style={[s.confirmMeta, { color: '#6A6A6A' }]}>{selectedDriver.rating?.toFixed(1) ?? '–'}</Text>
-                      <Text style={[s.confirmMeta, { color: '#2A2A2A' }]}>·</Text>
+                      <Text style={[s.confirmMeta, { color: '#2A2A2A' }]}>•</Text>
                       <Text style={[s.confirmMeta, { color: '#6A6A6A' }]}>{selectedDriver.totalRides} trips</Text>
                     </View>
                   </View>
@@ -863,6 +1114,20 @@ useEffect(() => {
           )}
         </Animated.View>
       )}
+
+      {/* ── Location Search Modal ── */}
+      <LocationSearchModal
+        visible={searchModal !== null}
+        type={searchModal}
+        query={searchQuery}
+        results={searchResults}
+        loading={searchLoading}
+        onChangeText={searchPlaces}
+        onSelect={selectPlace}
+        onClose={closeSearchModal}
+        onSwitchToPin={switchToMapPin}
+        accentColor={accentColor}
+      />
     </View>
   );
 }
@@ -938,13 +1203,14 @@ const s = StyleSheet.create({
   routeDot:    { width: 10, height: 10, borderRadius: 5 },
   routeLine:   { width: 1.5, flex: 1, marginVertical: 4 },
   locBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
     borderRadius: 14, borderWidth: 1.5,
     paddingHorizontal: 14, paddingVertical: 12,
   },
-  locBtnLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 2, marginBottom: 3 },
-  locBtnAddr:  { fontSize: 13, fontWeight: '500' },
-  locBtnIcon:  { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  locBtnLabel:          { fontSize: 9, fontWeight: '700', letterSpacing: 2, marginBottom: 3 },
+  locBtnAddr:           { fontSize: 13, fontWeight: '500' },
+  locBtnIcon:           { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  locBtnIconSecondary:  { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
 
   // ── Quick chips ────────────────────────────────────────────────────────────
   quickLabel:   { fontSize: 9, fontWeight: '700', letterSpacing: 2.5, marginBottom: 10 },

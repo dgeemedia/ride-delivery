@@ -562,8 +562,8 @@ exports.getNearbyDrivers = async (req, res) => {
     .sort((a, b) => a.distanceKm - b.distanceKm)
     .slice(0, 20);
 
-  const formatted = nearby.map(d => {
-    const fareEst = estimateFare(3, d.vehicleType ?? 'CAR');
+  const formatted = await Promise.all(nearby.map(async (d) => {
+    const fareEst = await estimateFare(3, d.vehicleType ?? 'CAR');
     return {
       driverId:        d.user.id,
       profileId:       d.id,
@@ -586,7 +586,7 @@ exports.getNearbyDrivers = async (req, res) => {
       surgeLabel:      fareEst.surgeLabel,
       bookingFee:      fareEst.bookingFee,
     };
-  });
+  }));
 
   res.status(200).json({ success: true, data: { drivers: formatted, total: formatted.length } });
 };
@@ -631,7 +631,7 @@ exports.requestSpecificDriver = async (req, res) => {
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
   const usedVehicleType = vehicleType?.toUpperCase() ?? driverProfile.vehicleType ?? 'CAR';
-  const fareBreakdown   = estimateFare(distance, usedVehicleType);
+  const fareBreakdown   = await estimateFare(distance, usedVehicleType);
   let   finalFare       = fareBreakdown.estimatedFare;
 
   let driverFloorResult = null;
