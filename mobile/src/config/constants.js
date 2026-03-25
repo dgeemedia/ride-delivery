@@ -17,7 +17,7 @@ import { Platform } from 'react-native';
 
 const LAN_URL       = process.env.EXPO_PUBLIC_API_BASE_URL
                    ?? Constants.expoConfig?.extra?.apiUrl
-                   ?? 'http://192.168.180.189:3000/api';
+                   ?? 'http://192.168.164.189:3000/api';
 
 const LOCALHOST_URL = 'http://localhost:3000/api';
 

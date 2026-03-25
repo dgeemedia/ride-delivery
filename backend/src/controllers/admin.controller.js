@@ -1374,4 +1374,432 @@ exports.closeShieldSession = async (req, res) => {
   res.status(200).json({ success: true, message: 'SHIELD session closed' });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADD TO: backend/src/controllers/admin.controller.js
+//
+// Paste these functions before the final  module.exports = exports;
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── CORPORATE ADMIN ─────────────────────────────────────────────────────────
+
+/**
+ * @desc  List all companies — paginated, searchable, filterable by status
+ * @route GET /api/admin/corporate/companies
+ */
+exports.getCompanies = async (req, res) => {
+  const { page = 1, limit = 15, search, status } = req.query;
+  const skip  = (parseInt(page) - 1) * parseInt(limit);
+  const where = {};
+
+  if (status) where.status = status;
+  if (search) {
+    where.OR = [
+      { name:  { contains: search, mode: 'insensitive' } },
+      { email: { contains: search, mode: 'insensitive' } },
+      { rcNumber: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  const [companies, total] = await Promise.all([
+    prisma.company.findMany({
+      where,
+      include: {
+        admin:  { select: { id: true, firstName: true, lastName: true, email: true } },
+        wallet: { select: { balance: true, lowBalanceThreshold: true } },
+        _count: { select: { employees: true, trips: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: parseInt(limit),
+    }),
+    prisma.company.count({ where }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      companies,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+    },
+  });
+};
+
+/**
+ * @desc  Single company detail with wallet transactions, employees and recent trips
+ * @route GET /api/admin/corporate/companies/:id
+ */
+exports.getCompanyById = async (req, res) => {
+  const { id } = req.params;
+
+  const company = await prisma.company.findUnique({
+    where: { id },
+    include: {
+      admin:  { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      wallet: {
+        include: {
+          transactions: { orderBy: { createdAt: 'desc' }, take: 20 },
+        },
+      },
+      _count: { select: { employees: true, trips: true } },
+    },
+  });
+
+  if (!company) throw new AppError('Company not found', 404);
+
+  res.status(200).json({ success: true, data: { company } });
+};
+
+/**
+ * @desc  List employees for a specific company
+ * @route GET /api/admin/corporate/companies/:id/employees
+ */
+exports.getCompanyEmployees = async (req, res) => {
+  const { id }              = req.params;
+  const { page = 1, limit = 20 } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const [employees, total] = await Promise.all([
+    prisma.companyEmployee.findMany({
+      where: { companyId: id },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, phone: true, email: true, profileImage: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: parseInt(limit),
+    }),
+    prisma.companyEmployee.count({ where: { companyId: id } }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      employees,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+    },
+  });
+};
+
+/**
+ * @desc  List trips for a specific company
+ * @route GET /api/admin/corporate/companies/:id/trips
+ */
+exports.getCompanyTrips = async (req, res) => {
+  const { id }              = req.params;
+  const { page = 1, limit = 20 } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const [trips, total] = await Promise.all([
+    prisma.corporateTrip.findMany({
+      where: { companyId: id },
+      include: {
+        employee: { include: { user: { select: { firstName: true, lastName: true } } } },
+        ride:     { select: { pickupAddress: true, dropoffAddress: true, completedAt: true, status: true } },
+        delivery: { select: { pickupAddress: true, dropoffAddress: true, deliveredAt: true, status: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: parseInt(limit),
+    }),
+    prisma.corporateTrip.count({ where: { companyId: id } }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      trips,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+    },
+  });
+};
+
+/**
+ * @desc  Activate a pending company — sets status to ACTIVE
+ * @route PUT /api/admin/corporate/companies/:id/activate
+ */
+exports.activateCompany = async (req, res) => {
+  const { id } = req.params;
+
+  const company = await prisma.company.findUnique({ where: { id } });
+  if (!company) throw new AppError('Company not found', 404);
+  if (company.status === 'ACTIVE') throw new AppError('Company is already active', 400);
+
+  const updated = await prisma.company.update({
+    where: { id },
+    data:  { status: 'ACTIVE' },
+  });
+
+  await notificationService.notify({
+    userId:  company.adminUserId,
+    title:   '🏢 Corporate Account Activated!',
+    message: `Your corporate transport account for ${company.name} has been approved and activated. You can now top up your wallet and invite employees.`,
+    type:    'corporate_activated',
+    data:    { companyId: id },
+  });
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'company_activated',
+    entityType: 'Company',
+    entityId:   id,
+    details:    { companyName: company.name },
+    req,
+  });
+
+  res.status(200).json({ success: true, message: 'Company activated', data: { company: updated } });
+};
+
+/**
+ * @desc  Suspend an active company
+ * @route PUT /api/admin/corporate/companies/:id/suspend
+ */
+exports.suspendCompany = async (req, res) => {
+  const { id }     = req.params;
+  const { reason } = req.body;
+
+  const company = await prisma.company.findUnique({ where: { id } });
+  if (!company) throw new AppError('Company not found', 404);
+  if (company.status === 'SUSPENDED') throw new AppError('Company is already suspended', 400);
+
+  const updated = await prisma.company.update({
+    where: { id },
+    data:  { status: 'SUSPENDED' },
+  });
+
+  await notificationService.notify({
+    userId:  company.adminUserId,
+    title:   '⚠️ Corporate Account Suspended',
+    message: `Your corporate transport account has been suspended.${reason ? ` Reason: ${reason}` : ''} Contact support to resolve.`,
+    type:    'corporate_suspended',
+    data:    { companyId: id, reason },
+  });
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'company_suspended',
+    entityType: 'Company',
+    entityId:   id,
+    details:    { reason, companyName: company.name },
+    req,
+  });
+
+  res.status(200).json({ success: true, message: 'Company suspended', data: { company: updated } });
+};
+
+// ─── DUOPAY ADMIN ─────────────────────────────────────────────────────────────
+
+/**
+ * @desc  Platform-wide DuoPay stats for the monitor page
+ * @route GET /api/admin/duopay/stats
+ */
+exports.getDuoPayStats = async (req, res) => {
+  const [
+    totalAccounts,
+    activeAccounts,
+    suspendedAccounts,
+    defaultedAccounts,
+    outstandingAgg,
+    overdueAgg,
+  ] = await Promise.all([
+    prisma.duoPayAccount.count(),
+    prisma.duoPayAccount.count({ where: { status: 'ACTIVE'    } }),
+    prisma.duoPayAccount.count({ where: { status: 'SUSPENDED' } }),
+    prisma.duoPayAccount.count({ where: { status: 'DEFAULTED' } }),
+    prisma.duoPayAccount.aggregate({ _sum: { usedBalance: true } }),
+    prisma.duoPayTransaction.aggregate({
+      where: { status: 'OVERDUE' },
+      _sum:  { amount: true },
+    }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      totalAccounts,
+      activeAccounts,
+      suspendedAccounts,
+      defaultedAccounts,
+      totalOutstanding: outstandingAgg._sum.usedBalance ?? 0,
+      totalOverdue:     overdueAgg._sum.amount          ?? 0,
+    },
+  });
+};
+
+/**
+ * @desc  List DuoPay accounts — paginated, filterable by status
+ * @route GET /api/admin/duopay/accounts?status=SUSPENDED&page=1&limit=15
+ */
+exports.getDuoPayAccounts = async (req, res) => {
+  const { page = 1, limit = 15, status } = req.query;
+  const skip  = (parseInt(page) - 1) * parseInt(limit);
+  const where = status ? { status } : {};
+
+  const [accounts, total] = await Promise.all([
+    prisma.duoPayAccount.findMany({
+      where,
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, phone: true, email: true },
+        },
+        transactions: {
+          where:   { status: { in: ['OVERDUE', 'PENDING'] } },
+          orderBy: { dueDate: 'asc' },
+        },
+        _count: { select: { transactions: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: parseInt(limit),
+    }),
+    prisma.duoPayAccount.count({ where }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      accounts,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+    },
+  });
+};
+
+/**
+ * @desc  Waive all OVERDUE transactions for a DuoPay account and reactivate it.
+ *        Used as a goodwill write-off for loyal customers.
+ * @route POST /api/admin/duopay/accounts/:id/waive
+ */
+exports.waiveDuoPayAccount = async (req, res) => {
+  const { id } = req.params;
+
+  const account = await prisma.duoPayAccount.findUnique({
+    where:   { id },
+    include: { transactions: { where: { status: 'OVERDUE' } } },
+  });
+  if (!account) throw new AppError('DuoPay account not found', 404);
+
+  const overdueAmount = account.transactions.reduce((s, t) => s + t.amount, 0);
+
+  // Mark all overdue transactions as waived and zero out the used balance
+  await prisma.$transaction([
+    prisma.duoPayTransaction.updateMany({
+      where: { duoPayAccountId: id, status: 'OVERDUE' },
+      data:  { status: 'WAIVED', paidAt: new Date() },
+    }),
+    prisma.duoPayAccount.update({
+      where: { id },
+      data:  {
+        status:       'ACTIVE',
+        usedBalance:  0,
+        suspendedAt:  null,
+        activatedAt:  new Date(),
+      },
+    }),
+  ]);
+
+  await notificationService.notify({
+    userId:  account.userId,
+    title:   '🎁 DuoPay Balance Cleared',
+    message: `Your outstanding DuoPay balance has been waived by the DuoRide team. Your account is now reactivated. Please make timely repayments going forward.`,
+    type:    'duopay_waived',
+    data:    { accountId: id, overdueAmount },
+  });
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'duopay_balance_waived',
+    entityType: 'DuoPayAccount',
+    entityId:   id,
+    details:    { overdueAmount, transactionCount: account.transactions.length },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `₦${overdueAmount.toLocaleString('en-NG')} in overdue balance waived. Account reactivated.`,
+    data:    { overdueAmount, transactionsWaived: account.transactions.length },
+  });
+};
+
+/**
+ * @desc  Waive a single DuoPay transaction
+ * @route POST /api/admin/duopay/accounts/:id/transactions/:txId/waive
+ */
+exports.waiveDuoPayTransaction = async (req, res) => {
+  const { id, txId } = req.params;
+
+  const tx = await prisma.duoPayTransaction.findUnique({ where: { id: txId } });
+  if (!tx)                          throw new AppError('Transaction not found', 404);
+  if (tx.duoPayAccountId !== id)    throw new AppError('Transaction does not belong to this account', 400);
+  if (tx.status !== 'OVERDUE')      throw new AppError('Only OVERDUE transactions can be waived', 400);
+
+  await prisma.$transaction([
+    prisma.duoPayTransaction.update({
+      where: { id: txId },
+      data:  { status: 'WAIVED', paidAt: new Date() },
+    }),
+    prisma.duoPayAccount.update({
+      where: { id },
+      data:  { usedBalance: { decrement: tx.amount } },
+    }),
+  ]);
+
+  // If no more overdue transactions remain, reactivate the account
+  const remainingOverdue = await prisma.duoPayTransaction.count({
+    where: { duoPayAccountId: id, status: 'OVERDUE' },
+  });
+
+if (remainingOverdue === 0) {
+    await prisma.duoPayAccount.update({
+      where: { id },
+      data:  { status: 'ACTIVE', suspendedAt: null, activatedAt: new Date() },
+    });
+    await notificationService.notify({
+      userId:  account.userId,
+      title:   '✅ DuoPay Reactivated',
+      message: 'Your outstanding DuoPay balance has been cleared. Your account is active again.',
+      type:    'duopay_reactivated',
+      data:    { accountId: id },
+    });
+  }
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'duopay_transaction_waived',
+    entityType: 'DuoPayTransaction',
+    entityId:   txId,
+    details:    { amount: tx.amount, accountId: id },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `₦${tx.amount.toLocaleString('en-NG')} transaction waived${remainingOverdue === 0 ? '. Account reactivated.' : '.'}`,
+    data:    { remainingOverdue },
+  });
+};
+
+/**
+ * @desc  Manually trigger the overdue check (same logic as the cron job)
+ * @route POST /api/admin/duopay/run-overdue-check
+ */
+exports.runDuoPayOverdueCheck = async (req, res) => {
+  const { markOverdue } = require('../services/duopay.service');
+  const result = await markOverdue();
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'duopay_overdue_check_manual',
+    entityType: 'DuoPayAccount',
+    entityId:   null,
+    details:    result,
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Overdue check complete. ${result.overdue} transactions marked overdue, ${result.suspended} accounts suspended.`,
+    data:    result,
+  });
+};
+
 module.exports = exports;

@@ -241,29 +241,29 @@ export default function RequestRideScreen({ navigation }) {
   const fadeA     = useRef(new Animated.Value(1)).current;
   const pinBounce = useRef(new Animated.Value(0)).current;
 
-  // ── GPS on mount ───────────────────────────────────────────────────────────
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setPickupCoords({ lat: 6.5244, lng: 3.3792 });
-          setPickupAddress('Lagos, Nigeria');
-          return;
-        }
-        const loc    = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-        const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+// ── GPS on mount (update here) ─────────────────────────────────────────────
+useEffect(() => {
+  (async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        const coords = { lat: 6.5244, lng: 3.3792 };
         setPickupCoords(coords);
-        console.log('[RequestRide] Customer GPS:', coords.lat, coords.lng);
-        reverseGeocode(coords.lat, coords.lng, setPickupAddress);
-      } catch (err) {
-        console.warn('[RequestRide] GPS error:', err.message);
-        setPickupCoords({ lat: 6.5244, lng: 3.3792 });
-        setPickupAddress('Lagos, Nigeria');
+        setPickupAddress(formatAddrWithCoords('Lagos, Nigeria', coords.lat, coords.lng));
+        return;
       }
-    })();
-    socketService.connect().catch(() => {});
-  }, []);
+      const loc    = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setPickupCoords(coords);
+      reverseGeocode(coords.lat, coords.lng, setPickupAddress);
+    } catch {
+      const coords = { lat: 6.5244, lng: 3.3792 };
+      setPickupCoords(coords);
+      setPickupAddress(formatAddrWithCoords('Lagos, Nigeria', coords.lat, coords.lng));
+    }
+  })();
+  socketService.connect().catch(() => {});
+}, []);
 
   // ── Animate map to pickup once GPS lands ──────────────────────────────────
   useEffect(() => {

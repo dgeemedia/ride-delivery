@@ -124,5 +124,27 @@ router.get('/shield/stats',            adminController.getShieldStats);
 router.get('/shield/sessions',         adminController.getShieldSessions);
 router.get('/shield/sessions/:id',     param('id').isUUID(), adminController.getShieldSessionById);
 router.put('/shield/sessions/:id/close', param('id').isUUID(), authorize('ADMIN', 'SUPER_ADMIN'), adminController.closeShieldSession);
- 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADD TO: backend/src/routes/admin.routes.js
+//
+// Paste these lines before  module.exports = router;
+// They sit after the existing SHIELD MONITORING block.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// CORPORATE ADMIN — all admin roles can view; ADMIN/SUPER_ADMIN can activate/suspend
+router.get('/corporate/companies',                                          adminController.getCompanies);
+router.get('/corporate/companies/:id',         param('id').isUUID(),        adminController.getCompanyById);
+router.get('/corporate/companies/:id/employees', param('id').isUUID(),      adminController.getCompanyEmployees);
+router.get('/corporate/companies/:id/trips',   param('id').isUUID(),        adminController.getCompanyTrips);
+router.put('/corporate/companies/:id/activate', param('id').isUUID(),       authorize('ADMIN', 'SUPER_ADMIN'), adminController.activateCompany);
+router.put('/corporate/companies/:id/suspend',  param('id').isUUID(),       authorize('ADMIN', 'SUPER_ADMIN'), body('reason').optional().isString(), adminController.suspendCompany);
+
+// DUOPAY ADMIN — viewPayments scope; only ADMIN/SUPER_ADMIN can waive
+router.get('/duopay/stats',                                                  adminController.getDuoPayStats);
+router.get('/duopay/accounts',                                               adminController.getDuoPayAccounts);
+router.post('/duopay/accounts/:id/waive',           param('id').isUUID(),   authorize('ADMIN', 'SUPER_ADMIN'), adminController.waiveDuoPayAccount);
+router.post('/duopay/accounts/:id/transactions/:txId/waive', param('id').isUUID(), param('txId').isUUID(), authorize('ADMIN', 'SUPER_ADMIN'), adminController.waiveDuoPayTransaction);
+router.post('/duopay/run-overdue-check',                                     authorize('ADMIN', 'SUPER_ADMIN'), adminController.runDuoPayOverdueCheck);
+
 module.exports = router;
