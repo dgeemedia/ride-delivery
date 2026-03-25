@@ -5,34 +5,35 @@ import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
 import Layout from '@/components/layout/Layout';
 
-import Login            from '@/pages/Auth/Login';
-import Dashboard        from '@/pages/Dashboard/Dashboard';
-import UserList         from '@/pages/Users/UserList';
-import UserDetails      from '@/pages/Users/UserDetails';
-import CreateAdminUser  from '@/pages/Users/CreateAdminUser';
-import DriverList       from '@/pages/Drivers/DriverList';
-import DriverApproval   from '@/pages/Drivers/DriverApproval';
-import DriverDetails    from '@/pages/Drivers/DriverDetails';
-import DriverDocuments  from '@/pages/Drivers/DriverDocuments';
-import PartnerList      from '@/pages/Partners/PartnerList';
-import PartnerApproval  from '@/pages/Partners/PartnerApproval';
-import PartnerDetails   from '@/pages/Partners/PartnerDetails';
-import RideList         from '@/pages/Rides/RideList';
-import RideDetails      from '@/pages/Rides/RideDetails';
-import LiveRides        from '@/pages/Rides/LiveRides';
-import DeliveryList     from '@/pages/Deliveries/DeliveryList';
-import DeliveryDetails  from '@/pages/Deliveries/DeliveryDetails';
-import TicketList       from '@/pages/Support/TicketList';
-import TicketDetail     from '@/pages/Support/TicketDetail';
-import PaymentList      from '@/pages/Payments/PaymentList';
-import Analytics        from '@/pages/Analytics/Overview';
-import GeneralSettings  from '@/pages/Settings/GeneralSettings';
-import ShieldMonitor    from '@/pages/Shield/ShieldMonitor';
-import ShieldSession    from '@/pages/Shield/ShieldSession';
-import CompanyList      from '@/pages/Corporate/CompanyList';
-import CompanyDetails   from '@/pages/Corporate/CompanyDetails';
-import DuoPayMonitor    from '@/pages/DuoPay/DuoPayMonitor';
-import DuoPayDefaults   from '@/pages/DuoPay/DuoPayDefaults';
+import Login              from '@/pages/Auth/Login';
+import Dashboard          from '@/pages/Dashboard/Dashboard';
+import UserList           from '@/pages/Users/UserList';
+import UserDetails        from '@/pages/Users/UserDetails';
+import CreateAdminUser    from '@/pages/Users/CreateAdminUser';
+import DriverList         from '@/pages/Drivers/DriverList';
+import DriverApproval     from '@/pages/Drivers/DriverApproval';
+import DriverDetails      from '@/pages/Drivers/DriverDetails';
+import DriverDocuments    from '@/pages/Drivers/DriverDocuments';
+import PartnerList        from '@/pages/Partners/PartnerList';
+import PartnerApproval    from '@/pages/Partners/PartnerApproval';
+import PartnerDetails     from '@/pages/Partners/PartnerDetails';
+import RideList           from '@/pages/Rides/RideList';
+import RideDetails        from '@/pages/Rides/RideDetails';
+import LiveRides          from '@/pages/Rides/LiveRides';
+import DeliveryList       from '@/pages/Deliveries/DeliveryList';
+import DeliveryDetails    from '@/pages/Deliveries/DeliveryDetails';
+import TicketList         from '@/pages/Support/TicketList';
+import TicketDetail       from '@/pages/Support/TicketDetail';
+import PaymentList        from '@/pages/Payments/PaymentList';
+import Analytics          from '@/pages/Analytics/Overview';
+import GeneralSettings    from '@/pages/Settings/GeneralSettings';
+import ShieldMonitor      from '@/pages/Shield/ShieldMonitor';
+import ShieldSession      from '@/pages/Shield/ShieldSession';
+import CompanyList        from '@/pages/Corporate/CompanyList';
+import CompanyDetails     from '@/pages/Corporate/CompanyDetails';
+import DuoPayMonitor      from '@/pages/DuoPay/DuoPayMonitor';
+import DuoPayDefaults     from '@/pages/DuoPay/DuoPayDefaults';
+import NotificationsPage  from '@/pages/Notifications/NotificationsPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
@@ -56,16 +57,19 @@ function App() {
           <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/" replace />} />
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
 
+          {/* Notifications */}
+          <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+
           {/* Users */}
           <Route path="/users"              element={<ProtectedRoute><UserList /></ProtectedRoute>} />
           <Route path="/users/create-admin" element={<SuperAdminRoute><CreateAdminUser /></SuperAdminRoute>} />
           <Route path="/users/:id"          element={<ProtectedRoute><UserDetails /></ProtectedRoute>} />
 
           {/* Drivers — statics before :id wildcard */}
-          <Route path="/drivers"                element={<ProtectedRoute><DriverList /></ProtectedRoute>} />
-          <Route path="/drivers/pending"         element={<ProtectedRoute><DriverApproval /></ProtectedRoute>} />
-          <Route path="/drivers/:id/documents"  element={<ProtectedRoute><DriverDocuments /></ProtectedRoute>} />
-          <Route path="/drivers/:id"            element={<ProtectedRoute><DriverDetails /></ProtectedRoute>} />
+          <Route path="/drivers"               element={<ProtectedRoute><DriverList /></ProtectedRoute>} />
+          <Route path="/drivers/pending"        element={<ProtectedRoute><DriverApproval /></ProtectedRoute>} />
+          <Route path="/drivers/:id/documents" element={<ProtectedRoute><DriverDocuments /></ProtectedRoute>} />
+          <Route path="/drivers/:id"           element={<ProtectedRoute><DriverDetails /></ProtectedRoute>} />
 
           {/* Partners */}
           <Route path="/partners"         element={<ProtectedRoute><PartnerList /></ProtectedRoute>} />
@@ -85,16 +89,16 @@ function App() {
           <Route path="/support/tickets"     element={<ProtectedRoute><TicketList /></ProtectedRoute>} />
           <Route path="/support/tickets/:id" element={<ProtectedRoute><TicketDetail /></ProtectedRoute>} />
 
-          {/* SHIELD — /shield before /shield/:id */}
+          {/* SHIELD */}
           <Route path="/shield"     element={<ProtectedRoute><ShieldMonitor /></ProtectedRoute>} />
           <Route path="/shield/:id" element={<ProtectedRoute><ShieldSession /></ProtectedRoute>} />
 
-          {/* Corporate — /corporate/trips is a static route; must come before /:id */}
+          {/* Corporate */}
           <Route path="/corporate"       element={<ProtectedRoute><CompanyList /></ProtectedRoute>} />
           <Route path="/corporate/trips" element={<ProtectedRoute><CompanyList /></ProtectedRoute>} />
           <Route path="/corporate/:id"   element={<ProtectedRoute><CompanyDetails /></ProtectedRoute>} />
 
-          {/* DuoPay — /duopay/defaults is static; must come before /:id if we ever add one */}
+          {/* DuoPay */}
           <Route path="/duopay"          element={<ProtectedRoute><DuoPayMonitor /></ProtectedRoute>} />
           <Route path="/duopay/defaults" element={<ProtectedRoute><DuoPayDefaults /></ProtectedRoute>} />
 

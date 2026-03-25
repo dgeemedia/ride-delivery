@@ -3,6 +3,7 @@ import { Menu, Bell, LogOut, User, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { useUIStore } from '@/store/uiStore';
+import NotificationBell from '@/components/notifications/NotificationBell';
 
 const Header: React.FC = () => {
   const navigate = useNavigate();
@@ -28,12 +29,7 @@ const Header: React.FC = () => {
 
       <div className="flex items-center space-x-4">
         {/* Notifications */}
-        <button className="relative text-gray-500 hover:text-gray-700">
-          <Bell className="h-6 w-6" />
-          <span className="absolute -top-1 -right-1 h-4 w-4 bg-error-500 rounded-full text-xs text-white flex items-center justify-center">
-            3
-          </span>
-        </button>
+        <NotificationBell />
 
         {/* User Menu */}
         <div className="relative">
