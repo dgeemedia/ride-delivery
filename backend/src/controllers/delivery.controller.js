@@ -2,7 +2,8 @@
 const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
-const { calculateDistance, calculateDeliveryFee } = require('../utils/helpers');
+const { calculateDistance } = require('../utils/helpers');
+const fareEngine = require('../utils/fareEngine');
 const notificationService = require('../services/notification.service');
 const { broadcastToPartners, emitToPartner } = require('../services/socket.service');
 const shieldService = require('../services/shield.service');
@@ -20,12 +21,22 @@ exports.getFeeEstimate = async (req, res) => {
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
 
-  const estimatedFee      = calculateDeliveryFee(distance, packageWeight ? parseFloat(packageWeight) : 0);
+  // ── Use fareEngine so this estimate always matches what gets saved to DB
+  //    and reflects any admin-configured pricing from SystemSettings.
+  const feeResult         = await fareEngine.calculateDeliveryFee(distance, packageWeight ? parseFloat(packageWeight) : 0);
   const estimatedDuration = Math.ceil(distance / 0.4);
 
   res.status(200).json({
     success: true,
-    data: { distance: distance.toFixed(2), estimatedFee: estimatedFee.toFixed(2), estimatedDuration, currency: 'NGN' }
+    data: {
+      distance:          distance.toFixed(2),
+      estimatedFee:      feeResult.estimatedFee.toFixed(2),
+      baseFee:           feeResult.baseFee,
+      distanceCharge:    feeResult.distanceCharge,
+      weightCharge:      feeResult.weightCharge,
+      estimatedDuration,
+      currency:          'NGN',
+    }
   });
 };
 
@@ -47,8 +58,11 @@ exports.requestDelivery = async (req, res) => {
   });
   if (activeDelivery) throw new AppError('You already have an active delivery', 400);
 
-  const distance   = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
-  let estimatedFee = calculateDeliveryFee(distance, packageWeight || 0);
+  const distance = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
+
+  // ── Use fareEngine — DB-backed pricing, consistent with getFeeEstimate
+  const feeResult    = await fareEngine.calculateDeliveryFee(distance, packageWeight || 0);
+  let   estimatedFee = feeResult.estimatedFee;
 
   let appliedPromo = null;
   if (promoCode) {
@@ -65,6 +79,7 @@ exports.requestDelivery = async (req, res) => {
       } else {
         estimatedFee = Math.max(0, estimatedFee - appliedPromo.discountValue);
       }
+      estimatedFee = Math.round(estimatedFee / 50) * 50; // keep rounded after promo
       await prisma.promoCode.update({ where: { id: appliedPromo.id }, data: { currentUses: { increment: 1 } } });
     }
   }
@@ -136,7 +151,7 @@ exports.requestDelivery = async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'Delivery requested successfully. Looking for nearby delivery partners...',
-    data: { delivery, promoApplied: !!appliedPromo }
+    data: { delivery, feeBreakdown: feeResult, promoApplied: !!appliedPromo }
   });
 };
 
@@ -177,7 +192,7 @@ exports.acceptDelivery = async (req, res) => {
   if (!delivery) throw new AppError('Delivery not found', 404);
   if (delivery.status !== 'PENDING') throw new AppError('Delivery is no longer available', 400);
 
-  const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+  const wallet          = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   const walletBalance   = wallet?.balance ?? 0;
   const requiredBalance = delivery.estimatedFee;
 
@@ -270,8 +285,11 @@ exports.completeDelivery = async (req, res) => {
   if (delivery.partnerId !== req.user.id) throw new AppError('Unauthorized', 403);
   if (delivery.status !== 'IN_TRANSIT') throw new AppError('Delivery is not in transit', 400);
 
+  // ── Use fareEngine commission rate (DB-backed) instead of hardcoded 0.15
+  const settings        = await fareEngine.getSettings();
+  const commissionRate  = settings.delivery.platformCommission;
   const finalFee        = actualFee || delivery.estimatedFee;
-  const platformFee     = finalFee * 0.15;
+  const platformFee     = Math.round(finalFee * commissionRate);
   const partnerEarnings = finalFee - platformFee;
 
   const [updatedDelivery, payment] = await prisma.$transaction([
@@ -329,7 +347,7 @@ exports.completeDelivery = async (req, res) => {
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Delivery Completed 💰',
-    message: `Package delivered. Earnings: ₦${partnerEarnings.toFixed(2)} (after 15% platform fee).`,
+    message: `Package delivered. Earnings: ₦${partnerEarnings.toFixed(2)} (after ${Math.round(commissionRate * 100)}% platform fee).`,
     type:    notificationService.TYPES.PAYMENT_RECEIVED,
     data:    { deliveryId: id, earnings: partnerEarnings, platformFee }
   });

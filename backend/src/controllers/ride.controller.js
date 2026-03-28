@@ -8,6 +8,7 @@ const {
   calculateFinalFare,
   applyDriverFloor,
   getSurgeMultiplier,
+  getSettings,
 } = require('../utils/fareEngine');
 const notificationService = require('../services/notification.service');
 const { broadcastToDrivers } = require('../services/socket.service');
@@ -48,7 +49,9 @@ exports.getFareEstimate = async (req, res) => {
     parseFloat(pickupLat), parseFloat(pickupLng),
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
-  const estimate = estimateFare(distance, vehicleType.toUpperCase());
+
+  // ── FIX: estimateFare is async — must await so DB-backed rates are used
+  const estimate = await estimateFare(distance, vehicleType.toUpperCase());
 
   res.status(200).json({ success: true, data: { ...estimate, distance: distance.toFixed(2) } });
 };
@@ -68,8 +71,10 @@ exports.requestRide = async (req, res) => {
   });
   if (activeRide) throw new AppError('You already have an active ride', 400);
 
-  const distance      = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
-  const fareBreakdown = estimateFare(distance, vehicleType.toUpperCase());
+  const distance = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
+
+  // ── FIX: estimateFare is async — must await
+  const fareBreakdown = await estimateFare(distance, vehicleType.toUpperCase());
   let finalFare       = fareBreakdown.estimatedFare;
 
   let appliedPromo = null;
@@ -182,6 +187,7 @@ exports.getActiveRide = async (req, res) => {
     }
   });
 
+  // getSurgeMultiplier is synchronous — no change needed
   const surgeContext = ride ? getSurgeMultiplier() : null;
 
   res.status(200).json({
@@ -212,7 +218,7 @@ exports.acceptRide = async (req, res) => {
   if (!ride)                       throw new AppError('Ride not found', 404);
   if (ride.status !== 'REQUESTED') throw new AppError('Ride is no longer available', 400);
 
-  const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+  const wallet          = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   const walletBalance   = wallet?.balance ?? 0;
   const requiredBalance = ride.estimatedFare;
 
@@ -315,7 +321,8 @@ exports.completeRide = async (req, res) => {
   const completedAt           = new Date();
   const driverFloorMultiplier = decodeFloorMultiplier(ride.notes);
 
-  const finalFareBreakdown = calculateFinalFare({
+  // ── FIX: calculateFinalFare is async — must await so DB-backed rates are used
+  const finalFareBreakdown = await calculateFinalFare({
     distanceKm:           ride.distance,
     startedAt:            ride.startedAt,
     completedAt,
@@ -562,6 +569,7 @@ exports.getNearbyDrivers = async (req, res) => {
     .sort((a, b) => a.distanceKm - b.distanceKm)
     .slice(0, 20);
 
+  // ── estimateFare is async — already correctly awaited here
   const formatted = await Promise.all(nearby.map(async (d) => {
     const fareEst = await estimateFare(3, d.vehicleType ?? 'CAR');
     return {
@@ -631,6 +639,8 @@ exports.requestSpecificDriver = async (req, res) => {
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
   const usedVehicleType = vehicleType?.toUpperCase() ?? driverProfile.vehicleType ?? 'CAR';
+
+  // ── FIX: estimateFare is async — must await
   const fareBreakdown   = await estimateFare(distance, usedVehicleType);
   let   finalFare       = fareBreakdown.estimatedFare;
 
@@ -703,8 +713,7 @@ exports.requestSpecificDriver = async (req, res) => {
         profileImage: customer.profileImage,
       }
     };
-    const room = `user:${driverId}`;
-    io.to(room).emit('ride:new_request', payload);
+    io.to(`user:${driverId}`).emit('ride:new_request', payload);
   }
 
   res.status(201).json({

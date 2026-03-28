@@ -65,6 +65,10 @@ const QUICK_DESTINATIONS = [
   { label: 'Surulere',        icon: 'football-outline', lat: 6.5037, lng: 3.3577 },
   { label: 'Eko Hotel',       icon: 'bed-outline',      lat: 6.4344, lng: 3.4212 },
   { label: 'Ajah',            icon: 'cart-outline',     lat: 6.4698, lng: 3.5827 },
+  { label: 'Agbara (Ogun)',   icon: 'business-outline', lat: 6.5167, lng: 2.8180 },
+  { label: 'Mile 2',          icon: 'car-outline',      lat: 6.4525, lng: 3.2875 },
+  { label: 'Okokomaiko',      icon: 'home-outline',     lat: 6.4472, lng: 3.2297 },
+  { label: 'Badagry',         icon: 'water-outline',    lat: 6.4167, lng: 2.8833 },
 ];
 
 // Mock fallback
