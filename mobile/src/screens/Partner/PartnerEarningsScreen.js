@@ -3,12 +3,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   StatusBar, Dimensions, Animated, ActivityIndicator,
-  RefreshControl, FlatList,
+  RefreshControl,
 } from 'react-native';
-import { Ionicons }          from '@expo/vector-icons';
-import { SafeAreaView }      from 'react-native-safe-area-context';
-import { useTheme }          from '../../context/ThemeContext';
-import { partnerAPI, walletAPI } from '../../services/api';
+import { Ionicons }                    from '@expo/vector-icons';
+import { SafeAreaView }                from 'react-native-safe-area-context';
+import { useTheme }                    from '../../context/ThemeContext';
+import { partnerAPI, walletAPI, deliveryAPI } from '../../services/api';
 
 const { width } = Dimensions.get('window');
 const COURIER_ACCENT = '#34D399';
@@ -21,10 +21,10 @@ const GREEN          = '#5DAA72';
 // Period filter tabs
 // ─────────────────────────────────────────────────────────────────────────────
 const PERIODS = [
-  { key: 'today', label: 'Today'  },
-  { key: 'week',  label: 'Week'   },
-  { key: 'month', label: 'Month'  },
-  { key: 'all',   label: 'All'    },
+  { key: 'today', label: 'Today' },
+  { key: 'week',  label: 'Week'  },
+  { key: 'month', label: 'Month' },
+  { key: 'all',   label: 'All'   },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,6 +35,30 @@ const TX_CONFIG = {
   DEBIT:      { icon: 'arrow-up-circle-outline',   color: RED,    label: 'Debit'      },
   WITHDRAWAL: { icon: 'cash-outline',              color: GOLD,   label: 'Withdrawal' },
   REFUND:     { icon: 'refresh-circle-outline',    color: PURPLE, label: 'Refund'     },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Filter deliveries by period client-side.
+ * Safe fallback if the /deliveries/history endpoint doesn't accept a period
+ * param — we fetch everything and slice here so the period selector always
+ * works regardless of backend support.
+ */
+const filterByPeriod = (list, period) => {
+  if (period === 'all') return list;
+  const now  = new Date();
+  const from = new Date();
+  if (period === 'today') {
+    from.setHours(0, 0, 0, 0);
+  } else if (period === 'week') {
+    from.setDate(now.getDate() - 7);
+  } else if (period === 'month') {
+    from.setMonth(now.getMonth() - 1);
+  }
+  return list.filter(d => new Date(d.requestedAt ?? d.createdAt) >= from);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,9 +82,9 @@ const st = StyleSheet.create({
 });
 
 const TxRow = ({ tx, theme }) => {
-  const cfg  = TX_CONFIG[tx.type] ?? TX_CONFIG.CREDIT;
-  const sign = tx.type === 'CREDIT' || tx.type === 'REFUND' ? '+' : '-';
-  const date = new Date(tx.createdAt);
+  const cfg     = TX_CONFIG[tx.type] ?? TX_CONFIG.CREDIT;
+  const sign    = tx.type === 'CREDIT' || tx.type === 'REFUND' ? '+' : '-';
+  const date    = new Date(tx.createdAt);
   const dateStr = date.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
   const timeStr = date.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
 
@@ -80,7 +104,7 @@ const TxRow = ({ tx, theme }) => {
           {sign}₦{Number(tx.amount).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
         </Text>
         <Text style={[tr.status, {
-          color: tx.status === 'COMPLETED' ? GREEN : tx.status === 'PENDING' ? GOLD : RED
+          color: tx.status === 'COMPLETED' ? GREEN : tx.status === 'PENDING' ? GOLD : RED,
         }]}>
           {tx.status}
         </Text>
@@ -97,41 +121,52 @@ const tr = StyleSheet.create({
   status:   { fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
 });
 
+// FIX: field names now match the actual /deliveries/history response shape —
+//      the same fields PartnerHistoryScreen already reads successfully.
+//      Old code used delivery.partnerEarnings and delivery.fee which don't
+//      exist; actual fields are payment.driverEarnings and actualFee/estimatedFee.
 const DeliveryRow = ({ delivery, theme }) => {
-  const date = delivery.deliveredAt
-    ? new Date(delivery.deliveredAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
+  const gross   = Number(delivery.actualFee ?? delivery.estimatedFee ?? 0);
+  const net     = Number(delivery.payment?.driverEarnings ?? 0);
+
+  const rawDate = delivery.deliveredAt ?? delivery.requestedAt ?? delivery.createdAt;
+  const dateStr = rawDate
+    ? new Date(rawDate).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
     : '—';
+
   return (
     <View style={[dr.row, { borderBottomColor: theme.border }]}>
       <View style={[dr.iconWrap, { backgroundColor: COURIER_ACCENT + '15' }]}>
         <Ionicons name="cube-outline" size={16} color={COURIER_ACCENT} />
       </View>
+
       <View style={{ flex: 1 }}>
         <Text style={[dr.addr, { color: theme.foreground }]} numberOfLines={1}>
           {delivery.pickupAddress?.split(',')[0]} → {delivery.dropoffAddress?.split(',')[0]}
         </Text>
-        <Text style={[dr.pkg, { color: theme.hint }]} numberOfLines={1}>
-          {delivery.packageDescription} · {date}
+        <Text style={[dr.meta, { color: theme.hint }]} numberOfLines={1}>
+          {[delivery.packageDescription, dateStr].filter(Boolean).join(' · ')}
         </Text>
       </View>
+
       <View style={{ alignItems: 'flex-end' }}>
-        <Text style={[dr.fee, { color: COURIER_ACCENT }]}>
-          +₦{Number(delivery.partnerEarnings ?? delivery.fee ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+        <Text style={[dr.net, { color: COURIER_ACCENT }]}>
+          +₦{net.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
         </Text>
         <Text style={[dr.gross, { color: theme.hint }]}>
-          ₦{Number(delivery.fee ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })} gross
+          ₦{gross.toLocaleString('en-NG', { maximumFractionDigits: 0 })} gross
         </Text>
       </View>
     </View>
   );
 };
 const dr = StyleSheet.create({
-  row:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderBottomWidth: 1 },
-  iconWrap:{ width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  addr:    { fontSize: 13, fontWeight: '600', marginBottom: 3 },
-  pkg:     { fontSize: 11 },
-  fee:     { fontSize: 14, fontWeight: '800', marginBottom: 2 },
-  gross:   { fontSize: 10 },
+  row:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderBottomWidth: 1 },
+  iconWrap: { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  addr:     { fontSize: 13, fontWeight: '600', marginBottom: 3 },
+  meta:     { fontSize: 11 },
+  net:      { fontSize: 14, fontWeight: '800', marginBottom: 2 },
+  gross:    { fontSize: 10 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -143,8 +178,9 @@ export default function PartnerEarningsScreen({ navigation }) {
   const [period,       setPeriod]       = useState('week');
   const [earnings,     setEarnings]     = useState(null);
   const [wallet,       setWallet]       = useState(null);
+  const [deliveries,   setDeliveries]   = useState([]);   // FIX: own state, own fetch
   const [transactions, setTransactions] = useState([]);
-  const [activeTab,    setActiveTab]    = useState('deliveries'); // 'deliveries' | 'transactions'
+  const [activeTab,    setActiveTab]    = useState('deliveries');
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [txPage,       setTxPage]       = useState(1);
@@ -157,24 +193,48 @@ export default function PartnerEarningsScreen({ navigation }) {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [earningsRes, walletRes, txRes] = await Promise.allSettled([
+      const [earningsRes, walletRes, txRes, deliveriesRes] = await Promise.allSettled([
         partnerAPI.getEarnings({ period }),
         walletAPI.getWallet(),
         walletAPI.getTransactions({ page: 1, limit: 20 }),
+        // FIX: fetch deliveries from the history endpoint directly — the same
+        //      source PartnerHistoryScreen uses and which is guaranteed to
+        //      return completed deliveries. The earnings endpoint either omits
+        //      the deliveries array entirely or returns an empty one, which
+        //      caused the tab to always show "No deliveries for this period".
+        deliveryAPI.getDeliveryHistory({ period, limit: 50 }),
       ]);
 
-      if (earningsRes.status === 'fulfilled') setEarnings(earningsRes.value?.data);
-      if (walletRes.status === 'fulfilled')   setWallet(walletRes.value?.data?.wallet ?? walletRes.value?.data);
+      if (earningsRes.status === 'fulfilled') {
+        setEarnings(earningsRes.value?.data);
+      }
+
+      if (walletRes.status === 'fulfilled') {
+        setWallet(walletRes.value?.data?.wallet ?? walletRes.value?.data);
+      }
+
       if (txRes.status === 'fulfilled') {
         setTransactions(txRes.value?.data?.transactions ?? []);
         setTxTotal(txRes.value?.data?.pagination?.total ?? 0);
         setTxPage(1);
       }
+
+      if (deliveriesRes.status === 'fulfilled') {
+        // Always filter client-side as a safe fallback — if the backend
+        // ignores the period param we still show the right slice.
+        const all = deliveriesRes.value?.data?.deliveries ?? [];
+        setDeliveries(filterByPeriod(all, period));
+      } else {
+        // History call failed — fall back to whatever earnings embedded
+        // (likely empty, but avoids a blank crash).
+        const fallback = earningsRes.value?.data?.deliveries ?? [];
+        setDeliveries(filterByPeriod(fallback, period));
+      }
     } catch {}
     finally {
       setLoading(false);
       setRefreshing(false);
-      Animated.timing(fadeA, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+      Animated.timing(fadeA,    { toValue: 1, duration: 500, useNativeDriver: true }).start();
       Animated.timing(balanceA, { toValue: 1, duration: 800, useNativeDriver: false }).start();
     }
   }, [period]);
@@ -186,8 +246,8 @@ export default function PartnerEarningsScreen({ navigation }) {
     setTxLoading(true);
     try {
       const nextPage = txPage + 1;
-      const res = await walletAPI.getTransactions({ page: nextPage, limit: 20 });
-      const newTx = res?.data?.transactions ?? [];
+      const res      = await walletAPI.getTransactions({ page: nextPage, limit: 20 });
+      const newTx    = res?.data?.transactions ?? [];
       setTransactions(prev => [...prev, ...newTx]);
       setTxPage(nextPage);
     } catch {}
@@ -196,12 +256,14 @@ export default function PartnerEarningsScreen({ navigation }) {
 
   const onRefresh = () => { setRefreshing(true); load(true); };
 
-  const walletBalance  = Number(wallet?.balance ?? 0);
-  const totalEarnings  = Number(earnings?.totalEarnings  ?? 0);
-  const netEarnings    = Number(earnings?.netEarnings    ?? 0);
-  const platformFee    = Number(earnings?.platformFee    ?? 0);
-  const totalDeliveries= Number(earnings?.totalDeliveries ?? 0);
-  const avgPerDelivery = Number(earnings?.averagePerDelivery ?? 0);
+  const walletBalance   = Number(wallet?.balance ?? 0);
+  const totalEarnings   = Number(earnings?.totalEarnings   ?? 0);
+  const netEarnings     = Number(earnings?.netEarnings     ?? 0);
+  const platformFee     = Number(earnings?.platformFee     ?? 0);
+  // Prefer the count of actually-fetched deliveries over what the earnings
+  // endpoint reports, so the tile stays in sync with what's shown in the list.
+  const totalDeliveries = deliveries.length || Number(earnings?.totalDeliveries ?? 0);
+  const avgPerDelivery  = Number(earnings?.averagePerDelivery ?? 0);
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
@@ -220,9 +282,10 @@ export default function PartnerEarningsScreen({ navigation }) {
             <Text style={[s.headerTitle, { color: theme.foreground }]}>Earnings & Wallet</Text>
             <Text style={[s.headerSub,   { color: theme.hint }]}>Track your income and payouts</Text>
           </View>
+          {/* FIX: was 'PayoutRequest' which doesn't exist in EarningsStack */}
           <TouchableOpacity
             style={[s.payoutBtn, { backgroundColor: COURIER_ACCENT }]}
-            onPress={() => navigation.navigate('PayoutRequest')}
+            onPress={() => navigation.navigate('Withdrawal')}
             activeOpacity={0.85}
           >
             <Ionicons name="cash-outline" size={15} color="#080C18" />
@@ -252,9 +315,10 @@ export default function PartnerEarningsScreen({ navigation }) {
               <Text style={s.balanceSub}>Available for withdrawal</Text>
             </View>
             <View style={s.balanceActions}>
+              {/* FIX: was 'PayoutRequest' which doesn't exist in EarningsStack */}
               <TouchableOpacity
                 style={[s.balanceAction, { backgroundColor: 'rgba(0,0,0,0.15)' }]}
-                onPress={() => navigation.navigate('PayoutRequest')}
+                onPress={() => navigation.navigate('Withdrawal')}
                 activeOpacity={0.8}
               >
                 <Ionicons name="arrow-up-outline" size={18} color="#fff" />
@@ -357,10 +421,10 @@ export default function PartnerEarningsScreen({ navigation }) {
           </View>
 
           {/* ── Tab switcher ── */}
-          <View style={[s.tabRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+          <View style={[s.tabRow, { borderBottomColor: theme.border }]}>
             {[
-              { key: 'deliveries',    label: 'Deliveries'   },
-              { key: 'transactions',  label: 'Transactions' },
+              { key: 'deliveries',   label: `Deliveries (${deliveries.length})`     },
+              { key: 'transactions', label: `Transactions (${transactions.length})`  },
             ].map(t => (
               <TouchableOpacity
                 key={t.key}
@@ -377,8 +441,8 @@ export default function PartnerEarningsScreen({ navigation }) {
           {/* ── Deliveries list ── */}
           {activeTab === 'deliveries' && (
             <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              {earnings?.deliveries?.length > 0 ? (
-                earnings.deliveries.map((d, i) => (
+              {deliveries.length > 0 ? (
+                deliveries.map((d, i) => (
                   <DeliveryRow key={d.id ?? i} delivery={d} theme={theme} />
                 ))
               ) : (
@@ -469,7 +533,7 @@ const s = StyleSheet.create({
   noteTxt:  { flex: 1, fontSize: 12, lineHeight: 18 },
 
   // Tab switcher
-  tabRow: { flexDirection: 'row', borderRadius: 0, borderWidth: 0, borderBottomWidth: 1, marginBottom: 0 },
+  tabRow: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: 0 },
   tabBtn: { flex: 1, paddingVertical: 13, alignItems: 'center' },
   tabTxt: { fontSize: 13, fontWeight: '700' },
 

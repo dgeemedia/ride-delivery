@@ -13,7 +13,6 @@ const { height }     = Dimensions.get('window');
 const COURIER_ACCENT = '#34D399';
 const RED            = '#E05555';
 const GREEN          = '#5DAA72';
-const GOLD           = '#FFB800';
 const TIMEOUT_SECS   = 35;
 
 // ── Countdown ring ─────────────────────────────────────────────────────────────
@@ -47,7 +46,7 @@ const RouteRow = ({ icon, iconColor, label, address, contact, theme }) => (
     <View style={{ flex: 1 }}>
       <Text style={[rr.label, { color: theme.hint }]}>{label}</Text>
       <Text style={[rr.addr, { color: theme.foreground }]} numberOfLines={2}>{address}</Text>
-      {contact && <Text style={[rr.contact, { color: theme.hint }]}>{contact}</Text>}
+      {!!contact && <Text style={[rr.contact, { color: theme.hint }]}>{contact}</Text>}
     </View>
   </View>
 );
@@ -87,16 +86,18 @@ const WalletStrip = ({ balance, required, theme, onTopUp }) => {
           {hasSufficient ? 'Wallet OK ✓' : 'Insufficient Balance'}
         </Text>
         <Text style={[ws.sub, { color: theme.hint }]}>
-          Balance: <Text style={{ fontWeight: '800', color }}>
-            ₦{Number(balance).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+          {'Balance: '}
+          <Text style={{ fontWeight: '800', color }}>
+            {`₦${Number(balance).toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
           </Text>
-          {'  '}Required: <Text style={{ fontWeight: '800' }}>
-            ₦{Number(required).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+          {'   Required: '}
+          <Text style={{ fontWeight: '800' }}>
+            {`₦${Number(required).toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
           </Text>
         </Text>
         {!hasSufficient && (
           <Text style={[ws.shortfall, { color: RED }]}>
-            Need ₦{Number(shortfall).toLocaleString('en-NG', { maximumFractionDigits: 0 })} more to accept
+            {`Need ₦${Number(shortfall).toLocaleString('en-NG', { maximumFractionDigits: 0 })} more to accept`}
           </Text>
         )}
       </View>
@@ -159,7 +160,6 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
       });
     }, 1000);
 
-    // Fetch wallet balance immediately
     walletAPI.getWallet()
       .then(res => setWalletBalance(res?.data?.wallet?.balance ?? res?.data?.balance ?? 0))
       .catch(() => setWalletBalance(0))
@@ -178,12 +178,10 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
   };
 
   const doAccept = async () => {
-    // Guard: wallet must be sufficient
     if (!hasSufficient) {
       Alert.alert(
         'Wallet Balance Required',
-        `You need ₦${estimatedFee.toLocaleString('en-NG')} in your wallet to accept this delivery. ` +
-        `Please top up your wallet first.`,
+        `You need ₦${estimatedFee.toLocaleString('en-NG')} in your wallet to accept this delivery. Please top up your wallet first.`,
         [
           { text: 'Decline',    style: 'cancel', onPress: doDecline },
           { text: 'Top Up Now', onPress: () => slideOut(() => navigation.navigate('EarningsHome')) },
@@ -204,7 +202,7 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
       setAccepting(false);
 
       const status  = err?.response?.status;
-      const message = err?.response?.data?.message ?? 'This delivery may have been cancelled.';
+      const message = String(err?.response?.data?.message ?? 'This delivery may have been cancelled.');
 
       if (status === 402) {
         Alert.alert(
@@ -224,8 +222,13 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
   };
 
   const feeStr  = estimatedFee.toLocaleString('en-NG', { maximumFractionDigits: 0 });
-  const distStr = request.distance?.toFixed(1) ?? '—';
+  const distStr = request.distance != null ? Number(request.distance).toFixed(1) : '—';
   const etaStr  = request.etaMinutes ?? (request.distance ? Math.ceil(request.distance / 0.4) : '—');
+
+  // ── FIX: use !! so that packageWeight=0 does not render a bare "0"
+  //         in the View, which crashes with "Text strings must be rendered
+  //         within a <Text> component".
+  const hasWeight = !!request.packageWeight && Number(request.packageWeight) > 0;
 
   return (
     <View style={s.root}>
@@ -249,19 +252,20 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
         </View>
 
         {/* Fee */}
-        <Text style={[s.fee, { color: COURIER_ACCENT }]}>₦{feeStr}</Text>
+        <Text style={[s.fee, { color: COURIER_ACCENT }]}>{`₦${feeStr}`}</Text>
         <Text style={[s.feeSub, { color: theme.hint }]}>Estimated delivery fee</Text>
 
         {/* Stats */}
         <View style={s.statsRow}>
           <StatPill icon="navigate-outline" value={`${distStr} km`}  theme={theme} />
           <StatPill icon="time-outline"     value={`~${etaStr} min`} theme={theme} />
-          {request.packageWeight && (
+          {/* ── FIX: guard with hasWeight (boolean) so 0 never renders bare ── */}
+          {hasWeight && (
             <StatPill icon="scale-outline" value={`${request.packageWeight} kg`} theme={theme} />
           )}
         </View>
 
-        {/* ── Wallet balance strip ── */}
+        {/* Wallet balance strip */}
         {loadingWallet ? (
           <View style={[s.walletLoading, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <ActivityIndicator color={COURIER_ACCENT} size="small" />
@@ -280,7 +284,7 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
 
         {/* Package info + route */}
         <ScrollView style={{ maxHeight: height * 0.22 }} showsVerticalScrollIndicator={false}>
-          {request.packageDescription && (
+          {!!request.packageDescription && (
             <View style={[s.pkgCard, { backgroundColor: COURIER_ACCENT + '10', borderColor: COURIER_ACCENT + '30' }]}>
               <Ionicons name="cube-outline" size={15} color={COURIER_ACCENT} />
               <Text style={[s.pkgTxt, { color: theme.foreground }]}>{request.packageDescription}</Text>
@@ -324,7 +328,7 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
             >
               {accepting ? (
                 <ActivityIndicator color="#080C18" size="small" />
-              ) : !hasSufficient && !loadingWallet ? (
+              ) : (!hasSufficient && !loadingWallet) ? (
                 <>
                   <Ionicons name="wallet-outline" size={18} color={theme.hint} />
                   <Text style={[s.acceptTxt, { color: theme.hint }]}>Top Up First</Text>

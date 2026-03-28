@@ -15,7 +15,7 @@ import { partnerAPI, userAPI, walletAPI, deliveryAPI } from '../../services/api'
 import socketService         from '../../services/socket';
 
 const { width } = Dimensions.get('window');
-const CA     = '#34D399'; // courier accent
+const CA     = '#34D399';
 const PURPLE = '#A78BFA';
 
 // ── getRealLocation ────────────────────────────────────────────────────────────
@@ -138,10 +138,13 @@ const WalletStrip = ({ balance, todayEarnings, onTopUp, onWithdraw, theme }) => 
     <View style={ws.left}>
       <Text style={[ws.lbl, { color: CA + '80' }]}>WALLET BALANCE</Text>
       <Text style={[ws.amount, { color: '#5DAA72' }]}>
-        ₦{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+        {`₦${Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`}
       </Text>
       <Text style={[ws.todayLbl, { color: theme.hint }]}>
-        Today: <Text style={{ color: CA }}>+₦{Number(todayEarnings ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}</Text>
+        {'Today: '}
+        <Text style={{ color: CA }}>
+          {`+₦${Number(todayEarnings ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
+        </Text>
       </Text>
     </View>
     <View style={ws.btns}>
@@ -229,8 +232,8 @@ export default function PartnerDashboardScreen({ navigation }) {
         setFloorPriceActive(floor > 0);
         setActiveFloorAmount(floor);
       }
-      if (statsRes.status  === 'fulfilled') setStats(statsRes.value?.data);
-      if (walletRes.status === 'fulfilled') setWalletBalance(walletRes.value?.data?.wallet?.balance ?? 0);
+      if (statsRes.status    === 'fulfilled') setStats(statsRes.value?.data);
+      if (walletRes.status   === 'fulfilled') setWalletBalance(walletRes.value?.data?.wallet?.balance ?? 0);
       if (earningsRes.status === 'fulfilled') setTodayEarnings(parseFloat(earningsRes.value?.data?.netEarnings ?? 0));
       if (activeDelRes.status === 'fulfilled') {
         const del = activeDelRes.value?.data?.delivery ?? null;
@@ -270,21 +273,11 @@ export default function PartnerDashboardScreen({ navigation }) {
 
     socketService.connect()
       .then(async () => {
-        // ── FIX: if the partner is already marked online in the DB (state
-        //         loaded from fetchData), re-emit partner:online after the
-        //         socket connects so the server adds this socket to the
-        //         partners:online broadcast room. Without this, a socket
-        //         reconnect (network drop, app resume from background) would
-        //         leave the partner invisible to broadcastToPartners even
-        //         though their DB flag is still isOnline=true.
         if (isOnline) {
           try {
             const coords = await getRealLocation();
             socketService.goOnline({ latitude: coords.lat, longitude: coords.lng });
           } catch {
-            // Location failed — still call goOnline so the room is rejoined.
-            // The server's auto-rejoin logic (DB check on connection) also
-            // handles this as a safety net.
             socketService.goOnline({});
           }
         }
@@ -295,9 +288,9 @@ export default function PartnerDashboardScreen({ navigation }) {
       socketService.off('delivery:incoming_request', handleIncomingDelivery);
       socketService.off('delivery:cancelled',        handleCancelled);
     };
-  }, [navigation, isOnline]); // isOnline added so effect re-runs if online state changes
+  }, [navigation, isOnline]);
 
-  // ── Toggle online — uses real GPS just like DriverDashboard ────────────────
+  // ── Toggle online ──────────────────────────────────────────────────────────
   const toggleOnline = async () => {
     if (!profile?.isApproved) {
       Alert.alert(
@@ -334,19 +327,27 @@ export default function PartnerDashboardScreen({ navigation }) {
 
   // ── Navigation helpers ─────────────────────────────────────────────────────
   const goToEarnings = () => navigation.getParent()?.navigate('EarningsTab');
-  const goToTopUp    = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'WalletTopUp' });
-  const goToWithdraw = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal' });
+  const goToTopUp    = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'WalletTopUp',    initial: false });
+  const goToWithdraw = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal',     initial: false });
   const goToProfile  = () => navigation.getParent()?.navigate('ProfileTab');
+
+  // ── FIX: initial: false forces React Navigation to honour the screen param
+  //         on repeat visits. Without it, navigating to EarningsTab a second
+  //         time lands on EarningsHome (the stack's initial screen) instead of
+  //         PartnerHistory, making "Earnings" and "Delivery History" resolve
+  //         to the same screen.
+  const goToHistory  = () =>
+    navigation.getParent()?.navigate('EarningsTab', { screen: 'PartnerHistory', initial: false });
 
   const isApproved = profile?.isApproved ?? false;
 
   // ── Quick actions ──────────────────────────────────────────────────────────
   const quickActions = [
-    { icon: 'wallet-outline',        label: 'Earnings',         color: CA,         onPress: goToEarnings          },
-    { icon: 'list-outline',          label: 'Delivery History', color: '#5DAA72',  screen: 'PartnerHistory'       },
-    { icon: 'trending-up-outline',   label: 'Floor Price',      color: PURPLE,     screen: 'FloorPrice'           },
-    { icon: 'document-text-outline', label: 'Documents',        color: '#4E8DBD',  screen: 'Support'              },
-    { icon: 'help-circle-outline',   label: 'Support',          color: theme.hint, screen: 'Support'              },
+    { icon: 'wallet-outline',        label: 'Earnings',         color: CA,         onPress: goToEarnings },
+    { icon: 'list-outline',          label: 'Delivery History', color: '#5DAA72',  onPress: goToHistory  },
+    { icon: 'trending-up-outline',   label: 'Floor Price',      color: PURPLE,     onPress: () => navigation.navigate('FloorPrice') },
+    { icon: 'document-text-outline', label: 'Documents',        color: '#4E8DBD',  onPress: () => navigation.navigate('Support')    },
+    { icon: 'help-circle-outline',   label: 'Support',          color: theme.hint, onPress: () => navigation.navigate('Support')    },
   ];
 
   return (
@@ -421,7 +422,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             />
           )}
 
-          {/* ── Waiting banner — shows when online but no active delivery ── */}
+          {/* ── Waiting banner ── */}
           {isOnline && !activeDelivery && <WaitingBanner theme={theme} />}
 
           {/* ── Wallet strip ── */}
@@ -488,7 +489,7 @@ export default function PartnerDashboardScreen({ navigation }) {
               <View style={{ flex: 1 }}>
                 <Text style={[s.vehicleName, { color: theme.foreground }]}>Floor Price Active</Text>
                 <Text style={[s.vehiclePlate, { color: PURPLE }]}>
-                  Min ₦{activeFloorAmount.toLocaleString('en-NG', { maximumFractionDigits: 0 })} per delivery
+                  {`Min ₦${activeFloorAmount.toLocaleString('en-NG', { maximumFractionDigits: 0 })} per delivery`}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={theme.hint} />
@@ -502,7 +503,7 @@ export default function PartnerDashboardScreen({ navigation }) {
               <TouchableOpacity
                 key={item.label}
                 style={[s.actionCard, { backgroundColor: theme.backgroundAlt, borderColor: item.color + '25' }]}
-                onPress={item.onPress ?? (() => navigation.navigate(item.screen))}
+                onPress={item.onPress}
                 activeOpacity={0.75}
               >
                 <View style={[s.actionIcon, { backgroundColor: item.color + '18' }]}>
@@ -512,7 +513,7 @@ export default function PartnerDashboardScreen({ navigation }) {
                 {item.label === 'Floor Price' && floorPriceActive && (
                   <View style={[s.floorBadge, { backgroundColor: PURPLE }]}>
                     <Text style={s.floorBadgeTxt}>
-                      ₦{activeFloorAmount.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                      {`₦${activeFloorAmount.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
                     </Text>
                   </View>
                 )}
