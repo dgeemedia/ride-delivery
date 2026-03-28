@@ -4,8 +4,9 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const { calculateDistance, calculateDeliveryFee } = require('../utils/helpers');
 const notificationService = require('../services/notification.service');
-const { broadcastToPartners } = require('../services/socket.service');
+const { broadcastToPartners, emitToPartner } = require('../services/socket.service');
 const shieldService = require('../services/shield.service');
+const { logger } = require('../utils/logger');
 
 exports.getFeeEstimate = async (req, res) => {
   const { pickupLat, pickupLng, dropoffLat, dropoffLng, packageWeight } = req.query;
@@ -37,7 +38,8 @@ exports.requestDelivery = async (req, res) => {
   const {
     pickupAddress, pickupLat, pickupLng, pickupContact,
     dropoffAddress, dropoffLat, dropoffLng, dropoffContact,
-    packageDescription, packageWeight, packageValue, notes, promoCode
+    packageDescription, packageWeight, packageValue, notes, promoCode,
+    partnerId: selectedPartnerId,
   } = req.body;
 
   const activeDelivery = await prisma.delivery.findFirst({
@@ -82,18 +84,30 @@ exports.requestDelivery = async (req, res) => {
     }
   });
 
-  broadcastToPartners(notificationService._io, 'delivery:new_request', {
+  const io = notificationService._io;
+  const deliveryPayload = {
     deliveryId:         delivery.id,
     pickupAddress:      delivery.pickupAddress,
+    pickupContact:      delivery.pickupContact,
     dropoffAddress:     delivery.dropoffAddress,
+    dropoffContact:     delivery.dropoffContact,
     estimatedFee:       delivery.estimatedFee,
     distance:           delivery.distance,
+    etaMinutes:         Math.ceil(delivery.distance / 0.4),
     packageDescription: delivery.packageDescription,
+    packageWeight:      delivery.packageWeight,
     customer: {
       firstName:    delivery.customer.firstName,
-      profileImage: delivery.customer.profileImage
-    }
-  });
+      profileImage: delivery.customer.profileImage,
+    },
+  };
+
+  if (selectedPartnerId) {
+    emitToPartner(io, selectedPartnerId, 'delivery:incoming_request', deliveryPayload);
+    logger.info(`[Delivery] Request ${delivery.id} sent to partner ${selectedPartnerId}`);
+  } else {
+    broadcastToPartners(io, 'delivery:incoming_request', deliveryPayload);
+  }
 
   // Auto-SHIELD for night deliveries
   try {
@@ -303,7 +317,6 @@ exports.completeDelivery = async (req, res) => {
 
   await prisma.deliveryPartnerProfile.update({ where: { userId: req.user.id }, data: { totalDeliveries: { increment: 1 } } });
 
-  // Close any active SHIELD session for this delivery
   await shieldService.closeSessionsForDelivery(id).catch(() => {});
 
   await notificationService.notify({
@@ -344,7 +357,6 @@ exports.cancelDelivery = async (req, res) => {
     data:  { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason }
   });
 
-  // Close any active SHIELD session for this delivery
   await shieldService.closeSessionsForDelivery(id).catch(() => {});
 
   const notifyUserId = cancelledByPartner ? delivery.customerId : delivery.partnerId;

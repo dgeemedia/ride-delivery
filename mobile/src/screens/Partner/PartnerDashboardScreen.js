@@ -257,22 +257,45 @@ export default function PartnerDashboardScreen({ navigation }) {
 
   // ── Socket ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const handleReq = (data) => {
+    const handleIncomingDelivery = (data) => {
       navigation.navigate('IncomingDelivery', { request: data });
     };
-    const handleCanc = () => {
+
+    const handleCancelled = () => {
       try { navigation.goBack(); } catch {}
     };
 
-    socketService.on('delivery:new_request', handleReq);
-    socketService.on('delivery:cancelled',   handleCanc);
-    socketService.connect().catch((err) => console.warn('[PartnerDashboard] socket connect:', err?.message));
+    socketService.on('delivery:incoming_request', handleIncomingDelivery);
+    socketService.on('delivery:cancelled',        handleCancelled);
+
+    socketService.connect()
+      .then(async () => {
+        // ── FIX: if the partner is already marked online in the DB (state
+        //         loaded from fetchData), re-emit partner:online after the
+        //         socket connects so the server adds this socket to the
+        //         partners:online broadcast room. Without this, a socket
+        //         reconnect (network drop, app resume from background) would
+        //         leave the partner invisible to broadcastToPartners even
+        //         though their DB flag is still isOnline=true.
+        if (isOnline) {
+          try {
+            const coords = await getRealLocation();
+            socketService.goOnline({ latitude: coords.lat, longitude: coords.lng });
+          } catch {
+            // Location failed — still call goOnline so the room is rejoined.
+            // The server's auto-rejoin logic (DB check on connection) also
+            // handles this as a safety net.
+            socketService.goOnline({});
+          }
+        }
+      })
+      .catch((err) => console.warn('[PartnerDashboard] socket connect:', err?.message));
 
     return () => {
-      socketService.off('delivery:new_request', handleReq);
-      socketService.off('delivery:cancelled',   handleCanc);
+      socketService.off('delivery:incoming_request', handleIncomingDelivery);
+      socketService.off('delivery:cancelled',        handleCancelled);
     };
-  }, [navigation]);
+  }, [navigation, isOnline]); // isOnline added so effect re-runs if online state changes
 
   // ── Toggle online — uses real GPS just like DriverDashboard ────────────────
   const toggleOnline = async () => {

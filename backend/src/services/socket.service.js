@@ -52,8 +52,28 @@ const initializeSocketHandlers = (io) => {
 
     activeSockets.set(socket.userId, socket.id);
 
-    // Every user joins their private room
+    // Every user joins their private room — this room is ALWAYS available
+    // and is used by emitToPartner / emitToUser for targeted delivery.
     socket.join(`user:${socket.userId}`);
+
+    // ── AUTO-REJOIN: if this is a DELIVERY_PARTNER who is still marked
+    //    online in the DB (e.g. app reconnected after a network drop),
+    //    immediately rejoin the broadcast room so they can receive both
+    //    targeted and broadcast delivery requests without having to toggle
+    //    the switch off and on again.
+    if (socket.userRole === 'DELIVERY_PARTNER') {
+      prisma.deliveryPartnerProfile.findUnique({
+        where:  { userId: socket.userId },
+        select: { isOnline: true },
+      }).then((profile) => {
+        if (profile?.isOnline) {
+          socket.join('partners:online');
+          logger.info(`[Socket] Partner auto-rejoined partners:online on reconnect: ${socket.userId}`);
+        }
+      }).catch((err) => {
+        logger.error('[Socket] partner auto-rejoin error:', err.message);
+      });
+    }
 
     // ── DRIVER EVENTS ─────────────────────────────
 
@@ -384,16 +404,26 @@ const initializeSocketHandlers = (io) => {
 const emitToUser          = (io, userId, event, data) => io?.to(`user:${userId}`).emit(event, data);
 const broadcastToDrivers  = (io, event, data)          => io?.to('drivers:online').emit(event, data);
 const broadcastToPartners = (io, event, data)          => io?.to('partners:online').emit(event, data);
-const getSocketId         = (userId)                   => activeSockets.get(userId) || null;
+
+// ── FIX: emit to the partner via their user:X room which is joined on
+//         every connection — not partner:X which only exists after the
+//         partner:online socket event fires. This guarantees delivery
+//         even after a socket reconnect where partner:online was not
+//         re-emitted by the client.
+const emitToPartner = (io, partnerId, event, data) =>
+  io?.to(`user:${partnerId}`).emit(event, data);
+
+const getSocketId      = (userId)                 => activeSockets.get(userId) || null;
 
 // SHIELD helper — emit to a beneficiary's live tracker room
-const emitToShieldRoom    = (io, token, event, data)   => io?.to(`shield:${token}`).emit(event, data);
+const emitToShieldRoom = (io, token, event, data) => io?.to(`shield:${token}`).emit(event, data);
 
 module.exports = {
   initializeSocketHandlers,
   emitToUser,
   broadcastToDrivers,
   broadcastToPartners,
+  emitToPartner,
   getSocketId,
   emitToShieldRoom,
 };

@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }    from '../../context/ThemeContext';
 import { deliveryAPI } from '../../services/api';
 import socketService   from '../../services/socket';
-import { GOOGLE_MAPS_API_KEY } from '../../config/constants'; // add this to your constants
+import { GOOGLE_MAPS_API_KEY } from '../../config/constants';
 
 const { width, height } = Dimensions.get('window');
 
@@ -57,7 +57,17 @@ const VEHICLE_ICONS = {
   CAR:  'car-outline',     VAN: 'bus-outline',
 };
 
-// ── Mock fallback ──────────────────────────────────────────────────────────────
+// Quick destinations
+const QUICK_DESTINATIONS = [
+  { label: 'Victoria Island', icon: 'business-outline', lat: 6.4281, lng: 3.4219 },
+  { label: 'Lekki Phase 1',   icon: 'home-outline',     lat: 6.4433, lng: 3.5077 },
+  { label: 'Ikeja',           icon: 'airplane-outline', lat: 6.6018, lng: 3.3515 },
+  { label: 'Surulere',        icon: 'football-outline', lat: 6.5037, lng: 3.3577 },
+  { label: 'Eko Hotel',       icon: 'bed-outline',      lat: 6.4344, lng: 3.4212 },
+  { label: 'Ajah',            icon: 'cart-outline',     lat: 6.4698, lng: 3.5827 },
+];
+
+// Mock fallback
 const PARTNER_NAMES = [
   { firstName: 'Kunle',  lastName: 'Balogun' },
   { firstName: 'Ifeanyi',lastName: 'Eze'     },
@@ -94,7 +104,7 @@ function generateMockPartners(center) {
   });
 }
 
-// ── PartnerPin ─────────────────────────────────────────────────────────────────
+// PartnerPin component (unchanged)
 const PartnerPin = ({ partner, selected, onPress, accentColor }) => {
   const scaleA = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -121,7 +131,7 @@ const pp = StyleSheet.create({
   pulse: { position: 'absolute', width: 52, height: 52, borderRadius: 26, borderWidth: 1.5, opacity: 0.4 },
 });
 
-// ── PartnerCard ────────────────────────────────────────────────────────────────
+// PartnerCard component (unchanged)
 const PartnerCard = ({ partner, selected, onSelect, accentColor, theme }) => (
   <TouchableOpacity
     onPress={() => onSelect(partner)}
@@ -174,7 +184,7 @@ const pc = StyleSheet.create({
   radioDot:      { width: 10, height: 10, borderRadius: 5 },
 });
 
-// ── PackageInput ───────────────────────────────────────────────────────────────
+// PackageInput component (unchanged)
 const PackageInput = ({ label, icon, placeholder, value, onChangeText, keyboardType, multiline, theme, accentColor }) => (
   <View style={[pi.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <View style={[pi.iconWrap, { backgroundColor: accentColor + '18' }]}>
@@ -203,7 +213,7 @@ const pi = StyleSheet.create({
   input:   { fontSize: 13, fontWeight: '500', minHeight: 20, outlineWidth: 0, borderWidth: 0 },
 });
 
-// ── StepDots ───────────────────────────────────────────────────────────────────
+// StepDots component (unchanged)
 const StepDots = ({ step, accentColor, theme }) => (
   <View style={std.wrap}>
     {[1, 2, 3].map(s => (
@@ -220,7 +230,7 @@ const std = StyleSheet.create({
   dot:  { height: 6, width: 6, borderRadius: 3 },
 });
 
-// ── LocationSearchModal ────────────────────────────────────────────────────────
+// LocationSearchModal component (unchanged)
 const LocationSearchModal = ({
   visible, type, query, results, loading,
   onChangeText, onSelect, onClose, onSwitchToPin,
@@ -245,7 +255,6 @@ const LocationSearchModal = ({
       onRequestClose={onClose}
     >
       <SafeAreaView style={lsm.root}>
-        {/* ── Header ── */}
         <View style={lsm.header}>
           <TouchableOpacity onPress={onClose} style={lsm.backBtn} activeOpacity={0.7}>
             <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
@@ -276,7 +285,6 @@ const LocationSearchModal = ({
           </View>
         </View>
 
-        {/* ── Switch to map pin ── */}
         <TouchableOpacity style={lsm.mapPinRow} onPress={onSwitchToPin} activeOpacity={0.8}>
           <View style={[lsm.mapPinIcon, { backgroundColor: pinColor + '18' }]}>
             <Ionicons name="map-outline" size={16} color={pinColor} />
@@ -290,7 +298,6 @@ const LocationSearchModal = ({
 
         <View style={lsm.divider} />
 
-        {/* ── Results ── */}
         <FlatList
           data={results}
           keyExtractor={(item) => item.place_id}
@@ -361,61 +368,64 @@ const lsm = StyleSheet.create({
   hintTxt:    { fontSize: 13, color: '#3A3A3A', textAlign: 'center', paddingTop: 40 },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // MAIN SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
 export default function RequestDeliveryScreen({ navigation }) {
   const { theme }   = useTheme();
   const insets      = useSafeAreaInsets();
   const accentColor = theme.accent;
   const accentFg    = theme.accentFg ?? '#111111';
 
-  // ── Location state ─────────────────────────────────────────────────────────
+  // State (unchanged)
   const [pickupAddress,  setPickupAddress]  = useState('');
   const [dropoffAddress, setDropoffAddress] = useState('');
   const [pickupCoords,   setPickupCoords]   = useState(null);
   const [dropoffCoords,  setDropoffCoords]  = useState(null);
-
-  // 'pickup' | 'dropoff' | null
   const [placingPin,     setPlacingPin]     = useState(null);
   const [resolvingAddr,  setResolvingAddr]  = useState(false);
   const [liveAddress,    setLiveAddress]    = useState('');
   const [mapCenter,      setMapCenter]      = useState(null);
-
-  // ── Location search modal ──────────────────────────────────────────────────
-  const [searchModal,   setSearchModal]   = useState(null); // 'pickup' | 'dropoff' | null
+  const [searchModal,   setSearchModal]   = useState(null);
   const [searchQuery,   setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimer = useRef(null);
-
-  // ── Package ────────────────────────────────────────────────────────────────
   const [pickupContact,      setPickupContact]      = useState('');
   const [dropoffContact,     setDropoffContact]     = useState('');
   const [packageDescription, setPackageDescription] = useState('');
   const [packageWeight,      setPackageWeight]      = useState('');
   const [packageNotes,       setPackageNotes]       = useState('');
-
-  // ── Map & partners ─────────────────────────────────────────────────────────
   const mapRef             = useRef(null);
   const geocodeTimer       = useRef(null);
   const [partners,         setPartners]         = useState([]);
   const [selectedPartner,  setSelectedPartner]  = useState(null);
   const [loadingPartners,  setLoadingPartners]  = useState(false);
-
-  // ── Fee ────────────────────────────────────────────────────────────────────
   const [distanceKm,  setDistanceKm]  = useState(null);
   const [feeEstimate, setFeeEstimate] = useState(null);
   const [etaMinutes,  setEtaMinutes]  = useState(null);
-
-  // ── Flow ───────────────────────────────────────────────────────────────────
   const [step,       setStep]       = useState(1);
   const [requesting, setRequesting] = useState(false);
   const [mapReady,   setMapReady]   = useState(false);
   const fadeA     = useRef(new Animated.Value(1)).current;
   const pinBounce = useRef(new Animated.Value(0)).current;
 
-  // ── GPS on mount ───────────────────────────────────────────────────────────
+  // Quick destination helper
+  const setQuickDestination = (dest) => {
+    setDropoffCoords({ lat: dest.lat, lng: dest.lng });
+    setDropoffAddress(dest.label);
+    if (pickupCoords) {
+      setTimeout(() => {
+        mapRef.current?.fitToCoordinates(
+          [
+            { latitude: pickupCoords.lat, longitude: pickupCoords.lng },
+            { latitude: dest.lat,         longitude: dest.lng         },
+          ],
+          { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true }
+        );
+      }, 300);
+    }
+  };
+
+  // GPS on mount
   useEffect(() => {
     (async () => {
       try {
@@ -435,7 +445,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     socketService.connect?.();
   }, []);
 
-  // ── Animate map to pickup once coords land ────────────────────────────────
   useEffect(() => {
     if (pickupCoords && mapReady && step === 1 && !placingPin) {
       mapRef.current?.animateToRegion({
@@ -445,7 +454,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     }
   }, [pickupCoords, mapReady]);
 
-  // ── Reverse geocode helper ─────────────────────────────────────────────────
   const reverseGeocode = useCallback(async (lat, lng, setter) => {
     try {
       const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
@@ -464,7 +472,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     }
   }, []);
 
-  // ── Places text search ─────────────────────────────────────────────────────
   const searchPlaces = useCallback(async (text) => {
     setSearchQuery(text);
     if (text.length < 3) {
@@ -491,7 +498,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     }, 350);
   }, [pickupCoords]);
 
-  // ── Resolve place_id → coords + address ───────────────────────────────────
   const selectPlace = useCallback(async (place) => {
     try {
       const url  = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&key=${GOOGLE_MAPS_API_KEY}&fields=geometry,formatted_address`;
@@ -536,7 +542,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     }
   }, [searchModal, pickupCoords]);
 
-  // ── Open / close search modal ──────────────────────────────────────────────
   const openSearchModal = useCallback((type) => {
     setSearchModal(type);
     setSearchQuery('');
@@ -558,7 +563,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     setTimeout(() => startPickingLocation(type), 300);
   }, [searchModal]);
 
-  // ── Map drag handlers ──────────────────────────────────────────────────────
   const onRegionChange = useCallback((region) => {
     if (!placingPin) return;
     setMapCenter({ lat: region.latitude, lng: region.longitude });
@@ -597,7 +601,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     });
   }, [placingPin, reverseGeocode]);
 
-  // ── Confirm pin placement ──────────────────────────────────────────────────
   const confirmPin = () => {
     if (!mapCenter) return;
     if (placingPin === 'pickup') {
@@ -612,7 +615,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     setMapCenter(null);
   };
 
-  // ── Start placing a pin ────────────────────────────────────────────────────
   const startPickingLocation = useCallback((type) => {
     setPlacingPin(type);
     const current = type === 'pickup' ? pickupCoords : dropoffCoords;
@@ -625,7 +627,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     }, 500);
   }, [pickupCoords, dropoffCoords, pickupAddress, dropoffAddress]);
 
-  // ── Proceed to partner selection ───────────────────────────────────────────
   const proceedToMap = useCallback(async () => {
     if (!pickupCoords || !dropoffCoords) {
       Alert.alert('Set both locations', 'Please set both pickup and drop-off locations.'); return;
@@ -672,7 +673,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     }, 500);
   }, [pickupCoords, dropoffCoords, pickupContact, dropoffContact, packageDescription, packageWeight]);
 
-  // ── Confirm & submit ───────────────────────────────────────────────────────
   const confirmDelivery = async () => {
     if (!selectedPartner) {
       Alert.alert('Select a partner', 'Please choose a delivery partner.'); return;
@@ -718,6 +718,7 @@ export default function RequestDeliveryScreen({ navigation }) {
   const pinColor          = placingPin === 'dropoff' ? '#E05555' : accentColor;
   const sheetPadBottom    = insets.bottom + 12;
   const backBtnTop        = insets.top + 14;
+  const sheetTop          = insets.top + 70; // Position sheet below back button
 
   const mapRegion = pickupCoords
     ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 }
@@ -727,7 +728,7 @@ export default function RequestDeliveryScreen({ navigation }) {
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* ── MAP ── */}
+      {/* Map */}
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
@@ -774,7 +775,7 @@ export default function RequestDeliveryScreen({ navigation }) {
 
       <View style={s.topGradient} pointerEvents="none" />
 
-      {/* ── Back button ── */}
+      {/* Back button */}
       <TouchableOpacity
         style={[s.backBtn, { top: backBtnTop, backgroundColor: '#111111CC', borderColor: '#2A2A2A' }]}
         onPress={() => {
@@ -787,9 +788,7 @@ export default function RequestDeliveryScreen({ navigation }) {
         <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          PIN-PLACING MODE
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* Pin-placing mode overlay */}
       {isPickingLocation && (
         <>
           <View style={s.crosshairWrap} pointerEvents="none">
@@ -835,35 +834,32 @@ export default function RequestDeliveryScreen({ navigation }) {
         </>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          NORMAL BOTTOM SHEET
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* Bottom sheet – now uses top to fill space */}
       {!isPickingLocation && (
         <Animated.View style={[s.sheet, {
           backgroundColor: '#111111',
           borderColor:     '#2A2A2A',
           opacity:         fadeA,
           paddingBottom:   sheetPadBottom,
+          top:             sheetTop,          // Fill from this point to bottom
         }]}>
           <StepDots step={step} accentColor={accentColor} theme={theme} />
 
-          {/* ── STEP 1 ── */}
+          {/* Step 1 */}
           {step === 1 && (
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
               <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <Text style={s.sheetTitle}>Send a Package</Text>
                 <Text style={[s.sheetSub, { color: '#6A6A6A' }]}>Search or tap the map icon to pin your location</Text>
 
-                {/* ── Location pickers ── */}
+                {/* Location pickers */}
                 <View style={s.locationRow}>
                   <View style={s.routeDots}>
                     <View style={[s.routeDot, { backgroundColor: accentColor }]} />
                     <View style={[s.routeLine, { backgroundColor: '#2A2A2A' }]} />
                     <View style={[s.routeDot, { backgroundColor: '#E05555' }]} />
                   </View>
-
                   <View style={{ flex: 1 }}>
-                    {/* Pickup */}
                     <TouchableOpacity
                       style={[s.locBtn, { backgroundColor: '#1A1A1A', borderColor: accentColor + '50' }]}
                       onPress={() => openSearchModal('pickup')}
@@ -886,10 +882,7 @@ export default function RequestDeliveryScreen({ navigation }) {
                         <Ionicons name="map-outline" size={14} color={accentColor} />
                       </TouchableOpacity>
                     </TouchableOpacity>
-
                     <View style={{ height: 6 }} />
-
-                    {/* Dropoff */}
                     <TouchableOpacity
                       style={[s.locBtn, { backgroundColor: '#1A1A1A', borderColor: '#E05555' + '50' }]}
                       onPress={() => openSearchModal('dropoff')}
@@ -915,7 +908,23 @@ export default function RequestDeliveryScreen({ navigation }) {
                   </View>
                 </View>
 
-                {/* ── Contact & package details ── */}
+                {/* Quick destinations */}
+                <Text style={[s.quickLabel, { color: '#6A6A6A' }]}>POPULAR DESTINATIONS</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                  {QUICK_DESTINATIONS.map((d) => (
+                    <TouchableOpacity
+                      key={d.label}
+                      style={[s.quickChip, { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }]}
+                      onPress={() => setQuickDestination(d)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name={d.icon} size={13} color={accentColor} />
+                      <Text style={[s.quickChipTxt, { color: '#F2EEE6' }]}>{d.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {/* Contact & package details */}
                 <Text style={[s.sectionLabel, { color: '#6A6A6A' }]}>CONTACT & PACKAGE</Text>
                 <PackageInput label="PICKUP CONTACT"      icon="call-outline"          placeholder="+234 801 234 5678"                    value={pickupContact}      onChangeText={setPickupContact}      keyboardType="phone-pad" theme={theme} accentColor={accentColor} />
                 <PackageInput label="DROP-OFF CONTACT"    icon="call-outline"          placeholder="+234 801 234 5678"                    value={dropoffContact}     onChangeText={setDropoffContact}     keyboardType="phone-pad" theme={theme} accentColor={accentColor} />
@@ -943,7 +952,7 @@ export default function RequestDeliveryScreen({ navigation }) {
             </KeyboardAvoidingView>
           )}
 
-          {/* ── STEP 2 ── */}
+          {/* Step 2 */}
           {step === 2 && (
             <View style={{ flex: 1 }}>
               <View style={[s.feeBadge, { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }]}>
@@ -1010,7 +1019,7 @@ export default function RequestDeliveryScreen({ navigation }) {
             </View>
           )}
 
-          {/* ── STEP 3 ── */}
+          {/* Step 3 */}
           {step === 3 && selectedPartner && (
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={s.sheetTitle}>Confirm Delivery</Text>
@@ -1115,7 +1124,7 @@ export default function RequestDeliveryScreen({ navigation }) {
         </Animated.View>
       )}
 
-      {/* ── Location Search Modal ── */}
+      {/* Location Search Modal */}
       <LocationSearchModal
         visible={searchModal !== null}
         type={searchModal}
@@ -1142,7 +1151,7 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', zIndex: 99,
   },
 
-  // ── Crosshair pin ──────────────────────────────────────────────────────────
+  // Crosshair pin styles
   crosshairWrap: {
     position: 'absolute', top: '50%', left: '50%',
     marginTop: -56, marginLeft: -20,
@@ -1160,8 +1169,6 @@ const s = StyleSheet.create({
     borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 10,
     borderLeftColor: 'transparent', borderRightColor: 'transparent',
   },
-
-  // ── Pin label bar ──────────────────────────────────────────────────────────
   pinLabelBar: {
     position: 'absolute', left: 70, right: 20,
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -1169,8 +1176,6 @@ const s = StyleSheet.create({
   },
   pinLabelDot: { width: 8, height: 8, borderRadius: 4 },
   pinLabelTxt: { fontSize: 13, fontWeight: '600', color: '#FFFFFF' },
-
-  // ── Confirm bar ────────────────────────────────────────────────────────────
   confirmBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
@@ -1187,17 +1192,16 @@ const s = StyleSheet.create({
   },
   confirmBarBtnTxt: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
 
-  // ── Bottom sheet ───────────────────────────────────────────────────────────
+  // Bottom sheet – now uses top to fill space (no maxHeight)
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1,
     paddingHorizontal: 24, paddingTop: 22,
-    maxHeight: height * 0.75,
   },
   sheetTitle: { fontSize: 20, fontWeight: '900', letterSpacing: -0.3, marginBottom: 4, color: '#F2EEE6' },
   sheetSub:   { fontSize: 12, fontWeight: '500', marginBottom: 16 },
 
-  // ── Location row ───────────────────────────────────────────────────────────
+  // Location row styles
   locationRow: { flexDirection: 'row', gap: 12, alignItems: 'stretch', marginBottom: 20 },
   routeDots:   { alignItems: 'center', paddingTop: 18, paddingBottom: 18 },
   routeDot:    { width: 10, height: 10, borderRadius: 5 },
@@ -1212,27 +1216,32 @@ const s = StyleSheet.create({
   locBtnIcon:          { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   locBtnIconSecondary: { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
 
+  // Quick destinations styles
+  quickLabel:   { fontSize: 9, fontWeight: '700', letterSpacing: 2.5, marginBottom: 10 },
+  quickChip:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8 },
+  quickChipTxt: { fontSize: 12, fontWeight: '600' },
+
   sectionLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 2.5, marginBottom: 10 },
 
-  // ── Buttons ────────────────────────────────────────────────────────────────
+  // Buttons
   primaryBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 16, marginTop: 4 },
   primaryBtnTxt:  { fontSize: 15, fontWeight: '800' },
   secondaryBtn:   { borderRadius: 14, paddingVertical: 12, alignItems: 'center', borderWidth: 1, marginTop: 8 },
   secondaryBtnTxt:{ fontSize: 14, fontWeight: '600' },
 
-  // ── Fee badge ──────────────────────────────────────────────────────────────
+  // Fee badge
   feeBadge:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
   feeItem:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10 },
   feeVal:     { fontSize: 13, fontWeight: '700' },
   feeDivider: { width: 1 },
 
-  // ── Empty state ────────────────────────────────────────────────────────────
+  // Empty state
   empty:    { alignItems: 'center', paddingVertical: 24 },
   emptyTxt: { fontSize: 13, marginTop: 10, marginBottom: 14 },
   retryBtn: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 8 },
   retryTxt: { fontSize: 13, fontWeight: '700' },
 
-  // ── Confirm step ──────────────────────────────────────────────────────────
+  // Confirm step styles
   confirmRoute:     { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 10 },
   confirmRow:       { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   cDot:             { width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0 },

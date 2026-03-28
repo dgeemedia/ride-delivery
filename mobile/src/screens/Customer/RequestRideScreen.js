@@ -738,6 +738,7 @@ export default function RequestRideScreen({ navigation }) {
   const pinColor          = placingPin === 'dropoff' ? '#E05555' : accentColor;
   const backBtnTop        = insets.top + 14;
   const sheetPadBottom    = insets.bottom + 12;
+  const sheetTop          = insets.top + 70; // position sheet below back button
 
   const mapRegion = pickupCoords
     ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 }
@@ -855,7 +856,7 @@ export default function RequestRideScreen({ navigation }) {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════
-          NORMAL BOTTOM SHEET
+          NORMAL BOTTOM SHEET (now scrollable and fitting)
       ══════════════════════════════════════════════════════════════════════ */}
       {!isPickingLocation && (
         <Animated.View style={[s.sheet, {
@@ -863,105 +864,108 @@ export default function RequestRideScreen({ navigation }) {
           borderColor:     '#2A2A2A',
           opacity:         fadeA,
           paddingBottom:   sheetPadBottom,
+          top:             sheetTop,
         }]}>
           <StepDots step={Math.min(step, 3)} accentColor={accentColor} theme={theme} />
 
           {/* ── STEP 1 ── */}
           {step === 1 && (
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-              <Text style={s.sheetTitle}>Where to?</Text>
-              <Text style={[s.sheetSub, { color: '#6A6A6A' }]}>Search or tap the map icon to pin your location</Text>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <Text style={s.sheetTitle}>Where to?</Text>
+                <Text style={[s.sheetSub, { color: '#6A6A6A' }]}>Search or tap the map icon to pin your location</Text>
 
-              {/* Location pickers */}
-              <View style={s.locationRow}>
-                <View style={s.routeDots}>
-                  <View style={[s.routeDot, { backgroundColor: accentColor }]} />
-                  <View style={[s.routeLine, { backgroundColor: '#2A2A2A' }]} />
-                  <View style={[s.routeDot, { backgroundColor: '#E05555' }]} />
-                </View>
-                <View style={{ flex: 1 }}>
+                {/* Location pickers */}
+                <View style={s.locationRow}>
+                  <View style={s.routeDots}>
+                    <View style={[s.routeDot, { backgroundColor: accentColor }]} />
+                    <View style={[s.routeLine, { backgroundColor: '#2A2A2A' }]} />
+                    <View style={[s.routeDot, { backgroundColor: '#E05555' }]} />
+                  </View>
+                  <View style={{ flex: 1 }}>
 
-                  {/* ── Pickup field ── */}
-                  <TouchableOpacity
-                    style={[s.locBtn, { backgroundColor: '#1A1A1A', borderColor: accentColor + '50' }]}
-                    onPress={() => openSearchModal('pickup')}
-                    activeOpacity={0.85}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[s.locBtnLabel, { color: accentColor }]}>PICKUP</Text>
-                      <Text style={[s.locBtnAddr, { color: pickupCoords ? '#F2EEE6' : '#6A6A6A' }]} numberOfLines={1}>
-                        {pickupAddress || 'Search or pin pickup location'}
-                      </Text>
-                    </View>
-                    {/* Search icon — opens modal */}
-                    <View style={[s.locBtnIcon, { backgroundColor: accentColor + '18' }]}>
-                      <Ionicons name="search" size={14} color={accentColor} />
-                    </View>
-                    {/* Map pin icon — opens pin mode */}
+                    {/* ── Pickup field ── */}
                     <TouchableOpacity
-                      style={[s.locBtnIconSecondary, { backgroundColor: accentColor + '10' }]}
-                      onPress={(e) => { e.stopPropagation(); startPickingLocation('pickup'); }}
-                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                      style={[s.locBtn, { backgroundColor: '#1A1A1A', borderColor: accentColor + '50' }]}
+                      onPress={() => openSearchModal('pickup')}
+                      activeOpacity={0.85}
                     >
-                      <Ionicons name="map-outline" size={14} color={accentColor} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[s.locBtnLabel, { color: accentColor }]}>PICKUP</Text>
+                        <Text style={[s.locBtnAddr, { color: pickupCoords ? '#F2EEE6' : '#6A6A6A' }]} numberOfLines={1}>
+                          {pickupAddress || 'Search or pin pickup location'}
+                        </Text>
+                      </View>
+                      {/* Search icon — opens modal */}
+                      <View style={[s.locBtnIcon, { backgroundColor: accentColor + '18' }]}>
+                        <Ionicons name="search" size={14} color={accentColor} />
+                      </View>
+                      {/* Map pin icon — opens pin mode */}
+                      <TouchableOpacity
+                        style={[s.locBtnIconSecondary, { backgroundColor: accentColor + '10' }]}
+                        onPress={(e) => { e.stopPropagation(); startPickingLocation('pickup'); }}
+                        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                      >
+                        <Ionicons name="map-outline" size={14} color={accentColor} />
+                      </TouchableOpacity>
                     </TouchableOpacity>
-                  </TouchableOpacity>
 
-                  <View style={{ height: 6 }} />
+                    <View style={{ height: 6 }} />
 
-                  {/* ── Dropoff field ── */}
-                  <TouchableOpacity
-                    style={[s.locBtn, { backgroundColor: '#1A1A1A', borderColor: '#E05555' + '50' }]}
-                    onPress={() => openSearchModal('dropoff')}
-                    activeOpacity={0.85}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[s.locBtnLabel, { color: '#E05555' }]}>DROP-OFF</Text>
-                      <Text style={[s.locBtnAddr, { color: dropoffCoords ? '#F2EEE6' : '#6A6A6A' }]} numberOfLines={1}>
-                        {dropoffAddress || 'Search or pin drop-off location'}
-                      </Text>
-                    </View>
-                    <View style={[s.locBtnIcon, { backgroundColor: '#E05555' + '18' }]}>
-                      <Ionicons name="search" size={14} color="#E05555" />
-                    </View>
+                    {/* ── Dropoff field ── */}
                     <TouchableOpacity
-                      style={[s.locBtnIconSecondary, { backgroundColor: '#E05555' + '10' }]}
-                      onPress={(e) => { e.stopPropagation(); startPickingLocation('dropoff'); }}
-                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                      style={[s.locBtn, { backgroundColor: '#1A1A1A', borderColor: '#E05555' + '50' }]}
+                      onPress={() => openSearchModal('dropoff')}
+                      activeOpacity={0.85}
                     >
-                      <Ionicons name="map-outline" size={14} color="#E05555" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[s.locBtnLabel, { color: '#E05555' }]}>DROP-OFF</Text>
+                        <Text style={[s.locBtnAddr, { color: dropoffCoords ? '#F2EEE6' : '#6A6A6A' }]} numberOfLines={1}>
+                          {dropoffAddress || 'Search or pin drop-off location'}
+                        </Text>
+                      </View>
+                      <View style={[s.locBtnIcon, { backgroundColor: '#E05555' + '18' }]}>
+                        <Ionicons name="search" size={14} color="#E05555" />
+                      </View>
+                      <TouchableOpacity
+                        style={[s.locBtnIconSecondary, { backgroundColor: '#E05555' + '10' }]}
+                        onPress={(e) => { e.stopPropagation(); startPickingLocation('dropoff'); }}
+                        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                      >
+                        <Ionicons name="map-outline" size={14} color="#E05555" />
+                      </TouchableOpacity>
                     </TouchableOpacity>
-                  </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
 
-              {/* Quick destinations */}
-              <Text style={[s.quickLabel, { color: '#6A6A6A' }]}>POPULAR DESTINATIONS</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
-                {QUICK_DESTINATIONS.map((d) => (
-                  <TouchableOpacity key={d.label}
-                    style={[s.quickChip, { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }]}
-                    onPress={() => setQuickDestination(d)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name={d.icon} size={13} color={accentColor} />
-                    <Text style={[s.quickChipTxt, { color: '#F2EEE6' }]}>{d.label}</Text>
-                  </TouchableOpacity>
-                ))}
+                {/* Quick destinations */}
+                <Text style={[s.quickLabel, { color: '#6A6A6A' }]}>POPULAR DESTINATIONS</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                  {QUICK_DESTINATIONS.map((d) => (
+                    <TouchableOpacity key={d.label}
+                      style={[s.quickChip, { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }]}
+                      onPress={() => setQuickDestination(d)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name={d.icon} size={13} color={accentColor} />
+                      <Text style={[s.quickChipTxt, { color: '#F2EEE6' }]}>{d.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <TouchableOpacity
+                  style={[s.primaryBtn, {
+                    backgroundColor: (pickupCoords && dropoffCoords) ? accentColor : '#2A2A2A',
+                  }]}
+                  onPress={proceedToMap}
+                  activeOpacity={0.88}
+                >
+                  <Ionicons name="map-outline" size={18} color={(pickupCoords && dropoffCoords) ? accentFg : '#6A6A6A'} />
+                  <Text style={[s.primaryBtnTxt, { color: (pickupCoords && dropoffCoords) ? accentFg : '#6A6A6A' }]}>
+                    Find Available Riders
+                  </Text>
+                </TouchableOpacity>
               </ScrollView>
-
-              <TouchableOpacity
-                style={[s.primaryBtn, {
-                  backgroundColor: (pickupCoords && dropoffCoords) ? accentColor : '#2A2A2A',
-                }]}
-                onPress={proceedToMap}
-                activeOpacity={0.88}
-              >
-                <Ionicons name="map-outline" size={18} color={(pickupCoords && dropoffCoords) ? accentFg : '#6A6A6A'} />
-                <Text style={[s.primaryBtnTxt, { color: (pickupCoords && dropoffCoords) ? accentFg : '#6A6A6A' }]}>
-                  Find Available Riders
-                </Text>
-              </TouchableOpacity>
             </KeyboardAvoidingView>
           )}
 
@@ -1027,7 +1031,7 @@ export default function RequestRideScreen({ navigation }) {
 
           {/* ── STEP 3: Confirm ── */}
           {step === 3 && selectedDriver && (
-            <View>
+            <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={s.sheetTitle}>Confirm Ride</Text>
 
               <View style={[s.confirmRoute, { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }]}>
@@ -1099,7 +1103,7 @@ export default function RequestRideScreen({ navigation }) {
               <TouchableOpacity style={[s.secondaryBtn, { borderColor: '#2A2A2A' }]} onPress={() => setStep(2)} activeOpacity={0.8}>
                 <Text style={[s.secondaryBtnTxt, { color: '#6A6A6A' }]}>Change Driver</Text>
               </TouchableOpacity>
-            </View>
+            </ScrollView>
           )}
 
           {/* ── STEP 4: Waiting ── */}
@@ -1187,12 +1191,11 @@ const s = StyleSheet.create({
   },
   confirmBarBtnTxt: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
 
-  // ── Bottom sheet ───────────────────────────────────────────────────────────
+  // ── Bottom sheet (now uses top, no maxHeight) ─────────────────────────────
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1,
     paddingHorizontal: 24, paddingTop: 22,
-    maxHeight: height * 0.72,
   },
   sheetTitle: { fontSize: 20, fontWeight: '900', letterSpacing: -0.3, marginBottom: 4, color: '#F2EEE6' },
   sheetSub:   { fontSize: 12, fontWeight: '500', marginBottom: 18 },
