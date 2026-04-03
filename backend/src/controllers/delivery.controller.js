@@ -21,8 +21,6 @@ exports.getFeeEstimate = async (req, res) => {
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
 
-  // ── Use fareEngine so this estimate always matches what gets saved to DB
-  //    and reflects any admin-configured pricing from SystemSettings.
   const feeResult         = await fareEngine.calculateDeliveryFee(distance, packageWeight ? parseFloat(packageWeight) : 0);
   const estimatedDuration = Math.ceil(distance / 0.4);
 
@@ -60,7 +58,6 @@ exports.requestDelivery = async (req, res) => {
 
   const distance = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
 
-  // ── Use fareEngine — DB-backed pricing, consistent with getFeeEstimate
   const feeResult    = await fareEngine.calculateDeliveryFee(distance, packageWeight || 0);
   let   estimatedFee = feeResult.estimatedFee;
 
@@ -79,7 +76,7 @@ exports.requestDelivery = async (req, res) => {
       } else {
         estimatedFee = Math.max(0, estimatedFee - appliedPromo.discountValue);
       }
-      estimatedFee = Math.round(estimatedFee / 50) * 50; // keep rounded after promo
+      estimatedFee = Math.round(estimatedFee / 50) * 50;
       await prisma.promoCode.update({ where: { id: appliedPromo.id }, data: { currentUses: { increment: 1 } } });
     }
   }
@@ -124,7 +121,6 @@ exports.requestDelivery = async (req, res) => {
     broadcastToPartners(io, 'delivery:incoming_request', deliveryPayload);
   }
 
-  // Auto-SHIELD for night deliveries
   try {
     const autoShield = await shieldService.shouldAutoShield(req.user.id);
     if (autoShield.should && autoShield.beneficiary) {
@@ -285,7 +281,6 @@ exports.completeDelivery = async (req, res) => {
   if (delivery.partnerId !== req.user.id) throw new AppError('Unauthorized', 403);
   if (delivery.status !== 'IN_TRANSIT') throw new AppError('Delivery is not in transit', 400);
 
-  // ── Use fareEngine commission rate (DB-backed) instead of hardcoded 0.15
   const settings        = await fareEngine.getSettings();
   const commissionRate  = settings.delivery.platformCommission;
   const finalFee        = actualFee || delivery.estimatedFee;
@@ -408,7 +403,7 @@ exports.getDeliveryHistory = async (req, res) => {
         customer: { select: { firstName: true, lastName: true } },
         partner:  { select: { firstName: true, lastName: true } },
         rating:   true,
-        payment:  { select: { amount: true, method: true, status: true } }
+        payment:  { select: { amount: true, method: true, status: true, driverEarnings: true } }
       },
       orderBy: { deliveredAt: 'desc' },
       skip:    parseInt(skip),
@@ -461,6 +456,7 @@ exports.rateDelivery = async (req, res) => {
 
   const newRating = await prisma.rating.create({ data: { userId: req.user.id, deliveryId: id, rating, comment } });
 
+  // Recalculate partner's average rating from all their delivery ratings
   const partnerRatings = await prisma.rating.findMany({ where: { delivery: { partnerId: delivery.partnerId } } });
   const avgRating      = partnerRatings.reduce((sum, r) => sum + r.rating, 0) / partnerRatings.length;
 
@@ -477,6 +473,18 @@ exports.rateDelivery = async (req, res) => {
   res.status(201).json({ success: true, message: 'Rating submitted successfully', data: { rating: newRating } });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/deliveries/nearby-partners
+//
+// FIX: Previously sorted purely by distanceKm, ignoring the rating stored on
+// every DeliveryPartnerProfile. This made ratings cosmetic only — they were
+// shown but never influenced who the customer saw first.
+//
+// New ranking uses the same weighted blend as getNearbyDrivers:
+//   score = (normalised_rating × 0.65) − (normalised_distance × 0.35)
+//
+// New partners (rating = 0) get a neutral 3.0 so they aren't buried.
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getNearbyPartners = async (req, res) => {
   const { pickupLat, pickupLng, radiusKm = 15 } = req.query;
   if (!pickupLat || !pickupLng) throw new AppError('Please provide pickup coordinates', 400);
@@ -491,9 +499,23 @@ exports.getNearbyPartners = async (req, res) => {
   });
 
   const nearby = partners
-    .map(p => ({ ...p, distanceKm: parseFloat(calculateDistance(lat, lng, p.currentLat, p.currentLng).toFixed(2)) }))
+    .map(p => ({
+      ...p,
+      distanceKm: parseFloat(calculateDistance(lat, lng, p.currentLat, p.currentLng).toFixed(2)),
+    }))
     .filter(p => p.distanceKm <= radius)
-    .sort((a, b) => a.distanceKm - b.distanceKm)
+    // FIX: rank by rating+distance blend instead of distance-only
+    .sort((a, b) => {
+      // New partners with 0 ratings get a neutral 3.0 to avoid burying them
+      const ratingA = (a.rating > 0 ? a.rating : 3.0) / 5;
+      const ratingB = (b.rating > 0 ? b.rating : 3.0) / 5;
+      const distA   = a.distanceKm / radius;
+      const distB   = b.distanceKm / radius;
+      // Higher score = shown first
+      const scoreA  = ratingA * 0.65 - distA * 0.35;
+      const scoreB  = ratingB * 0.65 - distB * 0.35;
+      return scoreB - scoreA;
+    })
     .slice(0, 20)
     .map(p => ({
       partnerId:           p.user.id,

@@ -52,15 +52,20 @@ export const rideAPI = {
   getRideById:   (id)         => api.get(`/rides/${id}`),
 
   // Driver actions
-  acceptRide:        (id)       => api.put(`/rides/${id}/accept`),
-  arrivedAtPickup:   (id)       => api.put(`/rides/${id}/arrived`),
-  startRide:         (id)       => api.put(`/rides/${id}/start`),
-  completeRide:      (id, data) => api.put(`/rides/${id}/complete`, data),
-  cancelRide:        (id, data) => api.put(`/rides/${id}/cancel`, data),
+  acceptRide:      (id)       => api.put(`/rides/${id}/accept`),
+  arrivedAtPickup: (id)       => api.put(`/rides/${id}/arrived`),
+  startRide:       (id)       => api.put(`/rides/${id}/start`),
+  completeRide:    (id, data) => api.put(`/rides/${id}/complete`, data),
+  cancelRide:      (id, data) => api.put(`/rides/${id}/cancel`, data),
 
   // Customer — find & book a specific driver
   getNearbyDrivers:      (params) => api.get('/rides/nearby-drivers', { params }),
   requestSpecificDriver: (data)   => api.post('/rides/request-driver', data),
+
+  // FIX: rateRide was missing — backend route POST /rides/:id/rate exists
+  // (exports.rateRide in ride.controller.js) but was never exposed here.
+  // Without this, RateRideScreen had no way to submit a rating.
+  rateRide: (id, data) => api.post(`/rides/${id}/rate`, data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,8 +105,6 @@ export const driverAPI = {
   getEarnings:        (params) => api.get('/drivers/earnings', { params }),
   getStats:           ()       => api.get('/drivers/stats'),
   getNearbyRequests:  ()       => api.get('/drivers/nearby-requests'),
-
-  // Payout (goes through admin approval flow)
   requestPayout:      (data)   => api.post('/drivers/payout/request', data),
   getPayoutHistory:   (params) => api.get('/drivers/payout/history', { params }),
 };
@@ -117,8 +120,6 @@ export const partnerAPI = {
   getStats:           ()        => api.get('/partners/stats'),
   getNearbyRequests:  ()        => api.get('/partners/nearby-requests'),
   updateFloorPrice:   (price)   => api.post('/partners/profile', { preferredFloorPrice: price }),
-
-  // Payout (goes through admin approval flow)
   requestPayout:      (data)    => api.post('/partners/payout/request', data),
   getPayoutHistory:   (params)  => api.get('/partners/payout/history', { params }),
 };
@@ -137,32 +138,17 @@ export const notificationAPI = {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WALLET
-// All methods that require auth — the webhook /topup/verify is public-only
-// and called directly by Paystack, not from the mobile app.
 // ─────────────────────────────────────────────────────────────────────────────
 export const walletAPI = {
-  // Balance & history
   getWallet:              ()       => api.get('/wallet'),
   getTransactions:        (params) => api.get('/wallet/transactions', { params }),
-
-  // Top-up — new unified flow (WalletTopUpScreen)
   initializeTopUp:        (data)   => api.post('/wallet/topup/initialize', data),
-
-  // Top-up — Paystack legacy
   paystackTopup:          (data)   => api.post('/wallet/topup/paystack', data),
   verifyPaystackTopup:    (data)   => api.post('/wallet/topup/paystack/verify', data),
-
-  // Top-up — Flutterwave
   flutterwaveTopup:       (data)   => api.post('/wallet/topup/flutterwave', data),
   verifyFlutterwaveTopup: (data)   => api.post('/wallet/topup/flutterwave/verify', data),
-
-  // Bank account verification (for WithdrawalScreen)
   verifyBankAccount:      (params) => api.get('/wallet/verify-account', { params }),
-
-  // Transfer between users
   transfer:               (data)   => api.post('/wallet/transfer', data),
-
-  // Legacy direct withdrawal
   withdraw:               (data)   => api.post('/wallet/withdraw', data),
 };
 
@@ -170,70 +156,48 @@ export const walletAPI = {
 // SUPPORT TICKETS
 // ─────────────────────────────────────────────────────────────────────────────
 export const supportAPI = {
-  /** POST /api/users/support-ticket */
-  submitTicket: (data) => api.post('/users/support-ticket', data),
- 
-  /** GET /api/users/support-tickets */
-  getMyTickets: (params) => api.get('/users/support-tickets', { params }),
- 
-  /** GET /api/users/support-tickets/:id */
-  getTicketById: (id) => api.get(`/users/support-tickets/${id}`),
-  /** POST /api/users/support-tickets/:id/reply */
-  addReply: (id, message) => api.post(`/users/support-tickets/${id}/reply`, { message }),
+  submitTicket: (data)        => api.post('/users/support-ticket', data),
+  getMyTickets: (params)      => api.get('/users/support-tickets', { params }),
+  getTicketById:(id)          => api.get(`/users/support-tickets/${id}`),
+  addReply:     (id, message) => api.post(`/users/support-tickets/${id}/reply`, { message }),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHIELD
 // ─────────────────────────────────────────────────────────────────────────────
 export const shieldAPI = {
-  // Beneficiary management
-  listBeneficiaries:   ()       => api.get('/shield/beneficiaries'),
-  addBeneficiary:      (data)   => api.post('/shield/beneficiaries', data),
-  updateBeneficiary:   (id, d)  => api.put(`/shield/beneficiaries/${id}`, d),
-  deleteBeneficiary:   (id)     => api.delete(`/shield/beneficiaries/${id}`),
- 
-  // Session lifecycle
-  activate:       (data) => api.post('/shield/activate', data),
-  deactivate:     (data) => api.post('/shield/deactivate', data),
-  arrivedSafe:    (data) => api.post('/shield/arrived-safe', data),
-  getSession:     (params) => api.get('/shield/session', { params }),
- 
-  // Driver confirms safe
-  driverConfirmSafe: (sessionId) => api.post('/shield/driver/confirm-safe', { sessionId }),
- 
-  // Public view (no token needed — used by web viewer, but useful for testing)
-  getView:  (token) => api.get(`/shield/view/${token}`),
+  listBeneficiaries: ()         => api.get('/shield/beneficiaries'),
+  addBeneficiary:    (data)     => api.post('/shield/beneficiaries', data),
+  updateBeneficiary: (id, d)    => api.put(`/shield/beneficiaries/${id}`, d),
+  deleteBeneficiary: (id)       => api.delete(`/shield/beneficiaries/${id}`),
+  activate:          (data)     => api.post('/shield/activate', data),
+  deactivate:        (data)     => api.post('/shield/deactivate', data),
+  arrivedSafe:       (data)     => api.post('/shield/arrived-safe', data),
+  getSession:        (params)   => api.get('/shield/session', { params }),
+  driverConfirmSafe: (sessionId)=> api.post('/shield/driver/confirm-safe', { sessionId }),
+  getView:           (token)    => api.get(`/shield/view/${token}`),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CORPORATE
 // ─────────────────────────────────────────────────────────────────────────────
 export const corporateAPI = {
-  // Company admin
-  register:      (data)         => api.post('/corporate/register', data),
-  getProfile:    ()             => api.get('/corporate/profile'),
-  updateProfile: (data)         => api.put('/corporate/profile', data),
- 
-  // Wallet
-  getWallet:     ()             => api.get('/corporate/wallet'),
-  initiateTopUp: (data)         => api.post('/corporate/wallet/topup', data),
-  verifyTopUp:   (data)         => api.post('/corporate/wallet/verify', data),
- 
-  // Employees (admin view)
-  listEmployees: (params)       => api.get('/corporate/employees', { params }),
-  inviteEmployee:(data)         => api.post('/corporate/employees/invite', data),
-  updateEmployee:(id, data)     => api.put(`/corporate/employees/${id}`, data),
-  removeEmployee:(id)           => api.delete(`/corporate/employees/${id}`),
- 
-  // Employee self-service
-  getMyAccount:  ()             => api.get('/corporate/my-account'),
-  respondInvite: (data)         => api.post('/corporate/invite/respond', data),
- 
-  // Trips & reporting
-  getTrips:      (params)       => api.get('/corporate/trips', { params }),
-  getInvoice:    (params)       => api.get('/corporate/invoice', { params }),
+  register:      (data)     => api.post('/corporate/register', data),
+  getProfile:    ()         => api.get('/corporate/profile'),
+  updateProfile: (data)     => api.put('/corporate/profile', data),
+  getWallet:     ()         => api.get('/corporate/wallet'),
+  initiateTopUp: (data)     => api.post('/corporate/wallet/topup', data),
+  verifyTopUp:   (data)     => api.post('/corporate/wallet/verify', data),
+  listEmployees: (params)   => api.get('/corporate/employees', { params }),
+  inviteEmployee:(data)     => api.post('/corporate/employees/invite', data),
+  updateEmployee:(id, data) => api.put(`/corporate/employees/${id}`, data),
+  removeEmployee:(id)       => api.delete(`/corporate/employees/${id}`),
+  getMyAccount:  ()         => api.get('/corporate/my-account'),
+  respondInvite: (data)     => api.post('/corporate/invite/respond', data),
+  getTrips:      (params)   => api.get('/corporate/trips', { params }),
+  getInvoice:    (params)   => api.get('/corporate/invoice', { params }),
 };
- 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DUOPAY
 // ─────────────────────────────────────────────────────────────────────────────

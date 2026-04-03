@@ -123,8 +123,9 @@ export default function RideTrackingScreen({ route, navigation }) {
   const [cancelling,     setCancelling]     = useState(false);
   const [shieldActive,   setShieldActive]   = useState(false);
 
-  const mapRef = useRef(null);
-  const sheetA = useRef(new Animated.Value(0)).current;
+  const mapRef          = useRef(null);
+  const sheetA          = useRef(new Animated.Value(0)).current;
+  const hasNavigatedRef = useRef(false);
 
   const loadRide = useCallback(async () => {
     try {
@@ -141,7 +142,6 @@ export default function RideTrackingScreen({ route, navigation }) {
 
       if (r?.id) {
         socketService.joinRide(r.id);
-        // Check if SHIELD is already active for this ride
         try {
           const sRes = await shieldAPI.getSession({ rideId: r.id });
           setShieldActive(!!sRes?.data?.session);
@@ -163,12 +163,16 @@ export default function RideTrackingScreen({ route, navigation }) {
       setRide(prev => prev ? { ...prev, status: data.status, driver: data.driver ?? prev.driver } : prev);
 
       if (data.status === 'COMPLETED') {
+        if (hasNavigatedRef.current) return;
+        hasNavigatedRef.current = true;
         setTimeout(() => {
-          Alert.alert('Ride Completed 🎉', 'Your ride has been completed. Thank you!', [
-            { text: 'OK', onPress: () => navigation.navigate('Home') }
-          ]);
+          navigation.navigate('RateRide', {
+            rideId,
+            driver: data.driver ?? ride?.driver,
+          });
         }, 500);
       }
+
       if (data.status === 'CANCELLED') {
         Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [
           { text: 'OK', onPress: () => navigation.navigate('Home') }
@@ -362,7 +366,6 @@ export default function RideTrackingScreen({ route, navigation }) {
       }]}>
         <ScrollView showsVerticalScrollIndicator={false}>
 
-          {/* Fare strip */}
           <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <View style={s.fareItem}>
               <Text style={[s.fareLabel, { color: theme.hint }]}>FARE</Text>
@@ -387,7 +390,6 @@ export default function RideTrackingScreen({ route, navigation }) {
           <DriverInfoCard ride={ride} theme={theme} />
           <RouteCard      ride={ride} theme={theme} />
 
-          {/* SHIELD button — only shown during active trips */}
           {isActiveTrip && (
             <TouchableOpacity
               style={[s.shieldBtn, {
@@ -405,7 +407,6 @@ export default function RideTrackingScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* Cancel */}
           {canCancel && (
             <TouchableOpacity
               style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
@@ -428,11 +429,19 @@ export default function RideTrackingScreen({ route, navigation }) {
           {(status === 'COMPLETED' || status === 'CANCELLED') && (
             <TouchableOpacity
               style={[s.homeBtn, { backgroundColor: theme.accent }]}
-              onPress={() => navigation.navigate('Home')}
+              onPress={() => {
+                if (status === 'COMPLETED') {
+                  navigation.navigate('RateRide', { rideId, driver: ride?.driver });
+                } else {
+                  navigation.navigate('Home');
+                }
+              }}
               activeOpacity={0.88}
             >
-              <Ionicons name="home-outline" size={18} color={accentFg} />
-              <Text style={[s.homeBtnTxt, { color: accentFg }]}>Back to Home</Text>
+              <Ionicons name={status === 'COMPLETED' ? 'star-outline' : 'home-outline'} size={18} color={accentFg} />
+              <Text style={[s.homeBtnTxt, { color: accentFg }]}>
+                {status === 'COMPLETED' ? 'Rate Your Driver' : 'Back to Home'}
+              </Text>
             </TouchableOpacity>
           )}
 

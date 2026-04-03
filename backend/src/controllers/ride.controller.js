@@ -50,7 +50,6 @@ exports.getFareEstimate = async (req, res) => {
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
 
-  // ── FIX: estimateFare is async — must await so DB-backed rates are used
   const estimate = await estimateFare(distance, vehicleType.toUpperCase());
 
   res.status(200).json({ success: true, data: { ...estimate, distance: distance.toFixed(2) } });
@@ -71,11 +70,9 @@ exports.requestRide = async (req, res) => {
   });
   if (activeRide) throw new AppError('You already have an active ride', 400);
 
-  const distance = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
-
-  // ── FIX: estimateFare is async — must await
+  const distance      = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
   const fareBreakdown = await estimateFare(distance, vehicleType.toUpperCase());
-  let finalFare       = fareBreakdown.estimatedFare;
+  let   finalFare     = fareBreakdown.estimatedFare;
 
   let appliedPromo = null;
   if (promoCode) {
@@ -131,7 +128,6 @@ exports.requestRide = async (req, res) => {
     }
   });
 
-  // Auto-SHIELD for night rides
   try {
     const autoShield = await shieldService.shouldAutoShield(req.user.id);
     if (autoShield.should && autoShield.beneficiary) {
@@ -152,7 +148,6 @@ exports.requestRide = async (req, res) => {
       });
     }
   } catch (shieldErr) {
-    // Non-critical — do not fail the ride request
     console.error('[SHIELD] Auto-SHIELD error:', shieldErr.message);
   }
 
@@ -187,7 +182,6 @@ exports.getActiveRide = async (req, res) => {
     }
   });
 
-  // getSurgeMultiplier is synchronous — no change needed
   const surgeContext = ride ? getSurgeMultiplier() : null;
 
   res.status(200).json({
@@ -321,7 +315,6 @@ exports.completeRide = async (req, res) => {
   const completedAt           = new Date();
   const driverFloorMultiplier = decodeFloorMultiplier(ride.notes);
 
-  // ── FIX: calculateFinalFare is async — must await so DB-backed rates are used
   const finalFareBreakdown = await calculateFinalFare({
     distanceKm:           ride.distance,
     startedAt:            ride.startedAt,
@@ -379,7 +372,6 @@ exports.completeRide = async (req, res) => {
   await prisma.driverProfile.update({ where: { userId: req.user.id }, data: { totalRides: { increment: 1 } } });
   emitRideStatus(getIO(req), ride.customerId, id, 'COMPLETED');
 
-  // Close any active SHIELD session for this ride
   await shieldService.closeSessionsForRide(id).catch(() => {});
 
   const surgeNote   = finalFareBreakdown.surgeLabel ? ` (${finalFareBreakdown.surgeLabel} pricing applied)` : '';
@@ -438,7 +430,6 @@ exports.cancelRide = async (req, res) => {
     data:  { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason }
   });
 
-  // Close any active SHIELD session for this ride
   await shieldService.closeSessionsForRide(id).catch(() => {});
 
   const io = getIO(req);
@@ -529,6 +520,7 @@ exports.rateRide = async (req, res) => {
 
   const newRating = await prisma.rating.create({ data: { userId: req.user.id, rideId: id, rating, comment } });
 
+  // Recalculate driver's average rating from all their ride ratings
   const driverRatings = await prisma.rating.findMany({ where: { ride: { driverId: ride.driverId } } });
   const avgRating     = driverRatings.reduce((sum, r) => sum + r.rating, 0) / driverRatings.length;
   await prisma.driverProfile.update({ where: { userId: ride.driverId }, data: { rating: avgRating } });
@@ -544,6 +536,29 @@ exports.rateRide = async (req, res) => {
   res.status(201).json({ success: true, message: 'Rating submitted', data: { rating: newRating } });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/rides/nearby-drivers
+//
+// FIX: Previously sorted purely by distanceKm, ignoring the rating field that
+// is stored on every DriverProfile. Ratings are meaningless if they never
+// influence which drivers a customer sees first.
+//
+// New ranking uses a weighted blend:
+//   score = (normalised_rating × 0.65) − (normalised_distance × 0.35)
+//
+// Normalisation:
+//   rating    → rating / 5           (range 0–1, higher is better)
+//   distance  → distanceKm / radius  (range 0–1, lower is better, so we subtract)
+//
+// Weight reasoning:
+//   65 % rating — the whole point of the rating system is to surface better
+//                 drivers; a 5-star driver 3 km away should beat a 2-star
+//                 driver 1 km away.
+//   35 % distance — proximity still matters for ETA, just not exclusively.
+//
+// New drivers (rating = 0) are treated as rating = 3.0 (neutral) so they
+// aren't systematically buried below experienced drivers at similar distances.
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getNearbyDrivers = async (req, res) => {
   const { pickupLat, pickupLng, radiusKm = 10, vehicleType } = req.query;
   if (!pickupLat || !pickupLng) throw new AppError('Please provide pickup coordinates', 400);
@@ -564,12 +579,25 @@ exports.getNearbyDrivers = async (req, res) => {
   });
 
   const nearby = drivers
-    .map(d => ({ ...d, distanceKm: parseFloat(calculateDistance(lat, lng, d.currentLat, d.currentLng).toFixed(2)) }))
+    .map(d => ({
+      ...d,
+      distanceKm: parseFloat(calculateDistance(lat, lng, d.currentLat, d.currentLng).toFixed(2)),
+    }))
     .filter(d => d.distanceKm <= radius)
-    .sort((a, b) => a.distanceKm - b.distanceKm)
+    // FIX: rank by rating+distance blend instead of distance-only
+    .sort((a, b) => {
+      // New drivers with 0 ratings get a neutral 3.0 to avoid burying them
+      const ratingA = (a.rating > 0 ? a.rating : 3.0) / 5;
+      const ratingB = (b.rating > 0 ? b.rating : 3.0) / 5;
+      const distA   = a.distanceKm / radius;
+      const distB   = b.distanceKm / radius;
+      // Higher score = shown first
+      const scoreA  = ratingA * 0.65 - distA * 0.35;
+      const scoreB  = ratingB * 0.65 - distB * 0.35;
+      return scoreB - scoreA;
+    })
     .slice(0, 20);
 
-  // ── estimateFare is async — already correctly awaited here
   const formatted = await Promise.all(nearby.map(async (d) => {
     const fareEst = await estimateFare(3, d.vehicleType ?? 'CAR');
     return {
@@ -640,7 +668,6 @@ exports.requestSpecificDriver = async (req, res) => {
   );
   const usedVehicleType = vehicleType?.toUpperCase() ?? driverProfile.vehicleType ?? 'CAR';
 
-  // ── FIX: estimateFare is async — must await
   const fareBreakdown   = await estimateFare(distance, usedVehicleType);
   let   finalFare       = fareBreakdown.estimatedFare;
 
@@ -693,7 +720,7 @@ exports.requestSpecificDriver = async (req, res) => {
 
   const io = getIO(req);
   if (io) {
-    const payload = {
+    io.to(`user:${driverId}`).emit('ride:new_request', {
       rideId:             ride.id,
       pickupAddress:      ride.pickupAddress,
       dropoffAddress:     ride.dropoffAddress,
@@ -712,8 +739,7 @@ exports.requestSpecificDriver = async (req, res) => {
         lastName:     customer.lastName,
         profileImage: customer.profileImage,
       }
-    };
-    io.to(`user:${driverId}`).emit('ride:new_request', payload);
+    });
   }
 
   res.status(201).json({

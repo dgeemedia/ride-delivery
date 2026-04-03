@@ -26,15 +26,14 @@ const DARK_MAP_STYLE = [
 ];
 
 const STATUS_CONFIG = {
-  PENDING:    { label: 'Finding a delivery partner...',  color: '#4E8DBD',     icon: 'time-outline'             },
-  ASSIGNED:   { label: 'Partner is on the way',         color: COURIER_ACCENT, icon: 'bicycle-outline'         },
-  PICKED_UP:  { label: 'Package has been picked up!',   color: '#FFB800',     icon: 'cube-outline'             },
-  IN_TRANSIT: { label: 'Package is in transit',         color: '#A78BFA',     icon: 'navigate-outline'         },
-  DELIVERED:  { label: 'Package delivered! ✅',          color: COURIER_ACCENT, icon: 'checkmark-circle-outline'},
-  CANCELLED:  { label: 'Delivery cancelled',            color: '#E05555',     icon: 'close-circle-outline'     },
+  PENDING:    { label: 'Finding a delivery partner...',  color: '#4E8DBD',     icon: 'time-outline'              },
+  ASSIGNED:   { label: 'Partner is on the way',         color: COURIER_ACCENT, icon: 'bicycle-outline'          },
+  PICKED_UP:  { label: 'Package has been picked up!',   color: '#FFB800',     icon: 'cube-outline'              },
+  IN_TRANSIT: { label: 'Package is in transit',         color: '#A78BFA',     icon: 'navigate-outline'          },
+  DELIVERED:  { label: 'Package delivered! ✅',          color: COURIER_ACCENT, icon: 'checkmark-circle-outline' },
+  CANCELLED:  { label: 'Delivery cancelled',            color: '#E05555',     icon: 'close-circle-outline'      },
 };
 
-// ── Partner info card ──────────────────────────────────────────────────────────
 const PartnerInfoCard = ({ delivery, theme }) => {
   const partner = delivery?.partner;
   if (!partner) return null;
@@ -77,7 +76,6 @@ const pi = StyleSheet.create({
   callBtn:   { width: 36, height: 36, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
 });
 
-// ── Package & route card ───────────────────────────────────────────────────────
 const DeliveryDetailCard = ({ delivery, theme }) => (
   <View style={[dd.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <View style={dd.pkgRow}>
@@ -114,9 +112,6 @@ const dd = StyleSheet.create({
   addr:      { fontSize: 13, fontWeight: '600' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN
-// ─────────────────────────────────────────────────────────────────────────────
 export default function DeliveryTrackingScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
@@ -128,8 +123,9 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
   const [cancelling,      setCancelling]      = useState(false);
   const [shieldActive,    setShieldActive]    = useState(false);
 
-  const mapRef = useRef(null);
-  const sheetA = useRef(new Animated.Value(0)).current;
+  const mapRef          = useRef(null);
+  const sheetA          = useRef(new Animated.Value(0)).current;
+  const hasNavigatedRef = useRef(false);
 
   const loadDelivery = useCallback(async () => {
     try {
@@ -146,7 +142,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
 
       if (d?.id) {
         socketService.joinDelivery?.(d.id);
-        // Check if SHIELD is already active for this delivery
         try {
           const sRes = await shieldAPI.getSession({ deliveryId: d.id });
           setShieldActive(!!sRes?.data?.session);
@@ -168,13 +163,16 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
       setDelivery(prev => prev ? { ...prev, status: data.status, partner: data.partner ?? prev.partner } : prev);
 
       if (data.status === 'DELIVERED') {
+        if (hasNavigatedRef.current) return;
+        hasNavigatedRef.current = true;
         setTimeout(() => {
-          Alert.alert('Package Delivered! 🎉', 'Your package has been delivered successfully!', [
-            { text: 'Rate Partner', onPress: () => navigation.navigate('Home') },
-            { text: 'Done',        onPress: () => navigation.navigate('Home') },
-          ]);
+          navigation.navigate('RateDelivery', {
+            deliveryId,
+            partner: data.partner ?? delivery?.partner,
+          });
         }, 500);
       }
+
       if (data.status === 'CANCELLED') {
         Alert.alert('Delivery Cancelled', 'Your delivery was cancelled.', [
           { text: 'OK', onPress: () => navigation.navigate('Home') }
@@ -274,7 +272,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Map */}
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
@@ -330,7 +327,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      {/* Status pill */}
       <View style={[s.statusPill, {
         backgroundColor: statusCfg.color + '18',
         borderColor:     statusCfg.color + '50',
@@ -340,7 +336,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
       </View>
 
-      {/* Bottom sheet */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
@@ -349,7 +344,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
       }]}>
         <ScrollView showsVerticalScrollIndicator={false}>
 
-          {/* Fee strip */}
           <View style={[s.feeStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <View style={s.feeItem}>
               <Text style={[s.feeLabel, { color: theme.hint }]}>FEE</Text>
@@ -372,7 +366,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
           <PartnerInfoCard    delivery={delivery} theme={theme} />
           <DeliveryDetailCard delivery={delivery} theme={theme} />
 
-          {/* SHIELD button — only shown during active deliveries */}
           {isActiveTrip && (
             <TouchableOpacity
               style={[s.shieldBtn, {
@@ -390,7 +383,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* Cancel */}
           {canCancel && (
             <TouchableOpacity
               style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
@@ -413,11 +405,19 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
           {(status === 'DELIVERED' || status === 'CANCELLED') && (
             <TouchableOpacity
               style={[s.homeBtn, { backgroundColor: COURIER_ACCENT }]}
-              onPress={() => navigation.navigate('Home')}
+              onPress={() => {
+                if (status === 'DELIVERED') {
+                  navigation.navigate('RateDelivery', { deliveryId, partner: delivery?.partner });
+                } else {
+                  navigation.navigate('Home');
+                }
+              }}
               activeOpacity={0.88}
             >
-              <Ionicons name="home-outline" size={18} color="#FFF" />
-              <Text style={s.homeBtnTxt}>Back to Home</Text>
+              <Ionicons name={status === 'DELIVERED' ? 'star-outline' : 'home-outline'} size={18} color="#FFF" />
+              <Text style={s.homeBtnTxt}>
+                {status === 'DELIVERED' ? 'Rate Your Partner' : 'Back to Home'}
+              </Text>
             </TouchableOpacity>
           )}
 
