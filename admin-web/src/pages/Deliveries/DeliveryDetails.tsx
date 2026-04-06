@@ -1,9 +1,4 @@
 // admin-web/src/pages/Deliveries/DeliveryDetails.tsx
-//
-// Google Maps uses the v2 functional API:
-//   import { setOptions, importLibrary } from '@googlemaps/js-api-loader'
-// No `new Loader()` — that class was removed in v2.
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
@@ -19,14 +14,12 @@ import { formatDateTime } from '@/utils/helpers';
 import { useSocket } from '@/hooks/useSocket';
 import toast from 'react-hot-toast';
 
-// ─── Configure the loader once (module-level, runs once per app session) ──────
+// FIX: removed 'version' property — not in APIOptions for this loader version
 setOptions({
-  apiKey:    import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? '',
-  version:   'weekly',
+  key:       import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? '',
   libraries: ['places', 'geometry', 'routes'],
-});
+} as any);
 
-// ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, {
   label: string;
   variant: 'success' | 'warning' | 'error' | 'info' | 'default';
@@ -42,7 +35,6 @@ const STATUS_CONFIG: Record<string, {
 const isLive = (status: string) =>
   ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(status);
 
-// ─── Small presentational helpers ────────────────────────────────────────────
 const TimelineStep: React.FC<{
   label: string;
   at?: string | null;
@@ -81,7 +73,6 @@ const InfoRow: React.FC<{
   </div>
 );
 
-// ─── Map hook — handles init + live updates ───────────────────────────────────
 function useDeliveryMap(
   containerRef: React.RefObject<HTMLDivElement>,
   delivery: Delivery | null,
@@ -103,46 +94,31 @@ function useDeliveryMap(
           return;
         }
 
-        // v2: import each library on demand
-        const { Map }                       = await importLibrary('maps') as google.maps.MapsLibrary;
-        const { AdvancedMarkerElement }      = await importLibrary('marker') as google.maps.MarkerLibrary;
+        const { Map }               = await importLibrary('maps') as google.maps.MapsLibrary;
+        const { AdvancedMarkerElement } = await importLibrary('marker') as google.maps.MarkerLibrary;
         const { DirectionsService, DirectionsRenderer, TravelMode } =
           await importLibrary('routes') as google.maps.RoutesLibrary;
 
         if (cancelled || !containerRef.current) return;
 
-        // Init map
         const map = new Map(containerRef.current, {
-          center: { lat: delivery.pickupLat, lng: delivery.pickupLng },
-          zoom: 13,
-          mapId: 'diakite-delivery-map',   // required by AdvancedMarkerElement
+          center:           { lat: delivery.pickupLat, lng: delivery.pickupLng },
+          zoom:             13,
+          mapId:            'diakite-delivery-map',
           mapTypeControl:   false,
           streetViewControl: false,
           fullscreenControl: true,
         });
         mapRef.current = map;
 
-        // Pickup pin (green)
         const pickupPin = document.createElement('div');
-        pickupPin.innerHTML = `
-          <div style="background:#22C55E;color:#fff;font-weight:700;font-size:11px;
-            border:2px solid #fff;border-radius:50%;width:28px;height:28px;
-            display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)">
-            P
-          </div>`;
+        pickupPin.innerHTML = `<div style="background:#22C55E;color:#fff;font-weight:700;font-size:11px;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)">P</div>`;
         new AdvancedMarkerElement({ map, position: { lat: delivery.pickupLat, lng: delivery.pickupLng }, content: pickupPin, title: 'Pickup' });
 
-        // Dropoff pin (red)
         const dropoffPin = document.createElement('div');
-        dropoffPin.innerHTML = `
-          <div style="background:#EF4444;color:#fff;font-weight:700;font-size:11px;
-            border:2px solid #fff;border-radius:50%;width:28px;height:28px;
-            display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)">
-            D
-          </div>`;
+        dropoffPin.innerHTML = `<div style="background:#EF4444;color:#fff;font-weight:700;font-size:11px;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)">D</div>`;
         new AdvancedMarkerElement({ map, position: { lat: delivery.dropoffLat, lng: delivery.dropoffLng }, content: dropoffPin, title: 'Dropoff' });
 
-        // Route polyline
         const dsvc = new DirectionsService();
         const dRenderer = new DirectionsRenderer({
           map,
@@ -155,34 +131,30 @@ function useDeliveryMap(
             destination: { lat: delivery.dropoffLat, lng: delivery.dropoffLng },
             travelMode: TravelMode.DRIVING,
           },
-          (result, status) => {
+          (
+            result: google.maps.DirectionsResult | null,
+            status: google.maps.DirectionsStatus,
+          ) => {
             if (status === 'OK' && result) dRenderer.setDirections(result);
           }
         );
 
-        // Partner live location marker
-        const profile = (delivery.partner as any)?.deliveryProfile;
+        const profile  = (delivery.partner as any)?.deliveryProfile;
         const initLat  = profile?.currentLat;
         const initLng  = profile?.currentLng;
 
         if (initLat && initLng) {
           const vehicleDiv = document.createElement('div');
-          vehicleDiv.innerHTML = `
-            <div style="background:#3B82F6;border:2px solid #fff;border-radius:50%;
-              width:32px;height:32px;display:flex;align-items:center;justify-content:center;
-              box-shadow:0 2px 8px rgba(0,0,0,.4)">
-              🛵
-            </div>`;
+          vehicleDiv.innerHTML = `<div style="background:#3B82F6;border:2px solid #fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.4)">🛵</div>`;
           partnerMarkerRef.current = new AdvancedMarkerElement({
             map,
             position: { lat: initLat, lng: initLng },
-            content: vehicleDiv,
-            title: `${delivery.partner?.firstName} ${delivery.partner?.lastName}`,
-            zIndex: 999,
+            content:  vehicleDiv,
+            title:    `${delivery.partner?.firstName} ${delivery.partner?.lastName}`,
+            zIndex:   999,
           });
         }
 
-        // Subscribe to live socket updates
         const unsub = onLocationUpdate((lat, lng) => {
           if (cancelled) return;
           const pos = { lat, lng };
@@ -209,21 +181,19 @@ function useDeliveryMap(
   return { mapError };
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
 const DeliveryDetails: React.FC = () => {
   const { id }   = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { on }   = useSocket();
 
-  const [delivery, setDelivery] = useState<Delivery | null>(null);
-  const [loading, setLoading]   = useState(true);
-  const [showCancel, setShowCancel]   = useState(false);
-  const [cancelReason, setCancelReason] = useState('');
-  const [cancelling, setCancelling]     = useState(false);
+  const [delivery,      setDelivery]      = useState<Delivery | null>(null);
+  const [loading,       setLoading]       = useState(true);
+  const [showCancel,    setShowCancel]    = useState(false);
+  const [cancelReason,  setCancelReason]  = useState('');
+  const [cancelling,    setCancelling]    = useState(false);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // Subscribe to partner location and forward to map hook
   const onLocationUpdate = useCallback(
     (fn: (lat: number, lng: number) => void) => {
       if (!delivery || !isLive(delivery.status)) return () => {};
@@ -278,9 +248,9 @@ const DeliveryDetails: React.FC = () => {
       `  Dropoff contact: ${delivery.dropoffContact}`,
       ``,
       `DELIVERY PARTNER`,
-      `  Name:  ${delivery.partner ? `${delivery.partner.firstName} ${delivery.partner.lastName}` : 'Unassigned'}`,
-      `  Email: ${delivery.partner?.email ?? '—'}`,
-      `  Vehicle: ${(delivery.partner as any)?.deliveryProfile?.vehicleType ?? '—'} · ${(delivery.partner as any)?.deliveryProfile?.vehiclePlate ?? '—'}`,
+      `  Name:    ${delivery.partner ? `${delivery.partner.firstName} ${delivery.partner.lastName}` : 'Unassigned'}`,
+      `  Email:   ${delivery.partner?.email ?? '—'}`,
+      `  Vehicle: ${(delivery.partner as any)?.deliveryProfile?.vehicleType ?? '—'} • ${(delivery.partner as any)?.deliveryProfile?.vehiclePlate ?? '—'}`,
       ``,
       `PACKAGE`,
       `  Description: ${delivery.packageDescription}`,
@@ -317,13 +287,12 @@ const DeliveryDetails: React.FC = () => {
     const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    a.href = url;
+    a.href     = url;
     a.download = `delivery-${delivery.id.slice(0, 8)}-report.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  // ── Render ───────────────────────────────────────────────────────────────
   if (loading) return <div className="flex justify-center py-20"><Spinner size="xl" showLabel /></div>;
 
   if (!delivery) return (
@@ -338,7 +307,6 @@ const DeliveryDetails: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" onClick={() => navigate('/deliveries')}>
@@ -370,7 +338,6 @@ const DeliveryDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Map */}
       <Card padding={false}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
           <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -414,9 +381,7 @@ const DeliveryDetails: React.FC = () => {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Customer */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
               <User className="h-4 w-4 text-primary-500" />Customer
@@ -428,7 +393,6 @@ const DeliveryDetails: React.FC = () => {
             <InfoRow icon={<MapPin className="h-4 w-4" />} label="Dropoff contact" value={delivery.dropoffContact} />
           </Card>
 
-          {/* Partner */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
               <Truck className="h-4 w-4 text-warning-500" />Delivery Partner
@@ -438,7 +402,7 @@ const DeliveryDetails: React.FC = () => {
                 <InfoRow icon={<User className="h-4 w-4" />}  label="Name"    value={`${delivery.partner.firstName} ${delivery.partner.lastName}`} />
                 <InfoRow icon={<Mail className="h-4 w-4" />}  label="Email"   value={delivery.partner.email} />
                 <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone"   value={(delivery.partner as any)?.phone ?? '—'} />
-                <InfoRow icon={<Truck className="h-4 w-4" />} label="Vehicle" value={`${(delivery.partner as any)?.deliveryProfile?.vehicleType ?? '—'} · ${(delivery.partner as any)?.deliveryProfile?.vehiclePlate ?? '—'}`} />
+                <InfoRow icon={<Truck className="h-4 w-4" />} label="Vehicle" value={`${(delivery.partner as any)?.deliveryProfile?.vehicleType ?? '—'} • ${(delivery.partner as any)?.deliveryProfile?.vehiclePlate ?? '—'}`} />
                 {!!((delivery.partner as any)?.deliveryProfile?.rating) && (
                   <InfoRow icon={<Star className="h-4 w-4" />} label="Rating" value={`${(delivery.partner as any).deliveryProfile.rating.toFixed(1)} ★`} />
                 )}
@@ -448,7 +412,6 @@ const DeliveryDetails: React.FC = () => {
             )}
           </Card>
 
-          {/* Package */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
               <Package className="h-4 w-4 text-indigo-500" />Package
@@ -472,7 +435,6 @@ const DeliveryDetails: React.FC = () => {
             )}
           </Card>
 
-          {/* Payment */}
           {delivery.payment && (
             <Card>
               <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -488,9 +450,7 @@ const DeliveryDetails: React.FC = () => {
           )}
         </div>
 
-        {/* Right column */}
         <div className="space-y-5">
-          {/* Summary */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Summary</h3>
             <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Estimated fee" value={`₦${delivery.estimatedFee.toLocaleString('en-NG')}`} />
@@ -512,7 +472,6 @@ const DeliveryDetails: React.FC = () => {
             )}
           </Card>
 
-          {/* Timeline */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
               <Clock className="h-4 w-4" />Timeline
@@ -545,7 +504,6 @@ const DeliveryDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Cancel modal */}
       <Modal
         isOpen={showCancel}
         onClose={() => setShowCancel(false)}

@@ -1,6 +1,7 @@
 // admin-web/src/pages/Settings/AdminUsers.tsx
+// FIX: removed unused Edit2 import, removed unused showEditModal/selectedAdmin state, fixed res variable, fixed colSpan
 import React, { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, Shield } from 'lucide-react';
+import { Plus, Trash2, Shield } from 'lucide-react';
 import { Card, Button, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Badge, Modal, Input, Select } from '@/components/common';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
@@ -21,8 +22,6 @@ const AdminUsers: React.FC = () => {
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedAdmin, setSelectedAdmin] = useState<AdminUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     firstName: '',
@@ -39,22 +38,18 @@ const AdminUsers: React.FC = () => {
   const loadAdmins = async () => {
     setLoading(true);
     try {
-      // Fetch all non-customer roles
-      const res = await api.get('/admin/users', {
-        params: { limit: 100, role: 'ADMIN' },
-      });
-      // Backend returns all users filtered by role param — fetch each role
-      const [admins, superAdmins, moderators, supports] = await Promise.all([
+      // FIX: removed unused `res` variable — fetch each role directly
+      const [adminsRes, superAdminsRes, moderatorsRes, supportsRes] = await Promise.all([
         api.get('/admin/users', { params: { limit: 100, role: 'ADMIN'        } }),
         api.get('/admin/users', { params: { limit: 100, role: 'SUPER_ADMIN'  } }),
         api.get('/admin/users', { params: { limit: 100, role: 'MODERATOR'    } }),
         api.get('/admin/users', { params: { limit: 100, role: 'SUPPORT'      } }),
       ]);
       const all = [
-        ...admins.data.data.users,
-        ...superAdmins.data.data.users,
-        ...moderators.data.data.users,
-        ...supports.data.data.users,
+        ...adminsRes.data.data.users,
+        ...superAdminsRes.data.data.users,
+        ...moderatorsRes.data.data.users,
+        ...supportsRes.data.data.users,
       ];
       setAdmins(all);
     } catch {
@@ -168,12 +163,13 @@ const AdminUsers: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {/* FIX: use native <tr><td> for colSpan */}
               {admins.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-gray-400 py-8">
+                <tr>
+                  <td colSpan={6} className="text-center text-gray-400 py-8 text-sm">
                     No admin users found.
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               )}
               {admins.map((admin) => (
                 <TableRow key={admin.id}>
@@ -190,7 +186,7 @@ const AdminUsers: React.FC = () => {
                   </TableCell>
                   <TableCell className="text-sm text-gray-600">{admin.email}</TableCell>
                   <TableCell>
-                    <Badge variant={roleVariant(admin.role)}>
+                    <Badge variant={roleVariant(admin.role) as any}>
                       <Shield className="h-3 w-3 mr-1" />
                       {admin.role.replace('_', ' ')}
                     </Badge>
@@ -225,7 +221,6 @@ const AdminUsers: React.FC = () => {
         )}
       </Card>
 
-      {/* Create Modal */}
       <Modal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}

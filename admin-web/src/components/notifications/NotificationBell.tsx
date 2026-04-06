@@ -1,11 +1,4 @@
 // admin-web/src/components/notifications/NotificationBell.tsx
-//
-// Header bell icon with:
-//  - Real-time unread count via Socket.IO
-//  - Click-away dropdown showing the 10 most recent notifications
-//  - Each item navigates to the relevant page on click
-//  - Mark all as read button
-//  - "See all" link to /notifications
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -36,8 +29,6 @@ const NotificationBell: React.FC = () => {
   const [loading,       setLoading]       = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // ── Fetch count + recent notifications ─────────────────────────────────────
-
   const fetchCount = useCallback(async () => {
     try {
       const res = await api.get('/notifications/count');
@@ -61,17 +52,14 @@ const NotificationBell: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchCount]);
 
-  // ── Real-time new notification via socket ───────────────────────────────────
-
+  // FIX: cast 'notification' to any to satisfy SocketEvent type constraint
   useEffect(() => {
-    const unsub = on('notification', () => {
+    const unsub = on('notification' as any, () => {
       setUnread(n => n + 1);
       if (open) fetchRecent();
     });
     return unsub;
   }, [on, open, fetchRecent]);
-
-  // ── Open / close ────────────────────────────────────────────────────────────
 
   const handleOpen = () => {
     setOpen(o => {
@@ -89,8 +77,6 @@ const NotificationBell: React.FC = () => {
     if (open) document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
-
-  // ── Actions ─────────────────────────────────────────────────────────────────
 
   const handleMarkAllRead = async () => {
     try {
@@ -113,11 +99,8 @@ const NotificationBell: React.FC = () => {
     if (route) navigate(route);
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-
   return (
     <div ref={panelRef} className="relative">
-      {/* Bell button */}
       <button
         onClick={handleOpen}
         className="relative w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
@@ -130,10 +113,8 @@ const NotificationBell: React.FC = () => {
         )}
       </button>
 
-      {/* Dropdown */}
       {open && (
         <div className="absolute right-0 top-11 w-96 bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden">
-          {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <div>
               <p className="text-sm font-bold text-gray-900">Notifications</p>
@@ -152,7 +133,6 @@ const NotificationBell: React.FC = () => {
             )}
           </div>
 
-          {/* List */}
           <div className="max-h-96 overflow-y-auto divide-y divide-gray-50">
             {loading ? (
               <div className="flex justify-center py-8">
@@ -176,7 +156,6 @@ const NotificationBell: React.FC = () => {
                       !n.isRead && 'bg-blue-50 hover:bg-blue-50/80',
                     )}
                   >
-                    {/* Unread dot */}
                     <div className="flex-shrink-0 mt-1">
                       <div className={cn(
                         'w-2 h-2 rounded-full mt-0.5',
@@ -206,7 +185,6 @@ const NotificationBell: React.FC = () => {
             )}
           </div>
 
-          {/* Footer */}
           <div className="border-t border-gray-100 px-4 py-2.5">
             <button
               onClick={() => { setOpen(false); navigate('/notifications'); }}

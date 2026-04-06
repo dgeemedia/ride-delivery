@@ -3,11 +3,10 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Building2, Users, Car, Wallet,
-  AlertTriangle, CheckCircle, XCircle, RefreshCw,
+  CheckCircle, XCircle, RefreshCw,
 } from 'lucide-react';
 import { Card } from '@/components/common';
 import api from '@/services/api';
-import { formatCurrency } from '@/utils/helpers';
 import toast from 'react-hot-toast';
 
 const CompanyDetails: React.FC = () => {
@@ -143,15 +142,15 @@ const CompanyDetails: React.FC = () => {
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Company Info</h3>
             <dl className="space-y-3">
               {[
-                ['Name',        company.name],
-                ['RC Number',   company.rcNumber ?? '—'],
-                ['Email',       company.email],
-                ['Phone',       company.phone],
-                ['Address',     company.address ?? '—'],
-                ['Billing',     company.billingType],
-                ['Commission',  `${(company.commissionRate * 100).toFixed(0)}%`],
+                ['Name',           company.name],
+                ['RC Number',      company.rcNumber ?? '—'],
+                ['Email',          company.email],
+                ['Phone',          company.phone],
+                ['Address',        company.address ?? '—'],
+                ['Billing',        company.billingType],
+                ['Commission',     `${(company.commissionRate * 100).toFixed(0)}%`],
                 ['Onboarding fee', company.onboardingFeePaid ? '✅ Paid' : '❌ Unpaid'],
-                ['Registered',  new Date(company.createdAt).toLocaleDateString('en-NG')],
+                ['Registered',     new Date(company.createdAt).toLocaleDateString('en-NG')],
               ].map(([label, value]) => (
                 <div key={label} className="flex justify-between">
                   <dt className="text-sm text-gray-500">{label}</dt>

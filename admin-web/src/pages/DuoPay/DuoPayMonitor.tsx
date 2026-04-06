@@ -1,18 +1,18 @@
 // admin-web/src/pages/DuoPay/DuoPayMonitor.tsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap, AlertTriangle, TrendingUp, Users, ChevronRight, XCircle } from 'lucide-react';
+import { Zap, AlertTriangle, TrendingUp, Users, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/common';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
 
 interface DuoPayStats {
-  totalAccounts:   number;
-  activeAccounts:  number;
+  totalAccounts:     number;
+  activeAccounts:    number;
   suspendedAccounts: number;
   defaultedAccounts: number;
-  totalOutstanding: number;
-  totalOverdue:     number;
+  totalOutstanding:  number;
+  totalOverdue:      number;
 }
 
 interface DuoPayAccount {
@@ -42,20 +42,25 @@ const STATUS_STYLES: Record<string, string> = {
   DEFAULTED: 'bg-red-100   text-red-700',
 };
 
-const StatCard: React.FC<{ label: string; value: string | number; icon: React.ElementType; color: string; bg: string }> =
-  ({ label, value, icon: Icon, color, bg }) => (
-    <Card className="hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">{label}</p>
-          <p className="text-2xl font-black text-gray-900">{value}</p>
-        </div>
-        <div className={`${bg} w-11 h-11 rounded-xl flex items-center justify-center`}>
-          <Icon className={`h-5 w-5 ${color}`} />
-        </div>
+const StatCard: React.FC<{
+  label: string;
+  value: string | number;
+  icon:  React.ElementType;
+  color: string;
+  bg:    string;
+}> = ({ label, value, icon: Icon, color, bg }) => (
+  <Card className="hover:shadow-md transition-shadow">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">{label}</p>
+        <p className="text-2xl font-black text-gray-900">{value}</p>
       </div>
-    </Card>
-  );
+      <div className={`${bg} w-11 h-11 rounded-xl flex items-center justify-center`}>
+        <Icon className={`h-5 w-5 ${color}`} />
+      </div>
+    </div>
+  </Card>
+);
 
 const DuoPayMonitor: React.FC = () => {
   const navigate = useNavigate();
@@ -127,10 +132,10 @@ const DuoPayMonitor: React.FC = () => {
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Total Accounts"    value={stats.totalAccounts}                                               icon={Users}        color="text-blue-600"  bg="bg-blue-100"  />
-          <StatCard label="Active"            value={stats.activeAccounts}                                              icon={Zap}          color="text-green-600" bg="bg-green-100" />
-          <StatCard label="Suspended"         value={stats.suspendedAccounts}                                           icon={AlertTriangle} color="text-amber-600" bg="bg-amber-100" />
-          <StatCard label="Total Outstanding" value={`₦${(stats.totalOutstanding ?? 0).toLocaleString('en-NG')}`}      icon={TrendingUp}   color="text-red-600"   bg="bg-red-100"   />
+          <StatCard label="Total Accounts"    value={stats.totalAccounts}                                          icon={Users}         color="text-blue-600"  bg="bg-blue-100"  />
+          <StatCard label="Active"            value={stats.activeAccounts}                                         icon={Zap}           color="text-green-600" bg="bg-green-100" />
+          <StatCard label="Suspended"         value={stats.suspendedAccounts}                                      icon={AlertTriangle} color="text-amber-600" bg="bg-amber-100" />
+          <StatCard label="Total Outstanding" value={`₦${(stats.totalOutstanding ?? 0).toLocaleString('en-NG')}`} icon={TrendingUp}    color="text-red-600"   bg="bg-red-100"   />
         </div>
       )}
 
@@ -147,7 +152,7 @@ const DuoPayMonitor: React.FC = () => {
       {/* Filter */}
       <Card>
         <div className="flex gap-2">
-          {['', 'ACTIVE', 'INACTIVE', 'SUSPENDED', 'DEFAULTED'].map(s => (
+          {(['', 'ACTIVE', 'INACTIVE', 'SUSPENDED', 'DEFAULTED'] as const).map(s => (
             <button
               key={s}
               onClick={() => { setStatus(s); setPage(1); }}

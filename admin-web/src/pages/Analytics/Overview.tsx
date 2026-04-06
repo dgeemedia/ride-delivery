@@ -1,11 +1,11 @@
 // admin-web/src/pages/Analytics/Overview.tsx
 import React, { useEffect, useState } from 'react';
 import { analyticsAPI } from '@/services/api/analytics';
-import { Card } from '@/components/common';
-import { LineChart, BarChart, PieChart } from '@/components/charts';
+import { Card, Spinner } from '@/components/common';
+import { LineChart, BarChart } from '@/components/charts';
 
 const Analytics: React.FC = () => {
-  const [revenue, setRevenue] = useState<any>(null);
+  const [revenue,    setRevenue]    = useState<any>(null);
   const [userGrowth, setUserGrowth] = useState<any>(null);
 
   useEffect(() => {
@@ -21,7 +21,12 @@ const Analytics: React.FC = () => {
     setUserGrowth(growthRes.data);
   };
 
-  if (!revenue || !userGrowth) return <div>Loading...</div>;
+  if (!revenue || !userGrowth) return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
+      <Spinner size="xl" />
+      <p className="text-sm text-gray-500 animate-pulse">Loading analytics…</p>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -34,7 +39,7 @@ const Analytics: React.FC = () => {
             data={revenue.dailyRevenue}
             xKey="date"
             lines={[
-              { key: 'total', name: 'Revenue', color: '#007AFF' }
+              { key: 'total', name: 'Revenue', color: '#007AFF' },
             ]}
           />
         </Card>
@@ -46,7 +51,7 @@ const Analytics: React.FC = () => {
             xKey="month"
             bars={[
               { key: 'customers', name: 'Customers', color: '#34C759' },
-              { key: 'drivers', name: 'Drivers', color: '#FF9500' },
+              { key: 'drivers',   name: 'Drivers',   color: '#FF9500' },
             ]}
           />
         </Card>

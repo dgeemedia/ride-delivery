@@ -1,13 +1,10 @@
 // admin-web/src/pages/Shield/ShieldSession.tsx
-//
-// Admin detail view for a single SHIELD session.
-// Shows customer, guardian, driver/partner, trip details and timeline.
-
+// FIX: removed unused MapPin import
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Shield, AlertTriangle, CheckCircle, Zap, Eye,
-  ArrowLeft, Phone, MapPin, User, Truck,
+  ArrowLeft, Phone, User, Truck,
 } from 'lucide-react';
 import { Card } from '@/components/common';
 import api from '@/services/api';
@@ -54,7 +51,6 @@ const ShieldSession: React.FC = () => {
   return (
     <div className="space-y-6 max-w-4xl">
 
-      {/* Back + header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/shield')} className="text-gray-400 hover:text-gray-600">
@@ -82,7 +78,6 @@ const ShieldSession: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* Customer */}
         <Card>
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <User className="h-4 w-4" /> Customer
@@ -101,7 +96,6 @@ const ShieldSession: React.FC = () => {
           </Link>
         </Card>
 
-        {/* Guardian */}
         <Card>
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <Shield className="h-4 w-4" /> Guardian
@@ -115,7 +109,6 @@ const ShieldSession: React.FC = () => {
           )}
         </Card>
 
-        {/* Trip info */}
         {trip && (
           <Card>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -157,7 +150,6 @@ const ShieldSession: React.FC = () => {
           </Card>
         )}
 
-        {/* Driver / Partner */}
         {contact && (
           <Card>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -175,7 +167,6 @@ const ShieldSession: React.FC = () => {
         )}
       </div>
 
-      {/* Session metadata */}
       <Card>
         <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Session Details</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

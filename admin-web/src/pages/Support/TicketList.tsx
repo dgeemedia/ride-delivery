@@ -1,4 +1,7 @@
+// ─────────────────────────────────────────────────────────────────────────────
 // admin-web/src/pages/Support/TicketList.tsx
+// FIX: use native <tr><td> for colSpan
+// ─────────────────────────────────────────────────────────────────────────────
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, MessageCircle } from 'lucide-react';
@@ -24,15 +27,15 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const TicketList: React.FC = () => {
   const navigate = useNavigate();
-  const [tickets, setTickets]           = useState<SupportTicket[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [search, setSearch]             = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [tickets, setTickets]               = useState<SupportTicket[]>([]);
+  const [loading, setLoading]               = useState(true);
+  const [search, setSearch]                 = useState('');
+  const [statusFilter, setStatusFilter]     = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [currentPage, setCurrentPage]   = useState(1);
-  const [totalPages, setTotalPages]     = useState(1);
-  const [totalCount, setTotalCount]     = useState(0);
+  const [currentPage, setCurrentPage]       = useState(1);
+  const [totalPages, setTotalPages]         = useState(1);
+  const [totalCount, setTotalCount]         = useState(0);
 
   useEffect(() => { load(); }, [currentPage, statusFilter, priorityFilter, categoryFilter]);
 
@@ -64,7 +67,6 @@ const TicketList: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters */}
       <Card>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="md:col-span-1">
@@ -107,7 +109,6 @@ const TicketList: React.FC = () => {
         </div>
       </Card>
 
-      {/* Table */}
       <Card padding={false}>
         {loading ? (
           <div className="py-16 flex justify-center"><Spinner size="lg" showLabel /></div>
@@ -127,10 +128,13 @@ const TicketList: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* FIX: use native <tr><td> for colSpan */}
                 {tickets.length === 0 ? (
-                  <TableRow>
-                    <TableCell className="text-center text-gray-400 py-12" colSpan={8}>No tickets found.</TableCell>
-                  </TableRow>
+                  <tr>
+                    <td colSpan={8} className="text-center text-gray-400 py-12 text-sm">
+                      No tickets found.
+                    </td>
+                  </tr>
                 ) : tickets.map(ticket => (
                   <TableRow key={ticket.id} onClick={() => navigate(`/support/tickets/${ticket.id}`)}>
                     <TableCell className="font-mono text-sm font-medium text-primary-600">

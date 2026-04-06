@@ -1,12 +1,14 @@
+// ─────────────────────────────────────────────────────────────────────────────
 // admin-web/src/pages/Users/CreateAdminUser.tsx
+// FIX: removed unused 'Info' import
+// ─────────────────────────────────────────────────────────────────────────────
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, Info } from 'lucide-react';
+import { ArrowLeft, Shield } from 'lucide-react';
 import { usersAPI } from '@/services/api/users';
 import { Card, Input, Select, Button, Alert } from '@/components/common';
 import toast from 'react-hot-toast';
 
-// Department descriptions shown in UI
 const DEPT_INFO: Record<string, { label: string; description: string; color: string }> = {
   '': {
     label: 'General Admin',
@@ -93,7 +95,6 @@ const CreateAdminUser: React.FC = () => {
         </div>
       </div>
 
-      {/* Department preview card */}
       <div className={`p-4 rounded-xl border ${deptInfo.color}`}>
         <p className="text-sm font-semibold flex items-center gap-1.5">
           <Shield className="h-4 w-4" />{deptInfo.label}
@@ -103,23 +104,16 @@ const CreateAdminUser: React.FC = () => {
 
       <Card>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Name */}
           <div className="grid grid-cols-2 gap-4">
             <Input label="First Name" value={form.firstName} onChange={set('firstName')} required />
             <Input label="Last Name"  value={form.lastName}  onChange={set('lastName')  } required />
           </div>
-
-          {/* Contact */}
           <Input label="Email"    type="email" value={form.email} onChange={set('email')} required />
           <Input label="Phone"    type="tel"   value={form.phone} onChange={set('phone')} required placeholder="+234..." />
-
-          {/* Password */}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Password"         type="password" value={form.password}        onChange={set('password')}        required hint="Min 8 characters" />
             <Input label="Confirm Password" type="password" value={form.confirmPassword} onChange={set('confirmPassword')} required />
           </div>
-
-          {/* Role */}
           <Select
             label="Role"
             value={form.role}
@@ -130,8 +124,6 @@ const CreateAdminUser: React.FC = () => {
               { value: 'MODERATOR', label: 'Moderator' },
             ]}
           />
-
-          {/* Department — only for ADMIN role */}
           {form.role === 'ADMIN' && (
             <Select
               label="Department (Access Scope)"
@@ -145,13 +137,11 @@ const CreateAdminUser: React.FC = () => {
               ]}
             />
           )}
-
           {form.role === 'SUPPORT' && (
             <Alert variant="info">
               Support agents can view and respond to tickets and have read-only access to user profiles and order history.
             </Alert>
           )}
-
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" type="button" onClick={() => navigate('/users')}>Cancel</Button>
             <Button type="submit" loading={loading}>Create Account</Button>
@@ -163,3 +153,9 @@ const CreateAdminUser: React.FC = () => {
 };
 
 export default CreateAdminUser;
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SAVE THIS AS: admin-web/src/pages/Users/UserDetails.tsx
+// FIX: removed unused 'formatDate' import and unused 'isAdminAccount' variable
+// ─────────────────────────────────────────────────────────────────────────────

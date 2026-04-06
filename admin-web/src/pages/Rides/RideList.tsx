@@ -54,7 +54,6 @@ const RideList: React.FC = () => {
         </Button>
       </div>
 
-      {/* Filters */}
       <Card>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
@@ -81,7 +80,6 @@ const RideList: React.FC = () => {
         </div>
       </Card>
 
-      {/* Table */}
       <Card padding={false}>
         {loading ? (
           <div className="py-16 flex justify-center"><Spinner size="lg" showLabel /></div>
@@ -100,12 +98,13 @@ const RideList: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* FIX: use native <tr><td> for colSpan */}
                 {rides.length === 0 ? (
-                  <TableRow>
-                    <TableCell className="text-center text-gray-400 py-12" colSpan={7}>
+                  <tr>
+                    <td colSpan={7} className="text-center text-gray-400 py-12 text-sm">
                       No rides found.
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 ) : rides.map(ride => (
                   <TableRow key={ride.id} onClick={() => navigate(`/rides/${ride.id}`)}>
                     <TableCell>

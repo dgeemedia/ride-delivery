@@ -1,10 +1,4 @@
 // admin-web/src/pages/Rides/RideDetails.tsx
-//
-// Google Maps v2 functional API — same pattern as DeliveryDetails.
-// Live tracking: driver location via socket 'driver:location:update'
-// History: completed rides show the route with DirectionsRenderer
-// Export: petition-ready .txt report with all timestamps + financials
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
@@ -17,15 +11,14 @@ import { ridesAPI } from '@/services/api/rides';
 import { Ride } from '@/types';
 import { Card, Button, Badge, Modal, Alert, Spinner } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
-import { RIDE_STATUSES } from '@/utils/constants';
 import { useSocket } from '@/hooks/useSocket';
 import toast from 'react-hot-toast';
 
+// FIX: removed unused RIDE_STATUSES import, changed apiKey → key, removed version
 setOptions({
-  apiKey:    import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? '',
-  version:   'weekly',
+  key:       import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? '',
   libraries: ['places', 'geometry', 'routes'],
-});
+} as any);
 
 const STATUS_CONFIG: Record<string, {
   label: string;
@@ -71,7 +64,6 @@ const InfoRow: React.FC<{ icon: React.ReactNode; label: string; value: React.Rea
   </div>
 );
 
-// ─── Map hook ─────────────────────────────────────────────────────────────────
 function useRideMap(
   containerRef: React.RefObject<HTMLDivElement>,
   ride: Ride | null,
@@ -109,17 +101,14 @@ function useRideMap(
         });
         mapRef.current = map;
 
-        // Pickup pin (green)
         const pickupEl = document.createElement('div');
         pickupEl.innerHTML = `<div style="background:#22C55E;color:#fff;font-weight:700;font-size:11px;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)">P</div>`;
         new AdvancedMarkerElement({ map, position: { lat: ride.pickupLat, lng: ride.pickupLng }, content: pickupEl, title: 'Pickup' });
 
-        // Dropoff pin (red)
         const dropoffEl = document.createElement('div');
         dropoffEl.innerHTML = `<div style="background:#EF4444;color:#fff;font-weight:700;font-size:11px;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)">D</div>`;
         new AdvancedMarkerElement({ map, position: { lat: ride.dropoffLat, lng: ride.dropoffLng }, content: dropoffEl, title: 'Dropoff' });
 
-        // Route
         const dRenderer = new DirectionsRenderer({
           map,
           suppressMarkers: true,
@@ -130,7 +119,6 @@ function useRideMap(
           (result, status) => { if (status === 'OK' && result) dRenderer.setDirections(result); }
         );
 
-        // Driver live location
         const driverProfile = (ride.driver as any)?.driverProfile;
         const initLat = driverProfile?.currentLat;
         const initLng = driverProfile?.currentLng;
@@ -140,7 +128,6 @@ function useRideMap(
           driverMarkerRef.current = new AdvancedMarkerElement({ map, position: { lat: initLat, lng: initLng }, content: carEl, title: `${ride.driver?.firstName} ${ride.driver?.lastName}`, zIndex: 999 });
         }
 
-        // Live socket updates
         const unsub = onDriverLocation((lat, lng) => {
           if (cancelled) return;
           const pos = { lat, lng };
@@ -166,7 +153,6 @@ function useRideMap(
   return { mapError };
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
 const RideDetails: React.FC = () => {
   const { id }   = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -233,7 +219,7 @@ const RideDetails: React.FC = () => {
       `DRIVER`,
       `  Name:    ${ride.driver ? `${ride.driver.firstName} ${ride.driver.lastName}` : 'Unassigned'}`,
       `  Email:   ${ride.driver?.email ?? '—'}`,
-      `  Vehicle: ${driverProfile ? `${driverProfile.vehicleType} · ${driverProfile.vehicleMake} ${driverProfile.vehicleModel} (${driverProfile.vehicleYear}) · ${driverProfile.vehiclePlate} · ${driverProfile.vehicleColor}` : '—'}`,
+      `  Vehicle: ${driverProfile ? `${driverProfile.vehicleType} • ${driverProfile.vehicleMake} ${driverProfile.vehicleModel} (${driverProfile.vehicleYear}) • ${driverProfile.vehiclePlate} • ${driverProfile.vehicleColor}` : '—'}`,
       `  Rating:  ${driverProfile?.rating?.toFixed(2) ?? '—'}`,
       ``,
       `ROUTE`,
@@ -281,7 +267,6 @@ const RideDetails: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" onClick={() => navigate('/rides')}><ArrowLeft className="h-5 w-5" /></Button>
@@ -306,7 +291,6 @@ const RideDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Map */}
       <Card padding={false}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
           <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -336,7 +320,6 @@ const RideDetails: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-5">
-          {/* Customer */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><User className="h-4 w-4 text-primary-500" />Customer</h3>
             <InfoRow icon={<User className="h-4 w-4" />}  label="Name"  value={`${ride.customer?.firstName} ${ride.customer?.lastName}`} />
@@ -344,7 +327,6 @@ const RideDetails: React.FC = () => {
             <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone" value={(ride.customer as any)?.phone ?? '—'} />
           </Card>
 
-          {/* Driver */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><Car className="h-4 w-4 text-warning-500" />Driver</h3>
             {ride.driver ? (
@@ -354,8 +336,8 @@ const RideDetails: React.FC = () => {
                 <InfoRow icon={<Phone className="h-4 w-4" />}  label="Phone"   value={(ride.driver as any)?.phone ?? '—'} />
                 {driverProfile && (
                   <>
-                    <InfoRow icon={<Car className="h-4 w-4" />}    label="Vehicle" value={`${driverProfile.vehicleType} · ${driverProfile.vehicleMake} ${driverProfile.vehicleModel} (${driverProfile.vehicleYear})`} />
-                    <InfoRow icon={<Shield className="h-4 w-4" />} label="Plate / Color" value={`${driverProfile.vehiclePlate} · ${driverProfile.vehicleColor}`} />
+                    <InfoRow icon={<Car className="h-4 w-4" />}    label="Vehicle" value={`${driverProfile.vehicleType} • ${driverProfile.vehicleMake} ${driverProfile.vehicleModel} (${driverProfile.vehicleYear})`} />
+                    <InfoRow icon={<Shield className="h-4 w-4" />} label="Plate / Color" value={`${driverProfile.vehiclePlate} • ${driverProfile.vehicleColor}`} />
                     {driverProfile.rating > 0 && <InfoRow icon={<Star className="h-4 w-4" />} label="Rating" value={`${driverProfile.rating.toFixed(1)} ★`} />}
                   </>
                 )}
@@ -365,7 +347,6 @@ const RideDetails: React.FC = () => {
             )}
           </Card>
 
-          {/* Route */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><MapPin className="h-4 w-4 text-indigo-500" />Route</h3>
             <InfoRow icon={<MapPin className="h-4 w-4 text-green-500" />} label="Pickup"   value={ride.pickupAddress} />
@@ -375,7 +356,6 @@ const RideDetails: React.FC = () => {
             {(ride as any).promoCode && <InfoRow icon={<FileText className="h-4 w-4" />} label="Promo code" value={(ride as any).promoCode} />}
           </Card>
 
-          {/* Payment */}
           {ride.payment && (
             <Card>
               <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><DollarSign className="h-4 w-4 text-green-500" />Payment</h3>
@@ -389,7 +369,6 @@ const RideDetails: React.FC = () => {
           )}
         </div>
 
-        {/* Right column */}
         <div className="space-y-5">
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Summary</h3>
@@ -407,11 +386,11 @@ const RideDetails: React.FC = () => {
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2"><Clock className="h-4 w-4" />Timeline</h3>
             <div className="pt-1">
-              <TimelineStep label="Requested"   at={ride.requestedAt} done={!!ride.requestedAt} />
-              <TimelineStep label="Accepted"    at={ride.acceptedAt}  done={!!ride.acceptedAt} />
+              <TimelineStep label="Requested"      at={ride.requestedAt} done={!!ride.requestedAt} />
+              <TimelineStep label="Accepted"       at={ride.acceptedAt}  done={!!ride.acceptedAt} />
               <TimelineStep label="Driver Arrived" at={(ride as any).arrivedAt} done={['ARRIVED','IN_PROGRESS','COMPLETED'].includes(ride.status)} />
-              <TimelineStep label="In Progress" at={ride.startedAt}   done={['IN_PROGRESS','COMPLETED'].includes(ride.status)} />
-              <TimelineStep label="Completed"   at={ride.completedAt} done={ride.status === 'COMPLETED'} last />
+              <TimelineStep label="In Progress"    at={ride.startedAt}   done={['IN_PROGRESS','COMPLETED'].includes(ride.status)} />
+              <TimelineStep label="Completed"      at={ride.completedAt} done={ride.status === 'COMPLETED'} last />
             </div>
             {ride.status === 'CANCELLED' && (
               <div className="mt-2 p-3 bg-red-50 rounded-lg">
@@ -425,7 +404,6 @@ const RideDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Cancel modal */}
       <Modal
         isOpen={showCancel}
         onClose={() => setShowCancel(false)}

@@ -1,22 +1,22 @@
 // admin-web/src/pages/Analytics/Performance.tsx
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Card } from '@/components/common';
 import { LineChart, PieChart } from '@/components/charts';
 import { TrendingUp, TrendingDown, Clock, Star } from 'lucide-react';
 
 const Performance: React.FC = () => {
-  const [metrics, setMetrics] = useState({
-    averageRideTime: 24.5,
+  const metrics = {
+    averageRideTime:     24.5,
     averageDeliveryTime: 32.8,
-    driverRating: 4.7,
-    partnerRating: 4.6,
-    completionRate: 94.2,
-    cancellationRate: 5.8,
-  });
+    driverRating:        4.7,
+    partnerRating:       4.6,
+    completionRate:      94.2,
+    cancellationRate:    5.8,
+  };
 
   const performanceData = [
     { name: 'Completed', value: 94.2 },
-    { name: 'Cancelled', value: 5.8 },
+    { name: 'Cancelled', value:  5.8 },
   ];
 
   const timeData = [
@@ -122,7 +122,7 @@ const Performance: React.FC = () => {
             data={timeData}
             xKey="day"
             lines={[
-              { key: 'rides', name: 'Rides', color: '#007AFF' },
+              { key: 'rides',      name: 'Rides',      color: '#007AFF' },
               { key: 'deliveries', name: 'Deliveries', color: '#FF9500' },
             ]}
             height={300}

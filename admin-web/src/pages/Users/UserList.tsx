@@ -127,7 +127,7 @@ const UserList: React.FC = () => {
               <TableBody>
                 {users.length === 0 ? (
                   <TableRow>
-                    <TableCell className="text-center text-gray-400 py-12" colSpan={7}>No users found.</TableCell>
+                    <TableCell className="text-center text-gray-400 py-12" {...{ colSpan: 7 }}>No users found.</TableCell>
                   </TableRow>
                 ) : users.map(user => (
                   <TableRow key={user.id} onClick={() => navigate(`/users/${user.id}`)}>

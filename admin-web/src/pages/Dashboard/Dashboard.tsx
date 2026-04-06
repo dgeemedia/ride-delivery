@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Car, Package, DollarSign, TrendingUp, Activity, Shield } from 'lucide-react';
-import { Card } from '@/components/common';
+import { Card, Spinner } from '@/components/common';
 import { LineChart, BarChart } from '@/components/charts';
 import { analyticsAPI } from '@/services/api/analytics';
 import api from '@/services/api';
@@ -10,10 +10,8 @@ import { DashboardStats, RevenueAnalytics } from '@/types';
 import { formatCurrency } from '@/utils/helpers';
 import toast from 'react-hot-toast';
 
-// ─── Feature flags (set in admin-web/.env) ────────────────────────────────────
-const ENABLE_SHIELD    = import.meta.env.VITE_ENABLE_SHIELD    === 'true';
-const ENABLE_CORPORATE = import.meta.env.VITE_ENABLE_CORPORATE === 'true';
-const ENABLE_DUOPAY    = import.meta.env.VITE_ENABLE_DUOPAY    === 'true';
+// ─── Feature flags ─────────────────────────────────────────────────────────────
+const ENABLE_SHIELD = import.meta.env.VITE_ENABLE_SHIELD === 'true';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -29,7 +27,6 @@ const Dashboard: React.FC = () => {
       const [statsRes, revenueRes, shieldRes] = await Promise.all([
         analyticsAPI.getDashboardStats(),
         analyticsAPI.getRevenueAnalytics('week'),
-        // Only fetch SHIELD stats if feature is enabled
         ENABLE_SHIELD
           ? api.get('/admin/shield/stats').catch(() => ({ data: { data: { activeSessions: 0 } } }))
           : Promise.resolve({ data: { data: { activeSessions: 0 } } }),
@@ -44,49 +41,53 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  if (loading || !stats) return <div>Loading...</div>;
+  if (loading || !stats) return (
+    <div className="flex flex-col items-center justify-center min-h-[500px] gap-3">
+      <Spinner size="xl" />
+      <p className="text-sm text-gray-500 animate-pulse">Loading dashboard…</p>
+    </div>
+  );
 
   const statCards = [
     {
-      title:  'Total Users',
-      value:  stats.users.total.toLocaleString(),
-      icon:   Users,
-      color:  'bg-primary-500',
-      change: '+12%',
+      title:   'Total Users',
+      value:   stats.users.total.toLocaleString(),
+      icon:    Users,
+      color:   'bg-primary-500',
+      change:  '+12%',
       onClick: () => navigate('/users'),
     },
     {
-      title:  'Active Rides',
-      value:  stats.rides.active.toLocaleString(),
-      icon:   Car,
-      color:  'bg-success-500',
-      change: '+5%',
+      title:   'Active Rides',
+      value:   stats.rides.active.toLocaleString(),
+      icon:    Car,
+      color:   'bg-success-500',
+      change:  '+5%',
       onClick: () => navigate('/rides/live'),
     },
     {
-      title:  'Active Deliveries',
-      value:  stats.deliveries.active.toLocaleString(),
-      icon:   Package,
-      color:  'bg-warning-500',
-      change: '+8%',
+      title:   'Active Deliveries',
+      value:   stats.deliveries.active.toLocaleString(),
+      icon:    Package,
+      color:   'bg-warning-500',
+      change:  '+8%',
       onClick: () => navigate('/deliveries'),
     },
     {
-      title:  "Today's Revenue",
-      value:  formatCurrency(stats.revenue.today),
-      icon:   DollarSign,
-      color:  'bg-error-500',
-      change: '+15%',
-      onClick: undefined,
+      title:   "Today's Revenue",
+      value:   formatCurrency(stats.revenue.today),
+      icon:    DollarSign,
+      color:   'bg-error-500',
+      change:  '+15%',
+      onClick: undefined as (() => void) | undefined,
     },
-    // SHIELD stat card — only shown when SHIELD is enabled
     ...(ENABLE_SHIELD ? [{
-      title:  'SHIELD Active',
-      value:  shieldActive,
-      icon:   Shield,
-      color:  'bg-green-500',
-      change: 'Live safety sessions',
-      onClick: () => navigate('/shield'),
+      title:   'SHIELD Active',
+      value:   shieldActive,
+      icon:    Shield,
+      color:   'bg-green-500',
+      change:  'Live safety sessions',
+      onClick: () => navigate('/shield') as void,
     }] : []),
   ];
 
@@ -195,7 +196,6 @@ const Dashboard: React.FC = () => {
           </div>
         </Card>
 
-        {/* SHIELD quick stat — only shown when SHIELD is enabled */}
         {ENABLE_SHIELD && (
           <Card
             className="cursor-pointer hover:shadow-md transition-shadow"

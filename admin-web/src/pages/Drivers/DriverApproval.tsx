@@ -5,7 +5,7 @@ import { Driver } from '@/types';
 import { Card, Button, Badge, Modal, Alert, Spinner } from '@/components/common';
 import {
   FileText, Car, Shield, CheckCircle, XCircle, Eye,
-  Gift, AlertTriangle, User, Phone, Mail, Calendar
+  Gift, AlertTriangle, Phone, Mail, Calendar,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { formatDate } from '@/utils/helpers';
@@ -51,18 +51,18 @@ const DocImage: React.FC<{ label: string; url?: string; icon: React.ReactNode }>
 
 // ─── Approval modal ───────────────────────────────────────────────────────────
 interface ApprovalModalProps {
-  driver: Driver;
+  driver:      Driver;
   isSuperAdmin: boolean;
-  onClose: () => void;
-  onApproved: () => void;
+  onClose:     () => void;
+  onApproved:  () => void;
 }
 
 const ApprovalModal: React.FC<ApprovalModalProps> = ({ driver, isSuperAdmin, onClose, onApproved }) => {
-  const [grantBonus, setGrantBonus]   = useState(false);
-  const [bonusAmount, setBonusAmount] = useState('5000');
-  const [rejectReason, setRejectReason] = useState('');
-  const [showReject, setShowReject]   = useState(false);
-  const [loading, setLoading]         = useState(false);
+  const [grantBonus,    setGrantBonus]    = useState(false);
+  const [bonusAmount,   setBonusAmount]   = useState('5000');
+  const [rejectReason,  setRejectReason]  = useState('');
+  const [showReject,    setShowReject]    = useState(false);
+  const [loading,       setLoading]       = useState(false);
 
   const docsUploaded = !!(driver.licenseImageUrl && driver.vehicleRegUrl && driver.insuranceUrl);
 
@@ -70,7 +70,7 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ driver, isSuperAdmin, onC
     setLoading(true);
     try {
       await driversAPI.approveDriver(driver.id, {
-        grantBonus: isSuperAdmin && grantBonus,
+        grantBonus:  isSuperAdmin && grantBonus,
         bonusAmount: isSuperAdmin && grantBonus ? parseFloat(bonusAmount) : undefined,
       });
       toast.success(`${driver.user.firstName} approved${grantBonus ? ` + ₦${parseInt(bonusAmount).toLocaleString('en-NG')} bonus sent` : ''}`);
@@ -128,7 +128,7 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ driver, isSuperAdmin, onC
           <div className="flex items-center gap-2 text-gray-600"><Mail className="h-4 w-4 text-gray-400" />{driver.user.email}</div>
           <div className="flex items-center gap-2 text-gray-600"><Phone className="h-4 w-4 text-gray-400" />{driver.user.phone}</div>
           <div className="flex items-center gap-2 text-gray-600"><Car className="h-4 w-4 text-gray-400" />{driver.vehicleMake} {driver.vehicleModel} ({driver.vehicleYear})</div>
-          <div className="flex items-center gap-2 text-gray-600"><Shield className="h-4 w-4 text-gray-400" />{driver.vehicleType} · {driver.vehiclePlate}</div>
+          <div className="flex items-center gap-2 text-gray-600"><Shield className="h-4 w-4 text-gray-400" />{driver.vehicleType} • {driver.vehiclePlate}</div>
           <div className="flex items-center gap-2 text-gray-600"><FileText className="h-4 w-4 text-gray-400" />License: {driver.licenseNumber}</div>
           <div className="flex items-center gap-2 text-gray-600"><Calendar className="h-4 w-4 text-gray-400" />Applied {formatDate(driver.createdAt)}</div>
         </div>
@@ -202,11 +202,11 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ driver, isSuperAdmin, onC
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 const DriverApproval: React.FC = () => {
-  const { user } = useAuthStore();
-  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const { user }       = useAuthStore();
+  const isSuperAdmin   = user?.role === 'SUPER_ADMIN';
 
-  const [drivers, setDrivers]           = useState<Driver[]>([]);
-  const [loading, setLoading]           = useState(true);
+  const [drivers,        setDrivers]        = useState<Driver[]>([]);
+  const [loading,        setLoading]        = useState(true);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
 
   useEffect(() => { loadPendingDrivers(); }, []);
@@ -272,7 +272,7 @@ const DriverApproval: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2 text-gray-600">
                     <Shield className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                    <span>{driver.vehicleType} · {driver.vehiclePlate}</span>
+                    <span>{driver.vehicleType} • {driver.vehiclePlate}</span>
                   </div>
                 </div>
 

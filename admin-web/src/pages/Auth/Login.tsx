@@ -11,8 +11,8 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuthStore();
   const [formData, setFormData] = useState({ email: '', password: '' });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [error,   setError]     = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,8 +21,12 @@ const Login: React.FC = () => {
 
     try {
       const response = await authAPI.login(formData.email, formData.password);
-      
-      if (response.data.user.role === 'CUSTOMER' || response.data.user.role === 'DRIVER' || response.data.user.role === 'DELIVERY_PARTNER') {
+
+      if (
+        response.data.user.role === 'CUSTOMER' ||
+        response.data.user.role === 'DRIVER' ||
+        response.data.user.role === 'DELIVERY_PARTNER'
+      ) {
         setError('You do not have admin access');
         return;
       }
@@ -39,58 +43,76 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <div className="text-center mb-8">
-            <div className="flex items-center justify-center mx-auto mb-4">
-              <img src={logo} alt="Diakite" className="h-16 w-auto" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+      {/* Background pattern */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary-900/20 via-transparent to-transparent pointer-events-none" />
+
+      <div className="max-w-md w-full relative">
+        {/* Card */}
+        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+          {/* Top accent bar */}
+          <div className="h-1.5 bg-gradient-to-r from-primary-500 via-primary-400 to-blue-500" />
+
+          <div className="p-8">
+            {/* Logo + branding */}
+            <div className="text-center mb-8">
+              <div className="flex items-center justify-center mx-auto mb-4">
+                <img src={logo} alt="Diakite" className="h-16 w-auto" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900">Diakite Admin</h2>
+              <p className="text-gray-500 mt-1.5 text-sm">Sign in to your account</p>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">Diakite Admin</h2>
-            <p className="text-gray-600 mt-2">Sign in to your account</p>
-          </div>
 
-          {error && (
-            <Alert type="error" message={error} className="mb-6" />
-          )}
+            {/* Error alert */}
+            {error && (
+              <Alert variant="error" className="mb-6">
+                {error}
+              </Alert>
+            )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <Input
-              label="Email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="admin@duoride.com"
-              required
-            />
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <Input
+                label="Email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="admin@diakite.com"
+                required
+              />
 
-            <Input
-              label="Password"
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="••••••••"
-              required
-            />
+              <Input
+                label="Password"
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                placeholder="••••••••"
+                required
+              />
 
-            <Button
-              type="submit"
-              loading={loading}
-              fullWidth
-              className="w-full"
-            >
-              Sign In
-            </Button>
-          </form>
+              <Button
+                type="submit"
+                loading={loading}
+                className="w-full"
+              >
+                Sign In
+              </Button>
+            </form>
 
-          <div className="mt-6 text-center">
-            <button className="text-sm text-primary-500 hover:text-primary-600">
-              Forgot password?
-            </button>
+            {/* Forgot password */}
+            <div className="mt-6 text-center">
+              <button
+                onClick={() => navigate('/forgot-password')}
+                className="text-sm text-primary-600 hover:text-primary-700 font-medium transition-colors"
+              >
+                Forgot password?
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="text-center mt-4 text-sm text-gray-600">
+        {/* Footer */}
+        <div className="text-center mt-5 text-sm text-slate-400">
           © 2026 Diakite. All rights reserved.
         </div>
       </div>

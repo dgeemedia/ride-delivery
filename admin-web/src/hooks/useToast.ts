@@ -1,6 +1,6 @@
 // admin-web/src/hooks/useToast.ts
 import { useCallback } from 'react';
-import toast, { Toast } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 
 export const useToast = () => {
   const showSuccess = useCallback((message: string) => {
@@ -37,8 +37,8 @@ export const useToast = () => {
 
   return {
     success: showSuccess,
-    error: showError,
-    info: showInfo,
+    error:   showError,
+    info:    showInfo,
     warning: showWarning,
     loading: showLoading,
     dismiss,

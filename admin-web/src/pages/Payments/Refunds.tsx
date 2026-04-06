@@ -1,16 +1,13 @@
 // admin-web/src/pages/Payments/Refunds.tsx
-import React, { useState } from 'react';
-import { paymentsAPI } from '@/services/api/payments';
-import { Card, Table, Button } from '@/components/common';
+import React from 'react';
+import { Card } from '@/components/common';
 
 const Refunds: React.FC = () => {
-  const [refunds, setRefunds] = useState([]);
-
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Refunds</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Refunds</h1>
       <Card>
-        {/* Refunds table */}
+        <p className="text-sm text-gray-400 text-center py-8">No refund data available.</p>
       </Card>
     </div>
   );

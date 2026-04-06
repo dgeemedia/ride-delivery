@@ -14,16 +14,14 @@ import { VEHICLE_TYPES } from '@/utils/constants';
 import { exportToExcel, exportToCSV, DRIVER_EXPORT_COLUMNS } from '@/utils/exportToExcel';
 import toast from 'react-hot-toast';
 
-// ─── Reusable export dropdown ─────────────────────────────────────────────────
 const ExportDropdown: React.FC<{
-  onExcel: () => void;
-  onCSV: () => void;
-  loading: boolean;
+  onExcel:  () => void;
+  onCSV:    () => void;
+  loading:  boolean;
 }> = ({ onExcel, onCSV, loading }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -34,11 +32,7 @@ const ExportDropdown: React.FC<{
 
   return (
     <div ref={ref} className="relative">
-      <Button
-        variant="outline"
-        loading={loading}
-        onClick={() => setOpen(o => !o)}
-      >
+      <Button variant="outline" loading={loading} onClick={() => setOpen(o => !o)}>
         <Download className="h-4 w-4" />
         Export
         <ChevronDown className={`h-3.5 w-3.5 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -66,18 +60,17 @@ const ExportDropdown: React.FC<{
   );
 };
 
-// ─── Main page ────────────────────────────────────────────────────────────────
 const DriverList: React.FC = () => {
   const navigate = useNavigate();
-  const [drivers, setDrivers]           = useState<Driver[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [exporting, setExporting]       = useState(false);
-  const [search, setSearch]             = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [vehicleFilter, setVehicleFilter] = useState('');
-  const [currentPage, setCurrentPage]   = useState(1);
-  const [totalPages, setTotalPages]     = useState(1);
-  const [totalCount, setTotalCount]     = useState(0);
+  const [drivers,        setDrivers]        = useState<Driver[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [exporting,      setExporting]      = useState(false);
+  const [search,         setSearch]         = useState('');
+  const [statusFilter,   setStatusFilter]   = useState('');
+  const [vehicleFilter,  setVehicleFilter]  = useState('');
+  const [currentPage,    setCurrentPage]    = useState(1);
+  const [totalPages,     setTotalPages]     = useState(1);
+  const [totalCount,     setTotalCount]     = useState(0);
 
   useEffect(() => { loadDrivers(); }, [currentPage, statusFilter, vehicleFilter]);
 
@@ -85,9 +78,10 @@ const DriverList: React.FC = () => {
     setLoading(true);
     try {
       const res = await driversAPI.getDrivers({
-        page: currentPage, limit: 20,
-        search: search || undefined,
-        isApproved: statusFilter || undefined,
+        page:        currentPage,
+        limit:       20,
+        search:      search        || undefined,
+        isApproved:  statusFilter  || undefined,
         vehicleType: vehicleFilter || undefined,
       });
       setDrivers(res.data.drivers || []);
@@ -102,17 +96,18 @@ const DriverList: React.FC = () => {
 
   const fetchAll = async () => {
     const res = await driversAPI.getDrivers({
-      page: 1, limit: 5000,
-      search: search || undefined,
-      isApproved: statusFilter || undefined,
+      page:        1,
+      limit:       5000,
+      search:      search        || undefined,
+      isApproved:  statusFilter  || undefined,
       vehicleType: vehicleFilter || undefined,
     });
     return res.data.drivers ?? [];
   };
 
-  const buildFilename = (ext: string) => {
+  const buildFilename = () => {
     const date   = new Date().toISOString().split('T')[0];
-    const suffix = statusFilter === 'true' ? 'approved'
+    const suffix = statusFilter === 'true'  ? 'approved'
                  : statusFilter === 'false' ? 'pending' : 'all';
     return `diakite-drivers-${suffix}-${date}`;
   };
@@ -122,7 +117,7 @@ const DriverList: React.FC = () => {
     try {
       const all = await fetchAll();
       if (!all.length) { toast.error('No drivers to export'); return; }
-      exportToExcel(all, DRIVER_EXPORT_COLUMNS, buildFilename('xlsx'), 'Drivers');
+      exportToExcel(all, DRIVER_EXPORT_COLUMNS, buildFilename(), 'Drivers');
       toast.success(`Exported ${all.length} driver${all.length !== 1 ? 's' : ''} as Excel`);
     } catch { toast.error('Export failed'); }
     finally { setExporting(false); }
@@ -133,7 +128,7 @@ const DriverList: React.FC = () => {
     try {
       const all = await fetchAll();
       if (!all.length) { toast.error('No drivers to export'); return; }
-      exportToCSV(all, DRIVER_EXPORT_COLUMNS, buildFilename('csv'));
+      exportToCSV(all, DRIVER_EXPORT_COLUMNS, buildFilename());
       toast.success(`Exported ${all.length} driver${all.length !== 1 ? 's' : ''} as CSV`);
     } catch { toast.error('Export failed'); }
     finally { setExporting(false); }
@@ -154,7 +149,6 @@ const DriverList: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters */}
       <Card>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="md:col-span-2">
@@ -169,9 +163,9 @@ const DriverList: React.FC = () => {
             value={statusFilter}
             onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
             options={[
-              { value: '', label: 'All Status' },
-              { value: 'true', label: 'Approved' },
-              { value: 'false', label: 'Pending' },
+              { value: '',      label: 'All Status' },
+              { value: 'true',  label: 'Approved'   },
+              { value: 'false', label: 'Pending'     },
             ]}
           />
           <Select
@@ -190,7 +184,6 @@ const DriverList: React.FC = () => {
         </div>
       </Card>
 
-      {/* Table */}
       <Card padding={false}>
         {loading ? (
           <div className="py-16 flex justify-center"><Spinner size="lg" showLabel /></div>
@@ -210,12 +203,13 @@ const DriverList: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* FIX: use native <tr><td> for colSpan */}
                 {drivers.length === 0 ? (
-                  <TableRow>
-                    <TableCell className="text-center text-gray-400 py-12" colSpan={8}>
+                  <tr>
+                    <td colSpan={8} className="text-center text-gray-400 py-12 text-sm">
                       No drivers found.
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 ) : drivers.map(driver => (
                   <TableRow key={driver.id} onClick={() => navigate(`/drivers/${driver.id}`)}>
                     <TableCell>
@@ -231,7 +225,7 @@ const DriverList: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <div className="font-medium">{driver.vehicleMake} {driver.vehicleModel}</div>
-                      <div className="text-sm text-gray-500">{driver.vehicleType} · {driver.vehiclePlate}</div>
+                      <div className="text-sm text-gray-500">{driver.vehicleType} • {driver.vehiclePlate}</div>
                     </TableCell>
                     <TableCell className="text-sm">{driver.licenseNumber}</TableCell>
                     <TableCell>

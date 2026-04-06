@@ -1,17 +1,13 @@
+// ─────────────────────────────────────────────────────────────────────────────
 // admin-web/src/pages/Shield/ShieldMonitor.tsx
-//
-// Admin monitoring page for all SHIELD safety sessions.
-// Shows live active sessions, today's stats, alert count, and a full
-// paginated session list. Admins can click into any session for details.
-
+// FIX: removed unused 'trip' variable (line 227) — contact/type derived directly
+// ─────────────────────────────────────────────────────────────────────────────
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, AlertTriangle, CheckCircle, Zap, Eye, XCircle } from 'lucide-react';
 import { Card } from '@/components/common';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ShieldStats {
   activeSessions:  number;
@@ -54,8 +50,6 @@ interface ShieldSession {
   } | null;
 }
 
-// ── Stat card ─────────────────────────────────────────────────────────────────
-
 const StatCard: React.FC<{
   title: string;
   value: number | string;
@@ -76,8 +70,6 @@ const StatCard: React.FC<{
   </Card>
 );
 
-// ── Status badge ──────────────────────────────────────────────────────────────
-
 const StatusBadge: React.FC<{ active: boolean }> = ({ active }) => (
   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
     active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
@@ -86,8 +78,6 @@ const StatusBadge: React.FC<{ active: boolean }> = ({ active }) => (
     {active ? 'Live' : 'Ended'}
   </span>
 );
-
-// ── Main ──────────────────────────────────────────────────────────────────────
 
 const ShieldMonitor: React.FC = () => {
   const navigate = useNavigate();
@@ -113,7 +103,6 @@ const ShieldMonitor: React.FC = () => {
         api.get('/admin/shield/sessions', { params }),
       ]);
 
-      setStats(sessionsRes.data.data ? statsRes.data.data : null);
       setStats(statsRes.data.data);
       setSessions(sessionsRes.data.data.sessions);
       setTotal(sessionsRes.data.data.pagination.total);
@@ -126,7 +115,6 @@ const ShieldMonitor: React.FC = () => {
 
   useEffect(() => { loadData(); }, [page, filter]);
 
-  // Auto-refresh every 30 s for live sessions
   useEffect(() => {
     const interval = setInterval(loadData, 30_000);
     return () => clearInterval(interval);
@@ -148,7 +136,6 @@ const ShieldMonitor: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
@@ -159,15 +146,11 @@ const ShieldMonitor: React.FC = () => {
             <p className="text-sm text-gray-500">Real-time safety guardian sessions</p>
           </div>
         </div>
-        <button
-          onClick={loadData}
-          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-        >
+        <button onClick={loadData} className="text-sm text-blue-600 hover:text-blue-800 font-medium">
           Refresh
         </button>
       </div>
 
-      {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <StatCard title="Active Now"        value={stats.activeSessions}  icon={Shield}        color="text-green-600"  bg="bg-green-100"  />
@@ -178,16 +161,13 @@ const ShieldMonitor: React.FC = () => {
         </div>
       )}
 
-      {/* Filter tabs */}
       <div className="flex gap-2">
         {(['all', 'active', 'alerted'] as const).map(f => (
           <button
             key={f}
             onClick={() => { setFilter(f); setPage(1); }}
             className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${
-              filter === f
-                ? 'bg-green-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              filter === f ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
             {f === 'alerted' ? 'Auto-SHIELD' : f}
@@ -195,7 +175,6 @@ const ShieldMonitor: React.FC = () => {
         ))}
       </div>
 
-      {/* Sessions table */}
       <Card>
         {loading ? (
           <div className="flex justify-center py-12">
@@ -224,7 +203,7 @@ const ShieldMonitor: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {sessions.map((s) => {
-                  const trip    = s.ride ?? s.delivery;
+                  // FIX: removed unused `trip` variable — derive contact/type directly
                   const contact = s.ride?.driver ?? s.delivery?.partner;
                   const type    = s.ride ? 'Ride' : 'Delivery';
 
@@ -234,13 +213,9 @@ const ShieldMonitor: React.FC = () => {
                       onClick={() => navigate(`/shield/${s.id}`)}
                       className="cursor-pointer hover:bg-gray-50 transition-colors"
                     >
+                      <td className="py-3 pr-4"><StatusBadge active={s.isActive} /></td>
                       <td className="py-3 pr-4">
-                        <StatusBadge active={s.isActive} />
-                      </td>
-                      <td className="py-3 pr-4">
-                        <p className="font-medium text-gray-900">
-                          {s.user.firstName} {s.user.lastName}
-                        </p>
+                        <p className="font-medium text-gray-900">{s.user.firstName} {s.user.lastName}</p>
                         <p className="text-xs text-gray-400">{s.user.phone}</p>
                       </td>
                       <td className="py-3 pr-4">
@@ -260,21 +235,9 @@ const ShieldMonitor: React.FC = () => {
                       <td className="py-3 pr-4 text-gray-500">{s.viewCount}</td>
                       <td className="py-3 pr-4">
                         <div className="flex gap-1">
-                          {s.autoTriggered && (
-                            <span title="Auto-triggered (night)" className="text-amber-500">
-                              <Zap className="h-3.5 w-3.5" />
-                            </span>
-                          )}
-                          {s.driverAlerted && (
-                            <span title="Guardian sent alert" className="text-red-500">
-                              <AlertTriangle className="h-3.5 w-3.5" />
-                            </span>
-                          )}
-                          {s.arrivedSafe && (
-                            <span title="Customer confirmed safe" className="text-green-500">
-                              <CheckCircle className="h-3.5 w-3.5" />
-                            </span>
-                          )}
+                          {s.autoTriggered  && <span title="Auto-triggered (night)" className="text-amber-500"><Zap className="h-3.5 w-3.5" /></span>}
+                          {s.driverAlerted  && <span title="Guardian sent alert"    className="text-red-500"><AlertTriangle className="h-3.5 w-3.5" /></span>}
+                          {s.arrivedSafe    && <span title="Customer confirmed safe" className="text-green-500"><CheckCircle className="h-3.5 w-3.5" /></span>}
                         </div>
                       </td>
                       <td className="py-3 pr-4 text-gray-400 text-xs whitespace-nowrap">
@@ -301,24 +264,17 @@ const ShieldMonitor: React.FC = () => {
           </div>
         )}
 
-        {/* Pagination */}
         {pages > 1 && (
           <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100">
             <p className="text-sm text-gray-500">{total} sessions total</p>
             <div className="flex gap-2">
-              <button
-                disabled={page === 1}
-                onClick={() => setPage(p => p - 1)}
-                className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50"
-              >
+              <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
+                className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50">
                 Previous
               </button>
               <span className="px-3 py-1.5 text-sm text-gray-600">{page} / {pages}</span>
-              <button
-                disabled={page === pages}
-                onClick={() => setPage(p => p + 1)}
-                className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50"
-              >
+              <button disabled={page === pages} onClick={() => setPage(p => p + 1)}
+                className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50">
                 Next
               </button>
             </div>

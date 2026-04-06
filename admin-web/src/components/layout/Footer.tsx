@@ -1,18 +1,18 @@
+// admin-web/src/layout/Footer.tsx
 import React from 'react';
 
 const Footer: React.FC = () => {
-  const currentYear = new Date().getFullYear();
+  const year = new Date().getFullYear();
 
   return (
-    <footer className="bg-white border-t border-gray-200 py-4 px-6">
-      <div className="flex items-center justify-between text-sm text-gray-600">
-        <div>
-          © {currentYear} DuoRide. All rights reserved.
-        </div>
-        <div className="flex items-center space-x-4">
-          <a href="#" className="hover:text-primary-500">Privacy Policy</a>
-          <a href="#" className="hover:text-primary-500">Terms of Service</a>
-          <a href="#" className="hover:text-primary-500">Help</a>
+    <footer className="bg-white border-t border-gray-100 px-6 py-3 flex-shrink-0">
+      <div className="flex items-center justify-between text-xs text-gray-400">
+        <span>© {year} Diakite. All rights reserved.</span>
+        <div className="flex items-center gap-4">
+          <a href="#" className="hover:text-gray-600 transition-colors">Privacy</a>
+          <a href="#" className="hover:text-gray-600 transition-colors">Terms</a>
+          <a href="#" className="hover:text-gray-600 transition-colors">Help</a>
+          <span className="text-gray-300">v1.0.0</span>
         </div>
       </div>
     </footer>

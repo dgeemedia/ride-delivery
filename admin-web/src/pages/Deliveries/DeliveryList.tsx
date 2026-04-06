@@ -9,27 +9,31 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
   Badge, Pagination, Spinner,
 } from '@/components/common';
-import { formatDateTime, formatCurrency, getStatusColor } from '@/utils/helpers';
+import { formatDateTime } from '@/utils/helpers';
 import { DELIVERY_STATUSES } from '@/utils/constants';
 import toast from 'react-hot-toast';
 
 const statusBadgeVariant = (status: string): 'success' | 'warning' | 'error' | 'info' | 'default' => {
-  const map: Record<string, any> = {
-    DELIVERED: 'success', CANCELLED: 'error',
-    IN_TRANSIT: 'info', PICKED_UP: 'info', ASSIGNED: 'info', PENDING: 'warning',
+  const map: Record<string, 'success' | 'warning' | 'error' | 'info' | 'default'> = {
+    DELIVERED:  'success',
+    CANCELLED:  'error',
+    IN_TRANSIT: 'info',
+    PICKED_UP:  'info',
+    ASSIGNED:   'info',
+    PENDING:    'warning',
   };
   return map[status] ?? 'default';
 };
 
 const DeliveryList: React.FC = () => {
   const navigate = useNavigate();
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [search, setSearch]         = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [currentPage, setCurrentPage]   = useState(1);
-  const [totalPages, setTotalPages]     = useState(1);
-  const [totalCount, setTotalCount]     = useState(0);
+  const [deliveries,    setDeliveries]    = useState<Delivery[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [search,        setSearch]        = useState('');
+  const [statusFilter,  setStatusFilter]  = useState('');
+  const [currentPage,   setCurrentPage]   = useState(1);
+  const [totalPages,    setTotalPages]    = useState(1);
+  const [totalCount,    setTotalCount]    = useState(0);
 
   useEffect(() => { load(); }, [currentPage, statusFilter]);
 
@@ -37,7 +41,8 @@ const DeliveryList: React.FC = () => {
     setLoading(true);
     try {
       const res = await deliveriesAPI.getDeliveries({
-        page: currentPage, limit: 20,
+        page:   currentPage,
+        limit:  20,
         status: statusFilter || undefined,
       });
       setDeliveries(res.data.deliveries || []);
@@ -60,7 +65,6 @@ const DeliveryList: React.FC = () => {
         </Button>
       </div>
 
-      {/* Filters */}
       <Card>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
@@ -87,7 +91,6 @@ const DeliveryList: React.FC = () => {
         </div>
       </Card>
 
-      {/* Table */}
       <Card padding={false}>
         {loading ? (
           <div className="py-16 flex justify-center"><Spinner size="lg" showLabel /></div>
@@ -107,12 +110,13 @@ const DeliveryList: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* FIX: use native <tr><td> for colSpan — TableCell doesn't support it */}
                 {deliveries.length === 0 ? (
-                  <TableRow>
-                    <TableCell className="text-center text-gray-400 py-12" colSpan={8}>
+                  <tr>
+                    <td colSpan={8} className="text-center text-gray-400 py-12 text-sm">
                       No deliveries found.
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 ) : deliveries.map(d => (
                   <TableRow key={d.id} onClick={() => navigate(`/deliveries/${d.id}`)}>
                     <TableCell>

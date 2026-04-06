@@ -1,4 +1,5 @@
 // admin-web/src/pages/Users/UserDetails.tsx
+// FIX: removed unused 'formatDate' import, removed unused 'isAdminAccount' variable
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -8,7 +9,7 @@ import {
 import { usersAPI } from '@/services/api/users';
 import { User as UserType } from '@/types';
 import { Card, Button, Badge, Modal, Alert, Spinner } from '@/components/common';
-import { formatDateTime, formatDate } from '@/utils/helpers';
+import { formatDateTime } from '@/utils/helpers';
 import { USER_ROLES } from '@/utils/constants';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
@@ -95,13 +96,12 @@ const UserDetails: React.FC = () => {
   if (loading) return <div className="flex justify-center py-20"><Spinner size="xl" showLabel /></div>;
   if (!user)   return <div className="text-center py-20"><p className="text-gray-500">User not found.</p><Button className="mt-4" onClick={() => navigate('/users')}>Back</Button></div>;
 
-  const wallet         = (user as any)?.wallet;
-  const adminDept      = (user as any)?.adminDepartment as string | null;
-  const isAdminAccount = ['ADMIN', 'SUPER_ADMIN', 'SUPPORT', 'MODERATOR'].includes(user.role);
+  const wallet    = (user as any)?.wallet;
+  const adminDept = (user as any)?.adminDepartment as string | null;
+  // FIX: removed unused 'isAdminAccount' variable
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" onClick={() => navigate('/users')}><ArrowLeft className="h-5 w-5" /></Button>
@@ -120,7 +120,6 @@ const UserDetails: React.FC = () => {
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex gap-2 flex-wrap">
           {user.isSuspended ? (
             <Button variant="success" loading={acting} onClick={handleActivate}>
@@ -140,7 +139,6 @@ const UserDetails: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left */}
         <div className="lg:col-span-2 space-y-5">
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><User className="h-4 w-4 text-primary-500" />Contact Information</h3>
@@ -154,7 +152,6 @@ const UserDetails: React.FC = () => {
             <InfoRow icon={<User className="h-4 w-4" />}     label="User ID" value={<span className="font-mono text-xs">{user.id}</span>} />
           </Card>
 
-          {/* Activity counts */}
           {(user as any)._count && (
             <Card>
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Activity</h3>
@@ -166,7 +163,6 @@ const UserDetails: React.FC = () => {
             </Card>
           )}
 
-          {/* Suspension info */}
           {user.isSuspended && (
             <Card>
               <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2 text-red-600">
@@ -178,7 +174,6 @@ const UserDetails: React.FC = () => {
           )}
         </div>
 
-        {/* Right */}
         <div className="space-y-5">
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Account Status</h3>
@@ -199,7 +194,6 @@ const UserDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Suspend modal */}
       <Modal isOpen={showSuspend} onClose={() => setShowSuspend(false)} title="Suspend User" size="md"
         footer={<>
           <Button variant="outline" onClick={() => setShowSuspend(false)}>Cancel</Button>
@@ -217,7 +211,6 @@ const UserDetails: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Delete modal */}
       <Modal isOpen={showDelete} onClose={() => setShowDelete(false)} title="Delete User Account" size="md"
         footer={<>
           <Button variant="outline" onClick={() => setShowDelete(false)}>Cancel</Button>

@@ -1,7 +1,7 @@
 // admin-web/src/pages/Corporate/CompanyList.tsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Plus, Search, ChevronRight } from 'lucide-react';
+import { Building2, Search, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/common';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
@@ -9,16 +9,16 @@ import toast from 'react-hot-toast';
 type CompanyStatus = 'PENDING' | 'ACTIVE' | 'SUSPENDED';
 
 interface Company {
-  id:               string;
-  name:             string;
-  email:            string;
-  phone:            string;
-  rcNumber:         string | null;
-  status:           CompanyStatus;
-  billingType:      'PREPAID' | 'POSTPAID';
+  id:                string;
+  name:              string;
+  email:             string;
+  phone:             string;
+  rcNumber:          string | null;
+  status:            CompanyStatus;
+  billingType:       'PREPAID' | 'POSTPAID';
   onboardingFeePaid: boolean;
-  commissionRate:   number;
-  createdAt:        string;
+  commissionRate:    number;
+  createdAt:         string;
   admin: {
     firstName: string;
     lastName:  string;
@@ -34,9 +34,9 @@ interface Company {
 }
 
 const STATUS_STYLES: Record<CompanyStatus, { pill: string; dot: string }> = {
-  PENDING:   { pill: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-400'  },
-  ACTIVE:    { pill: 'bg-green-100 text-green-700',  dot: 'bg-green-500'  },
-  SUSPENDED: { pill: 'bg-red-100   text-red-700',    dot: 'bg-red-500'    },
+  PENDING:   { pill: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400' },
+  ACTIVE:    { pill: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
+  SUSPENDED: { pill: 'bg-red-100   text-red-700',   dot: 'bg-red-500'   },
 };
 
 const CompanyList: React.FC = () => {
@@ -175,7 +175,7 @@ const CompanyList: React.FC = () => {
                     >
                       <td className="py-3 pr-4">
                         <p className="font-semibold text-gray-900">{c.name}</p>
-                        <p className="text-xs text-gray-400">{c.rcNumber ?? 'No RC'} · {c.email}</p>
+                        <p className="text-xs text-gray-400">{c.rcNumber ?? 'No RC'} • {c.email}</p>
                       </td>
                       <td className="py-3 pr-4 text-gray-600">
                         {c.admin.firstName} {c.admin.lastName}

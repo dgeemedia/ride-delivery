@@ -14,7 +14,6 @@ import { VEHICLE_TYPES } from '@/utils/constants';
 import { exportToExcel, exportToCSV, PARTNER_EXPORT_COLUMNS } from '@/utils/exportToExcel';
 import toast from 'react-hot-toast';
 
-// ─── Reusable export dropdown (same as DriverList) ────────────────────────────
 const ExportDropdown: React.FC<{
   onExcel: () => void;
   onCSV: () => void;
@@ -58,7 +57,6 @@ const ExportDropdown: React.FC<{
   );
 };
 
-// ─── Main page ────────────────────────────────────────────────────────────────
 const PartnerList: React.FC = () => {
   const navigate = useNavigate();
   const [partners, setPartners]           = useState<DeliveryPartner[]>([]);
@@ -146,7 +144,6 @@ const PartnerList: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters */}
       <Card>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="md:col-span-2">
@@ -182,7 +179,6 @@ const PartnerList: React.FC = () => {
         </div>
       </Card>
 
-      {/* Table */}
       <Card padding={false}>
         {loading ? (
           <div className="py-16 flex justify-center"><Spinner size="lg" showLabel /></div>
@@ -201,12 +197,13 @@ const PartnerList: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* FIX: use native <tr><td> for colSpan */}
                 {partners.length === 0 ? (
-                  <TableRow>
-                    <TableCell className="text-center text-gray-400 py-12" colSpan={7}>
+                  <tr>
+                    <td colSpan={7} className="text-center text-gray-400 py-12 text-sm">
                       No delivery partners found.
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 ) : partners.map(partner => (
                   <TableRow key={partner.id} onClick={() => navigate(`/partners/${partner.id}`)}>
                     <TableCell>

@@ -1,5 +1,4 @@
 // admin-web/src/types/index.ts
-// REPLACE the existing User interface — adds adminDepartment
 
 export type AdminDepartment = 'RIDES' | 'DELIVERIES' | 'SUPPORT' | null;
 
@@ -10,7 +9,7 @@ export interface User {
   firstName: string;
   lastName: string;
   role: 'CUSTOMER' | 'DRIVER' | 'DELIVERY_PARTNER' | 'ADMIN' | 'SUPER_ADMIN' | 'MODERATOR' | 'SUPPORT';
-  adminDepartment?: AdminDepartment;  // ← new
+  adminDepartment?: AdminDepartment;
   profileImage?: string;
   isActive: boolean;
   isVerified: boolean;
@@ -146,6 +145,13 @@ export interface Payment {
   driverEarnings?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Added for payments.ts ────────────────────────────────────────────────────
+export interface RefundRequest {
+  paymentId: string;
+  amount?: number;
+  reason: string;
 }
 
 export interface Rating {
