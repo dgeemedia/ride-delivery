@@ -1,3 +1,4 @@
+// admin-web/src/pages/Analytics/Performance.tsx
 import React, { useEffect, useState } from 'react';
 import { Card } from '@/components/common';
 import { LineChart, PieChart } from '@/components/charts';
