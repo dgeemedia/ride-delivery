@@ -10,6 +10,7 @@ import { useUIStore } from '@/store/uiStore';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/utils/helpers';
 import api from '@/services/api';
+import logo from '@/assets/images/diakite.png';
 
 interface Counts {
   pendingDrivers:  number;
@@ -171,12 +172,9 @@ const Sidebar: React.FC = () => {
       )}>
 
         {/* Logo header */}
-        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 flex-shrink-0">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-sm">D</span>
-            </div>
-            <span className="text-xl font-bold text-gray-900">Diakite</span>
+          <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 flex-shrink-0">
+            <div className="flex items-center">
+            <img src={logo} alt="Diakite" className="h-8 w-auto" />
           </div>
           {isMobile && (
             <button

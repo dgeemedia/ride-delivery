@@ -1,10 +1,11 @@
-// admin-web/src/Auth/Login.tsx
+// admin-web/src/pages/Auth/Login.tsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { authAPI } from '@/services/api/auth';
 import { Input, Button, Alert } from '@/components/common';
 import toast from 'react-hot-toast';
+import logo from '@/assets/images/diakite.png';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -42,8 +43,8 @@ const Login: React.FC = () => {
       <div className="max-w-md w-full">
         <div className="bg-white rounded-lg shadow-lg p-8">
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-primary-500 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <span className="text-white font-bold text-2xl">D</span>
+            <div className="flex items-center justify-center mx-auto mb-4">
+              <img src={logo} alt="Diakite" className="h-16 w-auto" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900">Diakite Admin</h2>
             <p className="text-gray-600 mt-2">Sign in to your account</p>
