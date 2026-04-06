@@ -64,17 +64,18 @@ const allowedOrigins = [
   'http://localhost:3000',
   process.env.CLIENT_URL,
   process.env.ADMIN_URL,
+  process.env.ADMIN_URL_PREVIEW,
 ].filter(Boolean);
+
+// Vercel preview deploy pattern — covers all auto-generated preview URLs
+const vercelPreviewPattern = /^https:\/\/ride-delivery-.*\.vercel\.app$/;
 
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (
-      process.env.NODE_ENV !== 'production' ||
-      allowedOrigins.includes(origin)
-    ) {
-      return callback(null, true);
-    }
+    if (process.env.NODE_ENV !== 'production') return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (vercelPreviewPattern.test(origin)) return callback(null, true);
     return callback(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
@@ -124,7 +125,6 @@ app.use(
   (req, _res, next) => { req.rawBody = req.body; next(); }
 );
 
-// DuoPay Paystack webhook — only registered when DuoPay is enabled
 if (ENABLE_DUOPAY) {
   app.use(
     '/api/duopay/webhook/paystack',
@@ -187,7 +187,6 @@ app.use('/api/wallet',        walletRoutes);
 app.use('/api/calls',         callRoutes);
 app.use('/api/debug',         debugRoutes);
 
-// Feature-flagged routes
 if (ENABLE_SHIELD)    app.use('/api/shield',    shieldRoutes);
 if (ENABLE_CORPORATE) app.use('/api/corporate', corporateRoutes);
 if (ENABLE_DUOPAY)    app.use('/api/duopay',    duopayRoutes);
