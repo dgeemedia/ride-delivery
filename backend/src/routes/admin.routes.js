@@ -114,6 +114,7 @@ router.post('/notifications/broadcast', authorize('ADMIN','SUPER_ADMIN'), [
 ], adminController.broadcastNotification);
 
 // ONBOARDING BONUS
+router.get('/bonuses/onboarding/preview', authorize('SUPER_ADMIN'), adminController.previewOnboardingBonuses);
 router.post('/bonuses/onboarding', authorize('SUPER_ADMIN'), [
   body('driverBonus').optional().isFloat({ min: 0 }),
   body('partnerBonus').optional().isFloat({ min: 0 }),

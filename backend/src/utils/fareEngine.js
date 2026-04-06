@@ -26,38 +26,11 @@ const prisma = require('../lib/prisma');
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FALLBACK_RATES = {
-  CAR: {
-    baseFare:        500,
-    perKm:           130,
-    perMinute:       15,
-    minimumFare:     500,
-    bookingFee:      100,
-    cancellationFee: 200,
-  },
-  BIKE: {
-    baseFare:        200,
-    perKm:           80,
-    perMinute:       8,
-    minimumFare:     250,
-    bookingFee:      50,
-    cancellationFee: 100,
-  },
-  VAN: {
-    baseFare:        800,
-    perKm:           180,
-    perMinute:       20,
-    minimumFare:     1000,
-    bookingFee:      150,
-    cancellationFee: 300,
-  },
-  MOTORCYCLE: {
-    baseFare:        200,
-    perKm:           80,
-    perMinute:       8,
-    minimumFare:     250,
-    bookingFee:      50,
-    cancellationFee: 100,
-  },
+  CAR:        { baseFare: 500,  perKm: 130, perMinute: 15, minimumFare: 500,  bookingFee: 100, cancellationFee: 200 },
+  BIKE:       { baseFare: 200,  perKm: 80,  perMinute: 8,  minimumFare: 250,  bookingFee: 50,  cancellationFee: 100 },
+  VAN:        { baseFare: 800,  perKm: 180, perMinute: 20, minimumFare: 1000, bookingFee: 150, cancellationFee: 300 },
+  MOTORCYCLE: { baseFare: 200,  perKm: 80,  perMinute: 8,  minimumFare: 250,  bookingFee: 50,  cancellationFee: 100 },
+  TRICYCLE:   { baseFare: 300,  perKm: 100, perMinute: 10, minimumFare: 300,  bookingFee: 75,  cancellationFee: 150 },
 };
 
 const FALLBACK_DELIVERY = {
@@ -99,25 +72,41 @@ const _loadFromDB = async () => {
     where: {
       key: {
         in: [
-          // Rides
-          'ride_base_fare_car',   'ride_per_km_car',
-          'ride_base_fare_bike',  'ride_per_km_bike',
-          'ride_base_fare_van',   'ride_per_km_van',
+          // Car
+          'ride_base_fare_car',         'ride_per_km_car',
+          'ride_per_minute_car',        'ride_minimum_fare_car',
+          'ride_cancellation_fee_car',
+          // Bike
+          'ride_base_fare_bike',        'ride_per_km_bike',
+          'ride_per_minute_bike',       'ride_minimum_fare_bike',
+          'ride_cancellation_fee_bike',
+          // Van
+          'ride_base_fare_van',         'ride_per_km_van',
+          'ride_per_minute_van',        'ride_minimum_fare_van',
+          'ride_cancellation_fee_van',
+          // Tricycle
+          'ride_base_fare_tricycle',    'ride_per_km_tricycle',
+          'ride_per_minute_tricycle',   'ride_minimum_fare_tricycle',
+          'ride_cancellation_fee_tricycle',
+          // Shared
           'ride_booking_fee',
           'platform_commission_rides',
-
           // Deliveries
           'delivery_base_fee',
           'delivery_per_km',
           'delivery_weight_fee_per_kg',
           'platform_commission_deliveries',
+          // Surge
+          'surge_windows',
         ],
       },
     },
   });
 
   const s = {};
-  rows.forEach(r => { s[r.key] = parseFloat(r.value); });
+  rows.forEach(r => {
+    s[r.key] = r.key === 'surge_windows' ? r.value : parseFloat(r.value);
+  });
 
   const n = (key, fallback) => (isNaN(s[key]) ? fallback : s[key]);
 
@@ -125,43 +114,51 @@ const _loadFromDB = async () => {
 
   const rates = {
     CAR: {
-      baseFare:        n('ride_base_fare_car',  500),
-      perKm:           n('ride_per_km_car',     130),
-      perMinute:       FALLBACK_RATES.CAR.perMinute,   // not yet in admin UI
-      minimumFare:     n('ride_base_fare_car',  500),   // min = baseFare
+      baseFare:        n('ride_base_fare_car',         500),
+      perKm:           n('ride_per_km_car',            130),
+      perMinute:       n('ride_per_minute_car',        15),
+      minimumFare:     n('ride_minimum_fare_car',      500),
       bookingFee,
-      cancellationFee: FALLBACK_RATES.CAR.cancellationFee,
+      cancellationFee: n('ride_cancellation_fee_car',  200),
     },
     BIKE: {
-      baseFare:        n('ride_base_fare_bike', 200),
-      perKm:           n('ride_per_km_bike',    80),
-      perMinute:       FALLBACK_RATES.BIKE.perMinute,
-      minimumFare:     n('ride_base_fare_bike', 250),
-      bookingFee:      Math.round(bookingFee * 0.5),   // bikes get half booking fee
-      cancellationFee: FALLBACK_RATES.BIKE.cancellationFee,
+      baseFare:        n('ride_base_fare_bike',        200),
+      perKm:           n('ride_per_km_bike',           80),
+      perMinute:       n('ride_per_minute_bike',       8),
+      minimumFare:     n('ride_minimum_fare_bike',     250),
+      bookingFee:      Math.round(bookingFee * 0.5),
+      cancellationFee: n('ride_cancellation_fee_bike', 100),
     },
     VAN: {
-      baseFare:        n('ride_base_fare_van',  800),
-      perKm:           n('ride_per_km_van',     180),
-      perMinute:       FALLBACK_RATES.VAN.perMinute,
-      minimumFare:     n('ride_base_fare_van',  1000),
-      bookingFee:      Math.round(bookingFee * 1.5),   // vans pay 1.5× booking fee
-      cancellationFee: FALLBACK_RATES.VAN.cancellationFee,
+      baseFare:        n('ride_base_fare_van',         800),
+      perKm:           n('ride_per_km_van',            180),
+      perMinute:       n('ride_per_minute_van',        20),
+      minimumFare:     n('ride_minimum_fare_van',      1000),
+      bookingFee:      Math.round(bookingFee * 1.5),
+      cancellationFee: n('ride_cancellation_fee_van',  300),
     },
     MOTORCYCLE: {
-      baseFare:        n('ride_base_fare_bike', 200),  // shares bike rates
-      perKm:           n('ride_per_km_bike',    80),
-      perMinute:       FALLBACK_RATES.MOTORCYCLE.perMinute,
-      minimumFare:     250,
+      baseFare:        n('ride_base_fare_bike',        200),
+      perKm:           n('ride_per_km_bike',           80),
+      perMinute:       n('ride_per_minute_bike',       8),
+      minimumFare:     n('ride_minimum_fare_bike',     250),
       bookingFee:      Math.round(bookingFee * 0.5),
-      cancellationFee: FALLBACK_RATES.MOTORCYCLE.cancellationFee,
+      cancellationFee: n('ride_cancellation_fee_bike', 100),
+    },
+    TRICYCLE: {
+      baseFare:        n('ride_base_fare_tricycle',        300),
+      perKm:           n('ride_per_km_tricycle',           100),
+      perMinute:       n('ride_per_minute_tricycle',       10),
+      minimumFare:     n('ride_minimum_fare_tricycle',     300),
+      bookingFee:      Math.round(bookingFee * 0.75),
+      cancellationFee: n('ride_cancellation_fee_tricycle', 150),
     },
   };
 
   const delivery = {
-    baseFee:           n('delivery_base_fee',          500),
-    perKm:             n('delivery_per_km',            80),
-    weightFeePerKg:    n('delivery_weight_fee_per_kg', 50),
+    baseFee:            n('delivery_base_fee',           500),
+    perKm:              n('delivery_per_km',             80),
+    weightFeePerKg:     n('delivery_weight_fee_per_kg',  50),
     platformCommission: n('platform_commission_deliveries', 15) / 100,
   };
 
@@ -170,7 +167,17 @@ const _loadFromDB = async () => {
     deliveryCommission: n('platform_commission_deliveries',  15) / 100,
   };
 
-  return { rates, delivery, platform, loadedAt: Date.now() };
+  // Load surge windows from DB, fall back to hardcoded
+  let surgeWindows = SURGE_WINDOWS;
+  if (s['surge_windows']) {
+    try {
+      surgeWindows = typeof s['surge_windows'] === 'string'
+        ? JSON.parse(s['surge_windows'])
+        : s['surge_windows'];
+    } catch {}
+  }
+
+  return { rates, delivery, platform, surgeWindows, loadedAt: Date.now() };
 };
 
 /**
@@ -235,9 +242,11 @@ const SURGE_WINDOWS = [
 ];
 
 const getSurgeMultiplier = (atTime = new Date()) => {
+  // Use cached surge windows if available, otherwise fall back to hardcoded
+  const windows = (_cache && _cache.surgeWindows) ? _cache.surgeWindows : SURGE_WINDOWS;
   const day  = atTime.getDay();
   const hour = atTime.getHours();
-  for (const w of SURGE_WINDOWS) {
+  for (const w of windows) {
     if (w.days.includes(day) && hour >= w.hourStart && hour < w.hourEnd) {
       return { multiplier: w.multiplier, label: w.label };
     }

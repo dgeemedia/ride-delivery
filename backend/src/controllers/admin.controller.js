@@ -1588,10 +1588,6 @@ exports.suspendCompany = async (req, res) => {
 
 // ─── DUOPAY ADMIN ─────────────────────────────────────────────────────────────
 
-/**
- * @desc  Platform-wide DuoPay stats for the monitor page
- * @route GET /api/admin/duopay/stats
- */
 exports.getDuoPayStats = async (req, res) => {
   const [
     totalAccounts,
@@ -1625,10 +1621,6 @@ exports.getDuoPayStats = async (req, res) => {
   });
 };
 
-/**
- * @desc  List DuoPay accounts — paginated, filterable by status
- * @route GET /api/admin/duopay/accounts?status=SUSPENDED&page=1&limit=15
- */
 exports.getDuoPayAccounts = async (req, res) => {
   const { page = 1, limit = 15, status } = req.query;
   const skip  = (parseInt(page) - 1) * parseInt(limit);
@@ -1664,8 +1656,7 @@ exports.getDuoPayAccounts = async (req, res) => {
 };
 
 /**
- * @desc  Waive all OVERDUE transactions for a DuoPay account and reactivate it.
- *        Used as a goodwill write-off for loyal customers.
+ * @desc  Waive ALL overdue transactions for an account and reactivate it (bulk write-off)
  * @route POST /api/admin/duopay/accounts/:id/waive
  */
 exports.waiveDuoPayAccount = async (req, res) => {
@@ -1679,7 +1670,6 @@ exports.waiveDuoPayAccount = async (req, res) => {
 
   const overdueAmount = account.transactions.reduce((s, t) => s + t.amount, 0);
 
-  // Mark all overdue transactions as waived and zero out the used balance
   await prisma.$transaction([
     prisma.duoPayTransaction.updateMany({
       where: { duoPayAccountId: id, status: 'OVERDUE' },
@@ -1688,10 +1678,10 @@ exports.waiveDuoPayAccount = async (req, res) => {
     prisma.duoPayAccount.update({
       where: { id },
       data:  {
-        status:       'ACTIVE',
-        usedBalance:  0,
-        suspendedAt:  null,
-        activatedAt:  new Date(),
+        status:      'ACTIVE',
+        usedBalance: 0,
+        suspendedAt: null,
+        activatedAt: new Date(),
       },
     }),
   ]);
@@ -1699,7 +1689,7 @@ exports.waiveDuoPayAccount = async (req, res) => {
   await notificationService.notify({
     userId:  account.userId,
     title:   '🎁 DuoPay Balance Cleared',
-    message: `Your outstanding DuoPay balance has been waived by the DuoRide team. Your account is now reactivated. Please make timely repayments going forward.`,
+    message: 'Your outstanding DuoPay balance has been waived by the Diakite team. Your account is now reactivated. Please make timely repayments going forward.',
     type:    'duopay_waived',
     data:    { accountId: id, overdueAmount },
   });
@@ -1721,16 +1711,19 @@ exports.waiveDuoPayAccount = async (req, res) => {
 };
 
 /**
- * @desc  Waive a single DuoPay transaction
+ * @desc  Waive a single overdue transaction; reactivate account if none remain
  * @route POST /api/admin/duopay/accounts/:id/transactions/:txId/waive
  */
 exports.waiveDuoPayTransaction = async (req, res) => {
   const { id, txId } = req.params;
 
   const tx = await prisma.duoPayTransaction.findUnique({ where: { id: txId } });
-  if (!tx)                          throw new AppError('Transaction not found', 404);
-  if (tx.duoPayAccountId !== id)    throw new AppError('Transaction does not belong to this account', 400);
-  if (tx.status !== 'OVERDUE')      throw new AppError('Only OVERDUE transactions can be waived', 400);
+  if (!tx)                        throw new AppError('Transaction not found', 404);
+  if (tx.duoPayAccountId !== id)  throw new AppError('Transaction does not belong to this account', 400);
+  if (tx.status !== 'OVERDUE')    throw new AppError('Only OVERDUE transactions can be waived', 400);
+
+  const account = await prisma.duoPayAccount.findUnique({ where: { id } });
+  if (!account) throw new AppError('DuoPay account not found', 404);
 
   await prisma.$transaction([
     prisma.duoPayTransaction.update({
@@ -1743,12 +1736,11 @@ exports.waiveDuoPayTransaction = async (req, res) => {
     }),
   ]);
 
-  // If no more overdue transactions remain, reactivate the account
   const remainingOverdue = await prisma.duoPayTransaction.count({
     where: { duoPayAccountId: id, status: 'OVERDUE' },
   });
 
-if (remainingOverdue === 0) {
+  if (remainingOverdue === 0) {
     await prisma.duoPayAccount.update({
       where: { id },
       data:  { status: 'ACTIVE', suspendedAt: null, activatedAt: new Date() },
@@ -1778,10 +1770,6 @@ if (remainingOverdue === 0) {
   });
 };
 
-/**
- * @desc  Manually trigger the overdue check (same logic as the cron job)
- * @route POST /api/admin/duopay/run-overdue-check
- */
 exports.runDuoPayOverdueCheck = async (req, res) => {
   const { markOverdue } = require('../services/duopay.service');
   const result = await markOverdue();
@@ -1799,6 +1787,33 @@ exports.runDuoPayOverdueCheck = async (req, res) => {
     success: true,
     message: `Overdue check complete. ${result.overdue} transactions marked overdue, ${result.suspended} accounts suspended.`,
     data:    result,
+  });
+};
+
+// ─── ONBOARDING BONUS PREVIEW (dry run) ──────────────────────────────────────
+
+/**
+ * @desc  Count eligible drivers/partners without crediting anyone
+ * @route GET /api/admin/bonuses/onboarding/preview
+ */
+exports.previewOnboardingBonuses = async (req, res) => {
+  const [eligibleDrivers, eligiblePartners] = await Promise.all([
+    prisma.driverProfile.findMany({
+      where:   { isApproved: true },
+      include: { user: { include: { wallet: { select: { balance: true } } } } },
+    }),
+    prisma.deliveryPartnerProfile.findMany({
+      where:   { isApproved: true },
+      include: { user: { include: { wallet: { select: { balance: true } } } } },
+    }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      eligibleDrivers:  eligibleDrivers.filter(d  => (d.user.wallet?.balance ?? 0) === 0).length,
+      eligiblePartners: eligiblePartners.filter(p => (p.user.wallet?.balance ?? 0) === 0).length,
+    },
   });
 };
 

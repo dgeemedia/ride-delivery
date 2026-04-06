@@ -33,27 +33,24 @@ model User {
   activityLogs         ActivityLog[]
   adminProfile         AdminProfile?
   appFeedback          AppFeedback[]
+  company              Company?                @relation("CompanyAdmin")
+  companyEmployments   CompanyEmployee[]       @relation("CompanyEmployees")
   customerDeliveries   Delivery[]              @relation("CustomerDeliveries")
   partnerDeliveries    Delivery[]              @relation("PartnerDeliveries")
   deliveryProfile      DeliveryPartnerProfile?
   driverProfile        DriverProfile?
+  duoPayAccount        DuoPayAccount?
   notifications        Notification[]
   payments             Payment[]
   payouts              Payout[]
   ratings              Rating[]
   customerRides        Ride[]                  @relation("CustomerRides")
   driverRides          Ride[]                  @relation("DriverRides")
+  shieldBeneficiaries  ShieldBeneficiary[]
+  shieldSessions       ShieldSession[]
   supportTickets       SupportTicket[]
   ticketReplies        TicketReply[]           @relation("TicketReplyAuthor")
   wallet               Wallet?
-  // ── SHIELD ──────────────────────────────────────
-  shieldBeneficiaries  ShieldBeneficiary[]
-  shieldSessions       ShieldSession[]
-  // ── CORPORATE ───────────────────────────────────
-  company              Company?                @relation("CompanyAdmin")
-  companyEmployments   CompanyEmployee[]       @relation("CompanyEmployees")
-  // ── DUOPAY ──────────────────────────────────────
-  duoPayAccount        DuoPayAccount?
 
   @@index([email])
   @@index([phone])
@@ -113,7 +110,7 @@ model DeliveryPartnerProfile {
 }
 
 model Ride {
-  id                 String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  id                 String             @id @default(dbgenerated("(gen_random_uuid())::text"))
   customerId         String
   driverId           String?
   pickupAddress      String
@@ -122,13 +119,13 @@ model Ride {
   dropoffAddress     String
   dropoffLat         Float
   dropoffLng         Float
-  status             RideStatus     @default(REQUESTED)
+  status             RideStatus         @default(REQUESTED)
   distance           Float?
   duration           Int?
   estimatedFare      Float
   actualFare         Float?
   promoCode          String?
-  requestedAt        DateTime       @default(now())
+  requestedAt        DateTime           @default(now())
   acceptedAt         DateTime?
   arrivedAt          DateTime?
   startedAt          DateTime?
@@ -136,17 +133,14 @@ model Ride {
   cancelledAt        DateTime?
   notes              String?
   cancellationReason String?
-  // ── CORPORATE ───────────────────────────────────
-  isCorporate        Boolean        @default(false)
+  isCorporate        Boolean            @default(false)
   corporateTrip      CorporateTrip?
-  // ── SHIELD ──────────────────────────────────────
-  shieldSession      ShieldSession?
-  // ── DUOPAY ──────────────────────────────────────
   duoPayTransaction  DuoPayTransaction?
   payment            Payment?
   rating             Rating?
-  customer           User           @relation("CustomerRides", fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  driver             User?          @relation("DriverRides", fields: [driverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customer           User               @relation("CustomerRides", fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  driver             User?              @relation("DriverRides", fields: [driverId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  shieldSession      ShieldSession?
 
   @@index([customerId])
   @@index([driverId])
@@ -186,20 +180,19 @@ model Delivery {
   notes              String?
   cancellationReason String?
   inTransitAt        DateTime?      @db.Timestamptz(6)
-  // ── CORPORATE ───────────────────────────────────
   isCorporate        Boolean        @default(false)
   corporateTrip      CorporateTrip?
-  // ── SHIELD ──────────────────────────────────────
-  shieldSession      ShieldSession?
   customer           User           @relation("CustomerDeliveries", fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   partner            User?          @relation("PartnerDeliveries", fields: [partnerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   payment            Payment?
   rating             Rating?
+  shieldSession      ShieldSession?
 
   @@index([customerId])
   @@index([partnerId])
   @@index([status])
   @@index([requestedAt])
+  @@index([isCorporate])
 }
 
 model Payment {
@@ -428,10 +421,6 @@ model AppFeedback {
   @@index([createdAt])
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SHIELD — Safety Guardian Feature
-// ─────────────────────────────────────────────────────────────────────────────
-
 model ShieldBeneficiary {
   id        String   @id @default(dbgenerated("(gen_random_uuid())::text"))
   userId    String
@@ -439,9 +428,9 @@ model ShieldBeneficiary {
   phone     String
   email     String?
   isDefault Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([userId])
 }
@@ -460,13 +449,13 @@ model ShieldSession {
   autoTriggered    Boolean   @default(false)
   driverAlerted    Boolean   @default(false)
   arrivedSafe      Boolean   @default(false)
-  lastPingAt       DateTime?
-  expiresAt        DateTime
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @default(now()) @updatedAt
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ride             Ride?     @relation(fields: [rideId], references: [id], onDelete: NoAction)
-  delivery         Delivery? @relation(fields: [deliveryId], references: [id], onDelete: NoAction)
+  lastPingAt       DateTime? @db.Timestamptz(6)
+  expiresAt        DateTime  @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  delivery         Delivery? @relation(fields: [deliveryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ride             Ride?     @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([token])
   @@index([userId])
@@ -474,46 +463,42 @@ model ShieldSession {
   @@index([expiresAt])
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CORPORATE ACCOUNTS
-// ─────────────────────────────────────────────────────────────────────────────
-
 model Company {
-  id                 String            @id @default(dbgenerated("(gen_random_uuid())::text"))
-  name               String
-  rcNumber           String?           @unique
-  email              String            @unique
-  phone              String
-  address            String?
-  logoUrl            String?
-  adminUserId        String            @unique
-  billingType        BillingType       @default(PREPAID)
-  status             CompanyStatus     @default(PENDING)
-  commissionRate     Float             @default(0.18)
-  onboardingFeePaid  Boolean           @default(false)
-  onboardingPaidAt   DateTime?
-  monthlyMinimum     Float             @default(100000)
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @default(now()) @updatedAt
-  admin              User              @relation("CompanyAdmin", fields: [adminUserId], references: [id], onDelete: NoAction)
-  wallet             CompanyWallet?
-  employees          CompanyEmployee[]
-  trips              CorporateTrip[]
+  id                String            @id @default(dbgenerated("(gen_random_uuid())::text"))
+  name              String
+  rcNumber          String?           @unique
+  email             String            @unique
+  phone             String
+  address           String?
+  logoUrl           String?
+  adminUserId       String            @unique
+  billingType       BillingType       @default(PREPAID)
+  status            CompanyStatus     @default(PENDING)
+  commissionRate    Float             @default(0.18)
+  onboardingFeePaid Boolean           @default(false)
+  onboardingPaidAt  DateTime?         @db.Timestamptz(6)
+  monthlyMinimum    Float             @default(100000)
+  createdAt         DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
+  admin             User              @relation("CompanyAdmin", fields: [adminUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees         CompanyEmployee[]
+  wallet            CompanyWallet?
+  trips             CorporateTrip[]
 
   @@index([status])
   @@index([adminUserId])
 }
 
 model CompanyWallet {
-  id                   String                     @id @default(dbgenerated("(gen_random_uuid())::text"))
-  companyId            String                     @unique
-  balance              Float                      @default(0)
-  currency             String                     @default("NGN")
-  lowBalanceThreshold  Float                      @default(50000)
-  createdAt            DateTime                   @default(now())
-  updatedAt            DateTime                   @default(now()) @updatedAt
-  company              Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  transactions         CompanyWalletTransaction[]
+  id                  String                     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  companyId           String                     @unique(map: "CompanyWallet_unique")
+  balance             Float                      @default(0)
+  currency            String                     @default("NGN")
+  lowBalanceThreshold Float                      @default(50000)
+  createdAt           DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+  company             Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  transactions        CompanyWalletTransaction[]
 
   @@index([companyId])
 }
@@ -524,67 +509,63 @@ model CompanyWalletTransaction {
   type        String
   amount      Float
   description String
-  reference   String?       @unique
+  reference   String?       @unique(map: "CompanyWalletTransaction_ref_key")
   status      String        @default("COMPLETED")
-  createdAt   DateTime      @default(now())
-  wallet      CompanyWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(6)
+  wallet      CompanyWallet @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([walletId])
-  @@index([createdAt])
+  @@index([createdAt], map: "CompanyWalletTx_createdAt_idx")
+  @@index([walletId], map: "CompanyWalletTx_walletId_idx")
 }
 
 model CompanyEmployee {
-  id                       String        @id @default(dbgenerated("(gen_random_uuid())::text"))
-  companyId                String
-  userId                   String
-  monthlyLimit             Float         @default(30000)
-  currentMonthSpend        Float         @default(0)
-  spendResetDate           DateTime?
-  department               String?
-  jobTitle                 String?
-  isActive                 Boolean       @default(true)
-  restrictToBusinessHours  Boolean       @default(false)
-  requireTripPurpose       Boolean       @default(false)
-  inviteStatus             InviteStatus  @default(PENDING)
-  invitedAt                DateTime      @default(now())
-  joinedAt                 DateTime?
-  createdAt                DateTime      @default(now())
-  updatedAt                DateTime      @default(now()) @updatedAt
-  company                  Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  user                     User          @relation("CompanyEmployees", fields: [userId], references: [id], onDelete: NoAction)
-  trips                    CorporateTrip[]
+  id                      String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  companyId               String
+  userId                  String
+  monthlyLimit            Float           @default(30000)
+  currentMonthSpend       Float           @default(0)
+  spendResetDate          DateTime?       @db.Timestamptz(6)
+  department              String?
+  jobTitle                String?
+  isActive                Boolean         @default(true)
+  restrictToBusinessHours Boolean         @default(false)
+  requireTripPurpose      Boolean         @default(false)
+  inviteStatus            InviteStatus    @default(PENDING)
+  invitedAt               DateTime        @default(now()) @db.Timestamptz(6)
+  joinedAt                DateTime?       @db.Timestamptz(6)
+  createdAt               DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+  company                 Company         @relation(fields: [companyId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user                    User            @relation("CompanyEmployees", fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trips                   CorporateTrip[]
 
-  @@unique([companyId, userId])
+  @@unique([companyId, userId], map: "CompanyEmployee_unique")
   @@index([companyId])
   @@index([userId])
-  @@index([inviteStatus])
+  @@index([inviteStatus], map: "CompanyEmployee_invite_idx")
 }
 
 model CorporateTrip {
   id               String          @id @default(dbgenerated("(gen_random_uuid())::text"))
   rideId           String?         @unique
-  deliveryId       String?         @unique
+  deliveryId       String?         @unique(map: "CorporateTrip_delId_key")
   companyId        String
   employeeId       String
   purpose          String?
   fare             Float
   commissionAmount Float
-  billedAt         DateTime?
+  billedAt         DateTime?       @db.Timestamptz(6)
   invoiceId        String?
-  createdAt        DateTime        @default(now())
-  company          Company         @relation(fields: [companyId], references: [id], onDelete: NoAction)
-  employee         CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: NoAction)
-  ride             Ride?           @relation(fields: [rideId], references: [id], onDelete: NoAction)
-  delivery         Delivery?       @relation(fields: [deliveryId], references: [id], onDelete: NoAction)
+  createdAt        DateTime        @default(now()) @db.Timestamptz(6)
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  delivery         Delivery?       @relation(fields: [deliveryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employee         CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ride             Ride?           @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([companyId])
   @@index([employeeId])
   @@index([createdAt])
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DUOPAY — Ride Now, Pay Later
-// ─────────────────────────────────────────────────────────────────────────────
 
 model DuoPayAccount {
   id                       String              @id @default(dbgenerated("(gen_random_uuid())::text"))
@@ -598,42 +579,38 @@ model DuoPayAccount {
   paystackCustomerCode     String?
   cardLast4                String?
   cardBrand                String?
-  activatedAt              DateTime?
-  suspendedAt              DateTime?
-  nextRepaymentDate        DateTime?
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @default(now()) @updatedAt
-  user                     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activatedAt              DateTime?           @db.Timestamptz(6)
+  suspendedAt              DateTime?           @db.Timestamptz(6)
+  nextRepaymentDate        DateTime?           @db.Timestamptz(6)
+  createdAt                DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+  user                     User                @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   transactions             DuoPayTransaction[]
 
   @@index([userId])
   @@index([status])
-  @@index([nextRepaymentDate])
+  @@index([nextRepaymentDate], map: "DuoPayAccount_repaymentDate_idx")
 }
 
 model DuoPayTransaction {
-  id                 String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  id                 String         @id @default(dbgenerated("(gen_random_uuid())::text"))
   duoPayAccountId    String
-  rideId             String?          @unique
+  rideId             String?        @unique
   amount             Float
-  dueDate            DateTime
-  paidAt             DateTime?
-  status             DuoPayTxStatus   @default(PENDING)
-  repaymentReference String?          @unique
-  reminderSentAt     DateTime?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @default(now()) @updatedAt
-  account            DuoPayAccount    @relation(fields: [duoPayAccountId], references: [id], onDelete: Cascade)
-  ride               Ride?            @relation(fields: [rideId], references: [id], onDelete: NoAction)
+  dueDate            DateTime       @db.Timestamptz(6)
+  paidAt             DateTime?      @db.Timestamptz(6)
+  status             DuoPayTxStatus @default(PENDING)
+  repaymentReference String?        @unique(map: "DuoPayTransaction_ref_key")
+  reminderSentAt     DateTime?      @db.Timestamptz(6)
+  createdAt          DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+  account            DuoPayAccount  @relation(fields: [duoPayAccountId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "DuoPayTransaction_accountId_fkey")
+  ride               Ride?          @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([duoPayAccountId])
-  @@index([status])
-  @@index([dueDate])
+  @@index([duoPayAccountId], map: "DuoPayTx_accountId_idx")
+  @@index([dueDate], map: "DuoPayTx_dueDate_idx")
+  @@index([status], map: "DuoPayTx_status_idx")
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ENUMS
-// ─────────────────────────────────────────────────────────────────────────────
 
 enum UserRole {
   CUSTOMER
@@ -679,8 +656,6 @@ enum PaymentMethod {
   CASH
   CARD
   WALLET
-  CORPORATE
-  DUOPAY
 }
 
 enum VehicleType {
@@ -688,6 +663,7 @@ enum VehicleType {
   CAR
   MOTORCYCLE
   VAN
+  TRICYCLE
 }
 
 enum WalletTxType {
