@@ -45,6 +45,7 @@ export const VEHICLE_TYPES = {
   CAR: 'Car',
   MOTORCYCLE: 'Motorcycle',
   VAN: 'Van',
+  TRICYCLE:   'Tricycle',
 } as const;
 
 export const STATUS_COLORS = {

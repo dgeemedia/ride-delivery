@@ -1,9 +1,15 @@
 // backend/src/controllers/partner.controller.js
+//
+// FIX: requestPayout — was checking wallet.balance directly, which allowed the
+// non-withdrawable onboarding bonus to be cashed out. Now uses
+// getWithdrawableBalance() from admin.controller to exclude bonus credits.
+
 const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
+const { getWithdrawableBalance } = require('./admin.controller'); // ← FIX
 
 /**
  * @desc    Create or update delivery partner profile
@@ -280,14 +286,18 @@ exports.uploadDocuments = async (req, res) => {
   res.status(200).json({ success: true, message: 'Documents uploaded successfully', data: { profile: updatedProfile } });
 };
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // PAYOUT SYSTEM
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * @desc    Request a payout to bank account
  * @route   POST /api/partners/payout/request
  * @access  Private (DELIVERY_PARTNER)
+ *
+ * FIX: The original checked wallet.balance directly, allowing the non-withdrawable
+ * onboarding bonus to be cashed out. Now uses getWithdrawableBalance() which
+ * subtracts any credits whose description contains "non-withdrawable".
  */
 exports.requestPayout = async (req, res) => {
   const errors = validationResult(req);
@@ -300,9 +310,12 @@ exports.requestPayout = async (req, res) => {
   if (amount < 1000) throw new AppError('Minimum payout amount is ₦1,000', 400);
 
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
-  if (!wallet || wallet.balance < amount) {
-    throw new AppError('Insufficient wallet balance for payout', 400);
-  }
+  if (!wallet) throw new AppError('Wallet not found', 404);
+
+  // ── FIX: use withdrawable balance, not raw balance ──
+  const withdrawable = await getWithdrawableBalance(wallet);
+  if (withdrawable < amount)
+    throw new AppError('Insufficient withdrawable balance for payout', 400);
 
   const accountVerify = await paymentService.paystackVerifyAccount(accountNumber, bankCode).catch(() => null);
   if (!accountVerify) throw new AppError('Unable to verify bank account. Please check details.', 400);

@@ -18,13 +18,16 @@ router.use(authenticate);
  * POST /api/drivers/profile
  * Create or update driver profile + vehicle info.
  * Document URLs are required on first submission.
+ *
+ * FIX: Added TRICYCLE to vehicleType allowlist — it is present in VEHICLE_TYPES
+ * constants, the VehicleType enum, and the DB schema but was missing here.
  */
 router.post(
   '/profile',
   authorize('DRIVER'),
   [
     body('licenseNumber').notEmpty(),
-    body('vehicleType').isIn(['BIKE', 'CAR', 'MOTORCYCLE', 'VAN']),
+    body('vehicleType').isIn(['BIKE', 'CAR', 'MOTORCYCLE', 'VAN', 'TRICYCLE']), // ← FIX
     body('vehicleMake').notEmpty(),
     body('vehicleModel').notEmpty(),
     body('vehicleYear').isInt({ min: 1990, max: new Date().getFullYear() + 1 }),
@@ -113,7 +116,8 @@ router.get('/nearby-requests', authorize('DRIVER'), ctrl.getNearbyRequests);
 /**
  * POST /api/drivers/payout/request
  * Verify bank account → create Paystack recipient → initiate transfer.
- * Minimum payout ₦1,000. Deducts wallet balance immediately.
+ * Minimum payout ₦1,000. Deducts withdrawable wallet balance only
+ * (non-withdrawable onboarding bonus is excluded).
  */
 router.post(
   '/payout/request',

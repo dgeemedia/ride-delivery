@@ -12,12 +12,15 @@ router.use(authenticate);
  * @route   POST /api/partners/profile
  * @desc    Create or update delivery partner profile
  * @access  Private (DELIVERY_PARTNER)
+ *
+ * FIX: Added TRICYCLE to vehicleType allowlist — it is present in VEHICLE_TYPES
+ * constants, the VehicleType enum, and the DB schema but was missing here.
  */
 router.post(
   '/profile',
   authorize('DELIVERY_PARTNER'),
   [
-    body('vehicleType').isIn(['BIKE', 'CAR', 'MOTORCYCLE', 'VAN']),
+    body('vehicleType').isIn(['BIKE', 'CAR', 'MOTORCYCLE', 'VAN', 'TRICYCLE']), // ← FIX
     body('vehiclePlate').optional().isString(),
     body('idImageUrl').optional().isURL(),
     body('vehicleImageUrl').optional().isURL()
@@ -86,7 +89,7 @@ router.post(
 
 /**
  * @route   POST /api/partners/payout/request
- * @desc    Request wallet payout to bank
+ * @desc    Request wallet payout to bank (withdrawable balance only)
  * @access  Private (DELIVERY_PARTNER)
  */
 router.post(

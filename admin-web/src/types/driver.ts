@@ -30,6 +30,7 @@ export enum VehicleType {
   CAR = 'CAR',
   MOTORCYCLE = 'MOTORCYCLE',
   VAN = 'VAN',
+  TRICYCLE = 'TRICYCLE',
 }
 
 export interface DriverDocuments {
