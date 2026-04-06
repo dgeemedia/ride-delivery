@@ -27,13 +27,20 @@ import TicketDetail       from '@/pages/Support/TicketDetail';
 import PaymentList        from '@/pages/Payments/PaymentList';
 import Analytics          from '@/pages/Analytics/Overview';
 import GeneralSettings    from '@/pages/Settings/GeneralSettings';
+import NotificationsPage  from '@/pages/Notifications/NotificationsPage';
+
+// Feature-flagged page imports — only used when flags are enabled
 import ShieldMonitor      from '@/pages/Shield/ShieldMonitor';
 import ShieldSession      from '@/pages/Shield/ShieldSession';
 import CompanyList        from '@/pages/Corporate/CompanyList';
 import CompanyDetails     from '@/pages/Corporate/CompanyDetails';
 import DuoPayMonitor      from '@/pages/DuoPay/DuoPayMonitor';
 import DuoPayDefaults     from '@/pages/DuoPay/DuoPayDefaults';
-import NotificationsPage  from '@/pages/Notifications/NotificationsPage';
+
+// ─── Feature flags (set in admin-web/.env) ────────────────────────────────────
+const ENABLE_SHIELD    = import.meta.env.VITE_ENABLE_SHIELD    === 'true';
+const ENABLE_CORPORATE = import.meta.env.VITE_ENABLE_CORPORATE === 'true';
+const ENABLE_DUOPAY    = import.meta.env.VITE_ENABLE_DUOPAY    === 'true';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
@@ -89,18 +96,32 @@ function App() {
           <Route path="/support/tickets"     element={<ProtectedRoute><TicketList /></ProtectedRoute>} />
           <Route path="/support/tickets/:id" element={<ProtectedRoute><TicketDetail /></ProtectedRoute>} />
 
+          {/* ─── Feature-flagged routes ─────────────────────────────────────── */}
+
           {/* SHIELD */}
-          <Route path="/shield"     element={<ProtectedRoute><ShieldMonitor /></ProtectedRoute>} />
-          <Route path="/shield/:id" element={<ProtectedRoute><ShieldSession /></ProtectedRoute>} />
+          {ENABLE_SHIELD && (
+            <>
+              <Route path="/shield"     element={<ProtectedRoute><ShieldMonitor /></ProtectedRoute>} />
+              <Route path="/shield/:id" element={<ProtectedRoute><ShieldSession /></ProtectedRoute>} />
+            </>
+          )}
 
           {/* Corporate */}
-          <Route path="/corporate"       element={<ProtectedRoute><CompanyList /></ProtectedRoute>} />
-          <Route path="/corporate/trips" element={<ProtectedRoute><CompanyList /></ProtectedRoute>} />
-          <Route path="/corporate/:id"   element={<ProtectedRoute><CompanyDetails /></ProtectedRoute>} />
+          {ENABLE_CORPORATE && (
+            <>
+              <Route path="/corporate"       element={<ProtectedRoute><CompanyList /></ProtectedRoute>} />
+              <Route path="/corporate/trips" element={<ProtectedRoute><CompanyList /></ProtectedRoute>} />
+              <Route path="/corporate/:id"   element={<ProtectedRoute><CompanyDetails /></ProtectedRoute>} />
+            </>
+          )}
 
           {/* DuoPay */}
-          <Route path="/duopay"          element={<ProtectedRoute><DuoPayMonitor /></ProtectedRoute>} />
-          <Route path="/duopay/defaults" element={<ProtectedRoute><DuoPayDefaults /></ProtectedRoute>} />
+          {ENABLE_DUOPAY && (
+            <>
+              <Route path="/duopay"          element={<ProtectedRoute><DuoPayMonitor /></ProtectedRoute>} />
+              <Route path="/duopay/defaults" element={<ProtectedRoute><DuoPayDefaults /></ProtectedRoute>} />
+            </>
+          )}
 
           {/* Other */}
           <Route path="/payments"  element={<ProtectedRoute><PaymentList /></ProtectedRoute>} />

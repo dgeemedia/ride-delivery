@@ -10,6 +10,11 @@ import { DashboardStats, RevenueAnalytics } from '@/types';
 import { formatCurrency } from '@/utils/helpers';
 import toast from 'react-hot-toast';
 
+// ─── Feature flags (set in admin-web/.env) ────────────────────────────────────
+const ENABLE_SHIELD    = import.meta.env.VITE_ENABLE_SHIELD    === 'true';
+const ENABLE_CORPORATE = import.meta.env.VITE_ENABLE_CORPORATE === 'true';
+const ENABLE_DUOPAY    = import.meta.env.VITE_ENABLE_DUOPAY    === 'true';
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [stats,        setStats]        = useState<DashboardStats | null>(null);
@@ -24,7 +29,10 @@ const Dashboard: React.FC = () => {
       const [statsRes, revenueRes, shieldRes] = await Promise.all([
         analyticsAPI.getDashboardStats(),
         analyticsAPI.getRevenueAnalytics('week'),
-        api.get('/admin/shield/stats').catch(() => ({ data: { data: { activeSessions: 0 } } })),
+        // Only fetch SHIELD stats if feature is enabled
+        ENABLE_SHIELD
+          ? api.get('/admin/shield/stats').catch(() => ({ data: { data: { activeSessions: 0 } } }))
+          : Promise.resolve({ data: { data: { activeSessions: 0 } } }),
       ]);
       setStats(statsRes.data);
       setRevenue(revenueRes.data);
@@ -71,20 +79,20 @@ const Dashboard: React.FC = () => {
       change: '+15%',
       onClick: undefined,
     },
-    {
+    // SHIELD stat card — only shown when SHIELD is enabled
+    ...(ENABLE_SHIELD ? [{
       title:  'SHIELD Active',
       value:  shieldActive,
       icon:   Shield,
       color:  'bg-green-500',
       change: 'Live safety sessions',
       onClick: () => navigate('/shield'),
-    },
+    }] : []),
   ];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-600 mt-1">Welcome back! Here's what's happening today.</p>
@@ -92,7 +100,9 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${
+        ENABLE_SHIELD ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
+      }`}>
         {statCards.map((stat) => (
           <Card
             key={stat.title}
@@ -185,18 +195,21 @@ const Dashboard: React.FC = () => {
           </div>
         </Card>
 
-        <Card
-          className="cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => navigate('/shield')}
-        >
-          <div className="flex items-center">
-            <Shield className="h-8 w-8 text-green-500" />
-            <div className="ml-4">
-              <p className="text-sm text-gray-600">SHIELD Monitor</p>
-              <p className="text-xl font-bold">{shieldActive} live</p>
+        {/* SHIELD quick stat — only shown when SHIELD is enabled */}
+        {ENABLE_SHIELD && (
+          <Card
+            className="cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => navigate('/shield')}
+          >
+            <div className="flex items-center">
+              <Shield className="h-8 w-8 text-green-500" />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">SHIELD Monitor</p>
+                <p className="text-xl font-bold">{shieldActive} live</p>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        )}
       </div>
     </div>
   );

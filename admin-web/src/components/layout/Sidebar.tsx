@@ -12,6 +12,11 @@ import { cn } from '@/utils/helpers';
 import api from '@/services/api';
 import logo from '@/assets/images/diakite.png';
 
+// ─── Feature flags (set in admin-web/.env) ────────────────────────────────────
+const ENABLE_SHIELD    = import.meta.env.VITE_ENABLE_SHIELD    === 'true';
+const ENABLE_CORPORATE = import.meta.env.VITE_ENABLE_CORPORATE === 'true';
+const ENABLE_DUOPAY    = import.meta.env.VITE_ENABLE_DUOPAY    === 'true';
+
 interface Counts {
   pendingDrivers:  number;
   pendingPartners: number;
@@ -40,10 +45,15 @@ const Sidebar: React.FC = () => {
   });
 
   useEffect(() => {
-    Promise.allSettled([
+    // Only fetch shield stats if SHIELD is enabled
+    const requests: Promise<any>[] = [
       api.get('/admin/dashboard/stats'),
-      api.get('/admin/shield/stats'),
-    ]).then(([statsRes, shieldRes]) => {
+      ENABLE_SHIELD
+        ? api.get('/admin/shield/stats')
+        : Promise.resolve({ data: { data: { activeSessions: 0 } } }),
+    ];
+
+    Promise.allSettled(requests).then(([statsRes, shieldRes]) => {
       const d = statsRes.status === 'fulfilled' ? statsRes.value.data?.data : null;
       const s = shieldRes.status === 'fulfilled' ? shieldRes.value.data?.data : null;
       setCounts({
@@ -114,31 +124,30 @@ const Sidebar: React.FC = () => {
         { name: 'Live Map',       href: '/deliveries/live', show: can.manageDeliveries },
       ],
     },
+    // ─── Feature-flagged nav items ─────────────────────────────────────────────
     {
-      // SHIELD — visible to all admin roles, badge shows live session count
-      name: 'SHIELD',  href: '/shield', icon: Shield,
-      show: true,
+      name: 'SHIELD', href: '/shield', icon: Shield,
+      show: ENABLE_SHIELD,
       badge:      counts.shieldActive || undefined,
       badgeColor: 'bg-green-500',
     },
     {
-      // Corporate Accounts — all admin roles can view
       name: 'Corporate', href: '/corporate', icon: Building2,
-      show: can.viewUsers,
+      show: ENABLE_CORPORATE && can.viewUsers,
       children: [
-        { name: 'Companies',  href: '/corporate',          show: can.viewUsers },
-        { name: 'Trips',      href: '/corporate/trips',    show: can.viewUsers },
+        { name: 'Companies', href: '/corporate',       show: can.viewUsers },
+        { name: 'Trips',     href: '/corporate/trips', show: can.viewUsers },
       ],
     },
     {
-      // DuoPay — finance / super admin focus
       name: 'DuoPay', href: '/duopay', icon: Zap,
-      show: can.viewPayments,
+      show: ENABLE_DUOPAY && can.viewPayments,
       children: [
-        { name: 'Accounts',    href: '/duopay',           show: can.viewPayments },
-        { name: 'Defaults',    href: '/duopay/defaults',  show: can.viewPayments },
+        { name: 'Accounts', href: '/duopay',          show: can.viewPayments },
+        { name: 'Defaults', href: '/duopay/defaults', show: can.viewPayments },
       ],
     },
+    // ──────────────────────────────────────────────────────────────────────────
     {
       name: 'Support Tickets', href: '/support/tickets', icon: MessageCircle,
       show: can.viewTickets,
@@ -172,8 +181,8 @@ const Sidebar: React.FC = () => {
       )}>
 
         {/* Logo header */}
-          <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 flex-shrink-0">
-            <div className="flex items-center">
+        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center">
             <img src={logo} alt="Diakite" className="h-8 w-auto" />
           </div>
           {isMobile && (
