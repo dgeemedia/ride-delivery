@@ -1,3 +1,4 @@
+// admin-web/src/pages/Dashboard/widgets/RecentActivity.tsx
 import React from 'react';
 import { Card } from '@/components/common';
 import { formatRelativeTime } from '@/utils/formatters';

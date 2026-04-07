@@ -1,3 +1,4 @@
+// admin-web/src/pages/Analytics/UserGrowth.tsx
 import React, { useEffect, useState } from 'react';
 import { Card, Select } from '@/components/common';
 import { AreaChart, BarChart } from '@/components/charts';

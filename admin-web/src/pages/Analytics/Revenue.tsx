@@ -1,3 +1,4 @@
+// admin-web/src/pages/Analytics/Revenue.tsx
 import React from 'react';
 import { Card } from '@/components/common';
 import { LineChart } from '@/components/charts';

@@ -1,3 +1,4 @@
+// admin-web/src/pages/Dashboard/widgets/QuickActions.tsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '@/components/common';
