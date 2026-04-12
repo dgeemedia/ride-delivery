@@ -15,10 +15,9 @@ import { Platform } from 'react-native';
 // To update the LAN IP, change EXPO_PUBLIC_API_BASE_URL in your .env file.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const LAN_URL       = process.env.EXPO_PUBLIC_API_BASE_URL
-                   ?? Constants.expoConfig?.extra?.apiUrl
-                   ?? 'http://192.168.164.189:3000/api';
-
+const LAN_URL = process.env.EXPO_PUBLIC_API_BASE_URL
+             ?? Constants.expoConfig?.extra?.apiUrl
+             ?? 'https://diakite.onrender.com/api'; // was local IP
 const LOCALHOST_URL = 'http://localhost:3000/api';
 
 export const API_BASE_URL = Platform.OS === 'web' ? LOCALHOST_URL : LAN_URL;

@@ -1,13 +1,8 @@
 // mobile/app.config.js
-
 require('dotenv').config();
 
 const ANDROID_KEY = process.env.GOOGLE_MAPS_API_KEY_ANDROID ?? '';
 const IOS_KEY     = process.env.GOOGLE_MAPS_API_KEY_IOS     ?? '';
-
-if (!ANDROID_KEY) {
-  console.warn('[app.config.js] ⚠️  GOOGLE_MAPS_API_KEY_ANDROID is not set in .env');
-}
 
 module.exports = {
   expo: {
@@ -75,8 +70,10 @@ module.exports = {
       bundler: 'metro',
     },
 
-    extra: {
-      apiUrl: process.env.API_URL ?? 'http://192.168.21.189:3000/api',
-    },
+extra: {
+  apiUrl: process.env.API_URL ?? 'https://diakite.onrender.com/api', // was local IP
+  eas: {
+    projectId: 'da8a9bc7-41c1-44d2-8d1d-a52b0dc46fb7',
   },
+},
 };
