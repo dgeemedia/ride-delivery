@@ -22,6 +22,7 @@ const notificationRoutes = require('./routes/notification.routes');
 const walletRoutes       = require('./routes/wallet.routes');
 const callRoutes         = require('./routes/call.routes');
 const debugRoutes        = require('./routes/debug.route');
+const publicRoutes       = require('./routes/public.routes');
 
 // ─── Feature-flagged routes (only imported when enabled) ──────────────────────
 const ENABLE_SHIELD    = process.env.ENABLE_SHIELD    === 'true';
@@ -35,6 +36,7 @@ const duopayRoutes    = ENABLE_DUOPAY    ? require('./routes/duopay.routes')    
 // ─── Middleware ───────────────────────────────────────────────────────────────
 const { errorHandler } = require('./middleware/errorHandler');
 const { logger }       = require('./utils/logger');
+const { maintenanceMiddleware } = require('./middleware/maintenance.middleware'); // ← ADD THIS
 
 const app = express();
 
@@ -171,6 +173,10 @@ if (ENABLE_SHIELD) {
     }
   });
 }
+
+app.use('/api/status', publicRoutes);
+// ─── Maintenance gate
+app.use(maintenanceMiddleware);
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth',          authRoutes);

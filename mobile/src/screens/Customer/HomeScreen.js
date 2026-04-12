@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   StatusBar, Dimensions, Animated, ActivityIndicator, Image,
-  ImageBackground, Platform, Alert,
+  ImageBackground, Alert,
 } from 'react-native';
 import { Ionicons }              from '@expo/vector-icons';
 import { useSafeAreaInsets }     from 'react-native-safe-area-context';
@@ -12,6 +12,8 @@ import { useTheme }              from '../../context/ThemeContext';
 import { userAPI, rideAPI, deliveryAPI } from '../../services/api';
 import ActiveRideBanner          from '../../components/ActiveRideBanner';
 import ActiveDeliveryBanner      from '../../components/ActiveDeliveryBanner';
+import MaintenanceBanner         from '../../components/MaintenanceBanner';
+import { checkMaintenance }      from '../../utils/maintenanceCheck';
 
 const { width } = Dimensions.get('window');
 const H_PAD    = 24;
@@ -36,6 +38,7 @@ const DELIVERY_IMAGES = [
 
 const PROMO_IMAGE = 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=900&q=80';
 
+// ─── Crossfade image cycler ───────────────────────────────────────────────────
 const CrossfadeImageCycler = ({ images, intervalMs = 4500, transitionMs = 2200 }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [nextIdx,    setNextIdx]    = useState(1);
@@ -63,6 +66,7 @@ const CrossfadeImageCycler = ({ images, intervalMs = 4500, transitionMs = 2200 }
   );
 };
 
+// ─── Wallet strip ─────────────────────────────────────────────────────────────
 const WalletStrip = ({ balance, onTopUp, theme }) => {
   const accentFg = theme.accentFg ?? '#111111';
   return (
@@ -88,6 +92,7 @@ const wl = StyleSheet.create({
   btnTxt: { fontSize: 13, fontWeight: '700' },
 });
 
+// ─── Stat pill ────────────────────────────────────────────────────────────────
 const StatPill = ({ icon, value, label, theme }) => (
   <View style={[sp.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <Ionicons name={icon} size={16} color={theme.accent} />
@@ -101,6 +106,7 @@ const sp = StyleSheet.create({
   lbl:  { fontSize: 9, fontWeight: '600' },
 });
 
+// ─── Action card ──────────────────────────────────────────────────────────────
 const ActionCard = ({ images, title, subtitle, badge, onPress, theme }) => {
   const accentFg = theme.accentFg ?? '#111111';
   const scaleA   = useRef(new Animated.Value(1)).current;
@@ -145,10 +151,11 @@ const ac = StyleSheet.create({
   arrowBtn: { width: 24, height: 24, borderRadius: 7, justifyContent: 'center', alignItems: 'center' },
 });
 
+// ─── Activity row ─────────────────────────────────────────────────────────────
 const ACTIVITY_STATUS_META = {
-  COMPLETED:   { color: '#5DAA72', label: 'Completed'  },
-  CANCELLED:   { color: '#E05555', label: 'Cancelled'  },
-  IN_PROGRESS: { color: '#C9A96E', label: 'In Progress'},
+  COMPLETED:   { color: '#5DAA72', label: 'Completed'   },
+  CANCELLED:   { color: '#E05555', label: 'Cancelled'   },
+  IN_PROGRESS: { color: '#C9A96E', label: 'In Progress' },
 };
 const ActivityRow = ({ icon, title, subtitle, amount, status, theme, last }) => {
   const meta = ACTIVITY_STATUS_META[status] ?? { color: theme.accent, label: status };
@@ -180,6 +187,7 @@ const ar = StyleSheet.create({
   statusTxt:  { fontSize: 9, fontWeight: '700', letterSpacing: 0.4 },
 });
 
+// ─── Promo banner ─────────────────────────────────────────────────────────────
 const PromoBanner = ({ theme, onPress }) => {
   const accentFg = theme.accentFg ?? '#111111';
   return (
@@ -214,6 +222,9 @@ const promo = StyleSheet.create({
   btnTxt:  { fontSize: 13, fontWeight: '700' },
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
@@ -223,6 +234,9 @@ export default function HomeScreen({ navigation }) {
   const [loading,        setLoading]        = useState(true);
   const [activeRide,     setActiveRide]     = useState(null);
   const [activeDelivery, setActiveDelivery] = useState(null);
+  const [maintenance,    setMaintenance]    = useState({
+    isOn: false, isScheduled: false, message: '', endsAt: null,
+  });
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(20)).current;
@@ -236,27 +250,42 @@ export default function HomeScreen({ navigation }) {
 
   const fetchAll = async () => {
     try {
-      const [statsRes, rideRes, deliveryRes] = await Promise.allSettled([
+      const [statsRes, rideRes, deliveryRes, maintState] = await Promise.all([
+        Promise.allSettled([
+          userAPI.getStats(),
+          rideAPI.getActiveRide(),
+          deliveryAPI.getActiveDelivery(),
+        ]),
+        checkMaintenance(),
+      ]).then(([settled, maint]) => [...settled, maint]);
+
+      // Stats
+      const [statsRes2, rideRes2, deliveryRes2] = await Promise.allSettled([
         userAPI.getStats(),
         rideAPI.getActiveRide(),
         deliveryAPI.getActiveDelivery(),
       ]);
 
-      if (statsRes.status === 'fulfilled') {
-        setStats(statsRes.value?.data ?? statsRes.value);
+      if (statsRes2.status === 'fulfilled') {
+        setStats(statsRes2.value?.data ?? statsRes2.value);
       }
-      if (rideRes.status === 'fulfilled') {
-        const ride = rideRes.value?.data?.ride ?? rideRes.value?.ride ?? null;
+      if (rideRes2.status === 'fulfilled') {
+        const ride = rideRes2.value?.data?.ride ?? rideRes2.value?.ride ?? null;
         setActiveRide(
           ride && ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'].includes(ride.status) ? ride : null
         );
       }
-      if (deliveryRes.status === 'fulfilled') {
-        const del = deliveryRes.value?.data?.delivery ?? null;
+      if (deliveryRes2.status === 'fulfilled') {
+        const del = deliveryRes2.value?.data?.delivery ?? null;
         setActiveDelivery(
           del && ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(del.status) ? del : null
         );
       }
+
+      // Maintenance
+      const maint = await checkMaintenance();
+      setMaintenance(maint);
+
     } catch {}
     finally {
       setLoading(false);
@@ -265,6 +294,34 @@ export default function HomeScreen({ navigation }) {
         Animated.timing(slideA, { toValue: 0, duration: 550, useNativeDriver: true }),
       ]).start();
     }
+  };
+
+  // ── Maintenance alert helper ─────────────────────────────────────────────
+  const showMaintenanceAlert = () => {
+    const endsMsg = maintenance.endsAt
+      ? `\n\nExpected back: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}`
+      : '';
+    Alert.alert('Platform Under Maintenance', maintenance.message + endsMsg);
+  };
+
+  // ── Guarded navigation ───────────────────────────────────────────────────
+  const goToRide = () => {
+    if (maintenance.isOn) { showMaintenanceAlert(); return; }
+    navigation.navigate('RequestRide');
+  };
+
+  const goToDelivery = () => {
+    if (maintenance.isOn) { showMaintenanceAlert(); return; }
+    navigation.navigate('RequestDelivery');
+  };
+
+  const goToNearbyDrivers = () => {
+    if (maintenance.isOn) { showMaintenanceAlert(); return; }
+    navigation.navigate('NearbyDrivers', {
+      pickupAddress: '', pickupLat: 6.5244, pickupLng: 3.3792,
+      dropoffAddress: '', dropoffLat: 6.4281, dropoffLng: 3.4219,
+      vehicleType: 'CAR',
+    });
   };
 
   const handleCancelRide = () => {
@@ -296,18 +353,6 @@ export default function HomeScreen({ navigation }) {
 
   const handleResumeRide = () => navigation.navigate('RideTracking', { rideId: activeRide?.id });
 
-  const handleChooseDriver = () => {
-    navigation.navigate('NearbyDrivers', {
-      pickupAddress:  '',
-      pickupLat:      6.5244,
-      pickupLng:      3.3792,
-      dropoffAddress: '',
-      dropoffLat:     6.4281,
-      dropoffLng:     3.4219,
-      vehicleType:    'CAR',
-    });
-  };
-
   const hour  = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
@@ -318,6 +363,15 @@ export default function HomeScreen({ navigation }) {
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
+
+      {/* Maintenance banner — active (red-ish) or scheduled (blue) */}
+      {(maintenance.isOn || maintenance.isScheduled) && (
+        <MaintenanceBanner
+          message={maintenance.message}
+          endsAt={maintenance.endsAt}
+          scheduled={maintenance.isScheduled}
+        />
+      )}
 
       <ScrollView
         contentContainerStyle={[s.scroll, { paddingTop, paddingBottom }]}
@@ -410,21 +464,21 @@ export default function HomeScreen({ navigation }) {
               subtitle="Fast rides across Lagos"
               badge="INSTANT"
               theme={theme}
-              onPress={() => navigation.navigate('RequestRide')}
+              onPress={goToRide}
             />
             <ActionCard
               images={DELIVERY_IMAGES}
               title="Send Package"
               subtitle="Bikes, vans & couriers"
               theme={theme}
-              onPress={() => navigation.navigate('RequestDelivery')}
+              onPress={goToDelivery}
             />
           </View>
 
           {/* Choose a Driver */}
           <TouchableOpacity
             style={[s.chooseDriverBtn, { borderColor: theme.accent + '50', backgroundColor: theme.accent + '0D' }]}
-            onPress={handleChooseDriver}
+            onPress={goToNearbyDrivers}
             activeOpacity={0.85}
           >
             <View style={[s.chooseDriverIcon, { backgroundColor: theme.accent + '18' }]}>
@@ -435,75 +489,6 @@ export default function HomeScreen({ navigation }) {
               <Text style={[s.chooseDriverSub,   { color: theme.hint }]}>Browse nearby drivers, see ratings & fares</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={theme.accent} />
-          </TouchableOpacity>
-
-          {/* SHIELD Safety */}
-          <TouchableOpacity
-            style={[s.shieldBtn, { borderColor: '#4CAF5050', backgroundColor: '#4CAF5010' }]}
-            onPress={() => navigation.navigate('Shield')}
-            activeOpacity={0.85}
-          >
-            <View style={[s.shieldIcon, { backgroundColor: '#4CAF5020' }]}>
-              <Ionicons name="shield-checkmark" size={18} color="#4CAF50" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[s.shieldTitle, { color: '#4CAF50' }]}>SHIELD</Text>
-                <View style={s.shieldBadge}>
-                  <Text style={s.shieldBadgeTxt}>SAFETY</Text>
-                </View>
-              </View>
-              <Text style={[s.shieldSub, { color: theme.hint }]}>
-                Let a guardian track your ride live — no app needed
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#4CAF50" />
-          </TouchableOpacity>
-
-          {/* Corporate */}
-          <TouchableOpacity
-            style={[s.featureBtn, { borderColor: '#2563EB50', backgroundColor: '#2563EB10' }]}
-            onPress={() => navigation.navigate('Corporate')}
-            activeOpacity={0.85}
-          >
-            <View style={[s.featureIcon, { backgroundColor: '#2563EB20' }]}>
-              <Ionicons name="business-outline" size={18} color="#2563EB" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[s.featureTitle, { color: '#2563EB' }]}>Corporate</Text>
-                <View style={[s.featureBadge, { backgroundColor: '#2563EB25' }]}>
-                  <Text style={[s.featureBadgeTxt, { color: '#2563EB' }]}>B2B</Text>
-                </View>
-              </View>
-              <Text style={[s.featureSub, { color: theme.hint }]}>
-                Company transport with spend controls & invoicing
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#2563EB" />
-          </TouchableOpacity>
-
-          {/* DuoPay */}
-          <TouchableOpacity
-            style={[s.featureBtn, { borderColor: '#4CAF5050', backgroundColor: '#4CAF5010' }]}
-            onPress={() => navigation.navigate('DuoPay')}
-            activeOpacity={0.85}
-          >
-            <View style={[s.featureIcon, { backgroundColor: '#4CAF5020' }]}>
-              <Ionicons name="flash-outline" size={18} color="#4CAF50" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[s.featureTitle, { color: '#4CAF50' }]}>DuoPay</Text>
-                <View style={[s.featureBadge, { backgroundColor: '#4CAF5025' }]}>
-                  <Text style={[s.featureBadgeTxt, { color: '#4CAF50' }]}>BNPL</Text>
-                </View>
-              </View>
-              <Text style={[s.featureSub, { color: theme.hint }]}>
-                Ride now, pay later — up to ₦15,000 credit
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#4CAF50" />
           </TouchableOpacity>
 
           {/* Promo */}
@@ -530,7 +515,7 @@ export default function HomeScreen({ navigation }) {
                 </Text>
                 <TouchableOpacity
                   style={[s.emptyBtn, { borderColor: theme.accent + '40', backgroundColor: theme.accent + '10' }]}
-                  onPress={() => navigation.navigate('RequestRide')}
+                  onPress={goToRide}
                   activeOpacity={0.8}
                 >
                   <Ionicons name="car-outline" size={14} color={theme.accent} />
@@ -569,20 +554,6 @@ const s = StyleSheet.create({
   chooseDriverIcon:  { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   chooseDriverTitle: { fontSize: 14, fontWeight: '800', marginBottom: 2 },
   chooseDriverSub:   { fontSize: 11, fontWeight: '500' },
-
-  shieldBtn:      { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 14 },
-  shieldIcon:     { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  shieldTitle:    { fontSize: 14, fontWeight: '900', marginBottom: 2 },
-  shieldSub:      { fontSize: 11, fontWeight: '500' },
-  shieldBadge:    { backgroundColor: '#4CAF5025', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 },
-  shieldBadgeTxt: { fontSize: 9, fontWeight: '800', color: '#4CAF50', letterSpacing: 0.5 },
-
-  featureBtn:      { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 14 },
-  featureIcon:     { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  featureTitle:    { fontSize: 14, fontWeight: '900', marginBottom: 2 },
-  featureSub:      { fontSize: 11, fontWeight: '500' },
-  featureBadge:    { borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 },
-  featureBadgeTxt: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
 
   activityCard:  { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 6 },
   emptyActivity: { alignItems: 'center', paddingVertical: 28 },

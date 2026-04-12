@@ -193,8 +193,14 @@ const PasswordSection: React.FC = () => {
 // ─────────────────────────────────────────────────────────────────────────────
 const PlatformSection: React.FC = () => {
   const [form, setForm] = useState({
-    name: 'Diakite', supportEmail: 'support@diakite.com',
-    supportPhone: '+2348000000000', logoUrl: '', maintenance: false,
+    name: 'Diakite',
+    supportEmail: 'support@diakite.com',
+    supportPhone: '+2348000000000',
+    logoUrl: '',
+    maintenance: false,
+    maintenanceMessage: '',
+    maintenanceStartsAt: '',  // ISO datetime-local string
+    maintenanceEndsAt: '',    // ISO datetime-local string
   });
   const [loading,  setLoading]  = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -205,19 +211,53 @@ const PlatformSection: React.FC = () => {
         const s = res.data?.settings ?? {};
         setForm(f => ({
           ...f,
-          name:         s['platform_name']?.value   ?? f.name,
-          supportEmail: s['support_email']?.value   ?? f.supportEmail,
-          supportPhone: s['support_phone']?.value   ?? f.supportPhone,
-          logoUrl:      s['platform_logo']?.value   ?? '',
-          maintenance:  s['maintenance_mode']?.value === true
-                     || s['maintenance_mode']?.value === 'true',
+          name:               s['platform_name']?.value        ?? f.name,
+          supportEmail:       s['support_email']?.value        ?? f.supportEmail,
+          supportPhone:       s['support_phone']?.value        ?? f.supportPhone,
+          logoUrl:            s['platform_logo']?.value        ?? '',
+          maintenance:        s['maintenance_mode']?.value === true
+                           || s['maintenance_mode']?.value === 'true',
+          maintenanceMessage: s['maintenance_message']?.value  ?? '',
+          // Convert stored ISO → datetime-local format (strip seconds+Z)
+          maintenanceStartsAt: s['maintenance_starts_at']?.value
+            ? new Date(s['maintenance_starts_at'].value).toISOString().slice(0,16)
+            : '',
+          maintenanceEndsAt: s['maintenance_ends_at']?.value
+            ? new Date(s['maintenance_ends_at'].value).toISOString().slice(0,16)
+            : '',
         }));
       })
       .catch(() => toast.error('Could not load platform settings.'))
       .finally(() => setFetching(false));
   }, []);
 
+  // Auto-expire the toggle in the UI when endsAt passes
+  useEffect(() => {
+    if (!form.maintenance || !form.maintenanceEndsAt) return;
+
+    const endsAt = new Date(form.maintenanceEndsAt);
+    const msUntilExpiry = endsAt.getTime() - Date.now();
+    if (msUntilExpiry <= 0) {
+      setForm(f => ({ ...f, maintenance: false }));
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setForm(f => ({ ...f, maintenance: false }));
+      toast.success('Maintenance window has expired — toggle turned off automatically');
+    }, msUntilExpiry);
+
+    return () => clearTimeout(timer);
+  }, [form.maintenance, form.maintenanceEndsAt]);
+
   const handleSave = async () => {
+    // Validate: if both are set, end must be after start
+    if (form.maintenanceStartsAt && form.maintenanceEndsAt) {
+      if (new Date(form.maintenanceEndsAt) <= new Date(form.maintenanceStartsAt)) {
+        toast.error('End time must be after start time');
+        return;
+      }
+    }
     setLoading(true);
     try {
       await Promise.all([
@@ -226,11 +266,27 @@ const PlatformSection: React.FC = () => {
         settingsAPI.updateSetting('support_phone',    form.supportPhone),
         settingsAPI.updateSetting('platform_logo',    form.logoUrl),
         settingsAPI.updateSetting('maintenance_mode', String(form.maintenance)),
+        settingsAPI.updateSetting('maintenance_message', form.maintenanceMessage),
+        settingsAPI.updateSetting('maintenance_starts_at',
+          form.maintenanceStartsAt ? new Date(form.maintenanceStartsAt).toISOString() : ''),
+        settingsAPI.updateSetting('maintenance_ends_at',
+          form.maintenanceEndsAt ? new Date(form.maintenanceEndsAt).toISOString() : ''),
       ]);
       toast.success('Platform settings saved');
     } catch { toast.error('Failed to save settings'); }
     finally   { setLoading(false); }
   };
+
+  // Derive a human-readable status line
+  const statusLabel = (() => {
+    if (!form.maintenance) return null;
+    const now = new Date();
+    const starts = form.maintenanceStartsAt ? new Date(form.maintenanceStartsAt) : null;
+    const ends   = form.maintenanceEndsAt   ? new Date(form.maintenanceEndsAt)   : null;
+    if (starts && starts > now) return `Scheduled — starts ${starts.toLocaleString('en-NG')}`;
+    if (ends)                   return `Active — ends ${ends.toLocaleString('en-NG')}`;
+    return 'Active — no end time set (manual off required)';
+  })();
 
   return (
     <Section icon={<Settings className="h-4 w-4" />}
@@ -258,21 +314,87 @@ const PlatformSection: React.FC = () => {
         </div>
       )}
 
-      {/* Maintenance mode — when ON, all non-admin routes return 503 */}
-      <div className="mt-5 flex items-center justify-between max-w-2xl border border-orange-200 bg-orange-50 rounded-lg px-4 py-3">
-        <div>
-          <p className="text-sm font-medium text-gray-900">Maintenance Mode</p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Blocks all customer and driver API routes with 503. Only admin routes remain accessible.
-          </p>
+      {/* ── Maintenance block ── */}
+      <div className="mt-5 max-w-2xl border border-orange-200 bg-orange-50 rounded-lg p-4 space-y-4">
+        {/* Header row */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Maintenance Mode</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Returns 503 on all customer/driver routes. Admin routes stay live.
+            </p>
+          </div>
+          <button
+            onClick={() => setForm(f => ({ ...f, maintenance: !f.maintenance }))}
+            className={`flex items-center gap-2 text-sm font-medium transition-colors
+              ${form.maintenance ? 'text-orange-600' : 'text-gray-400'}`}
+          >
+            {form.maintenance
+              ? <><ToggleRight className="h-8 w-8" /><span>ON</span></>
+              : <><ToggleLeft  className="h-8 w-8" /><span>OFF</span></>}
+          </button>
         </div>
-        <button onClick={() => setForm(f => ({ ...f, maintenance: !f.maintenance }))}
-          className={`flex items-center gap-2 text-sm font-medium transition-colors
-            ${form.maintenance ? 'text-orange-600' : 'text-gray-400'}`}>
-          {form.maintenance
-            ? <><ToggleRight className="h-8 w-8" /><span>ON</span></>
-            : <><ToggleLeft  className="h-8 w-8" /><span>OFF</span></>}
-        </button>
+
+        {/* Status pill */}
+        {statusLabel && (
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold
+            bg-orange-100 text-orange-700 px-3 py-1 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+            {statusLabel}
+          </div>
+        )}
+
+        {/* Fields — always visible when maintenance is toggled on */}
+        {form.maintenance && (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Message shown to users
+              </label>
+              <textarea
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg border border-orange-300 text-sm
+                  focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                placeholder="e.g. Scheduled maintenance from 2:00 AM – 5:00 AM WAT. We apologise for the inconvenience."
+                value={form.maintenanceMessage}
+                onChange={e => setForm(f => ({ ...f, maintenanceMessage: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Start date &amp; time <span className="text-gray-400">(optional)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={form.maintenanceStartsAt}
+                  onChange={e => setForm(f => ({ ...f, maintenanceStartsAt: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-orange-300 text-sm
+                    focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  If set, users see a warning banner before this time but can still use the app.
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  End date &amp; time <span className="text-gray-400">(optional)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={form.maintenanceEndsAt}
+                  onChange={e => setForm(f => ({ ...f, maintenanceEndsAt: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-orange-300 text-sm
+                    focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Maintenance auto-expires at this time. Leave blank for manual off.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-5">

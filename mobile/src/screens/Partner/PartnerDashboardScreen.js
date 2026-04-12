@@ -11,14 +11,19 @@ import * as Location         from '../../shims/Location';
 import { useAuth }           from '../../context/AuthContext';
 import { useTheme }          from '../../context/ThemeContext';
 import ActiveDeliveryBanner  from '../../components/ActiveDeliveryBanner';
+import MaintenanceBanner     from '../../components/MaintenanceBanner';
 import { partnerAPI, userAPI, walletAPI, deliveryAPI } from '../../services/api';
 import socketService         from '../../services/socket';
+import { checkMaintenance }  from '../../utils/maintenanceCheck';
 
 const { width } = Dimensions.get('window');
 const CA     = '#34D399';
 const PURPLE = '#A78BFA';
 
-// ── getRealLocation ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
 const getRealLocation = async () => {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') {
@@ -28,7 +33,10 @@ const getRealLocation = async () => {
   return { lat: loc.coords.latitude, lng: loc.coords.longitude };
 };
 
-// ── VerifiedBadge ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENTS
+// ─────────────────────────────────────────────────────────────────────────────
+
 const VerifiedBadge = () => (
   <View style={vb.wrap}>
     <Ionicons name="shield-checkmark" size={11} color="#080C18" />
@@ -40,7 +48,6 @@ const vb = StyleSheet.create({
   txt:  { fontSize: 9, fontWeight: '900', color: '#080C18', letterSpacing: 1.5 },
 });
 
-// ── PendingBadge ───────────────────────────────────────────────────────────────
 const PendingBadge = ({ theme }) => (
   <View style={[pb.wrap, { backgroundColor: theme.backgroundAlt, borderColor: CA + '40' }]}>
     <Ionicons name="time-outline" size={11} color={CA} />
@@ -52,7 +59,6 @@ const pb = StyleSheet.create({
   txt:  { fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
 });
 
-// ── MetricCard ─────────────────────────────────────────────────────────────────
 const MetricCard = ({ icon, value, label, color, theme }) => (
   <View style={[mc.card, { backgroundColor: theme.backgroundAlt, borderColor: (color || CA) + '20' }]}>
     <View style={[mc.iconBox, { backgroundColor: (color || CA) + '15' }]}>
@@ -69,8 +75,7 @@ const mc = StyleSheet.create({
   label:   { fontSize: 10, fontWeight: '600', textAlign: 'center' },
 });
 
-// ── OnlineToggle ───────────────────────────────────────────────────────────────
-const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
+const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, maintenanceOn, theme }) => {
   const pulseA = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -81,11 +86,11 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
         Animated.timing(pulseA, { toValue: 1,   duration: 700, useNativeDriver: true }),
       ]));
       anim.start();
-    } else {
-      pulseA.setValue(1);
-    }
+    } else { pulseA.setValue(1); }
     return () => anim?.stop();
   }, [isOnline]);
+
+  const disabled = !isApproved || maintenanceOn;
 
   return (
     <View style={[ot.card, { backgroundColor: theme.backgroundAlt, borderColor: isOnline ? CA + '50' : theme.border }]}>
@@ -100,11 +105,13 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
           </Text>
         </View>
         <Text style={[ot.sub, { color: theme.hint }]}>
-          {isOnline
-            ? 'GPS active • accepting deliveries'
-            : isApproved
-            ? 'Tap to start accepting deliveries'
-            : 'Approval required'}
+          {maintenanceOn
+            ? 'Unavailable during maintenance'
+            : isOnline
+              ? 'GPS active • accepting deliveries'
+              : isApproved
+                ? 'Tap to start accepting deliveries'
+                : 'Approval required'}
         </Text>
       </View>
       {toggling
@@ -112,7 +119,7 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
         : <Switch
             value={isOnline}
             onValueChange={onToggle}
-            disabled={!isApproved}
+            disabled={disabled}
             trackColor={{ false: theme.border, true: CA + '70' }}
             thumbColor={isOnline ? CA : theme.hint}
             ios_backgroundColor={theme.border}
@@ -132,7 +139,6 @@ const ot = StyleSheet.create({
   sub:     { fontSize: 12 },
 });
 
-// ── WalletStrip ────────────────────────────────────────────────────────────────
 const WalletStrip = ({ balance, todayEarnings, onTopUp, onWithdraw, theme }) => (
   <View style={[ws.card, { backgroundColor: theme.backgroundAlt, borderColor: CA + '25' }]}>
     <View style={ws.left}>
@@ -170,7 +176,6 @@ const ws = StyleSheet.create({
   btnTxt:   { fontSize: 11, fontWeight: '800' },
 });
 
-// ── WaitingBanner ──────────────────────────────────────────────────────────────
 const WaitingBanner = ({ theme }) => {
   const dotA = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
@@ -194,7 +199,10 @@ const wb = StyleSheet.create({
   txt:  { fontSize: 13, fontWeight: '600' },
 });
 
-// ── MAIN ───────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function PartnerDashboardScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
@@ -209,19 +217,22 @@ export default function PartnerDashboardScreen({ navigation }) {
   const [activeDelivery,    setActiveDelivery]    = useState(null);
   const [floorPriceActive,  setFloorPriceActive]  = useState(false);
   const [activeFloorAmount, setActiveFloorAmount] = useState(0);
+  const [maintenance,       setMaintenance]       = useState({
+    isOn: false, isScheduled: false, message: '', endsAt: null, startsAt: null,
+  });
 
   const fadeA   = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-20)).current;
 
-  // ── Fetch all data ──────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     try {
-      const [profileRes, statsRes, walletRes, earningsRes, activeDelRes] = await Promise.allSettled([
+      const [profileRes, statsRes, walletRes, earningsRes, activeDelRes, maintResult] = await Promise.allSettled([
         partnerAPI.getProfile(),
         userAPI.getStats(),
         walletAPI.getWallet(),
         partnerAPI.getEarnings({ period: 'today' }),
         deliveryAPI.getActiveDelivery(),
+        checkMaintenance(),
       ]);
 
       if (profileRes.status === 'fulfilled') {
@@ -241,6 +252,9 @@ export default function PartnerDashboardScreen({ navigation }) {
           del && ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(del.status) ? del : null
         );
       }
+      if (maintResult.status === 'fulfilled') {
+        setMaintenance(maintResult.value);
+      }
     } catch {}
     finally {
       setLoading(false);
@@ -258,15 +272,9 @@ export default function PartnerDashboardScreen({ navigation }) {
     return unsub;
   }, [navigation, fetchData]);
 
-  // ── Socket ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const handleIncomingDelivery = (data) => {
-      navigation.navigate('IncomingDelivery', { request: data });
-    };
-
-    const handleCancelled = () => {
-      try { navigation.goBack(); } catch {}
-    };
+    const handleIncomingDelivery = (data) => navigation.navigate('IncomingDelivery', { request: data });
+    const handleCancelled        = () => { try { navigation.goBack(); } catch {} };
 
     socketService.on('delivery:incoming_request', handleIncomingDelivery);
     socketService.on('delivery:cancelled',        handleCancelled);
@@ -290,8 +298,20 @@ export default function PartnerDashboardScreen({ navigation }) {
     };
   }, [navigation, isOnline]);
 
-  // ── Toggle online ──────────────────────────────────────────────────────────
+  // ── Go online/offline ──────────────────────────────────────────────────────
   const toggleOnline = async () => {
+    // Block going online during maintenance
+    if (maintenance.isOn && !isOnline) {
+      const endsStr = maintenance.endsAt
+        ? `\nMaintenance ends: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}`
+        : '';
+      Alert.alert(
+        'Platform Under Maintenance',
+        'You cannot go online until maintenance ends.' + endsStr
+      );
+      return;
+    }
+
     if (!profile?.isApproved) {
       Alert.alert(
         'Pending Approval',
@@ -303,6 +323,7 @@ export default function PartnerDashboardScreen({ navigation }) {
       );
       return;
     }
+
     setToggling(true);
     try {
       const next = !isOnline;
@@ -325,23 +346,14 @@ export default function PartnerDashboardScreen({ navigation }) {
     }
   };
 
-  // ── Navigation helpers ─────────────────────────────────────────────────────
   const goToEarnings = () => navigation.getParent()?.navigate('EarningsTab');
-  const goToTopUp    = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'WalletTopUp',    initial: false });
-  const goToWithdraw = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal',     initial: false });
+  const goToTopUp    = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'WalletTopUp',   initial: false });
+  const goToWithdraw = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal',    initial: false });
   const goToProfile  = () => navigation.getParent()?.navigate('ProfileTab');
-
-  // ── FIX: initial: false forces React Navigation to honour the screen param
-  //         on repeat visits. Without it, navigating to EarningsTab a second
-  //         time lands on EarningsHome (the stack's initial screen) instead of
-  //         PartnerHistory, making "Earnings" and "Delivery History" resolve
-  //         to the same screen.
-  const goToHistory  = () =>
-    navigation.getParent()?.navigate('EarningsTab', { screen: 'PartnerHistory', initial: false });
+  const goToHistory  = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'PartnerHistory', initial: false });
 
   const isApproved = profile?.isApproved ?? false;
 
-  // ── Quick actions ──────────────────────────────────────────────────────────
   const quickActions = [
     { icon: 'wallet-outline',        label: 'Earnings',         color: CA,         onPress: goToEarnings },
     { icon: 'list-outline',          label: 'Delivery History', color: '#5DAA72',  onPress: goToHistory  },
@@ -355,10 +367,19 @@ export default function PartnerDashboardScreen({ navigation }) {
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.orb, { backgroundColor: CA }]} />
 
+      {/* Maintenance banner */}
+      {(maintenance.isOn || maintenance.isScheduled) && (
+        <MaintenanceBanner
+          message={maintenance.message}
+          endsAt={maintenance.endsAt}
+          scheduled={maintenance.isScheduled}
+        />
+      )}
+
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} overScrollMode="never">
         <Animated.View style={{ opacity: fadeA, transform: [{ translateY: headerY }] }}>
 
-          {/* ── Header ── */}
+          {/* Header */}
           <View style={s.header}>
             <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
               <Text style={[s.eyebrow, { color: CA + '70' }]}>COURIER DASHBOARD</Text>
@@ -385,7 +406,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             </View>
           </View>
 
-          {/* ── Approval banner ── */}
+          {/* Pending approval banner */}
           {!isApproved && !loading && (
             <TouchableOpacity
               style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: CA + '30' }]}
@@ -403,16 +424,17 @@ export default function PartnerDashboardScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* ── Online toggle ── */}
+          {/* Online toggle — disabled during maintenance */}
           <OnlineToggle
             isOnline={isOnline}
             toggling={toggling}
             onToggle={toggleOnline}
             isApproved={isApproved}
+            maintenanceOn={maintenance.isOn}
             theme={theme}
           />
 
-          {/* ── Active delivery banner ── */}
+          {/* Active delivery banner */}
           {activeDelivery && (
             <ActiveDeliveryBanner
               delivery={activeDelivery}
@@ -422,10 +444,10 @@ export default function PartnerDashboardScreen({ navigation }) {
             />
           )}
 
-          {/* ── Waiting banner ── */}
-          {isOnline && !activeDelivery && <WaitingBanner theme={theme} />}
+          {/* Waiting for requests */}
+          {isOnline && !activeDelivery && !maintenance.isOn && <WaitingBanner theme={theme} />}
 
-          {/* ── Wallet strip ── */}
+          {/* Wallet */}
           {!loading && (
             <WalletStrip
               balance={walletBalance}
@@ -436,7 +458,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             />
           )}
 
-          {/* ── Stats ── */}
+          {/* Stats */}
           {loading ? (
             <ActivityIndicator color={CA} style={{ marginBottom: 16 }} />
           ) : (
@@ -447,7 +469,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             </View>
           )}
 
-          {/* ── Vehicle card ── */}
+          {/* Vehicle card */}
           {profile?.vehicleType && (
             <TouchableOpacity
               style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: CA + '25' }]}
@@ -476,7 +498,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* ── Floor price badge ── */}
+          {/* Floor price card */}
           {floorPriceActive && !loading && (
             <TouchableOpacity
               style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: PURPLE + '30', marginBottom: 14 }]}
@@ -496,7 +518,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* ── Quick actions ── */}
+          {/* Quick actions */}
           <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
           <View style={s.actionGrid}>
             {quickActions.map(item => (
@@ -521,7 +543,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             ))}
           </View>
 
-          {/* ── Footer ── */}
+          {/* Footer */}
           <View style={[s.footer, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <Ionicons
               name={isApproved ? 'shield-checkmark-outline' : 'shield-outline'}
@@ -538,6 +560,10 @@ export default function PartnerDashboardScreen({ navigation }) {
     </SafeAreaView>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
   root:   { flex: 1 },

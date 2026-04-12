@@ -13,12 +13,13 @@ import { useTheme }          from '../../context/ThemeContext';
 import { driverAPI, userAPI, walletAPI, rideAPI } from '../../services/api';
 import socketService         from '../../services/socket';
 import ActiveRideBanner      from '../../components/ActiveRideBanner';
+import MaintenanceBanner     from '../../components/MaintenanceBanner';
+import { checkMaintenance }  from '../../utils/maintenanceCheck';
 
 const { width } = Dimensions.get('window');
 const DA     = '#FFB800';
 const PURPLE = '#A78BFA';
 
-// ── getRealLocation ────────────────────────────────────────────────────────────
 const getRealLocation = async () => {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') {
@@ -28,7 +29,8 @@ const getRealLocation = async () => {
   return { lat: loc.coords.latitude, lng: loc.coords.longitude };
 };
 
-// ── VerifiedBadge ──────────────────────────────────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
 const VerifiedBadge = () => (
   <View style={vb.wrap}>
     <Ionicons name="shield-checkmark" size={11} color="#080C18" />
@@ -40,7 +42,6 @@ const vb = StyleSheet.create({
   txt:  { fontSize: 9, fontWeight: '900', color: '#080C18', letterSpacing: 1.5 },
 });
 
-// ── PendingBadge ───────────────────────────────────────────────────────────────
 const PendingBadge = ({ theme }) => (
   <View style={[pb.wrap, { backgroundColor: theme.backgroundAlt, borderColor: DA + '40' }]}>
     <Ionicons name="time-outline" size={11} color={DA} />
@@ -52,7 +53,6 @@ const pb = StyleSheet.create({
   txt:  { fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
 });
 
-// ── MetricCard ─────────────────────────────────────────────────────────────────
 const MetricCard = ({ icon, value, label, color, theme }) => (
   <View style={[mc.card, { backgroundColor: theme.backgroundAlt, borderColor: (color || DA) + '20' }]}>
     <View style={[mc.iconBox, { backgroundColor: (color || DA) + '15' }]}>
@@ -69,7 +69,6 @@ const mc = StyleSheet.create({
   label:   { fontSize: 10, fontWeight: '600', textAlign: 'center' },
 });
 
-// ── OnlineToggle ───────────────────────────────────────────────────────────────
 const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
   const pulseA = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -123,7 +122,6 @@ const ot = StyleSheet.create({
   sub:     { fontSize: 12 },
 });
 
-// ── WalletStrip ────────────────────────────────────────────────────────────────
 const WalletStrip = ({ balance, todayEarnings, onTopUp, onWithdraw, theme }) => (
   <View style={[ws.card, { backgroundColor: theme.backgroundAlt, borderColor: DA + '25' }]}>
     <View style={ws.left}>
@@ -158,7 +156,6 @@ const ws = StyleSheet.create({
   btnTxt:   { fontSize: 11, fontWeight: '800' },
 });
 
-// ── WaitingBanner ──────────────────────────────────────────────────────────────
 const WaitingBanner = ({ theme }) => {
   const dotA = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
@@ -182,7 +179,9 @@ const wb = StyleSheet.create({
   txt:  { fontSize: 13, fontWeight: '600' },
 });
 
-// ── MAIN ───────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 export default function DriverDashboardScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
@@ -197,11 +196,13 @@ export default function DriverDashboardScreen({ navigation }) {
   const [activeRide,        setActiveRide]        = useState(null);
   const [floorPriceActive,  setFloorPriceActive]  = useState(false);
   const [activeFloorAmount, setActiveFloorAmount] = useState(0);
+  const [maintenance,       setMaintenance]       = useState({
+    isOn: false, isScheduled: false, message: '', endsAt: null,
+  });
 
   const fadeA   = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-20)).current;
 
-  // ── Fetch all data ──────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     try {
       const [profileRes, statsRes, walletRes, earningsRes, activeRideRes] = await Promise.allSettled([
@@ -227,6 +228,11 @@ export default function DriverDashboardScreen({ navigation }) {
         const ride = activeRideRes.value?.data?.ride ?? activeRideRes.value?.ride ?? null;
         setActiveRide(ride && ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'].includes(ride.status) ? ride : null);
       }
+
+      // Maintenance check
+      const maint = await checkMaintenance();
+      setMaintenance(maint);
+
     } catch {}
     finally {
       setLoading(false);
@@ -244,14 +250,9 @@ export default function DriverDashboardScreen({ navigation }) {
     return unsub;
   }, [navigation, fetchData]);
 
-  // ── Socket ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const handleReq = (data) => {
-      navigation.navigate('IncomingRide', { request: data });
-    };
-    const handleCanc = () => {
-      try { navigation.goBack(); } catch {}
-    };
+    const handleReq  = (data) => navigation.navigate('IncomingRide', { request: data });
+    const handleCanc = () => { try { navigation.goBack(); } catch {} };
 
     socketService.on('ride:new_request', handleReq);
     socketService.on('ride:cancelled',   handleCanc);
@@ -263,12 +264,24 @@ export default function DriverDashboardScreen({ navigation }) {
     };
   }, [navigation]);
 
-  // ── Toggle online ──────────────────────────────────────────────────────────
   const toggleOnline = async () => {
     if (!profile?.isApproved) {
       Alert.alert('Pending Approval', 'Your account is under review. You will be notified when approved.');
       return;
     }
+
+    // Block going online during active maintenance
+    if (maintenance.isOn) {
+      const endsMsg = maintenance.endsAt
+        ? `\n\nExpected back: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}`
+        : '';
+      Alert.alert(
+        'Platform Under Maintenance',
+        'You cannot go online until maintenance ends.' + endsMsg
+      );
+      return;
+    }
+
     setToggling(true);
     try {
       const next = !isOnline;
@@ -291,21 +304,19 @@ export default function DriverDashboardScreen({ navigation }) {
     }
   };
 
-  // ── Navigate to Earnings tab (correct tab name in DriverNavigator) ─────────
-  const goToEarnings  = () => navigation.getParent()?.navigate('EarningsTab');
-  const goToTopUp     = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'WalletTopUp' });
-  const goToWithdraw  = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal' });
-  const goToProfile   = () => navigation.getParent()?.navigate('ProfileTab');
+  const goToEarnings = () => navigation.getParent()?.navigate('EarningsTab');
+  const goToTopUp    = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'WalletTopUp' });
+  const goToWithdraw = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal' });
+  const goToProfile  = () => navigation.getParent()?.navigate('ProfileTab');
 
   const isApproved = profile?.isApproved ?? false;
 
-  // ── Quick actions ──────────────────────────────────────────────────────────
   const quickActions = [
-    { icon: 'wallet-outline',          label: 'Earnings',     color: DA,         onPress: goToEarnings   },
-    { icon: 'time-outline',            label: 'Ride History', color: '#5DAA72',  screen: 'DriverHistory' },
-    { icon: 'trending-up-outline',     label: 'Floor Price',  color: PURPLE,     screen: 'FloorPrice'    },
-    { icon: 'document-text-outline',   label: 'Documents',    color: '#4E8DBD',  screen: 'DriverDocuments'},
-    { icon: 'help-circle-outline',     label: 'Support',      color: theme.hint, screen: 'Support'       },
+    { icon: 'wallet-outline',        label: 'Earnings',     color: DA,         onPress: goToEarnings                             },
+    { icon: 'time-outline',          label: 'Ride History', color: '#5DAA72',  screen: 'DriverHistory'                           },
+    { icon: 'trending-up-outline',   label: 'Floor Price',  color: PURPLE,     screen: 'FloorPrice'                              },
+    { icon: 'document-text-outline', label: 'Documents',    color: '#4E8DBD',  screen: 'DriverDocuments'                         },
+    { icon: 'help-circle-outline',   label: 'Support',      color: theme.hint, screen: 'Support'                                 },
   ];
 
   return (
@@ -313,10 +324,18 @@ export default function DriverDashboardScreen({ navigation }) {
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.orb, { backgroundColor: DA }]} />
 
+      {/* Maintenance banner */}
+      {(maintenance.isOn || maintenance.isScheduled) && (
+        <MaintenanceBanner
+          message={maintenance.message}
+          endsAt={maintenance.endsAt}
+          scheduled={maintenance.isScheduled}
+        />
+      )}
+
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} overScrollMode="never">
         <Animated.View style={{ opacity: fadeA, transform: [{ translateY: headerY }] }}>
 
-          {/* ── Header ── */}
           <View style={s.header}>
             <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
               <Text style={[s.eyebrow, { color: DA + '70' }]}>DRIVER DASHBOARD</Text>
@@ -343,7 +362,6 @@ export default function DriverDashboardScreen({ navigation }) {
             </View>
           </View>
 
-          {/* ── Approval banner ── */}
           {!isApproved && !loading && (
             <View style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}>
               <Ionicons name="time-outline" size={18} color={DA} />
@@ -354,7 +372,6 @@ export default function DriverDashboardScreen({ navigation }) {
             </View>
           )}
 
-          {/* ── Online toggle ── */}
           <OnlineToggle
             isOnline={isOnline}
             toggling={toggling}
@@ -363,7 +380,6 @@ export default function DriverDashboardScreen({ navigation }) {
             theme={theme}
           />
 
-          {/* ── Active ride banner ── */}
           {activeRide && (
             <ActiveRideBanner
               ride={activeRide}
@@ -373,10 +389,8 @@ export default function DriverDashboardScreen({ navigation }) {
             />
           )}
 
-          {/* ── Waiting banner ── */}
           {isOnline && !activeRide && <WaitingBanner theme={theme} />}
 
-          {/* ── Wallet strip ── */}
           {!loading && (
             <WalletStrip
               balance={walletBalance}
@@ -387,18 +401,16 @@ export default function DriverDashboardScreen({ navigation }) {
             />
           )}
 
-          {/* ── Stats ── */}
           {loading ? (
             <ActivityIndicator color={DA} style={{ marginBottom: 16 }} />
           ) : (
             <View style={s.statsRow}>
-              <MetricCard icon="car-sport-outline" value={stats?.completedRides ?? profile?.totalRides ?? 0} label="Rides"  theme={theme} />
-              <MetricCard icon="star-outline"      value={(profile?.rating ?? stats?.rating ?? 0).toFixed(1)} label="Rating" color="#A78BFA" theme={theme} />
-              <MetricCard icon="trending-up-outline" value={isApproved ? '94%' : '—'} label="Accept" color="#5DAA72" theme={theme} />
+              <MetricCard icon="car-sport-outline"   value={stats?.completedRides ?? profile?.totalRides ?? 0}        label="Rides"  theme={theme} />
+              <MetricCard icon="star-outline"        value={(profile?.rating ?? stats?.rating ?? 0).toFixed(1)}        label="Rating" color="#A78BFA" theme={theme} />
+              <MetricCard icon="trending-up-outline" value={isApproved ? '94%' : '—'}                                 label="Accept" color="#5DAA72" theme={theme} />
             </View>
           )}
 
-          {/* ── Vehicle card ── */}
           {profile?.vehicleMake && (
             <TouchableOpacity
               style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: DA + '25' }]}
@@ -418,7 +430,6 @@ export default function DriverDashboardScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* ── Floor price badge ── */}
           {floorPriceActive && !loading && (
             <TouchableOpacity
               style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: PURPLE + '30', marginBottom: 14 }]}
@@ -438,7 +449,6 @@ export default function DriverDashboardScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* ── Quick actions ── */}
           <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
           <View style={s.actionGrid}>
             {quickActions.map(item => (
@@ -463,7 +473,6 @@ export default function DriverDashboardScreen({ navigation }) {
             ))}
           </View>
 
-          {/* ── Footer ── */}
           <View style={[s.footer, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <Ionicons
               name={isApproved ? 'shield-checkmark-outline' : 'shield-outline'}

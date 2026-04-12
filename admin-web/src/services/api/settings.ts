@@ -12,4 +12,12 @@ export const settingsAPI = {
     const response = await api.put(`/admin/settings/${key}`, { value });
     return response.data;
   },
+
+  // Sends all keys in one request — avoids rate-limit bursts from parallel PUTs
+  updateSettingsBatch: async (
+    settings: { key: string; value: string; category?: string }[]
+  ): Promise<ApiResponse<{ settings: any[] }>> => {
+    const response = await api.patch('/admin/settings/batch', { settings });
+    return response.data;
+  },
 };

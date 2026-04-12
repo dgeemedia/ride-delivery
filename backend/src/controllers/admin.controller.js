@@ -7,6 +7,7 @@ const notificationService = require('../services/notification.service');
 const shieldService = require('../services/shield.service');
 const { invalidateFareCache } = require('../utils/fareEngine');
 const bcrypt = require('bcryptjs');
+const { invalidateMaintenanceCache } = require('../middleware/maintenance.middleware');
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -410,8 +411,46 @@ exports.updateSetting = async (req, res) => {
   // Bust fare engine cache so pricing is live immediately
   invalidateFareCache();
 
+  // Bust maintenance cache so the new state takes effect immediately
+  if (['maintenance_mode', 'maintenance_message', 'maintenance_starts_at', 'maintenance_ends_at'].includes(key)) {
+  invalidateMaintenanceCache();
+  }
+
   await logActivity({ userId: req.user.id, action: 'setting_updated', entityType: 'SystemSettings', entityId: setting.id, details: { key, value }, req });
   res.status(200).json({ success: true, message: 'Setting updated', data: { setting } });
+};
+
+exports.updateSettingsBatch = async (req, res) => {
+  const { settings } = req.body;
+  if (!Array.isArray(settings) || settings.length === 0)
+    throw new AppError('settings array is required', 400);
+
+  const results = await Promise.all(
+    settings.map(({ key, value, category = 'general', description }) =>
+      prisma.systemSettings.upsert({
+        where:  { key },
+        update: { value, updatedBy: req.user.id, ...(description && { description }) },
+        create: { key, value, category, description, updatedBy: req.user.id },
+      })
+    )
+  );
+
+  const keys = settings.map(s => s.key);
+
+  // Bust caches for any relevant keys
+  invalidateFareCache();
+  if (keys.some(k => k.startsWith('maintenance'))) invalidateMaintenanceCache();
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'settings_batch_updated',
+    entityType: 'SystemSettings',
+    entityId:   null,
+    details:    { keys },
+    req,
+  });
+
+  res.json({ success: true, message: 'Settings updated', data: { settings: results } });
 };
 
 // ─────────────────────────────────────────────

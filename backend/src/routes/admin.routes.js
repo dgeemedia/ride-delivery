@@ -72,6 +72,7 @@ router.get('/analytics/user-growth', authorize('ADMIN','SUPER_ADMIN'), adminCont
 // SETTINGS
 router.get('/settings',      authorize('ADMIN','SUPER_ADMIN'), adminController.getSettings);
 router.put('/settings/:key', [body('value').notEmpty()], authorize('SUPER_ADMIN'), adminController.updateSetting);
+router.patch('/settings/batch',  authorize('ADMIN','SUPER_ADMIN'), adminController.updateSettingsBatch);
 
 // PROMO CODES
 router.get('/promo-codes', authorize('ADMIN','SUPER_ADMIN'), adminController.getPromoCodes);
