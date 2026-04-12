@@ -3,6 +3,9 @@ require('dotenv').config();
 
 const ANDROID_KEY = process.env.GOOGLE_MAPS_API_KEY_ANDROID ?? '';
 const IOS_KEY     = process.env.GOOGLE_MAPS_API_KEY_IOS     ?? '';
+const API_URL     = process.env.API_URL ?? 'https://diakite.onrender.com/api';
+
+console.log('[app.config.js] API_URL:', API_URL);
 
 module.exports = {
   expo: {
@@ -70,10 +73,11 @@ module.exports = {
       bundler: 'metro',
     },
 
-extra: {
-  apiUrl: process.env.API_URL ?? 'https://diakite.onrender.com/api', // was local IP
-  eas: {
-    projectId: 'da8a9bc7-41c1-44d2-8d1d-a52b0dc46fb7',
+    extra: {
+      apiUrl: API_URL,
+      eas: {
+        projectId: 'da8a9bc7-41c1-44d2-8d1d-a52b0dc46fb7',
+      },
+    },
   },
-},
 };
