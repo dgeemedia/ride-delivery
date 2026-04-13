@@ -3,28 +3,25 @@ import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const SCREEN_W    = Dimensions.get('window').width;
-const PX_PER_SEC  = 50;   // pixels per second — raise to speed up
-const SEPARATOR   = '          •          ';
+const SCREEN_W   = Dimensions.get('window').width;
+const PX_PER_SEC = 50;
+const SEPARATOR  = '          •          ';
 
 export default function MaintenanceBanner({ message, endsAt, scheduled = false }) {
-  const translateX  = useRef(new Animated.Value(SCREEN_W)).current; // starts off-screen right
-  const animRef     = useRef(null);
-  const [oneWidth,  setOneWidth]  = useState(0);
+  const translateX = useRef(new Animated.Value(SCREEN_W)).current;
+  const bannerOpacity = useRef(new Animated.Value(1)).current;
+  const animRef    = useRef(null);
+  const [oneWidth, setOneWidth]   = useState(0);
   const [countdown, setCountdown] = useState('');
+  const [expired, setExpired]     = useState(false);
 
-  // ── Start / restart marquee ──────────────────────────────────────────────
+  // ── Marquee — single copy travels right → left, snaps back invisibly ───
   useEffect(() => {
     if (oneWidth <= 0) return;
-
     animRef.current?.stop();
 
-    // Full journey: starts at +SCREEN_W (right edge), ends at -oneWidth (fully off left)
-    // Total distance = SCREEN_W + oneWidth
-    // Animated.loop snaps back to +SCREEN_W so copy 2 seamlessly follows copy 1
-    const totalDistance = SCREEN_W + oneWidth;
-    const duration      = (totalDistance / PX_PER_SEC) * 1000;
-
+    // Start off-screen right, end off-screen left — snap is invisible to user
+    const duration = ((SCREEN_W + oneWidth) / PX_PER_SEC) * 1000;
     translateX.setValue(SCREEN_W);
 
     animRef.current = Animated.loop(
@@ -32,20 +29,33 @@ export default function MaintenanceBanner({ message, endsAt, scheduled = false }
         toValue:         -oneWidth,
         duration,
         useNativeDriver: true,
-        easing:          t => t,   // linear
+        easing:          t => t, // linear
       })
     );
     animRef.current.start();
-
     return () => animRef.current?.stop();
   }, [oneWidth, message]);
 
-  // ── Countdown ticker ─────────────────────────────────────────────────────
+  // ── Countdown ticker — fades banner out when time is up ────────────────
   useEffect(() => {
     if (!endsAt) { setCountdown(''); return; }
+
     const tick = () => {
       const diff = new Date(endsAt) - Date.now();
-      if (diff <= 0) { setCountdown('ending…'); return; }
+
+      if (diff <= 0) {
+        setCountdown('ending…');
+        // Fade the whole banner out after a short pause
+        setTimeout(() => {
+          Animated.timing(bannerOpacity, {
+            toValue:         0,
+            duration:        800,
+            useNativeDriver: true,
+          }).start(() => setExpired(true));
+        }, 2000); // show "ending…" for 2 s then fade
+        return;
+      }
+
       const h = Math.floor(diff / 3_600_000);
       const m = Math.floor((diff % 3_600_000) / 60_000);
       const s = Math.floor((diff % 60_000)    / 1_000);
@@ -55,47 +65,51 @@ export default function MaintenanceBanner({ message, endsAt, scheduled = false }
           : `${m}m ${String(s).padStart(2,'0')}s`
       );
     };
+
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [endsAt]);
+
+  // Fully unmount after fade completes
+  if (expired) return null;
 
   const bg     = scheduled ? '#EFF6FF' : '#FFF3CD';
   const border = scheduled ? '#BFDBFE' : '#FFD369';
   const fg     = scheduled ? '#1e40af' : '#7c3800';
   const icon   = scheduled ? 'information-circle-outline' : 'warning-outline';
 
-  // Two copies so no gap when loop snaps back
+  // Single copy — no double text visible at the same time
   const singleCopy = message + SEPARATOR;
-  const doubleCopy = singleCopy + singleCopy;
 
   return (
-    <View style={[styles.wrap, { backgroundColor: bg, borderBottomColor: border }]}>
+    <Animated.View
+      style={[
+        styles.wrap,
+        { backgroundColor: bg, borderBottomColor: border, opacity: bannerOpacity },
+      ]}
+    >
       <Ionicons name={icon} size={14} color={fg} style={styles.icon} />
 
-      {/*
-        Ghost text — lives OUTSIDE the clip so it's unconstrained.
-        position:absolute + opacity:0 means it doesn't push layout but
-        React Native still measures it correctly on Android & iOS.
-      */}
-      <Text
-        numberOfLines={1}
-        style={[styles.text, styles.ghost, { color: fg }]}
-        onLayout={e => {
-          const w = e.nativeEvent.layout.width;
-          if (w > 0 && w !== oneWidth) setOneWidth(w);
-        }}
-      >
-        {singleCopy}
-      </Text>
-
-      {/* Clipping window — hides text that has scrolled past left edge */}
       <View style={styles.clip}>
+        {/* Ghost — measures real text width without constraining the animated text */}
+        <Text
+          numberOfLines={1}
+          style={[styles.text, styles.ghost, { color: fg }]}
+          onLayout={e => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0 && w !== oneWidth) setOneWidth(w);
+          }}
+        >
+          {singleCopy}
+        </Text>
+
+        {/* Ticker — single copy scrolls right → left on repeat */}
         <Animated.Text
           numberOfLines={1}
           style={[styles.text, { color: fg, transform: [{ translateX }] }]}
         >
-          {doubleCopy}
+          {singleCopy}
         </Animated.Text>
       </View>
 
@@ -104,7 +118,7 @@ export default function MaintenanceBanner({ message, endsAt, scheduled = false }
           <Text style={[styles.pillTxt, { color: fg }]}>{countdown}</Text>
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -117,19 +131,14 @@ const styles = StyleSheet.create({
     paddingVertical:   9,
     minHeight:         38,
   },
-  icon: { marginRight: 6, flexShrink: 0 },
-
-  // Unconstrained measurer — absolute so it doesn't affect layout
+  icon:  { marginRight: 6, flexShrink: 0 },
+  clip:  { flex: 1, overflow: 'hidden' },
   ghost: {
     position: 'absolute',
-    opacity:  0,
-    left:     0,
     top:      0,
+    left:     0,
+    opacity:  0,
   },
-
-  // Clips overflowing ticker text
-  clip: { flex: 1, overflow: 'hidden' },
-
   text:    { fontSize: 12, fontWeight: '600' },
   pill:    {
     borderRadius:      10,

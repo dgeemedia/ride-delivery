@@ -369,14 +369,25 @@ export default function PartnerDashboardScreen({ navigation }) {
 
       {/* Maintenance banner */}
       {(maintenance.isOn || maintenance.isScheduled) && (
-        <MaintenanceBanner
-          message={maintenance.message}
-          endsAt={maintenance.endsAt}
-          scheduled={maintenance.isScheduled}
-        />
+        <View style={{ paddingTop: insets.top }}>
+          <MaintenanceBanner
+            message={maintenance.message}
+            endsAt={maintenance.endsAt}
+            scheduled={maintenance.isScheduled}
+          />
+        </View>
       )}
 
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} overScrollMode="never">
+      <ScrollView
+        contentContainerStyle={[s.scroll, {
+          paddingTop: (maintenance.isOn || maintenance.isScheduled)
+            ? 16                      // banner already consumed the inset
+            : paddingTop,             // insets.top + 16 as before
+          paddingBottom,
+        }]}
+        showsVerticalScrollIndicator={false}
+        overScrollMode="never"
+      >
         <Animated.View style={{ opacity: fadeA, transform: [{ translateY: headerY }] }}>
 
           {/* Header */}
