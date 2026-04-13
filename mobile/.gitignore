@@ -59,3 +59,6 @@ ios/Pods/
 .env.local
 .env.production
 .expo
+# Add to mobile/.gitignore
+android/
+ios/

@@ -1,6 +1,6 @@
 // mobile/app.config.js
-require('dotenv').config({ path: '.env.local' }); // local overrides first
-require('dotenv').config();                         // fallback to .env
+require('dotenv').config({ path: '.env.local', override: true }); // local overrides everything
+require('dotenv').config({ override: true });                       // .env overrides system vars
 
 const ANDROID_KEY = process.env.GOOGLE_MAPS_API_KEY_ANDROID ?? '';
 const IOS_KEY     = process.env.GOOGLE_MAPS_API_KEY_IOS     ?? '';
@@ -29,6 +29,9 @@ module.exports = {
       [
         'expo-image-picker',
         { photosPermission: 'Allow Diakite to access your photos.' },
+      ],
+      [
+        'expo-font',
       ],
       [
         'expo-location',
