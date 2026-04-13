@@ -1,34 +1,38 @@
 // mobile/src/components/MaintenanceBanner.js
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const PX_PER_SECOND = 40; // lower = slower
-const SEPARATOR     = '          ·          ';
+const SCREEN_W    = Dimensions.get('window').width;
+const PX_PER_SEC  = 50;   // pixels per second — raise to speed up
+const SEPARATOR   = '          •          ';
 
 export default function MaintenanceBanner({ message, endsAt, scheduled = false }) {
-  const translateX       = useRef(new Animated.Value(0)).current;
-  const animRef          = useRef(null);
-  const [oneWidth, setOneWidth]   = useState(0); // width of ONE copy (message + sep)
+  const translateX  = useRef(new Animated.Value(SCREEN_W)).current; // starts off-screen right
+  const animRef     = useRef(null);
+  const [oneWidth,  setOneWidth]  = useState(0);
   const [countdown, setCountdown] = useState('');
 
-  // ── Start the loop once we know the single-copy width ──────────────────────
+  // ── Start / restart marquee ──────────────────────────────────────────────
   useEffect(() => {
     if (oneWidth <= 0) return;
 
     animRef.current?.stop();
-    translateX.setValue(0);
 
-    // Animate exactly one copy to the left, then Animated.loop snaps back to 0.
-    // Because copy 2 is right behind copy 1, the snap is invisible — seamless loop.
-    const duration = (oneWidth / PX_PER_SECOND) * 1000;
+    // Full journey: starts at +SCREEN_W (right edge), ends at -oneWidth (fully off left)
+    // Total distance = SCREEN_W + oneWidth
+    // Animated.loop snaps back to +SCREEN_W so copy 2 seamlessly follows copy 1
+    const totalDistance = SCREEN_W + oneWidth;
+    const duration      = (totalDistance / PX_PER_SEC) * 1000;
+
+    translateX.setValue(SCREEN_W);
 
     animRef.current = Animated.loop(
       Animated.timing(translateX, {
         toValue:         -oneWidth,
         duration,
         useNativeDriver: true,
-        easing:          t => t,   // linear — constant speed
+        easing:          t => t,   // linear
       })
     );
     animRef.current.start();
@@ -36,19 +40,19 @@ export default function MaintenanceBanner({ message, endsAt, scheduled = false }
     return () => animRef.current?.stop();
   }, [oneWidth, message]);
 
-  // ── Countdown ticker ────────────────────────────────────────────────────────
+  // ── Countdown ticker ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!endsAt) { setCountdown(''); return; }
     const tick = () => {
       const diff = new Date(endsAt) - Date.now();
       if (diff <= 0) { setCountdown('ending…'); return; }
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
+      const h = Math.floor(diff / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      const s = Math.floor((diff % 60_000)    / 1_000);
       setCountdown(
         h > 0
-          ? `${h}h ${String(m).padStart(2, '0')}m`
-          : `${m}m ${String(s).padStart(2, '0')}s`
+          ? `${h}h ${String(m).padStart(2,'0')}m`
+          : `${m}m ${String(s).padStart(2,'0')}s`
       );
     };
     tick();
@@ -61,14 +65,19 @@ export default function MaintenanceBanner({ message, endsAt, scheduled = false }
   const fg     = scheduled ? '#1e40af' : '#7c3800';
   const icon   = scheduled ? 'information-circle-outline' : 'warning-outline';
 
+  // Two copies so no gap when loop snaps back
   const singleCopy = message + SEPARATOR;
-  const doubleCopy = singleCopy + singleCopy; // two copies side-by-side
+  const doubleCopy = singleCopy + singleCopy;
 
   return (
     <View style={[styles.wrap, { backgroundColor: bg, borderBottomColor: border }]}>
       <Ionicons name={icon} size={14} color={fg} style={styles.icon} />
 
-      {/* ── Hidden ghost text — measures real unconstrained width of one copy ── */}
+      {/*
+        Ghost text — lives OUTSIDE the clip so it's unconstrained.
+        position:absolute + opacity:0 means it doesn't push layout but
+        React Native still measures it correctly on Android & iOS.
+      */}
       <Text
         numberOfLines={1}
         style={[styles.text, styles.ghost, { color: fg }]}
@@ -80,7 +89,7 @@ export default function MaintenanceBanner({ message, endsAt, scheduled = false }
         {singleCopy}
       </Text>
 
-      {/* ── Visible clip area — two copies scroll as one seamless loop ── */}
+      {/* Clipping window — hides text that has scrolled past left edge */}
       <View style={styles.clip}>
         <Animated.Text
           numberOfLines={1}
@@ -100,28 +109,29 @@ export default function MaintenanceBanner({ message, endsAt, scheduled = false }
 }
 
 const styles = StyleSheet.create({
-  wrap:  {
+  wrap: {
     flexDirection:     'row',
     alignItems:        'center',
     borderBottomWidth: 1,
     paddingHorizontal: 12,
-    paddingVertical:   8,
+    paddingVertical:   9,
+    minHeight:         38,
   },
-  icon:  { marginRight: 6, flexShrink: 0 },
+  icon: { marginRight: 6, flexShrink: 0 },
 
-  // Invisible, positioned off-screen — exists only to measure text width
+  // Unconstrained measurer — absolute so it doesn't affect layout
   ghost: {
     position: 'absolute',
-    top:      -1000,     // off-screen, never seen by user
-    left:     0,
     opacity:  0,
+    left:     0,
+    top:      0,
   },
 
-  // Clips the scrolling text to the available horizontal space
-  clip:  { flex: 1, overflow: 'hidden' },
+  // Clips overflowing ticker text
+  clip: { flex: 1, overflow: 'hidden' },
 
-  text:  { fontSize: 12, fontWeight: '600' },
-  pill:  {
+  text:    { fontSize: 12, fontWeight: '600' },
+  pill:    {
     borderRadius:      10,
     paddingHorizontal: 8,
     paddingVertical:   3,
