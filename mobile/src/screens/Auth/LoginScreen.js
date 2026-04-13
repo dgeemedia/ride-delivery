@@ -11,10 +11,12 @@ import { useTheme } from '../../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
-const LOGO_DARK  = require('../../../assets/diakite_light.png');
-const LOGO_LIGHT = require('../../../assets/diakite_dark.png');
+// The Diakite logo is black artwork on a white canvas.
+// We always use the dark-logo asset (black marks) because the badge
+// background is always white — it never changes with the app theme.
+const LOGO = require('../../../assets/diakite_dark.png');
 
-// ── FloatInput ─────────────────────────────────────────────────────────────────
+// ── FloatInput ──────────────────────────────────────────────────────────────
 const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secureTextEntry }) => {
   const { theme } = useTheme();
   const [focused, setFocused] = useState(false);
@@ -24,14 +26,13 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secure
 
   useEffect(() => {
     Animated.timing(labelY, {
-      toValue: focused || value ? 1 : 0,
+      toValue:  focused || value ? 1 : 0,
       duration: 180,
       useNativeDriver: false,
     }).start();
   }, [focused, value]);
 
-  // Border is always static — no focus highlight
-  const top      = labelY.interpolate({ inputRange: [0, 1], outputRange: [18, 7] });
+  const top      = labelY.interpolate({ inputRange: [0, 1], outputRange: [18, 7]  });
   const fontSize = labelY.interpolate({ inputRange: [0, 1], outputRange: [15, 11] });
   const lColor   = labelY.interpolate({
     inputRange:  [0, 1],
@@ -65,7 +66,7 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secure
   );
 };
 
-// ── MAIN ───────────────────────────────────────────────────────────────────────
+// ── MAIN ────────────────────────────────────────────────────────────────────
 export default function LoginScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const { login }       = useAuth();
@@ -103,7 +104,10 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
 
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
@@ -123,13 +127,27 @@ export default function LoginScreen({ navigation }) {
 
           {/* ── Header ── */}
           <Animated.View style={[s.header, { opacity: hdrO, transform: [{ translateY: hdrY }] }]}>
-            <View style={[s.logoBadge, { backgroundColor: theme.backgroundAlt, borderColor: theme.border, shadowColor: theme.accent }]}>
+
+            {/*
+              Logo badge — always white background so the black logo artwork
+              is legible in both dark and light app modes.
+              theme.logoBadgeBg is '#FFFFFF' in every theme variant.
+            */}
+            <View style={[
+              s.logoBadge,
+              {
+                backgroundColor: theme.logoBadgeBg   ?? '#FFFFFF',
+                borderColor:     theme.logoBadgeBorder ?? '#E5E5E5',
+                shadowColor:     '#000000',
+              },
+            ]}>
               <Image
-                source={mode === 'dark' ? LOGO_DARK : LOGO_LIGHT}
+                source={LOGO}
                 style={s.logoImg}
                 resizeMode="contain"
               />
             </View>
+
             <Text style={[s.eyebrow,  { color: theme.accent }]}>WELCOME BACK</Text>
             <Text style={[s.title,    { color: theme.foreground }]}>Sign in</Text>
             <Text style={[s.subtitle, { color: theme.muted ?? theme.hint }]}>Good to see you again.</Text>
@@ -158,7 +176,11 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[s.signBtn, loading && s.signBtnDim, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
+              style={[
+                s.signBtn,
+                loading && s.signBtnDim,
+                { backgroundColor: theme.accent, shadowColor: theme.accent },
+              ]}
               activeOpacity={0.85}
               onPress={handleLogin}
               disabled={loading}
@@ -189,6 +211,7 @@ export default function LoginScreen({ navigation }) {
   );
 }
 
+// ── Styles ──────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root: { flex: 1 },
 
@@ -211,13 +234,26 @@ const s = StyleSheet.create({
     marginBottom: 32,
   },
 
-  header:    { marginBottom: 40 },
+  header: { marginBottom: 40 },
+
+  // White badge — fixed regardless of mode
   logoBadge: {
-    width: 60, height: 60, borderRadius: 16, borderWidth: 1,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 24,
-    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 12, elevation: 6,
+    width: 72, height: 72,
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    // Subtle shadow so the white badge lifts off dark backgrounds
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  logoImg:  { width: 38, height: 27 },
+
+  // Logo sized to show the full wordmark comfortably inside the badge
+  logoImg: { width: 52, height: 36 },
+
   eyebrow:  { fontSize: 10, letterSpacing: 4, fontWeight: '700', marginBottom: 10 },
   title:    { fontSize: 34, fontWeight: '800', letterSpacing: -0.5, marginBottom: 8 },
   subtitle: { fontSize: 15, fontWeight: '300' },

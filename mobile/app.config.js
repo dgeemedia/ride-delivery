@@ -1,5 +1,6 @@
 // mobile/app.config.js
-require('dotenv').config();
+require('dotenv').config({ path: '.env.local' }); // local overrides first
+require('dotenv').config();                         // fallback to .env
 
 const ANDROID_KEY = process.env.GOOGLE_MAPS_API_KEY_ANDROID ?? '';
 const IOS_KEY     = process.env.GOOGLE_MAPS_API_KEY_IOS     ?? '';
@@ -57,7 +58,7 @@ module.exports = {
     android: {
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#080C18',
+        backgroundColor: '#FFFFFF',
       },
       package:     'com.diakite.app',
       permissions: ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION'],

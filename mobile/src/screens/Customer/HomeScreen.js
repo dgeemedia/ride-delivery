@@ -250,16 +250,6 @@ export default function HomeScreen({ navigation }) {
 
   const fetchAll = async () => {
     try {
-      const [statsRes, rideRes, deliveryRes, maintState] = await Promise.all([
-        Promise.allSettled([
-          userAPI.getStats(),
-          rideAPI.getActiveRide(),
-          deliveryAPI.getActiveDelivery(),
-        ]),
-        checkMaintenance(),
-      ]).then(([settled, maint]) => [...settled, maint]);
-
-      // Stats
       const [statsRes2, rideRes2, deliveryRes2] = await Promise.allSettled([
         userAPI.getStats(),
         rideAPI.getActiveRide(),
@@ -282,7 +272,6 @@ export default function HomeScreen({ navigation }) {
         );
       }
 
-      // Maintenance
       const maint = await checkMaintenance();
       setMaintenance(maint);
 
@@ -296,7 +285,6 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // ── Maintenance alert helper ─────────────────────────────────────────────
   const showMaintenanceAlert = () => {
     const endsMsg = maintenance.endsAt
       ? `\n\nExpected back: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}`
@@ -304,7 +292,6 @@ export default function HomeScreen({ navigation }) {
     Alert.alert('Platform Under Maintenance', maintenance.message + endsMsg);
   };
 
-  // ── Guarded navigation ───────────────────────────────────────────────────
   const goToRide = () => {
     if (maintenance.isOn) { showMaintenanceAlert(); return; }
     navigation.navigate('RequestRide');
@@ -364,7 +351,6 @@ export default function HomeScreen({ navigation }) {
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
-      {/* Maintenance banner — active (red-ish) or scheduled (blue) */}
       {(maintenance.isOn || maintenance.isScheduled) && (
         <MaintenanceBanner
           message={maintenance.message}
@@ -410,7 +396,6 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Active ride banner */}
           {activeRide && (
             <ActiveRideBanner
               ride={activeRide}
@@ -421,7 +406,6 @@ export default function HomeScreen({ navigation }) {
             />
           )}
 
-          {/* Active delivery banner */}
           {activeDelivery && (
             <ActiveDeliveryBanner
               delivery={activeDelivery}
@@ -432,14 +416,12 @@ export default function HomeScreen({ navigation }) {
             />
           )}
 
-          {/* Wallet */}
           <WalletStrip
             balance={stats?.walletBalance}
             onTopUp={() => navigation.getParent()?.navigate('WalletTab')}
             theme={theme}
           />
 
-          {/* Stats */}
           {loading ? (
             <ActivityIndicator color={theme.accent} style={{ marginBottom: 24 }} />
           ) : (
@@ -455,7 +437,6 @@ export default function HomeScreen({ navigation }) {
             </View>
           )}
 
-          {/* Quick Actions */}
           <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
           <View style={s.actionsRow}>
             <ActionCard
@@ -475,7 +456,6 @@ export default function HomeScreen({ navigation }) {
             />
           </View>
 
-          {/* Choose a Driver */}
           <TouchableOpacity
             style={[s.chooseDriverBtn, { borderColor: theme.accent + '50', backgroundColor: theme.accent + '0D' }]}
             onPress={goToNearbyDrivers}
@@ -491,10 +471,8 @@ export default function HomeScreen({ navigation }) {
             <Ionicons name="chevron-forward" size={16} color={theme.accent} />
           </TouchableOpacity>
 
-          {/* Promo */}
           <PromoBanner theme={theme} onPress={() => {}} />
 
-          {/* Recent Activity */}
           <Text style={[s.sectionTitle, { color: theme.hint }]}>RECENT ACTIVITY</Text>
           <View style={[s.activityCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             {loading ? (

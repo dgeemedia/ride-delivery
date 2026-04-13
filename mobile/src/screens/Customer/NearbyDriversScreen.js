@@ -1,18 +1,4 @@
 // mobile/src/screens/Customer/NearbyDriversScreen.js
-//
-// Customer browses online drivers near their pickup point.
-// Each card shows the driver's vehicle, rating, ETA, platform fare estimate,
-// and their floor price if they have one set.
-//
-// Tapping a driver opens a bottom-sheet confirmation with a full fare breakdown.
-// "Request This Driver" calls rideAPI.requestSpecificDriver, passing the floor
-// price so the backend encodes it for accurate final-fare calculation.
-//
-// Navigation params expected:
-//   pickupAddress, pickupLat, pickupLng
-//   dropoffAddress, dropoffLat, dropoffLng
-//   vehicleType (optional, default 'CAR')
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
@@ -37,10 +23,7 @@ const VEHICLE_ICON = {
   MOTORCYCLE: 'bicycle-outline',
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-components
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ─── StarRating ───────────────────────────────────────────────────────────────
 const StarRating = ({ rating, theme }) => (
   <View style={sr.row}>
     <Ionicons name="star" size={11} color={DA} />
@@ -52,6 +35,7 @@ const sr = StyleSheet.create({
   txt: { fontSize: 12, fontWeight: '700' },
 });
 
+// ─── Pill ─────────────────────────────────────────────────────────────────────
 const Pill = ({ icon, label, color, theme }) => (
   <View style={[pill.wrap, { backgroundColor: (color || theme.hint) + '18', borderColor: (color || theme.hint) + '30' }]}>
     <Ionicons name={icon} size={11} color={color || theme.hint} />
@@ -63,7 +47,7 @@ const pill = StyleSheet.create({
   txt:  { fontSize: 11, fontWeight: '700' },
 });
 
-// ── Driver card ───────────────────────────────────────────────────────────────
+// ─── DriverCard ───────────────────────────────────────────────────────────────
 const DriverCard = ({ driver, platformFare, onPress, theme }) => {
   const hasFloor       = driver.preferredFloorPrice > 0;
   const effectiveFare  = hasFloor
@@ -84,7 +68,6 @@ const DriverCard = ({ driver, platformFare, onPress, theme }) => {
         onPressOut={onPressOut}
         activeOpacity={1}
       >
-        {/* Floor price badge */}
         {floorActive && (
           <View style={[dc.floorBadge, { backgroundColor: DA }]}>
             <Ionicons name="trending-up" size={10} color="#080C18" />
@@ -93,14 +76,12 @@ const DriverCard = ({ driver, platformFare, onPress, theme }) => {
         )}
 
         <View style={dc.top}>
-          {/* Avatar */}
           <View style={[dc.avatar, { backgroundColor: DA + '18' }]}>
             <Text style={[dc.avatarTxt, { color: DA }]}>
               {driver.firstName?.[0]}{driver.lastName?.[0]}
             </Text>
           </View>
 
-          {/* Name + vehicle */}
           <View style={{ flex: 1 }}>
             <View style={dc.nameRow}>
               <Text style={[dc.name, { color: theme.foreground }]}>
@@ -114,7 +95,6 @@ const DriverCard = ({ driver, platformFare, onPress, theme }) => {
             <Text style={[dc.plate, { color: DA }]}>{driver.vehiclePlate}</Text>
           </View>
 
-          {/* Fare */}
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={[dc.fare, { color: floorActive ? DA : GREEN }]}>
               ₦{effectiveFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
@@ -127,7 +107,6 @@ const DriverCard = ({ driver, platformFare, onPress, theme }) => {
           </View>
         </View>
 
-        {/* Pills row */}
         <View style={dc.pills}>
           <Pill icon={VEHICLE_ICON[driver.vehicleType] ?? 'car-outline'} label={driver.vehicleType} color={PURPLE} theme={theme} />
           <Pill icon="navigate-outline" label={`${driver.distanceKm} km`}   color={theme.hint} theme={theme} />
@@ -157,10 +136,11 @@ const dc = StyleSheet.create({
   pills:       { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 });
 
-// ── Confirm bottom sheet ───────────────────────────────────────────────────────
+// ─── ConfirmSheet ─────────────────────────────────────────────────────────────
 const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, theme }) => {
   const [requesting, setRequesting] = useState(false);
   const slideA = useRef(new Animated.Value(height)).current;
+  const accentFg = theme.accentFg ?? '#111111';
 
   const hasFloor      = driver.preferredFloorPrice > 0;
   const effectiveFare = hasFloor
@@ -168,7 +148,6 @@ const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, t
     : (platformFare ?? 0);
   const floorActive   = hasFloor && driver.preferredFloorPrice > (platformFare ?? 0);
   const bookingFee    = driver.bookingFee ?? 100;
-  const driverEarnings= Math.round((effectiveFare - bookingFee) * 0.80);
   const markupPct     = floorActive && platformFare
     ? (((effectiveFare - platformFare) / platformFare) * 100).toFixed(1)
     : null;
@@ -193,7 +172,6 @@ const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, t
         driverId:       driver.driverId,
         vehicleType:    driver.vehicleType,
         paymentMethod:  'CASH',
-        // Pass the floor price so the backend can encode it into the ride
         ...(floorActive && { driverFloorPrice: driver.preferredFloorPrice }),
       });
       onSuccess(res?.data?.ride ?? res?.ride);
@@ -213,12 +191,11 @@ const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, t
   return (
     <View style={cs.overlay}>
       <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={close} activeOpacity={1} />
-      <Animated.View style={[cs.sheet, { backgroundColor: theme.background, transform: [{ translateY: slideA }] }]}>
+      <Animated.View style={[cs.sheet, { backgroundColor: theme.background, borderColor: theme.border, transform: [{ translateY: slideA }] }]}>
         <View style={[cs.handle, { backgroundColor: theme.border }]} />
 
         <Text style={[cs.sheetTitle, { color: theme.foreground }]}>Confirm Driver</Text>
 
-        {/* Driver mini-card */}
         <View style={[cs.miniCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
           <View style={[cs.miniAvatar, { backgroundColor: DA + '18' }]}>
             <Text style={[cs.miniAvatarTxt, { color: DA }]}>
@@ -239,7 +216,6 @@ const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, t
           </View>
         </View>
 
-        {/* Fare breakdown */}
         <View style={[cs.fareCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
           <FareRow label="Platform estimate"  value={`₦${(platformFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}`} />
           {floorActive && (
@@ -263,7 +239,6 @@ const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, t
           </View>
         )}
 
-        {/* Route summary */}
         <View style={[cs.routeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
           <View style={cs.routeRow}>
             <View style={[cs.routeDot, { backgroundColor: DA }]} />
@@ -280,7 +255,6 @@ const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, t
           </View>
         </View>
 
-        {/* Actions */}
         <View style={cs.actions}>
           <TouchableOpacity
             style={[cs.cancelBtn, { borderColor: theme.border }]}
@@ -313,32 +287,27 @@ const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, t
 
 const cs = StyleSheet.create({
   overlay:    { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
-  sheet:      { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 24, paddingTop: 14, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.25, shadowRadius: 14, elevation: 18 },
+  sheet:      { borderTopLeftRadius: 30, borderTopRightRadius: 30, borderTopWidth: 1, padding: 24, paddingTop: 14, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.25, shadowRadius: 14, elevation: 18 },
   handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   sheetTitle: { fontSize: 20, fontWeight: '900', marginBottom: 16 },
-
   miniCard:       { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 14 },
   miniAvatar:     { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
   miniAvatarTxt:  { fontSize: 16, fontWeight: '800' },
   miniName:       { fontSize: 14, fontWeight: '800', marginBottom: 2 },
   miniVehicle:    { fontSize: 11, fontWeight: '500' },
   miniEta:        { fontSize: 11, marginTop: 3 },
-
   fareCard:    { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 12 },
   fareRow:     { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   fareLabel:   { fontSize: 13 },
   fareValue:   { fontSize: 13 },
   fareDivider: { height: 1, marginVertical: 6 },
-
   floorNote:    { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 12 },
   floorNoteTxt: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '500' },
-
   routeCard: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 18 },
   routeRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
   routeDot:  { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
   routeLine: { width: 2, height: 18, marginLeft: 4, marginVertical: 4 },
   routeAddr: { flex: 1, fontSize: 13, fontWeight: '600' },
-
   actions:    { flexDirection: 'row', gap: 12 },
   cancelBtn:  { flex: 1, height: 54, borderRadius: 14, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
   cancelTxt:  { fontSize: 15, fontWeight: '700' },
@@ -346,18 +315,16 @@ const cs = StyleSheet.create({
   confirmTxt: { fontSize: 15, fontWeight: '900', color: '#080C18' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function NearbyDriversScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
   const params = route.params ?? {};
 
-  const [drivers,       setDrivers]       = useState([]);
-  const [platformFare,  setPlatformFare]  = useState(null);
-  const [loading,       setLoading]       = useState(true);
-  const [refreshing,    setRefreshing]    = useState(false);
-  const [selectedDriver,setSelectedDriver]= useState(null);
+  const [drivers,        setDrivers]        = useState([]);
+  const [platformFare,   setPlatformFare]   = useState(null);
+  const [loading,        setLoading]        = useState(true);
+  const [refreshing,     setRefreshing]     = useState(false);
+  const [selectedDriver, setSelectedDriver] = useState(null);
 
   const fadeA = useRef(new Animated.Value(0)).current;
 
@@ -402,7 +369,6 @@ export default function NearbyDriversScreen({ route, navigation }) {
 
   const handleRideRequested = (ride) => {
     setSelectedDriver(null);
-    // Navigate to ride tracking
     navigation.replace('RideTracking', { rideId: ride?.id, ride });
   };
 
@@ -414,7 +380,6 @@ export default function NearbyDriversScreen({ route, navigation }) {
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
       <SafeAreaView edges={['top', 'left', 'right']}>
-        {/* ── Header ── */}
         <View style={[s.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
@@ -424,7 +389,7 @@ export default function NearbyDriversScreen({ route, navigation }) {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={[s.headerTitle, { color: theme.foreground }]}>Choose a Driver</Text>
-            <Text style={[s.headerSub,   { color: theme.hint }]} numberOfLines={1}>
+            <Text style={[s.headerSub, { color: theme.hint }]} numberOfLines={1}>
               {params.pickupAddress?.split('(')[0]?.trim() ?? 'Nearby pickup'}
             </Text>
           </View>
@@ -436,18 +401,16 @@ export default function NearbyDriversScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── Surge banner ── */}
         {surgeActive && (
           <View style={[s.surgeBanner, { backgroundColor: DA + '12', borderColor: DA + '30' }]}>
             <Ionicons name="flash" size={13} color={DA} />
             <Text style={[s.surgeTxt, { color: DA }]}>
-              {surgeLabel ?? 'Surge pricing'} is active · Fares are higher than normal
+              {surgeLabel ?? 'Surge pricing'} is active • Fares are higher than normal
             </Text>
           </View>
         )}
       </SafeAreaView>
 
-      {/* ── Route summary strip ── */}
       <View style={[s.routeStrip, { backgroundColor: theme.backgroundAlt, borderBottomColor: theme.border }]}>
         <View style={s.routeItem}>
           <View style={[s.routeDot, { backgroundColor: DA }]} />
@@ -469,7 +432,6 @@ export default function NearbyDriversScreen({ route, navigation }) {
         )}
       </View>
 
-      {/* ── List ── */}
       {loading ? (
         <View style={s.center}>
           <ActivityIndicator color={DA} size="large" />
@@ -512,7 +474,7 @@ export default function NearbyDriversScreen({ route, navigation }) {
               <View style={s.empty}>
                 <Ionicons name="car-outline" size={48} color={theme.hint} />
                 <Text style={[s.emptyTitle, { color: theme.foreground }]}>No drivers nearby</Text>
-                <Text style={[s.emptySub,   { color: theme.hint }]}>
+                <Text style={[s.emptySub, { color: theme.hint }]}>
                   Pull down to refresh or try a larger radius.
                 </Text>
                 <TouchableOpacity
@@ -527,7 +489,6 @@ export default function NearbyDriversScreen({ route, navigation }) {
         </Animated.View>
       )}
 
-      {/* ── Confirm sheet ── */}
       {selectedDriver && (
         <ConfirmSheet
           driver={selectedDriver}
@@ -544,33 +505,23 @@ export default function NearbyDriversScreen({ route, navigation }) {
 
 const s = StyleSheet.create({
   root:   { flex: 1 },
-
-  // Header
   header:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
   backBtn:    { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   refreshBtn: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   headerTitle:{ fontSize: 17, fontWeight: '900' },
   headerSub:  { fontSize: 12, marginTop: 1 },
-
-  // Surge banner
   surgeBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, marginHorizontal: 16, marginTop: 10, marginBottom: 4, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   surgeTxt:    { fontSize: 12, fontWeight: '700', flex: 1 },
-
-  // Route strip
   routeStrip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
   routeItem:  { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
   routeDot:   { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   routeText:  { fontSize: 12, fontWeight: '600', flex: 1 },
   fareChip:   { fontSize: 13, fontWeight: '900', marginLeft: 8 },
-
-  // List
   list:       { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 120 },
   listHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   listCount:  { fontSize: 12, fontWeight: '700' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
   legendTxt:  { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
-
-  // States
   center:     { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingTxt: { fontSize: 13, fontWeight: '500', marginTop: 8 },
   empty:      { alignItems: 'center', paddingTop: 80, gap: 12 },

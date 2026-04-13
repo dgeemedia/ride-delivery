@@ -58,3 +58,4 @@ ios/Pods/
 .env
 .env.local
 .env.production
+.expo

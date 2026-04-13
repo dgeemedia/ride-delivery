@@ -22,6 +22,7 @@ const ACCENT_OPTIONS = [
   { id: 'chalk', label: 'Chalk', color: '#EAE5DA' },
 ];
 
+// ─── Avatar ───────────────────────────────────────────────────────────────────
 const Avatar = ({ user, theme }) => (
   <View style={[av.ring, { borderColor: theme.accent + '40' }]}>
     <View style={[av.circle, { backgroundColor: theme.accent + '18' }]}>
@@ -37,6 +38,7 @@ const av = StyleSheet.create({
   initials: { fontSize: 28, fontWeight: '800' },
 });
 
+// ─── InfoRow ──────────────────────────────────────────────────────────────────
 const InfoRow = ({ icon, label, value, theme }) => (
   <View style={[ir.row, { borderBottomColor: theme.border }]}>
     <Ionicons name={icon} size={15} color={theme.hint} style={ir.icon} />
@@ -53,6 +55,7 @@ const ir = StyleSheet.create({
   value: { fontSize: 14, fontWeight: '500' },
 });
 
+// ─── MenuItem ─────────────────────────────────────────────────────────────────
 const MenuItem = ({ icon, label, onPress, danger, value, theme, last }) => {
   const color = danger ? '#E05555' : theme.foreground;
   return (
@@ -80,6 +83,7 @@ const mi = StyleSheet.create({
   value:   { fontSize: 13, fontWeight: '600' },
 });
 
+// ─── DocBadge ─────────────────────────────────────────────────────────────────
 const DocBadge = ({ label, uploaded, theme }) => {
   const color = uploaded ? theme.accent : theme.hint;
   return (
@@ -94,6 +98,7 @@ const db = StyleSheet.create({
   txt:  { fontSize: 11, fontWeight: '600' },
 });
 
+// ─── Section ──────────────────────────────────────────────────────────────────
 const Section = ({ title, children, theme }) => (
   <View style={[sec.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     {title && <Text style={[sec.title, { color: theme.hint }]}>{title}</Text>}
@@ -105,12 +110,13 @@ const sec = StyleSheet.create({
   title: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 6 },
 });
 
+// ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
-  const { user, logout }           = useAuth();
-  const { theme, mode, accentId, changeAccent, changeMode } = useTheme();
-  const [stats,   setStats]        = useState(null);
-  const [profile, setProfile]      = useState(null);
-  const [loading, setLoading]      = useState(true);
+  const { user, logout }                                     = useAuth();
+  const { theme, mode, accentId, changeAccent, changeMode }  = useTheme();
+  const [stats,   setStats]   = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
   const fadeA = useRef(new Animated.Value(0)).current;
 
   const role = user?.role ?? 'CUSTOMER';
@@ -133,11 +139,8 @@ export default function ProfileScreen({ navigation }) {
     finally { setLoading(false); }
   };
 
-  // ── Sign out — works on both web and native ────────────────────────────────
-  // Alert.alert is a no-op on web, so we use window.confirm instead.
   const confirmLogout = () => {
     if (Platform.OS === 'web') {
-      // Browser native confirm dialog — always works, no extra deps needed
       if (window.confirm('Sign out of Diakite?')) {
         logout();
       }
@@ -160,6 +163,7 @@ export default function ProfileScreen({ navigation }) {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: fadeA }}>
 
+          {/* Hero */}
           <View style={s.hero}>
             <Avatar user={user} theme={theme} />
             <Text style={[s.name, { color: theme.foreground }]}>{user?.firstName} {user?.lastName}</Text>
@@ -179,6 +183,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
           </View>
 
+          {/* Stats strip */}
           {loading ? (
             <ActivityIndicator color={theme.accent} style={{ marginBottom: 20 }} />
           ) : (
@@ -224,6 +229,7 @@ export default function ProfileScreen({ navigation }) {
             </View>
           )}
 
+          {/* Personal info */}
           <Section title="PERSONAL INFORMATION" theme={theme}>
             <InfoRow icon="mail-outline"     label="EMAIL"        value={user?.email}   theme={theme} />
             <InfoRow icon="call-outline"     label="PHONE"        value={user?.phone}   theme={theme} />
@@ -233,6 +239,7 @@ export default function ProfileScreen({ navigation }) {
             />
           </Section>
 
+          {/* Driver — vehicle & docs */}
           {role === 'DRIVER' && dp && (
             <Section title="VEHICLE & DOCUMENTS" theme={theme}>
               <InfoRow icon="car-outline"           label="VEHICLE" value={`${dp.vehicleMake ?? ''} ${dp.vehicleModel ?? ''} ${dp.vehicleYear ?? ''}`.trim()} theme={theme} />
@@ -251,6 +258,7 @@ export default function ProfileScreen({ navigation }) {
             </Section>
           )}
 
+          {/* Delivery partner — vehicle & docs */}
           {role === 'DELIVERY_PARTNER' && pp && (
             <Section title="VEHICLE & DOCUMENTS" theme={theme}>
               <InfoRow icon="bicycle-outline"       label="VEHICLE TYPE" value={pp.vehicleType}  theme={theme} />
@@ -268,6 +276,7 @@ export default function ProfileScreen({ navigation }) {
             </Section>
           )}
 
+          {/* Appearance */}
           <Section title="APPEARANCE" theme={theme}>
             <View style={s.swatchRow}>
               {ACCENT_OPTIONS.map(opt => {
@@ -306,26 +315,30 @@ export default function ProfileScreen({ navigation }) {
             </View>
           </Section>
 
+          {/* Account */}
           <Section title="ACCOUNT" theme={theme}>
-            <MenuItem icon="create-outline"         label="Edit Profile"       theme={theme} onPress={() => navigation.navigate('EditProfile')} />
+            <MenuItem icon="create-outline"        label="Edit Profile"       theme={theme} onPress={() => navigation.navigate('EditProfile')} />
             {role === 'CUSTOMER' && (
-              <MenuItem icon="wallet-outline"       label="My Wallet"          theme={theme}
+              <MenuItem icon="wallet-outline"      label="My Wallet"          theme={theme}
                 value={stats ? `₦${(stats.walletBalance ?? 0).toLocaleString()}` : null}
                 onPress={() => navigation.navigate('Wallet')} />
             )}
             {(role === 'DRIVER' || role === 'DELIVERY_PARTNER') && (
-              <MenuItem icon="cash-outline"         label="Earnings & Payouts" theme={theme} onPress={() => navigation.navigate(role === 'DRIVER' ? 'DriverEarnings' : 'PartnerEarnings')} />
+              <MenuItem icon="cash-outline"        label="Earnings & Payouts" theme={theme}
+                onPress={() => navigation.navigate(role === 'DRIVER' ? 'DriverEarnings' : 'PartnerEarnings')} />
             )}
-            <MenuItem icon="notifications-outline"  label="Notifications"     theme={theme} onPress={() => navigation.navigate('Notifications')} />
-            <MenuItem icon="lock-closed-outline"    label="Change Password"   theme={theme} last onPress={() => navigation.navigate('ChangePassword')} />
+            <MenuItem icon="notifications-outline" label="Notifications"     theme={theme} onPress={() => navigation.navigate('Notifications')} />
+            <MenuItem icon="lock-closed-outline"   label="Change Password"   theme={theme} last onPress={() => navigation.navigate('ChangePassword')} />
           </Section>
 
+          {/* Support */}
           <Section title="SUPPORT" theme={theme}>
             <MenuItem icon="help-circle-outline"   label="Help & Support"  theme={theme} onPress={() => navigation.navigate('Support')} />
             <MenuItem icon="star-outline"          label="Rate the App"    theme={theme} onPress={() => navigation.navigate('AppFeedback')} />
             <MenuItem icon="document-text-outline" label="Terms & Privacy" theme={theme} last onPress={() => navigation.navigate('Terms')} />
           </Section>
 
+          {/* Sign out */}
           <TouchableOpacity style={[s.logoutBtn, { borderColor: theme.border }]} onPress={confirmLogout} activeOpacity={0.75}>
             <Ionicons name="log-out-outline" size={18} color="#E05555" />
             <Text style={s.logoutTxt}>Sign Out</Text>

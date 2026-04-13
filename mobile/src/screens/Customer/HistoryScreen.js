@@ -14,24 +14,18 @@ const { width } = Dimensions.get('window');
 const DA     = '#FFB800';
 const GREEN  = '#5DAA72';
 const RED    = '#E05555';
-const PURPLE = '#A78BFA';
 const TEAL   = '#34D399';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Status config
-// ─────────────────────────────────────────────────────────────────────────────
 const RIDE_STATUS = {
-  COMPLETED: { color: GREEN,  icon: 'checkmark-circle-outline', label: 'Completed'  },
-  CANCELLED: { color: RED,    icon: 'close-circle-outline',     label: 'Cancelled'  },
+  COMPLETED: { color: GREEN, icon: 'checkmark-circle-outline', label: 'Completed' },
+  CANCELLED: { color: RED,   icon: 'close-circle-outline',     label: 'Cancelled' },
 };
 const DEL_STATUS = {
-  DELIVERED: { color: TEAL,   icon: 'checkmark-circle-outline', label: 'Delivered'  },
-  CANCELLED: { color: RED,    icon: 'close-circle-outline',     label: 'Cancelled'  },
+  DELIVERED: { color: TEAL, icon: 'checkmark-circle-outline', label: 'Delivered' },
+  CANCELLED: { color: RED,  icon: 'close-circle-outline',     label: 'Cancelled' },
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RideCard
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── RideCard ─────────────────────────────────────────────────────────────────
 const RideCard = ({ item, theme, onPress }) => {
   const cfg  = RIDE_STATUS[item.status] ?? RIDE_STATUS.COMPLETED;
   const date = new Date(item.requestedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -44,14 +38,13 @@ const RideCard = ({ item, theme, onPress }) => {
       onPress={() => onPress(item, 'ride')}
       activeOpacity={0.85}
     >
-      {/* Header row */}
       <View style={rc.header}>
         <View style={[rc.iconWrap, { backgroundColor: DA + '18' }]}>
           <Ionicons name="car-outline" size={18} color={DA} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[rc.typeLabel, { color: DA }]}>RIDE</Text>
-          <Text style={[rc.date, { color: theme.hint }]}>{date} · {time}</Text>
+          <Text style={[rc.date, { color: theme.hint }]}>{date} • {time}</Text>
         </View>
         <View style={[rc.statusPill, { backgroundColor: cfg.color + '15' }]}>
           <Ionicons name={cfg.icon} size={11} color={cfg.color} />
@@ -59,7 +52,6 @@ const RideCard = ({ item, theme, onPress }) => {
         </View>
       </View>
 
-      {/* Route */}
       <View style={rc.route}>
         <View style={rc.routeRow}>
           <View style={[rc.dot, { backgroundColor: DA }]} />
@@ -72,7 +64,6 @@ const RideCard = ({ item, theme, onPress }) => {
         </View>
       </View>
 
-      {/* Footer strip */}
       <View style={[rc.footer, { borderTopColor: theme.border }]}>
         <View style={rc.footerItem}>
           <Ionicons name="navigate-outline" size={12} color={theme.hint} />
@@ -100,7 +91,6 @@ const RideCard = ({ item, theme, onPress }) => {
             </View>
           </>
         )}
-        {/* Driver name */}
         {item.driver && (
           <View style={rc.driverChip}>
             <Ionicons name="person-outline" size={11} color={theme.hint} />
@@ -134,9 +124,7 @@ const rc = StyleSheet.create({
   driverChip:  { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DeliveryCard
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── DeliveryCard ─────────────────────────────────────────────────────────────
 const DeliveryCard = ({ item, theme, onPress }) => {
   const cfg  = DEL_STATUS[item.status] ?? DEL_STATUS.DELIVERED;
   const date = new Date(item.requestedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -155,7 +143,7 @@ const DeliveryCard = ({ item, theme, onPress }) => {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[dc.typeLabel, { color: TEAL }]}>DELIVERY</Text>
-          <Text style={[dc.date, { color: theme.hint }]}>{date} · {time}</Text>
+          <Text style={[dc.date, { color: theme.hint }]}>{date} • {time}</Text>
         </View>
         <View style={[dc.statusPill, { backgroundColor: cfg.color + '15' }]}>
           <Ionicons name={cfg.icon} size={11} color={cfg.color} />
@@ -163,7 +151,6 @@ const DeliveryCard = ({ item, theme, onPress }) => {
         </View>
       </View>
 
-      {/* Package info */}
       <View style={[dc.pkgRow, { backgroundColor: TEAL + '0D', borderColor: TEAL + '25' }]}>
         <Ionicons name="cube-outline" size={13} color={TEAL} />
         <Text style={[dc.pkgTxt, { color: theme.foreground }]} numberOfLines={1}>
@@ -174,7 +161,6 @@ const DeliveryCard = ({ item, theme, onPress }) => {
         )}
       </View>
 
-      {/* Route */}
       <View style={dc.route}>
         <View style={dc.routeRow}>
           <View style={[dc.dot, { backgroundColor: TEAL }]} />
@@ -193,7 +179,6 @@ const DeliveryCard = ({ item, theme, onPress }) => {
         </View>
       </View>
 
-      {/* Footer */}
       <View style={[dc.footer, { borderTopColor: theme.border }]}>
         <View style={dc.footerItem}>
           <Ionicons name="navigate-outline" size={12} color={theme.hint} />
@@ -242,9 +227,16 @@ const dc = StyleSheet.create({
   partnerChip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Empty state ──────────────────────────────────────────────────────────────
+const EmptyState = ({ icon, color, label, theme }) => (
+  <View style={{ alignItems: 'center', paddingTop: 80, gap: 12 }}>
+    <Ionicons name={icon} size={48} color={theme.hint} />
+    <Text style={{ fontSize: 18, fontWeight: '800', color: theme.foreground }}>{label}</Text>
+    <Text style={{ fontSize: 13, color: theme.hint }}>Your history will appear here</Text>
+  </View>
+);
+
+// ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function HistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
 
@@ -321,7 +313,6 @@ export default function HistoryScreen({ navigation }) {
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
       <SafeAreaView edges={['top', 'left', 'right']}>
-        {/* Header */}
         <View style={[s.header, { borderBottomColor: theme.border }]}>
           <View>
             <Text style={[s.headerTitle, { color: theme.foreground }]}>History</Text>
@@ -329,7 +320,6 @@ export default function HistoryScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Stats strip */}
         {!loading && (
           <View style={[s.statsStrip, { backgroundColor: theme.backgroundAlt, borderBottomColor: theme.border }]}>
             {tab === 'rides' ? (
@@ -374,7 +364,6 @@ export default function HistoryScreen({ navigation }) {
           </View>
         )}
 
-        {/* Tab bar */}
         <View style={[s.tabRow, { borderBottomColor: theme.border }]}>
           {[
             { key: 'rides',      label: 'Rides',      count: rideStats.total, color: DA   },
@@ -434,14 +423,6 @@ export default function HistoryScreen({ navigation }) {
     </View>
   );
 }
-
-const EmptyState = ({ icon, color, label, theme }) => (
-  <View style={{ alignItems: 'center', paddingTop: 80, gap: 12 }}>
-    <Ionicons name={icon} size={48} color={theme.hint} />
-    <Text style={{ fontSize: 18, fontWeight: '800', color: theme.foreground }}>{label}</Text>
-    <Text style={{ fontSize: 13, color: theme.hint }}>Your history will appear here</Text>
-  </View>
-);
 
 const s = StyleSheet.create({
   root:        { flex: 1 },

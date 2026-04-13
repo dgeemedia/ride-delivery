@@ -1,4 +1,5 @@
 // mobile/src/theme/theme.js
+
 export const ACCENT_COLORS = {
   onyx: {
     id: 'onyx', name: 'Onyx', emoji: '◼', accent: '#FFFFFF',
@@ -10,11 +11,13 @@ export const ACCENT_COLORS = {
       pill:          '#1D1D1D',
       pillBorder:    '#FFFFFF18',
       accent:        '#FFFFFF',
-      accentFg:      '#111111',   // ← dark text on white button
+      accentFg:      '#111111',
       foreground:    '#F2EEE6',
       muted:         '#6A6A6A',
       hint:          '#333333',
       shadow:        '#FFFFFF',
+      logoBadgeBg:   '#FFFFFF',
+      logoBadgeBorder: '#E5E5E5',
     },
     light: {
       background:    '#EAE5DA',
@@ -24,13 +27,16 @@ export const ACCENT_COLORS = {
       pill:          '#E0D8C8',
       pillBorder:    '#11111118',
       accent:        '#111111',
-      accentFg:      '#FFFFFF',   // ← white text on dark button
+      accentFg:      '#FFFFFF',
       foreground:    '#0F0D0A',
       muted:         '#5A5248',
       hint:          '#A89C88',
       shadow:        '#111111',
+      logoBadgeBg:     '#FFFFFF',
+      logoBadgeBorder: '#E5E5E5',
     },
   },
+
   chalk: {
     id: 'chalk', name: 'Chalk', emoji: '◻', accent: '#EAE5DA',
     dark: {
@@ -41,11 +47,13 @@ export const ACCENT_COLORS = {
       pill:          '#1D1D1D',
       pillBorder:    '#EAE5DA18',
       accent:        '#EAE5DA',
-      accentFg:      '#111111',   // ← dark text on cream button
+      accentFg:      '#111111',
       foreground:    '#F2EEE6',
       muted:         '#6A6A6A',
       hint:          '#333333',
       shadow:        '#EAE5DA',
+      logoBadgeBg:     '#FFFFFF',
+      logoBadgeBorder: '#E5E5E5',
     },
     light: {
       background:    '#EAE5DA',
@@ -55,11 +63,13 @@ export const ACCENT_COLORS = {
       pill:          '#E0D8C8',
       pillBorder:    '#11111118',
       accent:        '#2A2520',
-      accentFg:      '#FFFFFF',   // ← white text on dark brown button
+      accentFg:      '#FFFFFF',
       foreground:    '#0F0D0A',
       muted:         '#5A5248',
       hint:          '#A89C88',
       shadow:        '#2A2520',
+      logoBadgeBg:     '#FFFFFF',
+      logoBadgeBorder: '#E5E5E5',
     },
   },
 };
