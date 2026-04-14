@@ -30,42 +30,47 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = async (credentials) => {
-    try {
-      const response = await authAPI.login(credentials);
-      const { user: u, token: t } = response.data;
-      await AsyncStorage.setItem('authToken', t);
-      await AsyncStorage.setItem('user', JSON.stringify(u));
-      setToken(t);
-      setUser(u);
-      socketService.connect().catch(() => {});
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        message: error.response?.data?.message || 'Login failed',
-      };
-    }
-  };
+const login = async (credentials) => {
+  try {
+    const response = await authAPI.login(credentials);
 
-  const register = async (userData) => {
-    try {
-      const response = await authAPI.register(userData);
-      const { user: u, token: t } = response.data;
-      await AsyncStorage.setItem('authToken', t);
-      await AsyncStorage.setItem('user', JSON.stringify(u));
-      setToken(t);
-      setUser(u);
-      socketService.connect().catch(() => {});
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        message: error.response?.data?.message || 'Registration failed',
-      };
-    }
-  };
+    // interceptor returns { success, message, data: { user, token } }
+    const { user: u, token: t } = response.data; // ✅ needs .data
 
+    await AsyncStorage.setItem('authToken', t);
+    await AsyncStorage.setItem('user', JSON.stringify(u));
+    setToken(t);
+    setUser(u);
+    socketService.connect().catch(() => {});
+    return { success: true };
+  } catch (error) {
+    console.log('LOGIN ERROR FULL:', error.response?.data);
+    const message =
+      error.response?.data?.message ||
+      error.response?.data?.errors?.[0]?.msg ||
+      error.message ||
+      'Login failed';
+    return { success: false, message };
+  }
+};
+
+const register = async (userData) => {
+  try {
+    const response = await authAPI.register(userData);
+    const { user: u, token: t } = response.data; // ✅ needs .data
+    await AsyncStorage.setItem('authToken', t);
+    await AsyncStorage.setItem('user', JSON.stringify(u));
+    setToken(t);
+    setUser(u);
+    socketService.connect().catch(() => {});
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Registration failed',
+    };
+  }
+};
   const updateUser = async (updatedFields) => {
     const updated = { ...user, ...updatedFields };
     await AsyncStorage.setItem('user', JSON.stringify(updated));
