@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator }     from '@react-navigation/stack';
 import { Ionicons }                 from '@expo/vector-icons';
+import { useSafeAreaInsets }        from 'react-native-safe-area-context';
 import { useTheme }                 from '../context/ThemeContext';
 
 import DriverDashboardScreen from '../screens/Driver/DriverDashboardScreen';
@@ -77,8 +78,18 @@ const ProfileStack = () => (
   </Stack.Navigator>
 );
 
+// ── DriverNavigator ───────────────────────────────────────────────────────────
 const DriverNavigator = () => {
-  const { theme } = useTheme();
+  const { theme }  = useTheme();
+  // ✅ FIX: read device bottom inset so the tab bar clears the Android
+  //         gesture navigation bar and the iOS home indicator.
+  const insets = useSafeAreaInsets();
+
+  // Tab bar sits above the gesture bar.
+  // Content height (icons + labels) = 54px; add the device's bottom inset on top.
+  const TAB_CONTENT_H = 54;
+  const tabBarHeight  = TAB_CONTENT_H + insets.bottom;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -91,14 +102,16 @@ const DriverNavigator = () => {
           };
           return <Ionicons name={icons[route.name]} size={size} color={color} />;
         },
-        tabBarActiveTintColor:   theme.accent,      // ← was hardcoded '#FFB800'
+        tabBarActiveTintColor:   theme.accent,
         tabBarInactiveTintColor: theme.hint,
         tabBarStyle: {
-          backgroundColor: theme.background,        // ← was theme.backgroundAlt
+          backgroundColor: theme.background,
           borderTopColor:  theme.border,
           borderTopWidth:  1,
-          height:          Platform.OS === 'ios' ? 82 : 62,
-          paddingBottom:   Platform.OS === 'ios' ? 24 : 8,
+          // ✅ FIX: dynamic height = content + safe area bottom inset
+          height:          tabBarHeight,
+          // ✅ FIX: paddingBottom pushes labels/icons above the gesture bar
+          paddingBottom:   insets.bottom + 4,
           paddingTop:      8,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },

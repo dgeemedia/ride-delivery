@@ -647,7 +647,7 @@ export default function HomeScreen({ navigation }) {
 
   const hasMaintBanner  = maintenance.isOn || maintenance.isScheduled;
   const paddingTop      = hasMaintBanner ? 16 : insets.top + 16;
-  const paddingBottom   = insets.bottom + (Platform.OS === 'ios' ? 110 : 90);
+  const paddingBottom = insets.bottom + TAB_CONTENT_H + 16;
 
   const combinedHistory = [
     ...rideHistory.map(r => ({

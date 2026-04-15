@@ -6,6 +6,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator }     from '@react-navigation/stack';
 import { Ionicons }                 from '@expo/vector-icons';
 import { BlurView }                 from 'expo-blur';
+import { useSafeAreaInsets }        from 'react-native-safe-area-context';
 import { useTheme }                 from '../context/ThemeContext';
 
 import HomeScreen                from '../screens/Customer/HomeScreen';
@@ -96,24 +97,23 @@ const ProfileStack = () => (
 );
 
 // ── Glass Tab Bar Background ──────────────────────────────────────────────────
-const GlassTabBar = ({ style, mode }) => {
+const GlassTabBar = ({ mode }) => {
   const darkMode = mode === 'dark';
   if (Platform.OS === 'ios') {
     return (
       <BlurView
         intensity={darkMode ? 80 : 60}
         tint={darkMode ? 'dark' : 'light'}
-        style={[StyleSheet.absoluteFill, style]}
+        style={StyleSheet.absoluteFill}
       />
     );
   }
-  // Android fallback
+  // Android: solid fallback — blur not supported
   return (
     <View
       style={[
         StyleSheet.absoluteFill,
         { backgroundColor: darkMode ? 'rgba(4,4,4,0.94)' : 'rgba(252,252,252,0.96)' },
-        style,
       ]}
     />
   );
@@ -124,19 +124,23 @@ const GlassTabBar = ({ style, mode }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const CustomerNavigator = () => {
   const { theme, mode } = useTheme();
-  const darkMode = mode === 'dark';
+  const insets          = useSafeAreaInsets();
+  const darkMode        = mode === 'dark';
 
-  // Heights
-  const TAB_H     = Platform.OS === 'ios' ? 88 : 64;
-  const PADDING_B = Platform.OS === 'ios' ? 28 : 10;
+  // ✅ FIX: Dynamic height = icon+label content row + device bottom inset.
+  //         This is the same pattern used in DriverNavigator & PartnerNavigator.
+  //         On Samsung gesture-nav phones, insets.bottom can be 24–48 px;
+  //         the old hardcoded values (88/64) ignored this entirely.
+  const TAB_CONTENT_H = 54;                          // icon + label row
+  const tabBarHeight  = TAB_CONTENT_H + insets.bottom;
+  const paddingBottom = insets.bottom + 4;           // push icons above gesture bar
 
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
 
-        // Icon
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarIcon: ({ focused, color }) => {
           const icons = {
             HomeTab:    focused ? 'home'   : 'home-outline',
             HistoryTab: focused ? 'time'   : 'time-outline',
@@ -144,7 +148,10 @@ const CustomerNavigator = () => {
             ProfileTab: focused ? 'person' : 'person-outline',
           };
           return (
-            <View style={focused ? [tb.iconActive, { backgroundColor: darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.07)' }] : tb.icon}>
+            <View style={focused
+              ? [tb.iconActive, { backgroundColor: darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.07)' }]
+              : tb.icon
+            }>
               <Ionicons name={icons[route.name]} size={focused ? 20 : 22} color={color} />
             </View>
           );
@@ -154,22 +161,20 @@ const CustomerNavigator = () => {
         tabBarInactiveTintColor: darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
         tabBarLabelStyle: { fontSize:10, fontWeight:'700', letterSpacing:0.3, marginTop:2 },
 
-        // Transparent background — BlurView / glass goes underneath
         tabBarStyle: {
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          elevation: 0,
-          height: TAB_H,
-          paddingBottom: PADDING_B,
-          paddingTop: 10,
+          position:        'absolute',
+          bottom:          0,
+          left:            0,
+          right:           0,
+          elevation:       0,
+          height:          tabBarHeight,   // ✅ dynamic
+          paddingBottom:   paddingBottom,  // ✅ dynamic — clears Samsung gesture bar
+          paddingTop:      10,
           backgroundColor: 'transparent',
-          borderTopColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor:  darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          borderTopWidth:  StyleSheet.hairlineWidth,
         },
 
-        // Custom glass background
         tabBarBackground: () => <GlassTabBar mode={mode} />,
       })}
     >

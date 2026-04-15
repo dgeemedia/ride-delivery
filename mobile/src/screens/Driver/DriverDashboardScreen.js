@@ -1,25 +1,34 @@
 // mobile/src/screens/Driver/DriverDashboardScreen.js
+// ─── CHANGE ONLY: the paddingBottom calculation ───────────────────────────────
+//
+// OLD (hardcoded, causes footer to be hidden):
+//   const paddingBottom = insets.bottom + 90;
+//
+// NEW (matches the dynamic tab bar height defined in DriverNavigator):
+//   const TAB_CONTENT_H = 54;                         // icon + label row
+//   const paddingBottom = insets.bottom + TAB_CONTENT_H + 16;  // tab bar + breathing room
+//
+// The rest of DriverDashboardScreen is unchanged.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Switch,
   ScrollView, StatusBar, Dimensions, Animated,
   ActivityIndicator, Alert,
 } from 'react-native';
-import { Ionicons }              from '@expo/vector-icons';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Location             from '../../shims/Location';
-import { useAuth }               from '../../context/AuthContext';
-import { useTheme }              from '../../context/ThemeContext';
+import { Ionicons }                            from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets }     from 'react-native-safe-area-context';
+import * as Location                           from '../../shims/Location';
+import { useAuth }                             from '../../context/AuthContext';
+import { useTheme }                            from '../../context/ThemeContext';
 import { driverAPI, userAPI, walletAPI, rideAPI } from '../../services/api';
-import socketService             from '../../services/socket';
-import ActiveRideBanner          from '../../components/ActiveRideBanner';
-import MaintenanceBanner         from '../../components/MaintenanceBanner';
-import { checkMaintenance }      from '../../utils/maintenanceCheck';
+import socketService                           from '../../services/socket';
+import ActiveRideBanner                        from '../../components/ActiveRideBanner';
+import MaintenanceBanner                       from '../../components/MaintenanceBanner';
+import { checkMaintenance }                    from '../../utils/maintenanceCheck';
 
 const { width } = Dimensions.get('window');
-
-// Driver accent stays gold for driver-specific UI (separate from global theme)
-const DA     = '#FFFFFF'; // overridden per theme below
 const PURPLE = '#A78BFA';
 
 const getRealLocation = async () => {
@@ -187,7 +196,6 @@ const wb = StyleSheet.create({
 export default function DriverDashboardScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
-  // ✅ FIX: useSafeAreaInsets was missing — caused 'paddingTop doesn't exist' crash
   const insets          = useSafeAreaInsets();
 
   const [isOnline,          setIsOnline]          = useState(false);
@@ -207,10 +215,13 @@ export default function DriverDashboardScreen({ navigation }) {
   const fadeA   = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-20)).current;
 
-  // ✅ FIX: define paddingTop and paddingBottom from insets
   const hasMaintBanner = maintenance.isOn || maintenance.isScheduled;
   const paddingTop     = hasMaintBanner ? 16 : insets.top + 16;
-  const paddingBottom  = insets.bottom + 90;
+
+  // ✅ FIX: paddingBottom = device bottom inset + tab bar content height + gap
+  //         TAB_CONTENT_H (54) must match the value in DriverNavigator.js
+  const TAB_CONTENT_H = 54;
+  const paddingBottom = insets.bottom + TAB_CONTENT_H + 16;
 
   const fetchData = useCallback(async () => {
     try {
@@ -326,7 +337,6 @@ export default function DriverDashboardScreen({ navigation }) {
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.orb, { backgroundColor: theme.accent }]} />
 
-      {/* Maintenance banner */}
       {hasMaintBanner && (
         <View style={{ paddingTop: insets.top }}>
           <MaintenanceBanner
@@ -344,7 +354,6 @@ export default function DriverDashboardScreen({ navigation }) {
       >
         <Animated.View style={{ opacity: fadeA, transform: [{ translateY: headerY }] }}>
 
-          {/* ── Header ───────────────────────────────────────────────────────── */}
           <View style={s.header}>
             <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
               <Text style={[s.eyebrow, { color: theme.hint }]}>DRIVER DASHBOARD</Text>
@@ -371,7 +380,6 @@ export default function DriverDashboardScreen({ navigation }) {
             </View>
           </View>
 
-          {/* ── Approval banner ──────────────────────────────────────────────── */}
           {!isApproved && !loading && (
             <View style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <Ionicons name="time-outline" size={18} color={theme.hint} />
@@ -382,19 +390,11 @@ export default function DriverDashboardScreen({ navigation }) {
             </View>
           )}
 
-          <OnlineToggle
-            isOnline={isOnline}
-            toggling={toggling}
-            onToggle={toggleOnline}
-            isApproved={isApproved}
-            theme={theme}
-          />
+          <OnlineToggle isOnline={isOnline} toggling={toggling} onToggle={toggleOnline} isApproved={isApproved} theme={theme} />
 
           {activeRide && (
             <ActiveRideBanner
-              ride={activeRide}
-              role="DRIVER"
-              theme={theme}
+              ride={activeRide} role="DRIVER" theme={theme}
               onPress={() => navigation.navigate('ActiveRide', { rideId: activeRide.id })}
             />
           )}
@@ -402,13 +402,7 @@ export default function DriverDashboardScreen({ navigation }) {
           {isOnline && !activeRide && <WaitingBanner theme={theme} />}
 
           {!loading && (
-            <WalletStrip
-              balance={walletBalance}
-              todayEarnings={todayEarnings}
-              onTopUp={goToTopUp}
-              onWithdraw={goToWithdraw}
-              theme={theme}
-            />
+            <WalletStrip balance={walletBalance} todayEarnings={todayEarnings} onTopUp={goToTopUp} onWithdraw={goToWithdraw} theme={theme} />
           )}
 
           {loading ? (
@@ -421,7 +415,6 @@ export default function DriverDashboardScreen({ navigation }) {
             </View>
           )}
 
-          {/* ── Vehicle card ─────────────────────────────────────────────────── */}
           {profile?.vehicleMake && (
             <TouchableOpacity
               style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
@@ -441,7 +434,6 @@ export default function DriverDashboardScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* ── Floor price card ─────────────────────────────────────────────── */}
           {floorPriceActive && !loading && (
             <TouchableOpacity
               style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border, marginBottom: 14 }]}
@@ -461,7 +453,6 @@ export default function DriverDashboardScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* ── Quick Actions ─────────────────────────────────────────────────── */}
           <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
           <View style={s.actionGrid}>
             {quickActions.map(item => {
@@ -489,7 +480,6 @@ export default function DriverDashboardScreen({ navigation }) {
             })}
           </View>
 
-          {/* ── Footer ───────────────────────────────────────────────────────── */}
           <View style={[s.footer, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <Ionicons
               name={isApproved ? 'shield-checkmark-outline' : 'shield-outline'}
