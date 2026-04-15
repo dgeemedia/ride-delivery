@@ -115,7 +115,7 @@ const TopUpModal = ({ visible, onClose, onSuccess, theme }) => {
             disabled={loading}
             activeOpacity={0.85}
           >
-            {loading ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={m.btnTxt}>Continue to Payment</Text>}
+            {loading ? <ActivityIndicator color={theme.accentFg} size="small" /> : <Text style={[m.btnTxt, { color: theme.accentFg }]}>Continue to Payment</Text>}
           </TouchableOpacity>
 
           <TouchableOpacity style={m.cancel} onPress={onClose}>
@@ -203,8 +203,8 @@ export default function WalletScreen({ navigation }) {
             {/* Action buttons */}
             <View style={s.actionRow}>
               <TouchableOpacity style={[s.actionBtn, { backgroundColor: theme.accent, shadowColor: theme.accent }]} onPress={() => setShowTopUp(true)} activeOpacity={0.85}>
-                <Ionicons name="add" size={18} color="#FFFFFF" />
-                <Text style={s.actionBtnTxt}>Top Up</Text>
+                <Ionicons name="add" size={18} color={theme.accentFg} />
+                <Text style={[s.actionBtnTxt, { color: theme.accentFg }]}>Top Up</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[s.actionBtnOutline, { borderColor: theme.border, backgroundColor: theme.background }]} onPress={() => navigation.navigate('Transfer')} activeOpacity={0.8}>
                 <Ionicons name="swap-horizontal-outline" size={17} color={theme.muted} />
@@ -278,7 +278,7 @@ const s = StyleSheet.create({
   currency:       { fontSize: 12, fontWeight: '600', marginBottom: 24 },
   actionRow:      { flexDirection: 'row', gap: 10, width: '100%' },
   actionBtn:      { flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, paddingVertical: 12, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 6 },
-  actionBtnTxt:   { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  actionBtnTxt:   { fontSize: 14, fontWeight: '700' },
   actionBtnOutline:{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, paddingVertical: 12, borderWidth: 1 },
   actionBtnOutlineTxt: { fontSize: 13, fontWeight: '600' },
 
