@@ -1,9 +1,11 @@
 // mobile/src/navigation/CustomerNavigator.js
+// ── Premium Glass Tab Bar ─────────────────────────────────────────────────────
 import React from 'react';
-import { Platform } from 'react-native';
+import { Platform, View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator }     from '@react-navigation/stack';
 import { Ionicons }                 from '@expo/vector-icons';
+import { BlurView }                 from 'expo-blur';
 import { useTheme }                 from '../context/ThemeContext';
 
 import HomeScreen                from '../screens/Customer/HomeScreen';
@@ -18,8 +20,6 @@ import ShieldScreen              from '../screens/Customer/ShieldScreen';
 import ShieldBeneficiariesScreen from '../screens/Customer/ShieldBeneficiariesScreen';
 import CorporateScreen           from '../screens/Customer/CorporateScreen';
 import DuoPayScreen              from '../screens/Customer/DuoPayScreen';
-// FIX: Add rating screens — these did not exist before.
-// Customers must be able to rate after every completed ride/delivery.
 import RateRideScreen            from '../screens/Customer/RateRideScreen';
 import RateDeliveryScreen        from '../screens/Customer/RateDeliveryScreen';
 import ProfileScreen             from '../screens/Shared/ProfileScreen';
@@ -31,31 +31,20 @@ import SubmitTicketScreen        from '../screens/Shared/SubmitTicketScreen';
 import MyTicketsScreen           from '../screens/Shared/MyTicketsScreen';
 import TicketDetailScreen        from '../screens/Shared/TicketDetailScreen';
 
-const DA    = '#FFB800';
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// HomeStack — also owns the rating screens because RideTracking and
-// DeliveryTracking (which trigger the rating flow on completion) live here.
+// ── Stack definitions ─────────────────────────────────────────────────────────
 const HomeStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+  <Stack.Navigator screenOptions={{ headerShown:false }}>
     <Stack.Screen name="Home"                component={HomeScreen}                />
     <Stack.Screen name="RequestRide"         component={RequestRideScreen}         />
     <Stack.Screen name="RequestDelivery"     component={RequestDeliveryScreen}     />
     <Stack.Screen name="NearbyDrivers"       component={NearbyDriversScreen}       />
     <Stack.Screen name="RideTracking"        component={RideTrackingScreen}        />
     <Stack.Screen name="DeliveryTracking"    component={DeliveryTrackingScreen}    />
-    {/* Rating screens — navigated to once ride/delivery status = COMPLETED/DELIVERED */}
-    <Stack.Screen
-      name="RateRide"
-      component={RateRideScreen}
-      options={{ presentation: 'modal' }}
-    />
-    <Stack.Screen
-      name="RateDelivery"
-      component={RateDeliveryScreen}
-      options={{ presentation: 'modal' }}
-    />
+    <Stack.Screen name="RateRide"     component={RateRideScreen}     options={{ presentation:'modal' }} />
+    <Stack.Screen name="RateDelivery" component={RateDeliveryScreen} options={{ presentation:'modal' }} />
     <Stack.Screen name="Shield"              component={ShieldScreen}              />
     <Stack.Screen name="ShieldBeneficiaries" component={ShieldBeneficiariesScreen} />
     <Stack.Screen name="Corporate"           component={CorporateScreen}           />
@@ -68,22 +57,11 @@ const HomeStack = () => (
   </Stack.Navigator>
 );
 
-// HistoryStack — also needs the rating screens so customers can rate directly
-// from a completed-but-unrated entry in their history list.
 const HistoryStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+  <Stack.Navigator screenOptions={{ headerShown:false }}>
     <Stack.Screen name="HistoryHome"  component={HistoryScreen}      />
-    {/* Rating screens reachable from history "Rate" buttons */}
-    <Stack.Screen
-      name="RateRide"
-      component={RateRideScreen}
-      options={{ presentation: 'modal' }}
-    />
-    <Stack.Screen
-      name="RateDelivery"
-      component={RateDeliveryScreen}
-      options={{ presentation: 'modal' }}
-    />
+    <Stack.Screen name="RateRide"     component={RateRideScreen}     options={{ presentation:'modal' }} />
+    <Stack.Screen name="RateDelivery" component={RateDeliveryScreen} options={{ presentation:'modal' }} />
     <Stack.Screen name="Support"      component={SupportScreen}      />
     <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen} />
     <Stack.Screen name="MyTickets"    component={MyTicketsScreen}    />
@@ -92,7 +70,7 @@ const HistoryStack = () => (
 );
 
 const WalletStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+  <Stack.Navigator screenOptions={{ headerShown:false }}>
     <Stack.Screen name="WalletHome"   component={WalletScreen}       />
     <Stack.Screen name="DuoPay"       component={DuoPayScreen}       />
     <Stack.Screen name="Support"      component={SupportScreen}      />
@@ -103,7 +81,7 @@ const WalletStack = () => (
 );
 
 const ProfileStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+  <Stack.Navigator screenOptions={{ headerShown:false }}>
     <Stack.Screen name="ProfileHome"    component={ProfileScreen}        />
     <Stack.Screen name="EditProfile"    component={EditProfileScreen}    />
     <Stack.Screen name="Notifications"  component={NotificationsScreen}  />
@@ -117,12 +95,47 @@ const ProfileStack = () => (
   </Stack.Navigator>
 );
 
+// ── Glass Tab Bar Background ──────────────────────────────────────────────────
+const GlassTabBar = ({ style, mode }) => {
+  const darkMode = mode === 'dark';
+  if (Platform.OS === 'ios') {
+    return (
+      <BlurView
+        intensity={darkMode ? 80 : 60}
+        tint={darkMode ? 'dark' : 'light'}
+        style={[StyleSheet.absoluteFill, style]}
+      />
+    );
+  }
+  // Android fallback
+  return (
+    <View
+      style={[
+        StyleSheet.absoluteFill,
+        { backgroundColor: darkMode ? 'rgba(4,4,4,0.94)' : 'rgba(252,252,252,0.96)' },
+        style,
+      ]}
+    />
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NAVIGATOR
+// ─────────────────────────────────────────────────────────────────────────────
 const CustomerNavigator = () => {
-  const { theme } = useTheme();
+  const { theme, mode } = useTheme();
+  const darkMode = mode === 'dark';
+
+  // Heights
+  const TAB_H     = Platform.OS === 'ios' ? 88 : 64;
+  const PADDING_B = Platform.OS === 'ios' ? 28 : 10;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+
+        // Icon
         tabBarIcon: ({ focused, color, size }) => {
           const icons = {
             HomeTab:    focused ? 'home'   : 'home-outline',
@@ -130,27 +143,47 @@ const CustomerNavigator = () => {
             WalletTab:  focused ? 'wallet' : 'wallet-outline',
             ProfileTab: focused ? 'person' : 'person-outline',
           };
-          return <Ionicons name={icons[route.name]} size={size} color={color} />;
+          return (
+            <View style={focused ? [tb.iconActive, { backgroundColor: darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.07)' }] : tb.icon}>
+              <Ionicons name={icons[route.name]} size={focused ? 20 : 22} color={color} />
+            </View>
+          );
         },
-        tabBarActiveTintColor:   DA,
-        tabBarInactiveTintColor: theme.hint,
+
+        tabBarActiveTintColor:   theme.foreground,
+        tabBarInactiveTintColor: darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
+        tabBarLabelStyle: { fontSize:10, fontWeight:'700', letterSpacing:0.3, marginTop:2 },
+
+        // Transparent background — BlurView / glass goes underneath
         tabBarStyle: {
-          backgroundColor: theme.backgroundAlt,
-          borderTopColor:  theme.border,
-          borderTopWidth:  1,
-          height:          Platform.OS === 'ios' ? 82 : 62,
-          paddingBottom:   Platform.OS === 'ios' ? 24 : 8,
-          paddingTop:      8,
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          elevation: 0,
+          height: TAB_H,
+          paddingBottom: PADDING_B,
+          paddingTop: 10,
+          backgroundColor: 'transparent',
+          borderTopColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          borderTopWidth: StyleSheet.hairlineWidth,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
+
+        // Custom glass background
+        tabBarBackground: () => <GlassTabBar mode={mode} />,
       })}
     >
-      <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Home'    }} />
-      <Tab.Screen name="HistoryTab" component={HistoryStack} options={{ title: 'History' }} />
-      <Tab.Screen name="WalletTab"  component={WalletStack}  options={{ title: 'Wallet'  }} />
-      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
+      <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title:'Home'    }} />
+      <Tab.Screen name="HistoryTab" component={HistoryStack} options={{ title:'History' }} />
+      <Tab.Screen name="WalletTab"  component={WalletStack}  options={{ title:'Wallet'  }} />
+      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title:'Profile' }} />
     </Tab.Navigator>
   );
 };
 
 export default CustomerNavigator;
+
+const tb = StyleSheet.create({
+  icon:       { width:32, height:32, justifyContent:'center', alignItems:'center' },
+  iconActive: { width:40, height:32, borderRadius:10, justifyContent:'center', alignItems:'center' },
+});

@@ -23,7 +23,6 @@ import SubmitTicketScreen      from '../screens/Shared/SubmitTicketScreen';
 import MyTicketsScreen         from '../screens/Shared/MyTicketsScreen';
 import TicketDetailScreen      from '../screens/Shared/TicketDetailScreen';
 
-const COURIER_ACCENT = '#34D399';
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
@@ -82,10 +81,10 @@ const PartnerNavigator = () => {
           };
           return <Ionicons name={icons[route.name]} size={size} color={color} />;
         },
-        tabBarActiveTintColor:   COURIER_ACCENT,
+        tabBarActiveTintColor:   theme.accent,      // ← was hardcoded '#34D399'
         tabBarInactiveTintColor: theme.hint,
         tabBarStyle: {
-          backgroundColor: theme.backgroundAlt,
+          backgroundColor: theme.background,        // ← was theme.backgroundAlt
           borderTopColor:  theme.border,
           borderTopWidth:  1,
           height:          Platform.OS === 'ios' ? 82 : 62,

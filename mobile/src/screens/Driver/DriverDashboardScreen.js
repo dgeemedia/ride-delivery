@@ -5,19 +5,21 @@ import {
   ScrollView, StatusBar, Dimensions, Animated,
   ActivityIndicator, Alert,
 } from 'react-native';
-import { Ionicons }          from '@expo/vector-icons';
-import { SafeAreaView }      from 'react-native-safe-area-context';
-import * as Location         from '../../shims/Location';
-import { useAuth }           from '../../context/AuthContext';
-import { useTheme }          from '../../context/ThemeContext';
+import { Ionicons }              from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Location             from '../../shims/Location';
+import { useAuth }               from '../../context/AuthContext';
+import { useTheme }              from '../../context/ThemeContext';
 import { driverAPI, userAPI, walletAPI, rideAPI } from '../../services/api';
-import socketService         from '../../services/socket';
-import ActiveRideBanner      from '../../components/ActiveRideBanner';
-import MaintenanceBanner     from '../../components/MaintenanceBanner';
-import { checkMaintenance }  from '../../utils/maintenanceCheck';
+import socketService             from '../../services/socket';
+import ActiveRideBanner          from '../../components/ActiveRideBanner';
+import MaintenanceBanner         from '../../components/MaintenanceBanner';
+import { checkMaintenance }      from '../../utils/maintenanceCheck';
 
 const { width } = Dimensions.get('window');
-const DA     = '#FFB800';
+
+// Driver accent stays gold for driver-specific UI (separate from global theme)
+const DA     = '#FFFFFF'; // overridden per theme below
 const PURPLE = '#A78BFA';
 
 const getRealLocation = async () => {
@@ -31,21 +33,21 @@ const getRealLocation = async () => {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const VerifiedBadge = () => (
-  <View style={vb.wrap}>
-    <Ionicons name="shield-checkmark" size={11} color="#080C18" />
-    <Text style={vb.txt}>VERIFIED DRIVER</Text>
+const VerifiedBadge = ({ theme }) => (
+  <View style={[vb.wrap, { backgroundColor: theme.accent, borderColor: theme.border }]}>
+    <Ionicons name="shield-checkmark" size={11} color={theme.accentFg} />
+    <Text style={[vb.txt, { color: theme.accentFg }]}>VERIFIED DRIVER</Text>
   </View>
 );
 const vb = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: DA, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
-  txt:  { fontSize: 9, fontWeight: '900', color: '#080C18', letterSpacing: 1.5 },
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
+  txt:  { fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
 });
 
 const PendingBadge = ({ theme }) => (
-  <View style={[pb.wrap, { backgroundColor: theme.backgroundAlt, borderColor: DA + '40' }]}>
-    <Ionicons name="time-outline" size={11} color={DA} />
-    <Text style={[pb.txt, { color: DA }]}>PENDING APPROVAL</Text>
+  <View style={[pb.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+    <Ionicons name="time-outline" size={11} color={theme.hint} />
+    <Text style={[pb.txt, { color: theme.hint }]}>PENDING APPROVAL</Text>
   </View>
 );
 const pb = StyleSheet.create({
@@ -54,11 +56,11 @@ const pb = StyleSheet.create({
 });
 
 const MetricCard = ({ icon, value, label, color, theme }) => (
-  <View style={[mc.card, { backgroundColor: theme.backgroundAlt, borderColor: (color || DA) + '20' }]}>
-    <View style={[mc.iconBox, { backgroundColor: (color || DA) + '15' }]}>
-      <Ionicons name={icon} size={18} color={color || DA} />
+  <View style={[mc.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+    <View style={[mc.iconBox, { backgroundColor: (color || theme.accent) + '15' }]}>
+      <Ionicons name={icon} size={18} color={color || theme.accent} />
     </View>
-    <Text style={[mc.value, { color: color || DA }]}>{value}</Text>
+    <Text style={[mc.value, { color: color || theme.accent }]}>{value}</Text>
     <Text style={[mc.label, { color: theme.hint }]}>{label}</Text>
   </View>
 );
@@ -84,12 +86,12 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
   }, [isOnline]);
 
   return (
-    <View style={[ot.card, { backgroundColor: theme.backgroundAlt, borderColor: isOnline ? DA + '50' : theme.border }]}>
+    <View style={[ot.card, { backgroundColor: theme.backgroundAlt, borderColor: isOnline ? theme.accent + '50' : theme.border }]}>
       <View style={ot.left}>
         <View style={ot.dotRow}>
           <View style={ot.dotWrap}>
-            {isOnline && <Animated.View style={[ot.dotRing, { borderColor: DA, transform: [{ scale: pulseA }] }]} />}
-            <View style={[ot.dot, { backgroundColor: isOnline ? DA : theme.hint }]} />
+            {isOnline && <Animated.View style={[ot.dotRing, { borderColor: theme.accent, transform: [{ scale: pulseA }] }]} />}
+            <View style={[ot.dot, { backgroundColor: isOnline ? theme.accent : theme.hint }]} />
           </View>
           <Text style={[ot.status, { color: theme.foreground }]}>{isOnline ? "You're Online" : "You're Offline"}</Text>
         </View>
@@ -98,13 +100,13 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
         </Text>
       </View>
       {toggling
-        ? <ActivityIndicator color={DA} size="small" />
+        ? <ActivityIndicator color={theme.accent} size="small" />
         : <Switch
             value={isOnline}
             onValueChange={onToggle}
             disabled={!isApproved}
-            trackColor={{ false: theme.border, true: DA + '70' }}
-            thumbColor={isOnline ? DA : theme.hint}
+            trackColor={{ false: theme.border, true: theme.accent + '70' }}
+            thumbColor={isOnline ? theme.accent : theme.hint}
             ios_backgroundColor={theme.border}
           />
       }
@@ -123,14 +125,14 @@ const ot = StyleSheet.create({
 });
 
 const WalletStrip = ({ balance, todayEarnings, onTopUp, onWithdraw, theme }) => (
-  <View style={[ws.card, { backgroundColor: theme.backgroundAlt, borderColor: DA + '25' }]}>
+  <View style={[ws.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <View style={ws.left}>
-      <Text style={[ws.lbl, { color: DA + '80' }]}>WALLET BALANCE</Text>
+      <Text style={[ws.lbl, { color: theme.hint }]}>WALLET BALANCE</Text>
       <Text style={[ws.amount, { color: '#5DAA72' }]}>
         ₦{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
       </Text>
       <Text style={[ws.todayLbl, { color: theme.hint }]}>
-        Today: <Text style={{ color: DA }}>+₦{Number(todayEarnings ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}</Text>
+        Today: <Text style={{ color: theme.foreground }}>+₦{Number(todayEarnings ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}</Text>
       </Text>
     </View>
     <View style={ws.btns}>
@@ -138,9 +140,9 @@ const WalletStrip = ({ balance, todayEarnings, onTopUp, onWithdraw, theme }) => 
         <Ionicons name="add-circle-outline" size={13} color={theme.foreground} />
         <Text style={[ws.btnTxt, { color: theme.foreground }]}>Top Up</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={[ws.btn, { backgroundColor: DA }]} onPress={onWithdraw} activeOpacity={0.88}>
-        <Ionicons name="arrow-up-circle-outline" size={13} color="#080C18" />
-        <Text style={[ws.btnTxt, { color: '#080C18' }]}>Withdraw</Text>
+      <TouchableOpacity style={[ws.btn, { backgroundColor: theme.accent }]} onPress={onWithdraw} activeOpacity={0.88}>
+        <Ionicons name="arrow-up-circle-outline" size={13} color={theme.accentFg} />
+        <Text style={[ws.btnTxt, { color: theme.accentFg }]}>Withdraw</Text>
       </TouchableOpacity>
     </View>
   </View>
@@ -167,9 +169,9 @@ const WaitingBanner = ({ theme }) => {
     return () => loop.stop();
   }, []);
   return (
-    <View style={[wb.wrap, { backgroundColor: DA + '10', borderColor: DA + '30' }]}>
-      <Animated.View style={[wb.dot, { backgroundColor: DA, opacity: dotA }]} />
-      <Text style={[wb.txt, { color: DA }]}>Waiting for ride requests...</Text>
+    <View style={[wb.wrap, { backgroundColor: theme.accent + '10', borderColor: theme.accent + '30' }]}>
+      <Animated.View style={[wb.dot, { backgroundColor: theme.accent, opacity: dotA }]} />
+      <Text style={[wb.txt, { color: theme.accent }]}>Waiting for ride requests...</Text>
     </View>
   );
 };
@@ -185,6 +187,8 @@ const wb = StyleSheet.create({
 export default function DriverDashboardScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
+  // ✅ FIX: useSafeAreaInsets was missing — caused 'paddingTop doesn't exist' crash
+  const insets          = useSafeAreaInsets();
 
   const [isOnline,          setIsOnline]          = useState(false);
   const [toggling,          setToggling]          = useState(false);
@@ -202,6 +206,11 @@ export default function DriverDashboardScreen({ navigation }) {
 
   const fadeA   = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-20)).current;
+
+  // ✅ FIX: define paddingTop and paddingBottom from insets
+  const hasMaintBanner = maintenance.isOn || maintenance.isScheduled;
+  const paddingTop     = hasMaintBanner ? 16 : insets.top + 16;
+  const paddingBottom  = insets.bottom + 90;
 
   const fetchData = useCallback(async () => {
     try {
@@ -229,7 +238,6 @@ export default function DriverDashboardScreen({ navigation }) {
         setActiveRide(ride && ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'].includes(ride.status) ? ride : null);
       }
 
-      // Maintenance check
       const maint = await checkMaintenance();
       setMaintenance(maint);
 
@@ -269,16 +277,10 @@ export default function DriverDashboardScreen({ navigation }) {
       Alert.alert('Pending Approval', 'Your account is under review. You will be notified when approved.');
       return;
     }
-
-    // Block going online during active maintenance
     if (maintenance.isOn) {
       const endsMsg = maintenance.endsAt
-        ? `\n\nExpected back: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}`
-        : '';
-      Alert.alert(
-        'Platform Under Maintenance',
-        'You cannot go online until maintenance ends.' + endsMsg
-      );
+        ? `\n\nExpected back: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}` : '';
+      Alert.alert('Platform Under Maintenance', 'You cannot go online until maintenance ends.' + endsMsg);
       return;
     }
 
@@ -312,20 +314,20 @@ export default function DriverDashboardScreen({ navigation }) {
   const isApproved = profile?.isApproved ?? false;
 
   const quickActions = [
-    { icon: 'wallet-outline',        label: 'Earnings',     color: DA,         onPress: goToEarnings                             },
-    { icon: 'time-outline',          label: 'Ride History', color: '#5DAA72',  screen: 'DriverHistory'                           },
-    { icon: 'trending-up-outline',   label: 'Floor Price',  color: PURPLE,     screen: 'FloorPrice'                              },
-    { icon: 'document-text-outline', label: 'Documents',    color: '#4E8DBD',  screen: 'DriverDocuments'                         },
-    { icon: 'help-circle-outline',   label: 'Support',      color: theme.hint, screen: 'Support'                                 },
+    { icon: 'wallet-outline',        label: 'Earnings',     onPress: goToEarnings                          },
+    { icon: 'time-outline',          label: 'Ride History', screen: 'DriverHistory'                        },
+    { icon: 'trending-up-outline',   label: 'Floor Price',  screen: 'FloorPrice', color: PURPLE           },
+    { icon: 'document-text-outline', label: 'Documents',    screen: 'DriverDocuments'                      },
+    { icon: 'help-circle-outline',   label: 'Support',      screen: 'Support'                              },
   ];
 
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={[s.root, { backgroundColor: theme.background }]} edges={['left', 'right']}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
-      <View style={[s.orb, { backgroundColor: DA }]} />
+      <View style={[s.orb, { backgroundColor: theme.accent }]} />
 
       {/* Maintenance banner */}
-      {(maintenance.isOn || maintenance.isScheduled) && (
+      {hasMaintBanner && (
         <View style={{ paddingTop: insets.top }}>
           <MaintenanceBanner
             message={maintenance.message}
@@ -336,25 +338,21 @@ export default function DriverDashboardScreen({ navigation }) {
       )}
 
       <ScrollView
-        contentContainerStyle={[s.scroll, {
-          paddingTop: (maintenance.isOn || maintenance.isScheduled)
-            ? 16                      // banner already consumed the inset
-            : paddingTop,             // insets.top + 16 as before
-          paddingBottom,
-        }]}
+        contentContainerStyle={[s.scroll, { paddingTop, paddingBottom }]}
         showsVerticalScrollIndicator={false}
         overScrollMode="never"
       >
         <Animated.View style={{ opacity: fadeA, transform: [{ translateY: headerY }] }}>
 
+          {/* ── Header ───────────────────────────────────────────────────────── */}
           <View style={s.header}>
             <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
-              <Text style={[s.eyebrow, { color: DA + '70' }]}>DRIVER DASHBOARD</Text>
+              <Text style={[s.eyebrow, { color: theme.hint }]}>DRIVER DASHBOARD</Text>
               <Text style={[s.name, { color: theme.foreground }]} numberOfLines={1}>
                 {user?.firstName} {user?.lastName}
               </Text>
               <View style={{ marginTop: 8 }}>
-                {isApproved ? <VerifiedBadge /> : <PendingBadge theme={theme} />}
+                {isApproved ? <VerifiedBadge theme={theme} /> : <PendingBadge theme={theme} />}
               </View>
             </View>
             <View style={s.headerRight}>
@@ -362,22 +360,23 @@ export default function DriverDashboardScreen({ navigation }) {
                 style={[s.notifBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
                 onPress={() => navigation.navigate('Notifications')}
               >
-                <Ionicons name="notifications-outline" size={19} color={DA} />
+                <Ionicons name="notifications-outline" size={19} color={theme.foreground} />
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.avatarBtn, { backgroundColor: DA + '18', borderColor: DA + '40' }]}
+                style={[s.avatarBtn, { backgroundColor: theme.accent + '18', borderColor: theme.border }]}
                 onPress={goToProfile}
               >
-                <Text style={[s.avatarTxt, { color: DA }]}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
+                <Text style={[s.avatarTxt, { color: theme.accent }]}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
               </TouchableOpacity>
             </View>
           </View>
 
+          {/* ── Approval banner ──────────────────────────────────────────────── */}
           {!isApproved && !loading && (
-            <View style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}>
-              <Ionicons name="time-outline" size={18} color={DA} />
+            <View style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <Ionicons name="time-outline" size={18} color={theme.hint} />
               <View style={{ flex: 1 }}>
-                <Text style={[s.approvalTitle, { color: DA }]}>Account Under Review</Text>
+                <Text style={[s.approvalTitle, { color: theme.foreground }]}>Account Under Review</Text>
                 <Text style={[s.approvalSub, { color: theme.hint }]}>Your documents are being reviewed. Approval takes 24–48 hours.</Text>
               </View>
             </View>
@@ -413,37 +412,39 @@ export default function DriverDashboardScreen({ navigation }) {
           )}
 
           {loading ? (
-            <ActivityIndicator color={DA} style={{ marginBottom: 16 }} />
+            <ActivityIndicator color={theme.accent} style={{ marginBottom: 16 }} />
           ) : (
             <View style={s.statsRow}>
-              <MetricCard icon="car-sport-outline"   value={stats?.completedRides ?? profile?.totalRides ?? 0}        label="Rides"  theme={theme} />
-              <MetricCard icon="star-outline"        value={(profile?.rating ?? stats?.rating ?? 0).toFixed(1)}        label="Rating" color="#A78BFA" theme={theme} />
-              <MetricCard icon="trending-up-outline" value={isApproved ? '94%' : '—'}                                 label="Accept" color="#5DAA72" theme={theme} />
+              <MetricCard icon="car-sport-outline"   value={stats?.completedRides ?? profile?.totalRides ?? 0}   label="Rides"  theme={theme} />
+              <MetricCard icon="star-outline"        value={(profile?.rating ?? stats?.rating ?? 0).toFixed(1)}   label="Rating" color={PURPLE} theme={theme} />
+              <MetricCard icon="trending-up-outline" value={isApproved ? '94%' : '—'}                             label="Accept" color="#5DAA72" theme={theme} />
             </View>
           )}
 
+          {/* ── Vehicle card ─────────────────────────────────────────────────── */}
           {profile?.vehicleMake && (
             <TouchableOpacity
-              style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: DA + '25' }]}
+              style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
               onPress={() => navigation.navigate('DriverDocuments')}
               activeOpacity={0.8}
             >
-              <View style={[s.vehicleIconWrap, { backgroundColor: DA + '18' }]}>
-                <Ionicons name="car-outline" size={18} color={DA} />
+              <View style={[s.vehicleIconWrap, { backgroundColor: theme.accent + '18' }]}>
+                <Ionicons name="car-outline" size={18} color={theme.accent} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[s.vehicleName, { color: theme.foreground }]}>
                   {profile.vehicleColor} {profile.vehicleMake} {profile.vehicleModel}
                 </Text>
-                <Text style={[s.vehiclePlate, { color: DA }]}>{profile.vehiclePlate}</Text>
+                <Text style={[s.vehiclePlate, { color: theme.accent }]}>{profile.vehiclePlate}</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={theme.hint} />
             </TouchableOpacity>
           )}
 
+          {/* ── Floor price card ─────────────────────────────────────────────── */}
           {floorPriceActive && !loading && (
             <TouchableOpacity
-              style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: PURPLE + '30', marginBottom: 14 }]}
+              style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border, marginBottom: 14 }]}
               onPress={() => navigation.navigate('FloorPrice')}
               activeOpacity={0.8}
             >
@@ -460,30 +461,35 @@ export default function DriverDashboardScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
+          {/* ── Quick Actions ─────────────────────────────────────────────────── */}
           <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
           <View style={s.actionGrid}>
-            {quickActions.map(item => (
-              <TouchableOpacity
-                key={item.label}
-                style={[s.actionCard, { backgroundColor: theme.backgroundAlt, borderColor: item.color + '25' }]}
-                onPress={item.onPress ?? (() => navigation.navigate(item.screen))}
-                activeOpacity={0.75}
-              >
-                <View style={[s.actionIcon, { backgroundColor: item.color + '18' }]}>
-                  <Ionicons name={item.icon} size={20} color={item.color} />
-                </View>
-                <Text style={[s.actionLabel, { color: item.color }]}>{item.label}</Text>
-                {item.label === 'Floor Price' && floorPriceActive && (
-                  <View style={[s.floorBadge, { backgroundColor: PURPLE }]}>
-                    <Text style={s.floorBadgeTxt}>
-                      ₦{activeFloorAmount.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-                    </Text>
+            {quickActions.map(item => {
+              const color = item.color ?? theme.accent;
+              return (
+                <TouchableOpacity
+                  key={item.label}
+                  style={[s.actionCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+                  onPress={item.onPress ?? (() => navigation.navigate(item.screen))}
+                  activeOpacity={0.75}
+                >
+                  <View style={[s.actionIcon, { backgroundColor: color + '18' }]}>
+                    <Ionicons name={item.icon} size={20} color={color} />
                   </View>
-                )}
-              </TouchableOpacity>
-            ))}
+                  <Text style={[s.actionLabel, { color: theme.foreground }]}>{item.label}</Text>
+                  {item.label === 'Floor Price' && floorPriceActive && (
+                    <View style={[s.floorBadge, { backgroundColor: PURPLE }]}>
+                      <Text style={s.floorBadgeTxt}>
+                        ₦{activeFloorAmount.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
+          {/* ── Footer ───────────────────────────────────────────────────────── */}
           <View style={[s.footer, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <Ionicons
               name={isApproved ? 'shield-checkmark-outline' : 'shield-outline'}
@@ -503,8 +509,8 @@ export default function DriverDashboardScreen({ navigation }) {
 
 const s = StyleSheet.create({
   root:   { flex: 1 },
-  orb:    { position: 'absolute', width: width * 1.2, height: width * 1.2, borderRadius: width * 0.6, top: -width * 0.78, right: -width * 0.3, opacity: 0.05 },
-  scroll: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24 },
+  orb:    { position: 'absolute', width: width * 1.2, height: width * 1.2, borderRadius: width * 0.6, top: -width * 0.78, right: -width * 0.3, opacity: 0.04 },
+  scroll: { paddingHorizontal: 24 },
 
   header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 },
   eyebrow:     { fontSize: 10, fontWeight: '800', letterSpacing: 3, marginBottom: 4 },
