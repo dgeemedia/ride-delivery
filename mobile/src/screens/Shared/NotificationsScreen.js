@@ -372,7 +372,7 @@ export default function NotificationsScreen({ navigation }) {
               style={[s.filterBtn, filter === f.key && { backgroundColor: theme.accent }]}
               onPress={() => setFilter(f.key)}
             >
-              <Text style={[s.filterTxt, { color: filter === f.key ? '#080C18' : theme.hint }]}>
+              <Text style={[s.filterTxt, { color: filter === f.key ? theme.accentFg : theme.hint }]}>
                 {f.label}
               </Text>
             </TouchableOpacity>

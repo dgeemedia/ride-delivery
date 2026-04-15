@@ -221,7 +221,7 @@ export default function DriverDashboardScreen({ navigation }) {
   // ✅ FIX: paddingBottom = device bottom inset + tab bar content height + gap
   //         TAB_CONTENT_H (54) must match the value in DriverNavigator.js
   const TAB_CONTENT_H = 54;
-  const paddingBottom = insets.bottom + TAB_CONTENT_H + 16;
+  const paddingBottom = insets.bottom + TAB_CONTENT_H + 36;
 
   const fetchData = useCallback(async () => {
     try {

@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, StatusBar, Dimensions, Animated, ActivityIndicator, Platform,
+  Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
+  Platform,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons }          from '@expo/vector-icons';
@@ -34,17 +35,23 @@ const STATUS_CONFIG = {
   CANCELLED:  { label: 'Delivery cancelled',            color: '#E05555',     icon: 'close-circle-outline'      },
 };
 
+// ── PartnerInfoCard ───────────────────────────────────────────────────────────
 const PartnerInfoCard = ({ delivery, theme }) => {
   const partner = delivery?.partner;
   if (!partner) return null;
   const dp = partner.deliveryProfile;
+
   return (
     <View style={[pi.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
       <View style={[pi.avatar, { backgroundColor: COURIER_ACCENT + '18' }]}>
-        <Text style={[pi.avatarTxt, { color: COURIER_ACCENT }]}>{partner.firstName?.[0]}{partner.lastName?.[0]}</Text>
+        <Text style={[pi.avatarTxt, { color: COURIER_ACCENT }]}>
+          {partner.firstName?.[0]}{partner.lastName?.[0]}
+        </Text>
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[pi.name, { color: theme.foreground }]}>{partner.firstName} {partner.lastName}</Text>
+        <Text style={[pi.name, { color: theme.foreground }]}>
+          {partner.firstName} {partner.lastName}
+        </Text>
         {dp && (
           <Text style={[pi.vehicle, { color: theme.hint }]} numberOfLines={1}>
             {dp.vehicleType} {dp.vehiclePlate ? `• ${dp.vehiclePlate}` : ''}
@@ -76,6 +83,7 @@ const pi = StyleSheet.create({
   callBtn:   { width: 36, height: 36, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
 });
 
+// ── DeliveryDetailCard ────────────────────────────────────────────────────────
 const DeliveryDetailCard = ({ delivery, theme }) => (
   <View style={[dd.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <View style={dd.pkgRow}>
@@ -87,7 +95,9 @@ const DeliveryDetailCard = ({ delivery, theme }) => (
       <View style={[dd.dot, { backgroundColor: COURIER_ACCENT }]} />
       <View style={{ flex: 1 }}>
         <Text style={[dd.lbl, { color: theme.hint }]}>PICKUP</Text>
-        <Text style={[dd.addr, { color: theme.foreground }]} numberOfLines={1}>{delivery?.pickupAddress}</Text>
+        <Text style={[dd.addr, { color: theme.foreground }]} numberOfLines={1}>
+          {delivery?.pickupAddress}
+        </Text>
       </View>
     </View>
     <View style={[dd.routeLine, { backgroundColor: theme.border }]} />
@@ -95,7 +105,9 @@ const DeliveryDetailCard = ({ delivery, theme }) => (
       <View style={[dd.dot, { backgroundColor: '#E05555' }]} />
       <View style={{ flex: 1 }}>
         <Text style={[dd.lbl, { color: theme.hint }]}>DROP-OFF</Text>
-        <Text style={[dd.addr, { color: theme.foreground }]} numberOfLines={1}>{delivery?.dropoffAddress}</Text>
+        <Text style={[dd.addr, { color: theme.foreground }]} numberOfLines={1}>
+          {delivery?.dropoffAddress}
+        </Text>
       </View>
     </View>
   </View>
@@ -112,6 +124,7 @@ const dd = StyleSheet.create({
   addr:      { fontSize: 13, fontWeight: '600' },
 });
 
+// ── MAIN SCREEN ───────────────────────────────────────────────────────────────
 export default function DeliveryTrackingScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
@@ -127,6 +140,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
   const sheetA          = useRef(new Animated.Value(0)).current;
   const hasNavigatedRef = useRef(false);
 
+  // ── Load delivery ───────────────────────────────────────────────────────────
   const loadDelivery = useCallback(async () => {
     try {
       const res = await deliveryAPI.getActiveDelivery();
@@ -154,13 +168,16 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     }
   }, [deliveryId]);
 
+  // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     loadDelivery();
     Animated.spring(sheetA, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }).start();
 
     const handleStatus = (data) => {
       if (data.deliveryId && data.deliveryId !== deliveryId) return;
-      setDelivery(prev => prev ? { ...prev, status: data.status, partner: data.partner ?? prev.partner } : prev);
+      setDelivery(prev =>
+        prev ? { ...prev, status: data.status, partner: data.partner ?? prev.partner } : prev
+      );
 
       if (data.status === 'DELIVERED') {
         if (hasNavigatedRef.current) return;
@@ -175,7 +192,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
 
       if (data.status === 'CANCELLED') {
         Alert.alert('Delivery Cancelled', 'Your delivery was cancelled.', [
-          { text: 'OK', onPress: () => navigation.navigate('Home') }
+          { text: 'OK', onPress: () => navigation.navigate('Home') },
         ]);
       }
     };
@@ -203,6 +220,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     };
   }, [deliveryId]);
 
+  // ── Cancel handler ──────────────────────────────────────────────────────────
   const handleCancel = () => {
     Alert.alert(
       'Cancel Delivery?',
@@ -215,24 +233,32 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
           onPress: async () => {
             setCancelling(true);
             try {
-              await deliveryAPI.cancelDelivery(delivery.id, { reason: 'Customer cancelled from tracking screen' });
+              await deliveryAPI.cancelDelivery(delivery.id, {
+                reason: 'Customer cancelled from tracking screen',
+              });
               navigation.navigate('Home');
             } catch (err) {
               Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the delivery.');
-            } finally { setCancelling(false); }
-          }
-        }
+            } finally {
+              setCancelling(false);
+            }
+          },
+        },
       ]
     );
   };
 
-  const status    = delivery?.status ?? 'PENDING';
-  const statusCfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
-
-  const pickupLat  = delivery?.pickupLat;
-  const pickupLng  = delivery?.pickupLng;
-  const dropoffLat = delivery?.dropoffLat;
-  const dropoffLng = delivery?.dropoffLng;
+  // ── Derived values ──────────────────────────────────────────────────────────
+  const status         = delivery?.status ?? 'PENDING';
+  const statusCfg      = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
+  const pickupLat      = delivery?.pickupLat;
+  const pickupLng      = delivery?.pickupLng;
+  const dropoffLat     = delivery?.dropoffLat;
+  const dropoffLng     = delivery?.dropoffLng;
+  const canCancel      = ['PENDING', 'ASSIGNED'].includes(status);
+  const isActiveTrip   = ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(status);
+  const backBtnTop     = insets.top + 14;
+  const sheetPadBottom = insets.bottom + 12;
 
   const mapRegion = partnerLocation
     ? { ...partnerLocation, latitudeDelta: 0.03, longitudeDelta: 0.03 }
@@ -241,9 +267,8 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     : undefined;
 
   const sheetTranslate = sheetA.interpolate({ inputRange: [0, 1], outputRange: [300, 0] });
-  const canCancel      = ['PENDING', 'ASSIGNED'].includes(status);
-  const isActiveTrip   = ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(status);
 
+  // ── Loading state ───────────────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={[s.center, { backgroundColor: theme.background }]}>
@@ -253,6 +278,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     );
   }
 
+  // ── Not found state ─────────────────────────────────────────────────────────
   if (!delivery) {
     return (
       <View style={[s.center, { backgroundColor: theme.background }]}>
@@ -268,10 +294,12 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     );
   }
 
+  // ── Main render ─────────────────────────────────────────────────────────────
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
+      {/* ── MAP ── */}
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
@@ -306,44 +334,58 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
               { latitude: pickupLat,  longitude: pickupLng  },
               { latitude: dropoffLat, longitude: dropoffLng },
             ]}
-            strokeColor={COURIER_ACCENT} strokeWidth={3} lineDashPattern={[8, 5]}
+            strokeColor={COURIER_ACCENT}
+            strokeWidth={3}
+            lineDashPattern={[8, 5]}
           />
         )}
         {partnerLocation && pickupLat && status === 'ASSIGNED' && (
           <Polyline
             coordinates={[partnerLocation, { latitude: pickupLat, longitude: pickupLng }]}
-            strokeColor={statusCfg.color} strokeWidth={2} lineDashPattern={[4, 6]}
+            strokeColor={statusCfg.color}
+            strokeWidth={2}
+            lineDashPattern={[4, 6]}
           />
         )}
       </MapView>
 
+      {/* ── Top gradient ── */}
       <View style={s.topGradient} pointerEvents="none" />
 
+      {/* ── Back button ── */}
       <TouchableOpacity
-        style={[s.backBtn, { top: insets.top + 14, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
+        style={[s.backBtn, {
+          top:             backBtnTop,
+          backgroundColor: theme.backgroundAlt + 'EE',
+          borderColor:     theme.border,
+        }]}
         onPress={() => navigation.navigate('Home')}
         activeOpacity={0.85}
       >
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
+      {/* ── Status pill ── */}
       <View style={[s.statusPill, {
         backgroundColor: statusCfg.color + '18',
         borderColor:     statusCfg.color + '50',
-        bottom:          height * 0.44,
+        bottom:          height * 0.46,
       }]}>
         <Ionicons name={statusCfg.icon} size={13} color={statusCfg.color} />
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
       </View>
 
+      {/* ── Bottom sheet ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
-        paddingBottom:   insets.bottom + 12,
         transform:       [{ translateY: sheetTranslate }],
       }]}>
-        <ScrollView showsVerticalScrollIndicator={false}>
-
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: sheetPadBottom }}
+        >
+          {/* Fee strip */}
           <View style={[s.feeStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <View style={s.feeItem}>
               <Text style={[s.feeLabel, { color: theme.hint }]}>FEE</Text>
@@ -354,7 +396,9 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
             <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
             <View style={s.feeItem}>
               <Text style={[s.feeLabel, { color: theme.hint }]}>DISTANCE</Text>
-              <Text style={[s.feeValue, { color: theme.foreground }]}>{delivery.distance?.toFixed(1) ?? '—'} km</Text>
+              <Text style={[s.feeValue, { color: theme.foreground }]}>
+                {delivery.distance?.toFixed(1) ?? '—'} km
+              </Text>
             </View>
             <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
             <View style={s.feeItem}>
@@ -366,6 +410,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
           <PartnerInfoCard    delivery={delivery} theme={theme} />
           <DeliveryDetailCard delivery={delivery} theme={theme} />
 
+          {/* Shield button */}
           {isActiveTrip && (
             <TouchableOpacity
               style={[s.shieldBtn, {
@@ -383,6 +428,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
+          {/* Cancel button */}
           {canCancel && (
             <TouchableOpacity
               style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
@@ -390,18 +436,18 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
               disabled={cancelling}
               activeOpacity={0.8}
             >
-              {cancelling
-                ? <ActivityIndicator color="#E05555" size="small" />
-                : (
-                  <>
-                    <Ionicons name="close-circle-outline" size={16} color="#E05555" />
-                    <Text style={s.cancelTxt}>Cancel Delivery</Text>
-                  </>
-                )
-              }
+              {cancelling ? (
+                <ActivityIndicator color="#E05555" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="close-circle-outline" size={16} color="#E05555" />
+                  <Text style={s.cancelTxt}>Cancel Delivery</Text>
+                </>
+              )}
             </TouchableOpacity>
           )}
 
+          {/* Post-delivery button */}
           {(status === 'DELIVERED' || status === 'CANCELLED') && (
             <TouchableOpacity
               style={[s.homeBtn, { backgroundColor: COURIER_ACCENT }]}
@@ -414,13 +460,16 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
               }}
               activeOpacity={0.88}
             >
-              <Ionicons name={status === 'DELIVERED' ? 'star-outline' : 'home-outline'} size={18} color="#FFF" />
+              <Ionicons
+                name={status === 'DELIVERED' ? 'star-outline' : 'home-outline'}
+                size={18}
+                color="#FFF"
+              />
               <Text style={s.homeBtnTxt}>
                 {status === 'DELIVERED' ? 'Rate Your Partner' : 'Back to Home'}
               </Text>
             </TouchableOpacity>
           )}
-
         </ScrollView>
       </Animated.View>
     </View>
@@ -428,26 +477,53 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:          { flex: 1 },
-  center:        { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
-  centerTxt:     { fontSize: 14 },
-  goHomeBtn:     { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
-  goHomeTxt:     { fontSize: 14, fontWeight: '600' },
-  topGradient:   { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
-  backBtn:       { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
-  partnerPin:    { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
+  root:        { flex: 1 },
+
+  // Loading / not found
+  center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
+  centerTxt:   { fontSize: 14 },
+  goHomeBtn:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
+  goHomeTxt:   { fontSize: 14, fontWeight: '600' },
+
+  // Map overlays
+  topGradient:  { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
+  backBtn:      { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
+  partnerPin:   { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
+
   statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
-  sheet:         { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, paddingHorizontal: 20, paddingTop: 20, maxHeight: height * 0.52 },
-  feeStrip:      { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
-  feeItem:       { flex: 1, alignItems: 'center', paddingVertical: 11, gap: 3 },
-  feeLabel:      { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
-  feeValue:      { fontSize: 14, fontWeight: '900' },
-  feeDivider:    { width: 1 },
-  shieldBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
-  shieldBtnTxt:  { flex: 1, fontSize: 13, fontWeight: '700', color: '#4CAF50' },
-  cancelBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, marginBottom: 8 },
-  cancelTxt:     { fontSize: 14, fontWeight: '700', color: '#E05555' },
-  homeBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8 },
-  homeBtnTxt:    { fontSize: 15, fontWeight: '800', color: '#FFF' },
+
+  // Bottom sheet — maxHeight keeps map visible, ScrollView handles overflow
+  sheet: {
+    position:             'absolute',
+    bottom:               0,
+    left:                 0,
+    right:                0,
+    borderTopLeftRadius:  28,
+    borderTopRightRadius: 28,
+    borderTopWidth:       1,
+    paddingHorizontal:    20,
+    paddingTop:           20,
+    maxHeight:            height * 0.55,
+    overflow:             'hidden',
+  },
+
+  // Fee strip
+  feeStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
+  feeItem:    { flex: 1, alignItems: 'center', paddingVertical: 11, gap: 3 },
+  feeLabel:   { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
+  feeValue:   { fontSize: 14, fontWeight: '900' },
+  feeDivider: { width: 1 },
+
+  // Shield
+  shieldBtn:    { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
+  shieldBtnTxt: { flex: 1, fontSize: 13, fontWeight: '700', color: '#4CAF50' },
+
+  // Cancel
+  cancelBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, marginBottom: 8 },
+  cancelTxt: { fontSize: 14, fontWeight: '700', color: '#E05555' },
+
+  // Home / rate
+  homeBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8, backgroundColor: COURIER_ACCENT },
+  homeBtnTxt: { fontSize: 15, fontWeight: '800', color: '#FFF' },
 });

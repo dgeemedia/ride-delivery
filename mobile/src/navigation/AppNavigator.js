@@ -2,13 +2,13 @@
 import React from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { useAuth }  from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
-import AuthNavigator     from './AuthNavigator';
+import AuthNavigator from './AuthNavigator';
 import CustomerNavigator from './CustomerNavigator';
-import DriverNavigator   from './DriverNavigator';
-import PartnerNavigator  from './PartnerNavigator';
+import DriverNavigator from './DriverNavigator';
+import PartnerNavigator from './PartnerNavigator';
 
 const Stack = createStackNavigator();
 
@@ -26,23 +26,23 @@ const AppNavigator = () => {
   const { user, loading } = useAuth();
   const { loaded: themeLoaded } = useTheme();
 
-  // Wait for both auth state AND persisted theme to resolve
-  // before rendering — prevents flash of wrong theme
   if (loading || !themeLoaded) {
     return <LoadingScreen />;
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator 
+      screenOptions={{ headerShown: false }}
+      initialRouteName={!user ? "Auth" : user.role === 'CUSTOMER' ? "Customer" : user.role === 'DRIVER' ? "Driver" : "Partner"}
+    >
       {!user ? (
-        <Stack.Screen name="Auth"     component={AuthNavigator}     />
+        <Stack.Screen name="Auth" component={AuthNavigator} />
       ) : user.role === 'CUSTOMER' ? (
         <Stack.Screen name="Customer" component={CustomerNavigator} />
       ) : user.role === 'DRIVER' ? (
-        <Stack.Screen name="Driver"   component={DriverNavigator}   />
+        <Stack.Screen name="Driver" component={DriverNavigator} />
       ) : (
-        // DELIVERY_PARTNER (and any future roles fall here)
-        <Stack.Screen name="Partner"  component={PartnerNavigator}  />
+        <Stack.Screen name="Partner" component={PartnerNavigator} />
       )}
     </Stack.Navigator>
   );

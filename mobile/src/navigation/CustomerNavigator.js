@@ -1,5 +1,6 @@
 // mobile/src/navigation/CustomerNavigator.js
 // ── Premium Glass Tab Bar ─────────────────────────────────────────────────────
+
 import React from 'react';
 import { Platform, View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -35,9 +36,9 @@ import TicketDetailScreen        from '../screens/Shared/TicketDetailScreen';
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// ── Stack definitions ─────────────────────────────────────────────────────────
+// Stack definitions (unchanged)
 const HomeStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown:false }}>
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="Home"                component={HomeScreen}                />
     <Stack.Screen name="RequestRide"         component={RequestRideScreen}         />
     <Stack.Screen name="RequestDelivery"     component={RequestDeliveryScreen}     />
@@ -59,7 +60,7 @@ const HomeStack = () => (
 );
 
 const HistoryStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown:false }}>
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="HistoryHome"  component={HistoryScreen}      />
     <Stack.Screen name="RateRide"     component={RateRideScreen}     options={{ presentation:'modal' }} />
     <Stack.Screen name="RateDelivery" component={RateDeliveryScreen} options={{ presentation:'modal' }} />
@@ -71,7 +72,7 @@ const HistoryStack = () => (
 );
 
 const WalletStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown:false }}>
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="WalletHome"   component={WalletScreen}       />
     <Stack.Screen name="DuoPay"       component={DuoPayScreen}       />
     <Stack.Screen name="Support"      component={SupportScreen}      />
@@ -82,7 +83,7 @@ const WalletStack = () => (
 );
 
 const ProfileStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown:false }}>
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="ProfileHome"    component={ProfileScreen}        />
     <Stack.Screen name="EditProfile"    component={EditProfileScreen}    />
     <Stack.Screen name="Notifications"  component={NotificationsScreen}  />
@@ -96,7 +97,7 @@ const ProfileStack = () => (
   </Stack.Navigator>
 );
 
-// ── Glass Tab Bar Background ──────────────────────────────────────────────────
+// Glass Tab Bar Background
 const GlassTabBar = ({ mode }) => {
   const darkMode = mode === 'dark';
   if (Platform.OS === 'ios') {
@@ -108,32 +109,23 @@ const GlassTabBar = ({ mode }) => {
       />
     );
   }
-  // Android: solid fallback — blur not supported
   return (
-    <View
-      style={[
-        StyleSheet.absoluteFill,
-        { backgroundColor: darkMode ? 'rgba(4,4,4,0.94)' : 'rgba(252,252,252,0.96)' },
-      ]}
-    />
+    <View style={[StyleSheet.absoluteFill, { 
+      backgroundColor: darkMode ? 'rgba(4,4,4,0.94)' : 'rgba(252,252,252,0.96)' 
+    }]} />
   );
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NAVIGATOR
+// CUSTOMER NAVIGATOR - FIXED & IMPROVED
 // ─────────────────────────────────────────────────────────────────────────────
 const CustomerNavigator = () => {
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
 
-  // ✅ FIX: Dynamic height = icon+label content row + device bottom inset.
-  //         This is the same pattern used in DriverNavigator & PartnerNavigator.
-  //         On Samsung gesture-nav phones, insets.bottom can be 24–48 px;
-  //         the old hardcoded values (88/64) ignored this entirely.
-  const TAB_CONTENT_H = 54;                          // icon + label row
+  const TAB_CONTENT_H = 54;
   const tabBarHeight  = TAB_CONTENT_H + insets.bottom;
-  const paddingBottom = insets.bottom + 4;           // push icons above gesture bar
 
   return (
     <Tab.Navigator
@@ -159,7 +151,12 @@ const CustomerNavigator = () => {
 
         tabBarActiveTintColor:   theme.foreground,
         tabBarInactiveTintColor: darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
-        tabBarLabelStyle: { fontSize:10, fontWeight:'700', letterSpacing:0.3, marginTop:2 },
+        tabBarLabelStyle: { 
+          fontSize: 10, 
+          fontWeight: '700', 
+          letterSpacing: 0.3, 
+          marginTop: 2 
+        },
 
         tabBarStyle: {
           position:        'absolute',
@@ -167,8 +164,9 @@ const CustomerNavigator = () => {
           left:            0,
           right:           0,
           elevation:       0,
-          height:          tabBarHeight,   // ✅ dynamic
-          paddingBottom:   paddingBottom,  // ✅ dynamic — clears Samsung gesture bar
+          height:          tabBarHeight,
+          // ── MAIN FIX: Stronger upward push so labels are not cut off ──
+          paddingBottom:   insets.bottom + 16,     // Increased (was +4)
           paddingTop:      10,
           backgroundColor: 'transparent',
           borderTopColor:  darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
@@ -178,10 +176,10 @@ const CustomerNavigator = () => {
         tabBarBackground: () => <GlassTabBar mode={mode} />,
       })}
     >
-      <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title:'Home'    }} />
-      <Tab.Screen name="HistoryTab" component={HistoryStack} options={{ title:'History' }} />
-      <Tab.Screen name="WalletTab"  component={WalletStack}  options={{ title:'Wallet'  }} />
-      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title:'Profile' }} />
+      <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Home'    }} />
+      <Tab.Screen name="HistoryTab" component={HistoryStack} options={{ title: 'History' }} />
+      <Tab.Screen name="WalletTab"  component={WalletStack}  options={{ title: 'Wallet'  }} />
+      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
 };
@@ -189,6 +187,6 @@ const CustomerNavigator = () => {
 export default CustomerNavigator;
 
 const tb = StyleSheet.create({
-  icon:       { width:32, height:32, justifyContent:'center', alignItems:'center' },
-  iconActive: { width:40, height:32, borderRadius:10, justifyContent:'center', alignItems:'center' },
+  icon:       { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
+  iconActive: { width: 40, height: 32, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
 });

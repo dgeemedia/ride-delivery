@@ -57,7 +57,6 @@ const VEHICLE_ICONS = {
   CAR:  'car-outline',     VAN: 'bus-outline',
 };
 
-// Quick destinations
 const QUICK_DESTINATIONS = [
   { label: 'Victoria Island', icon: 'business-outline', lat: 6.4281, lng: 3.4219 },
   { label: 'Lekki Phase 1',   icon: 'home-outline',     lat: 6.4433, lng: 3.5077 },
@@ -71,7 +70,6 @@ const QUICK_DESTINATIONS = [
   { label: 'Badagry',         icon: 'water-outline',    lat: 6.4167, lng: 2.8833 },
 ];
 
-// Mock fallback
 const PARTNER_NAMES = [
   { firstName: 'Kunle',  lastName: 'Balogun' },
   { firstName: 'Ifeanyi',lastName: 'Eze'     },
@@ -108,7 +106,7 @@ function generateMockPartners(center) {
   });
 }
 
-// PartnerPin component (unchanged)
+// ── PartnerPin ─────────────────────────────────────────────────────────────────
 const PartnerPin = ({ partner, selected, onPress, accentColor }) => {
   const scaleA = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -135,7 +133,7 @@ const pp = StyleSheet.create({
   pulse: { position: 'absolute', width: 52, height: 52, borderRadius: 26, borderWidth: 1.5, opacity: 0.4 },
 });
 
-// PartnerCard component (unchanged)
+// ── PartnerCard ────────────────────────────────────────────────────────────────
 const PartnerCard = ({ partner, selected, onSelect, accentColor, theme }) => (
   <TouchableOpacity
     onPress={() => onSelect(partner)}
@@ -188,7 +186,7 @@ const pc = StyleSheet.create({
   radioDot:      { width: 10, height: 10, borderRadius: 5 },
 });
 
-// PackageInput component (unchanged)
+// ── PackageInput ───────────────────────────────────────────────────────────────
 const PackageInput = ({ label, icon, placeholder, value, onChangeText, keyboardType, multiline, theme, accentColor }) => (
   <View style={[pi.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <View style={[pi.iconWrap, { backgroundColor: accentColor + '18' }]}>
@@ -217,7 +215,7 @@ const pi = StyleSheet.create({
   input:   { fontSize: 13, fontWeight: '500', minHeight: 20, outlineWidth: 0, borderWidth: 0 },
 });
 
-// StepDots component (unchanged)
+// ── StepDots ───────────────────────────────────────────────────────────────────
 const StepDots = ({ step, accentColor, theme }) => (
   <View style={std.wrap}>
     {[1, 2, 3].map(s => (
@@ -234,11 +232,11 @@ const std = StyleSheet.create({
   dot:  { height: 6, width: 6, borderRadius: 3 },
 });
 
-// LocationSearchModal component (unchanged)
+// ── LocationSearchModal ────────────────────────────────────────────────────────
 const LocationSearchModal = ({
   visible, type, query, results, loading,
   onChangeText, onSelect, onClose, onSwitchToPin,
-  accentColor,
+  accentColor, theme,
 }) => {
   const inputRef = useRef(null);
 
@@ -258,12 +256,13 @@ const LocationSearchModal = ({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={lsm.root}>
-        <View style={lsm.header}>
-          <TouchableOpacity onPress={onClose} style={lsm.backBtn} activeOpacity={0.7}>
-            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+      <SafeAreaView style={[lsm.root, { backgroundColor: theme.background }]}>
+        {/* ── Header ── */}
+        <View style={[lsm.header, { borderBottomColor: theme.border, backgroundColor: theme.background }]}>
+          <TouchableOpacity onPress={onClose} style={[lsm.backBtn, { backgroundColor: theme.card }]} activeOpacity={0.7}>
+            <Ionicons name="arrow-back" size={20} color={theme.foreground} />
           </TouchableOpacity>
-          <View style={[lsm.inputWrap, { borderColor: pinColor + '60' }]}>
+          <View style={[lsm.inputWrap, { backgroundColor: theme.backgroundAlt, borderColor: pinColor + '60' }]}>
             <Ionicons
               name={type === 'pickup' ? 'radio-button-on' : 'location'}
               size={16}
@@ -271,9 +270,9 @@ const LocationSearchModal = ({
             />
             <TextInput
               ref={inputRef}
-              style={lsm.input}
+              style={[lsm.input, { color: theme.foreground }]}
               placeholder={type === 'pickup' ? 'Search pickup location…' : 'Search drop-off location…'}
-              placeholderTextColor="#5A5A5A"
+              placeholderTextColor={theme.hint}
               value={query}
               onChangeText={onChangeText}
               returnKeyType="search"
@@ -283,25 +282,27 @@ const LocationSearchModal = ({
             {loading && <ActivityIndicator color={pinColor} size="small" />}
             {!loading && query.length > 0 && (
               <TouchableOpacity onPress={() => onChangeText('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close-circle" size={18} color="#5A5A5A" />
+                <Ionicons name="close-circle" size={18} color={theme.muted} />
               </TouchableOpacity>
             )}
           </View>
         </View>
 
+        {/* ── Switch to map pin ── */}
         <TouchableOpacity style={lsm.mapPinRow} onPress={onSwitchToPin} activeOpacity={0.8}>
           <View style={[lsm.mapPinIcon, { backgroundColor: pinColor + '18' }]}>
             <Ionicons name="map-outline" size={16} color={pinColor} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[lsm.mapPinLabel, { color: pinColor }]}>Place pin on map</Text>
-            <Text style={lsm.mapPinSub}>Drag the map to set your exact location</Text>
+            <Text style={[lsm.mapPinSub, { color: theme.muted }]}>Drag the map to set your exact location</Text>
           </View>
-          <Ionicons name="chevron-forward" size={16} color="#5A5A5A" />
+          <Ionicons name="chevron-forward" size={16} color={theme.muted} />
         </TouchableOpacity>
 
-        <View style={lsm.divider} />
+        <View style={[lsm.divider, { backgroundColor: theme.border }]} />
 
+        {/* ── Results ── */}
         <FlatList
           data={results}
           keyExtractor={(item) => item.place_id}
@@ -309,19 +310,19 @@ const LocationSearchModal = ({
           contentContainerStyle={{ paddingBottom: 40 }}
           renderItem={({ item }) => (
             <TouchableOpacity
-              style={lsm.resultRow}
+              style={[lsm.resultRow, { borderBottomColor: theme.border }]}
               onPress={() => onSelect(item)}
               activeOpacity={0.7}
             >
-              <View style={lsm.resultIcon}>
-                <Ionicons name="location-outline" size={16} color="#6A6A6A" />
+              <View style={[lsm.resultIcon, { backgroundColor: theme.card }]}>
+                <Ionicons name="location-outline" size={16} color={theme.hint} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={lsm.resultMain} numberOfLines={1}>
+                <Text style={[lsm.resultMain, { color: theme.foreground }]} numberOfLines={1}>
                   {item.structured_formatting?.main_text ?? item.description}
                 </Text>
                 {item.structured_formatting?.secondary_text ? (
-                  <Text style={lsm.resultSub} numberOfLines={1}>
+                  <Text style={[lsm.resultSub, { color: theme.hint }]} numberOfLines={1}>
                     {item.structured_formatting.secondary_text}
                   </Text>
                 ) : null}
@@ -331,17 +332,17 @@ const LocationSearchModal = ({
           ListEmptyComponent={
             query.length === 0 ? (
               <View style={lsm.emptyWrap}>
-                <Ionicons name="search-outline" size={40} color="#2A2A2A" />
-                <Text style={lsm.emptyTitle}>Search for a location</Text>
-                <Text style={lsm.emptySub}>Type an address, landmark, or area</Text>
+                <Ionicons name="search-outline" size={40} color={theme.border} />
+                <Text style={[lsm.emptyTitle, { color: theme.muted }]}>Search for a location</Text>
+                <Text style={[lsm.emptySub, { color: theme.muted }]}>Type an address, landmark, or area</Text>
               </View>
             ) : query.length < 3 ? (
-              <Text style={lsm.hintTxt}>Keep typing to see results…</Text>
+              <Text style={[lsm.hintTxt, { color: theme.muted }]}>Keep typing to see results…</Text>
             ) : !loading ? (
               <View style={lsm.emptyWrap}>
-                <Ionicons name="alert-circle-outline" size={36} color="#2A2A2A" />
-                <Text style={lsm.emptyTitle}>No results found</Text>
-                <Text style={lsm.emptySub}>Try a different search or use the map pin</Text>
+                <Ionicons name="alert-circle-outline" size={36} color={theme.border} />
+                <Text style={[lsm.emptyTitle, { color: theme.muted }]}>No results found</Text>
+                <Text style={[lsm.emptySub, { color: theme.muted }]}>Try a different search or use the map pin</Text>
               </View>
             ) : null
           }
@@ -352,34 +353,33 @@ const LocationSearchModal = ({
 };
 
 const lsm = StyleSheet.create({
-  root:       { flex: 1, backgroundColor: '#111111' },
-  header:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1E1E1E' },
-  backBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  inputWrap:  { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#1A1A1A', borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 12, height: 44 },
-  input:      { flex: 1, fontSize: 14, fontWeight: '500', color: '#F2EEE6', height: 44 },
+  root:       { flex: 1 },
+  header:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
+  backBtn:    { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  inputWrap:  { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 12, height: 44 },
+  input:      { flex: 1, fontSize: 14, fontWeight: '500', height: 44 },
   mapPinRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
   mapPinIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   mapPinLabel:{ fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  mapPinSub:  { fontSize: 11, color: '#5A5A5A' },
-  divider:    { height: 1, backgroundColor: '#1E1E1E', marginHorizontal: 16 },
-  resultRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#161616' },
-  resultIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  resultMain: { fontSize: 14, fontWeight: '600', color: '#F2EEE6', marginBottom: 2 },
-  resultSub:  { fontSize: 12, color: '#5A5A5A' },
+  mapPinSub:  { fontSize: 11 },
+  divider:    { height: 1, marginHorizontal: 16 },
+  resultRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
+  resultIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  resultMain: { fontSize: 14, fontWeight: '600', marginBottom: 2 },
+  resultSub:  { fontSize: 12 },
   emptyWrap:  { alignItems: 'center', paddingTop: 60, paddingHorizontal: 40 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#3A3A3A', marginTop: 16, marginBottom: 6 },
-  emptySub:   { fontSize: 13, color: '#3A3A3A', textAlign: 'center', lineHeight: 19 },
-  hintTxt:    { fontSize: 13, color: '#3A3A3A', textAlign: 'center', paddingTop: 40 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', marginTop: 16, marginBottom: 6 },
+  emptySub:   { fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  hintTxt:    { fontSize: 13, textAlign: 'center', paddingTop: 40 },
 });
 
-// MAIN SCREEN
+// ── MAIN SCREEN ────────────────────────────────────────────────────────────────
 export default function RequestDeliveryScreen({ navigation }) {
   const { theme }   = useTheme();
   const insets      = useSafeAreaInsets();
   const accentColor = theme.accent;
   const accentFg    = theme.accentFg ?? '#111111';
 
-  // State (unchanged)
   const [pickupAddress,  setPickupAddress]  = useState('');
   const [dropoffAddress, setDropoffAddress] = useState('');
   const [pickupCoords,   setPickupCoords]   = useState(null);
@@ -388,56 +388,58 @@ export default function RequestDeliveryScreen({ navigation }) {
   const [resolvingAddr,  setResolvingAddr]  = useState(false);
   const [liveAddress,    setLiveAddress]    = useState('');
   const [mapCenter,      setMapCenter]      = useState(null);
-  const [searchModal,   setSearchModal]   = useState(null);
-  const [searchQuery,   setSearchQuery]   = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchModal,    setSearchModal]    = useState(null);
+  const [searchQuery,    setSearchQuery]    = useState('');
+  const [searchResults,  setSearchResults]  = useState([]);
+  const [searchLoading,  setSearchLoading]  = useState(false);
   const searchTimer = useRef(null);
+
   const [pickupContact,      setPickupContact]      = useState('');
   const [dropoffContact,     setDropoffContact]     = useState('');
   const [packageDescription, setPackageDescription] = useState('');
   const [packageWeight,      setPackageWeight]      = useState('');
   const [packageNotes,       setPackageNotes]       = useState('');
+
   const mapRef             = useRef(null);
   const geocodeTimer       = useRef(null);
   const [partners,         setPartners]         = useState([]);
   const [selectedPartner,  setSelectedPartner]  = useState(null);
   const [loadingPartners,  setLoadingPartners]  = useState(false);
+
   const [distanceKm,  setDistanceKm]  = useState(null);
   const [feeEstimate, setFeeEstimate] = useState(null);
   const [etaMinutes,  setEtaMinutes]  = useState(null);
+
   const [step,       setStep]       = useState(1);
   const [requesting, setRequesting] = useState(false);
   const [mapReady,   setMapReady]   = useState(false);
+
   const fadeA     = useRef(new Animated.Value(1)).current;
   const pinBounce = useRef(new Animated.Value(0)).current;
 
-  // Quick destination helper
+  const TAB_CONTENT_H  = 54;
+  const sheetPadBottom = insets.bottom + TAB_CONTENT_H + 24;
+  const backBtnTop     = insets.top + 14;
+  const sheetTop       = insets.top + 70;
+
   const setQuickDestination = (dest) => {
     setDropoffCoords({ lat: dest.lat, lng: dest.lng });
     setDropoffAddress(dest.label);
     if (pickupCoords) {
       setTimeout(() => {
         mapRef.current?.fitToCoordinates(
-          [
-            { latitude: pickupCoords.lat, longitude: pickupCoords.lng },
-            { latitude: dest.lat,         longitude: dest.lng         },
-          ],
+          [{ latitude: pickupCoords.lat, longitude: pickupCoords.lng }, { latitude: dest.lat, longitude: dest.lng }],
           { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true }
         );
       }, 300);
     }
   };
 
-  // GPS on mount
   useEffect(() => {
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setPickupCoords({ lat: LAGOS_DEFAULT.latitude, lng: LAGOS_DEFAULT.longitude });
-          return;
-        }
+        if (status !== 'granted') { setPickupCoords({ lat: LAGOS_DEFAULT.latitude, lng: LAGOS_DEFAULT.longitude }); return; }
         const loc    = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
         setPickupCoords(coords);
@@ -451,10 +453,7 @@ export default function RequestDeliveryScreen({ navigation }) {
 
   useEffect(() => {
     if (pickupCoords && mapReady && step === 1 && !placingPin) {
-      mapRef.current?.animateToRegion({
-        latitude: pickupCoords.lat, longitude: pickupCoords.lng,
-        latitudeDelta: 0.012, longitudeDelta: 0.012,
-      }, 600);
+      mapRef.current?.animateToRegion({ latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 600);
     }
   }, [pickupCoords, mapReady]);
 
@@ -464,25 +463,15 @@ export default function RequestDeliveryScreen({ navigation }) {
       const place   = results?.[0];
       if (place) {
         const parts = [place.name, place.street, place.district, place.city]
-          .filter(Boolean)
-          .filter((v, i, a) => a.indexOf(v) === i)
-          .slice(0, 3);
+          .filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3);
         setter(parts.length > 0 ? parts.join(', ') : `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
-      } else {
-        setter(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
-      }
-    } catch {
-      setter(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
-    }
+      } else { setter(`${lat.toFixed(5)}, ${lng.toFixed(5)}`); }
+    } catch { setter(`${lat.toFixed(5)}, ${lng.toFixed(5)}`); }
   }, []);
 
   const searchPlaces = useCallback(async (text) => {
     setSearchQuery(text);
-    if (text.length < 3) {
-      setSearchResults([]);
-      setSearchLoading(false);
-      return;
-    }
+    if (text.length < 3) { setSearchResults([]); setSearchLoading(false); return; }
     clearTimeout(searchTimer.current);
     setSearchLoading(true);
     searchTimer.current = setTimeout(async () => {
@@ -494,11 +483,7 @@ export default function RequestDeliveryScreen({ navigation }) {
         const res  = await fetch(url);
         const data = await res.json();
         setSearchResults(data.predictions ?? []);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearchLoading(false);
-      }
+      } catch { setSearchResults([]); } finally { setSearchLoading(false); }
     }, 350);
   }, [pickupCoords]);
 
@@ -508,64 +493,30 @@ export default function RequestDeliveryScreen({ navigation }) {
       const res  = await fetch(url);
       const data = await res.json();
       const loc  = data.result?.geometry?.location;
-      if (!loc) {
-        Alert.alert('Error', 'Could not get location details. Please try again.');
-        return;
-      }
+      if (!loc) { Alert.alert('Error', 'Could not get location details. Please try again.'); return; }
       const coords  = { lat: loc.lat, lng: loc.lng };
       const address = data.result.formatted_address ?? place.description;
-
       if (searchModal === 'pickup') {
-        setPickupCoords(coords);
-        setPickupAddress(address);
-        mapRef.current?.animateToRegion({
-          latitude: coords.lat, longitude: coords.lng,
-          latitudeDelta: 0.012, longitudeDelta: 0.012,
-        }, 500);
+        setPickupCoords(coords); setPickupAddress(address);
+        mapRef.current?.animateToRegion({ latitude: coords.lat, longitude: coords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 500);
       } else {
-        setDropoffCoords(coords);
-        setDropoffAddress(address);
+        setDropoffCoords(coords); setDropoffAddress(address);
         if (pickupCoords) {
           setTimeout(() => {
             mapRef.current?.fitToCoordinates(
-              [
-                { latitude: pickupCoords.lat, longitude: pickupCoords.lng },
-                { latitude: coords.lat,       longitude: coords.lng       },
-              ],
+              [{ latitude: pickupCoords.lat, longitude: pickupCoords.lng }, { latitude: coords.lat, longitude: coords.lng }],
               { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true }
             );
           }, 300);
         }
       }
-    } catch {
-      Alert.alert('Error', 'Could not load location. Please try again.');
-    } finally {
-      setSearchModal(null);
-      setSearchQuery('');
-      setSearchResults([]);
-    }
+    } catch { Alert.alert('Error', 'Could not load location. Please try again.'); }
+    finally { setSearchModal(null); setSearchQuery(''); setSearchResults([]); }
   }, [searchModal, pickupCoords]);
 
-  const openSearchModal = useCallback((type) => {
-    setSearchModal(type);
-    setSearchQuery('');
-    setSearchResults([]);
-    setSearchLoading(false);
-  }, []);
-
-  const closeSearchModal = useCallback(() => {
-    clearTimeout(searchTimer.current);
-    setSearchModal(null);
-    setSearchQuery('');
-    setSearchResults([]);
-    setSearchLoading(false);
-  }, []);
-
-  const switchToMapPin = useCallback(() => {
-    const type = searchModal;
-    closeSearchModal();
-    setTimeout(() => startPickingLocation(type), 300);
-  }, [searchModal]);
+  const openSearchModal  = useCallback((type) => { setSearchModal(type); setSearchQuery(''); setSearchResults([]); setSearchLoading(false); }, []);
+  const closeSearchModal = useCallback(() => { clearTimeout(searchTimer.current); setSearchModal(null); setSearchQuery(''); setSearchResults([]); setSearchLoading(false); }, []);
+  const switchToMapPin   = useCallback(() => { const type = searchModal; closeSearchModal(); setTimeout(() => startPickingLocation(type), 300); }, [searchModal]);
 
   const onRegionChange = useCallback((region) => {
     if (!placingPin) return;
@@ -579,15 +530,10 @@ export default function RequestDeliveryScreen({ navigation }) {
         const results = await Location.reverseGeocodeAsync({ latitude: region.latitude, longitude: region.longitude });
         const place   = results?.[0];
         if (place) {
-          const parts = [place.name, place.street, place.district, place.city]
-            .filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3);
+          const parts = [place.name, place.street, place.district, place.city].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3);
           setLiveAddress(parts.length > 0 ? parts.join(', ') : `${region.latitude.toFixed(5)}, ${region.longitude.toFixed(5)}`);
-        } else {
-          setLiveAddress(`${region.latitude.toFixed(5)}, ${region.longitude.toFixed(5)}`);
-        }
-      } catch {
-        setLiveAddress(`${region.latitude.toFixed(5)}, ${region.longitude.toFixed(5)}`);
-      }
+        } else { setLiveAddress(`${region.latitude.toFixed(5)}, ${region.longitude.toFixed(5)}`); }
+      } catch { setLiveAddress(`${region.latitude.toFixed(5)}, ${region.longitude.toFixed(5)}`); }
       setResolvingAddr(false);
     }, 400);
   }, [placingPin]);
@@ -595,28 +541,17 @@ export default function RequestDeliveryScreen({ navigation }) {
   const onRegionChangeComplete = useCallback((region) => {
     if (!placingPin) return;
     Animated.spring(pinBounce, { toValue: 0, tension: 160, friction: 7, useNativeDriver: true }).start();
-    const coords = { lat: region.latitude, lng: region.longitude };
-    setMapCenter(coords);
+    setMapCenter({ lat: region.latitude, lng: region.longitude });
     clearTimeout(geocodeTimer.current);
     setResolvingAddr(true);
-    reverseGeocode(region.latitude, region.longitude, (addr) => {
-      setLiveAddress(addr);
-      setResolvingAddr(false);
-    });
+    reverseGeocode(region.latitude, region.longitude, (addr) => { setLiveAddress(addr); setResolvingAddr(false); });
   }, [placingPin, reverseGeocode]);
 
   const confirmPin = () => {
     if (!mapCenter) return;
-    if (placingPin === 'pickup') {
-      setPickupCoords(mapCenter);
-      setPickupAddress(liveAddress);
-    } else if (placingPin === 'dropoff') {
-      setDropoffCoords(mapCenter);
-      setDropoffAddress(liveAddress);
-    }
-    setPlacingPin(null);
-    setLiveAddress('');
-    setMapCenter(null);
+    if (placingPin === 'pickup') { setPickupCoords(mapCenter); setPickupAddress(liveAddress); }
+    else if (placingPin === 'dropoff') { setDropoffCoords(mapCenter); setDropoffAddress(liveAddress); }
+    setPlacingPin(null); setLiveAddress(''); setMapCenter(null);
   };
 
   const startPickingLocation = useCallback((type) => {
@@ -625,104 +560,58 @@ export default function RequestDeliveryScreen({ navigation }) {
     const center  = current ?? pickupCoords ?? { lat: LAGOS_DEFAULT.latitude, lng: LAGOS_DEFAULT.longitude };
     setLiveAddress(type === 'pickup' ? pickupAddress : dropoffAddress);
     setMapCenter(center);
-    mapRef.current?.animateToRegion({
-      latitude: center.lat, longitude: center.lng,
-      latitudeDelta: 0.008, longitudeDelta: 0.008,
-    }, 500);
+    mapRef.current?.animateToRegion({ latitude: center.lat, longitude: center.lng, latitudeDelta: 0.008, longitudeDelta: 0.008 }, 500);
   }, [pickupCoords, dropoffCoords, pickupAddress, dropoffAddress]);
 
   const proceedToMap = useCallback(async () => {
-    if (!pickupCoords || !dropoffCoords) {
-      Alert.alert('Set both locations', 'Please set both pickup and drop-off locations.'); return;
-    }
-    if (!pickupContact || !dropoffContact) {
-      Alert.alert('Missing contacts', 'Please enter phone numbers for both pickup and drop-off contacts.'); return;
-    }
-    if (!packageDescription) {
-      Alert.alert('Missing package info', 'Please describe what you are sending.'); return;
-    }
-
+    if (!pickupCoords || !dropoffCoords) { Alert.alert('Set both locations', 'Please set both pickup and drop-off locations.'); return; }
+    if (!pickupContact || !dropoffContact) { Alert.alert('Missing contacts', 'Please enter phone numbers for both pickup and drop-off contacts.'); return; }
+    if (!packageDescription) { Alert.alert('Missing package info', 'Please describe what you are sending.'); return; }
     const km  = haversineKm(pickupCoords.lat, pickupCoords.lng, dropoffCoords.lat, dropoffCoords.lng);
     const wKg = parseFloat(packageWeight) || 0;
-    setDistanceKm(km);
-    setFeeEstimate(calcFee(km, wKg));
-    setEtaMinutes(Math.ceil(km / 0.4));
-
+    setDistanceKm(km); setFeeEstimate(calcFee(km, wKg)); setEtaMinutes(Math.ceil(km / 0.4));
     setLoadingPartners(true);
     try {
-      const res  = await deliveryAPI.getNearbyPartners({
-        pickupLat: pickupCoords.lat, pickupLng: pickupCoords.lng, radiusKm: 15,
-      });
+      const res  = await deliveryAPI.getNearbyPartners({ pickupLat: pickupCoords.lat, pickupLng: pickupCoords.lng, radiusKm: 15 });
       const list = res?.data?.partners ?? res?.partners ?? [];
       setPartners(list.length > 0 ? list : generateMockPartners(pickupCoords));
-    } catch {
-      setPartners(generateMockPartners(pickupCoords));
-    } finally {
-      setLoadingPartners(false);
-    }
-
+    } catch { setPartners(generateMockPartners(pickupCoords)); }
+    finally { setLoadingPartners(false); }
     Animated.timing(fadeA, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
-      setStep(2);
-      Animated.timing(fadeA, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+      setStep(2); Animated.timing(fadeA, { toValue: 1, duration: 300, useNativeDriver: true }).start();
     });
-
     setTimeout(() => {
       mapRef.current?.fitToCoordinates(
-        [
-          { latitude: pickupCoords.lat,  longitude: pickupCoords.lng  },
-          { latitude: dropoffCoords.lat, longitude: dropoffCoords.lng },
-        ],
+        [{ latitude: pickupCoords.lat, longitude: pickupCoords.lng }, { latitude: dropoffCoords.lat, longitude: dropoffCoords.lng }],
         { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true }
       );
     }, 500);
   }, [pickupCoords, dropoffCoords, pickupContact, dropoffContact, packageDescription, packageWeight]);
 
   const confirmDelivery = async () => {
-    if (!selectedPartner) {
-      Alert.alert('Select a partner', 'Please choose a delivery partner.'); return;
-    }
+    if (!selectedPartner) { Alert.alert('Select a partner', 'Please choose a delivery partner.'); return; }
     setRequesting(true);
     try {
       await deliveryAPI.requestDelivery({
-        pickupAddress,
-        pickupLat:          pickupCoords.lat,
-        pickupLng:          pickupCoords.lng,
-        pickupContact,
-        dropoffAddress,
-        dropoffLat:         dropoffCoords.lat,
-        dropoffLng:         dropoffCoords.lng,
-        dropoffContact,
-        packageDescription,
-        packageWeight:      parseFloat(packageWeight) || 0,
-        notes:              packageNotes,
-        estimatedFee:       feeEstimate,
-        partnerId:          selectedPartner.partnerId,
+        pickupAddress, pickupLat: pickupCoords.lat, pickupLng: pickupCoords.lng, pickupContact,
+        dropoffAddress, dropoffLat: dropoffCoords.lat, dropoffLng: dropoffCoords.lng, dropoffContact,
+        packageDescription, packageWeight: parseFloat(packageWeight) || 0,
+        notes: packageNotes, estimatedFee: feeEstimate, partnerId: selectedPartner.partnerId,
       });
-      if (navigation.replace) {
-        navigation.replace('DeliveryTracking');
-      } else {
-        navigation.goBack();
-      }
+      if (navigation.replace) navigation.replace('DeliveryTracking');
+      else navigation.goBack();
     } catch (err) {
       Alert.alert('Request failed', err?.response?.data?.message ?? 'Could not place delivery. Please try again.');
-    } finally {
-      setRequesting(false);
-    }
+    } finally { setRequesting(false); }
   };
 
   const handleSelectPartner = (partner) => {
     setSelectedPartner(partner);
-    mapRef.current?.animateToRegion({
-      latitude: partner.currentLat, longitude: partner.currentLng,
-      latitudeDelta: 0.015, longitudeDelta: 0.015,
-    }, 600);
+    mapRef.current?.animateToRegion({ latitude: partner.currentLat, longitude: partner.currentLng, latitudeDelta: 0.015, longitudeDelta: 0.015 }, 600);
   };
 
   const isPickingLocation = placingPin !== null;
   const pinColor          = placingPin === 'dropoff' ? '#E05555' : accentColor;
-  const sheetPadBottom    = insets.bottom + 12;
-  const backBtnTop        = insets.top + 14;
-  const sheetTop          = insets.top + 70; // Position sheet below back button
 
   const mapRegion = pickupCoords
     ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 }
@@ -781,7 +670,7 @@ export default function RequestDeliveryScreen({ navigation }) {
 
       {/* Back button */}
       <TouchableOpacity
-        style={[s.backBtn, { top: backBtnTop, backgroundColor: '#111111CC', borderColor: '#2A2A2A' }]}
+        style={[s.backBtn, { top: backBtnTop, backgroundColor: theme.card + 'CC', borderColor: theme.border }]}
         onPress={() => {
           if (isPickingLocation) { setPlacingPin(null); setLiveAddress(''); setMapCenter(null); }
           else if (step > 1)     { setStep(prev => prev - 1); }
@@ -789,7 +678,7 @@ export default function RequestDeliveryScreen({ navigation }) {
         }}
         activeOpacity={0.85}
       >
-        <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+        <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
       {/* Pin-placing mode overlay */}
@@ -805,21 +694,21 @@ export default function RequestDeliveryScreen({ navigation }) {
             </Animated.View>
           </View>
 
-          <View style={[s.pinLabelBar, { top: backBtnTop, backgroundColor: '#111111EE' }]}>
+          <View style={[s.pinLabelBar, { top: backBtnTop, backgroundColor: theme.card + 'EE' }]}>
             <View style={[s.pinLabelDot, { backgroundColor: pinColor }]} />
-            <Text style={s.pinLabelTxt}>
+            <Text style={[s.pinLabelTxt, { color: theme.foreground }]}>
               {placingPin === 'pickup' ? 'Move map to set pickup' : 'Move map to set drop-off'}
             </Text>
           </View>
 
-          <View style={[s.confirmBar, { backgroundColor: '#111111', paddingBottom: sheetPadBottom }]}>
+          <View style={[s.confirmBar, { backgroundColor: theme.background, borderTopColor: theme.border, paddingBottom: sheetPadBottom }]}>
             <View style={s.confirmBarInner}>
               <View style={[s.confirmBarDot, { backgroundColor: pinColor }]} />
               <View style={{ flex: 1 }}>
-                <Text style={s.confirmBarLabel}>
+                <Text style={[s.confirmBarLabel, { color: theme.hint }]}>
                   {placingPin === 'pickup' ? 'PICKUP LOCATION' : 'DROP-OFF LOCATION'}
                 </Text>
-                <Text style={s.confirmBarAddr} numberOfLines={2}>
+                <Text style={[s.confirmBarAddr, { color: theme.foreground }]} numberOfLines={2}>
                   {resolvingAddr ? 'Locating…' : (liveAddress || 'Move the map to select')}
                 </Text>
               </View>
@@ -838,40 +727,40 @@ export default function RequestDeliveryScreen({ navigation }) {
         </>
       )}
 
-      {/* Bottom sheet – now uses top to fill space */}
+      {/* Bottom sheet */}
       {!isPickingLocation && (
         <Animated.View style={[s.sheet, {
-          backgroundColor: '#111111',
-          borderColor:     '#2A2A2A',
+          backgroundColor: theme.background,
+          borderColor:     theme.border,
           opacity:         fadeA,
           paddingBottom:   sheetPadBottom,
-          top:             sheetTop,          // Fill from this point to bottom
+          top:             sheetTop,
+          overflow:        'hidden',
         }]}>
           <StepDots step={step} accentColor={accentColor} theme={theme} />
 
-          {/* Step 1 */}
+          {/* ── Step 1 ── */}
           {step === 1 && (
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
               <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                <Text style={s.sheetTitle}>Send a Package</Text>
-                <Text style={[s.sheetSub, { color: '#6A6A6A' }]}>Search or tap the map icon to pin your location</Text>
+                <Text style={[s.sheetTitle, { color: theme.foreground }]}>Send a Package</Text>
+                <Text style={[s.sheetSub, { color: theme.hint }]}>Search or tap the map icon to pin your location</Text>
 
-                {/* Location pickers */}
                 <View style={s.locationRow}>
                   <View style={s.routeDots}>
                     <View style={[s.routeDot, { backgroundColor: accentColor }]} />
-                    <View style={[s.routeLine, { backgroundColor: '#2A2A2A' }]} />
+                    <View style={[s.routeLine, { backgroundColor: theme.border }]} />
                     <View style={[s.routeDot, { backgroundColor: '#E05555' }]} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <TouchableOpacity
-                      style={[s.locBtn, { backgroundColor: '#1A1A1A', borderColor: accentColor + '50' }]}
+                      style={[s.locBtn, { backgroundColor: theme.card, borderColor: accentColor + '50' }]}
                       onPress={() => openSearchModal('pickup')}
                       activeOpacity={0.85}
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={[s.locBtnLabel, { color: accentColor }]}>PICKUP</Text>
-                        <Text style={[s.locBtnAddr, { color: pickupCoords ? '#F2EEE6' : '#6A6A6A' }]} numberOfLines={1}>
+                        <Text style={[s.locBtnAddr, { color: pickupCoords ? theme.foreground : theme.hint }]} numberOfLines={1}>
                           {pickupAddress || 'Search or pin pickup location'}
                         </Text>
                       </View>
@@ -888,13 +777,13 @@ export default function RequestDeliveryScreen({ navigation }) {
                     </TouchableOpacity>
                     <View style={{ height: 6 }} />
                     <TouchableOpacity
-                      style={[s.locBtn, { backgroundColor: '#1A1A1A', borderColor: '#E05555' + '50' }]}
+                      style={[s.locBtn, { backgroundColor: theme.card, borderColor: '#E05555' + '50' }]}
                       onPress={() => openSearchModal('dropoff')}
                       activeOpacity={0.85}
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={[s.locBtnLabel, { color: '#E05555' }]}>DROP-OFF</Text>
-                        <Text style={[s.locBtnAddr, { color: dropoffCoords ? '#F2EEE6' : '#6A6A6A' }]} numberOfLines={1}>
+                        <Text style={[s.locBtnAddr, { color: dropoffCoords ? theme.foreground : theme.hint }]} numberOfLines={1}>
                           {dropoffAddress || 'Search or pin drop-off location'}
                         </Text>
                       </View>
@@ -912,24 +801,22 @@ export default function RequestDeliveryScreen({ navigation }) {
                   </View>
                 </View>
 
-                {/* Quick destinations */}
-                <Text style={[s.quickLabel, { color: '#6A6A6A' }]}>POPULAR DESTINATIONS</Text>
+                <Text style={[s.quickLabel, { color: theme.hint }]}>POPULAR DESTINATIONS</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
                   {QUICK_DESTINATIONS.map((d) => (
                     <TouchableOpacity
                       key={d.label}
-                      style={[s.quickChip, { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }]}
+                      style={[s.quickChip, { backgroundColor: theme.card, borderColor: theme.border }]}
                       onPress={() => setQuickDestination(d)}
                       activeOpacity={0.8}
                     >
                       <Ionicons name={d.icon} size={13} color={accentColor} />
-                      <Text style={[s.quickChipTxt, { color: '#F2EEE6' }]}>{d.label}</Text>
+                      <Text style={[s.quickChipTxt, { color: theme.foreground }]}>{d.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
 
-                {/* Contact & package details */}
-                <Text style={[s.sectionLabel, { color: '#6A6A6A' }]}>CONTACT & PACKAGE</Text>
+                <Text style={[s.sectionLabel, { color: theme.hint }]}>CONTACT & PACKAGE</Text>
                 <PackageInput label="PICKUP CONTACT"      icon="call-outline"          placeholder="+234 801 234 5678"                    value={pickupContact}      onChangeText={setPickupContact}      keyboardType="phone-pad" theme={theme} accentColor={accentColor} />
                 <PackageInput label="DROP-OFF CONTACT"    icon="call-outline"          placeholder="+234 801 234 5678"                    value={dropoffContact}     onChangeText={setDropoffContact}     keyboardType="phone-pad" theme={theme} accentColor={accentColor} />
                 <PackageInput label="PACKAGE DESCRIPTION" icon="cube-outline"          placeholder="e.g. Documents, Clothes, Electronics" value={packageDescription} onChangeText={setPackageDescription}                         theme={theme} accentColor={accentColor} />
@@ -941,14 +828,12 @@ export default function RequestDeliveryScreen({ navigation }) {
                 <PackageInput label="SPECIAL NOTES" icon="document-text-outline" placeholder="Handle with care, fragile..." value={packageNotes} onChangeText={setPackageNotes} multiline theme={theme} accentColor={accentColor} />
 
                 <TouchableOpacity
-                  style={[s.primaryBtn, {
-                    backgroundColor: (pickupCoords && dropoffCoords) ? accentColor : '#2A2A2A',
-                  }]}
+                  style={[s.primaryBtn, { backgroundColor: (pickupCoords && dropoffCoords) ? accentColor : theme.border }]}
                   onPress={proceedToMap}
                   activeOpacity={0.88}
                 >
-                  <Ionicons name="bicycle-outline" size={18} color={(pickupCoords && dropoffCoords) ? accentFg : '#6A6A6A'} />
-                  <Text style={[s.primaryBtnTxt, { color: (pickupCoords && dropoffCoords) ? accentFg : '#6A6A6A' }]}>
+                  <Ionicons name="bicycle-outline" size={18} color={(pickupCoords && dropoffCoords) ? accentFg : theme.muted} />
+                  <Text style={[s.primaryBtnTxt, { color: (pickupCoords && dropoffCoords) ? accentFg : theme.muted }]}>
                     Find Delivery Partners
                   </Text>
                 </TouchableOpacity>
@@ -956,39 +841,39 @@ export default function RequestDeliveryScreen({ navigation }) {
             </KeyboardAvoidingView>
           )}
 
-          {/* Step 2 */}
+          {/* ── Step 2 ── */}
           {step === 2 && (
-            <View style={{ flex: 1 }}>
-              <View style={[s.feeBadge, { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }]}>
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              <View style={[s.feeBadge, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <View style={s.feeItem}>
-                  <Ionicons name="navigate-outline" size={13} color="#6A6A6A" />
-                  <Text style={[s.feeVal, { color: '#F2EEE6' }]}>{distanceKm?.toFixed(1)} km</Text>
+                  <Ionicons name="navigate-outline" size={13} color={theme.hint} />
+                  <Text style={[s.feeVal, { color: theme.foreground }]}>{distanceKm?.toFixed(1)} km</Text>
                 </View>
-                <View style={[s.feeDivider, { backgroundColor: '#2A2A2A' }]} />
+                <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
                 <View style={s.feeItem}>
-                  <Ionicons name="time-outline" size={13} color="#6A6A6A" />
-                  <Text style={[s.feeVal, { color: '#F2EEE6' }]}>~{etaMinutes} min</Text>
+                  <Ionicons name="time-outline" size={13} color={theme.hint} />
+                  <Text style={[s.feeVal, { color: theme.foreground }]}>~{etaMinutes} min</Text>
                 </View>
-                <View style={[s.feeDivider, { backgroundColor: '#2A2A2A' }]} />
+                <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
                 <View style={s.feeItem}>
-                  <Ionicons name="cash-outline" size={13} color="#6A6A6A" />
+                  <Ionicons name="cash-outline" size={13} color={theme.hint} />
                   <Text style={[s.feeVal, { color: accentColor }]}>
                     ₦{feeEstimate?.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
                   </Text>
                 </View>
               </View>
 
-              <Text style={s.sheetTitle}>
+              <Text style={[s.sheetTitle, { color: theme.foreground }]}>
                 {loadingPartners ? 'Finding partners…' : `${partners.length} partner${partners.length !== 1 ? 's' : ''} nearby`}
               </Text>
-              <Text style={[s.sheetSub, { color: '#6A6A6A' }]}>Choose who handles your package</Text>
+              <Text style={[s.sheetSub, { color: theme.hint }]}>Choose who handles your package</Text>
 
               {loadingPartners ? (
                 <ActivityIndicator color={accentColor} style={{ marginTop: 24 }} />
               ) : partners.length === 0 ? (
                 <View style={s.empty}>
-                  <Ionicons name="bicycle-outline" size={36} color="#6A6A6A" />
-                  <Text style={[s.emptyTxt, { color: '#6A6A6A' }]}>No partners available right now</Text>
+                  <Ionicons name="bicycle-outline" size={36} color={theme.hint} />
+                  <Text style={[s.emptyTxt, { color: theme.hint }]}>No partners available right now</Text>
                   <TouchableOpacity onPress={proceedToMap} style={[s.retryBtn, { borderColor: accentColor + '50' }]}>
                     <Text style={[s.retryTxt, { color: accentColor }]}>Retry</Text>
                   </TouchableOpacity>
@@ -1020,76 +905,76 @@ export default function RequestDeliveryScreen({ navigation }) {
                   <Ionicons name="arrow-forward" size={16} color={accentFg} />
                 </TouchableOpacity>
               )}
-            </View>
+            </ScrollView>
           )}
 
-          {/* Step 3 */}
+          {/* ── Step 3 ── */}
           {step === 3 && selectedPartner && (
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={s.sheetTitle}>Confirm Delivery</Text>
+              <Text style={[s.sheetTitle, { color: theme.foreground }]}>Confirm Delivery</Text>
 
-              <View style={[s.confirmRoute, { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }]}>
+              <View style={[s.confirmRoute, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <View style={s.confirmRow}>
                   <View style={[s.cDot, { backgroundColor: accentColor }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[s.confirmAddr, { color: '#F2EEE6' }]} numberOfLines={2}>{pickupAddress}</Text>
-                    <Text style={[s.confirmContact, { color: '#6A6A6A' }]}>{pickupContact}</Text>
+                    <Text style={[s.confirmAddr, { color: theme.foreground }]} numberOfLines={2}>{pickupAddress}</Text>
+                    <Text style={[s.confirmContact, { color: theme.hint }]}>{pickupContact}</Text>
                   </View>
                 </View>
-                <View style={[s.confirmRouteLine, { backgroundColor: '#2A2A2A' }]} />
+                <View style={[s.confirmRouteLine, { backgroundColor: theme.border }]} />
                 <View style={s.confirmRow}>
                   <View style={[s.cDot, { backgroundColor: '#E05555' }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[s.confirmAddr, { color: '#F2EEE6' }]} numberOfLines={2}>{dropoffAddress}</Text>
-                    <Text style={[s.confirmContact, { color: '#6A6A6A' }]}>{dropoffContact}</Text>
+                    <Text style={[s.confirmAddr, { color: theme.foreground }]} numberOfLines={2}>{dropoffAddress}</Text>
+                    <Text style={[s.confirmContact, { color: theme.hint }]}>{dropoffContact}</Text>
                   </View>
                 </View>
               </View>
 
-              <View style={[s.packageSummary, { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }]}>
+              <View style={[s.packageSummary, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <View style={s.pkgRow}>
-                  <Ionicons name="cube-outline" size={14} color="#6A6A6A" />
-                  <Text style={[s.pkgTxt, { color: '#F2EEE6' }]}>{packageDescription}</Text>
+                  <Ionicons name="cube-outline" size={14} color={theme.hint} />
+                  <Text style={[s.pkgTxt, { color: theme.foreground }]}>{packageDescription}</Text>
                 </View>
                 {packageWeight ? (
                   <View style={s.pkgRow}>
-                    <Ionicons name="scale-outline" size={14} color="#6A6A6A" />
-                    <Text style={[s.pkgTxt, { color: '#F2EEE6' }]}>{packageWeight} kg</Text>
+                    <Ionicons name="scale-outline" size={14} color={theme.hint} />
+                    <Text style={[s.pkgTxt, { color: theme.foreground }]}>{packageWeight} kg</Text>
                   </View>
                 ) : null}
                 {packageNotes ? (
                   <View style={s.pkgRow}>
-                    <Ionicons name="document-text-outline" size={14} color="#6A6A6A" />
-                    <Text style={[s.pkgTxt, { color: '#6A6A6A' }]} numberOfLines={2}>{packageNotes}</Text>
+                    <Ionicons name="document-text-outline" size={14} color={theme.hint} />
+                    <Text style={[s.pkgTxt, { color: theme.hint }]} numberOfLines={2}>{packageNotes}</Text>
                   </View>
                 ) : null}
               </View>
 
-              <View style={[s.confirmCard, { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }]}>
+              <View style={[s.confirmCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <View style={s.confirmDriver}>
                   <View style={[s.confirmAvatarFallback, { backgroundColor: accentColor + '22' }]}>
                     <Ionicons name={VEHICLE_ICONS[selectedPartner.vehicleType] ?? 'bicycle-outline'} size={20} color={accentColor} />
                   </View>
                   <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[s.confirmName, { color: '#F2EEE6' }]}>
+                    <Text style={[s.confirmName, { color: theme.foreground }]}>
                       {selectedPartner.firstName} {selectedPartner.lastName}
                     </Text>
-                    <Text style={[s.confirmVehicle, { color: '#6A6A6A' }]}>
+                    <Text style={[s.confirmVehicle, { color: theme.hint }]}>
                       {selectedPartner.vehicleType} • {selectedPartner.vehiclePlate ?? '—'}
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
                       <Ionicons name="star" size={12} color="#C9A96E" />
-                      <Text style={[s.confirmMeta, { color: '#6A6A6A' }]}>{selectedPartner.rating?.toFixed(1) ?? '–'}</Text>
-                      <Text style={[s.confirmMeta, { color: '#2A2A2A' }]}>•</Text>
-                      <Text style={[s.confirmMeta, { color: '#6A6A6A' }]}>{selectedPartner.totalDeliveries} deliveries</Text>
+                      <Text style={[s.confirmMeta, { color: theme.hint }]}>{selectedPartner.rating?.toFixed(1) ?? '–'}</Text>
+                      <Text style={[s.confirmMeta, { color: theme.border }]}>•</Text>
+                      <Text style={[s.confirmMeta, { color: theme.hint }]}>{selectedPartner.totalDeliveries} deliveries</Text>
                     </View>
                   </View>
                   <View style={s.confirmFareBox}>
-                    <Text style={[s.confirmFareLabel, { color: '#6A6A6A' }]}>FEE</Text>
+                    <Text style={[s.confirmFareLabel, { color: theme.hint }]}>FEE</Text>
                     <Text style={[s.confirmFare, { color: accentColor }]}>
                       ₦{feeEstimate?.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
                     </Text>
-                    <Text style={[s.confirmFareLabel, { color: '#6A6A6A' }]}>CASH</Text>
+                    <Text style={[s.confirmFareLabel, { color: theme.hint }]}>CASH</Text>
                   </View>
                 </View>
               </View>
@@ -1118,10 +1003,10 @@ export default function RequestDeliveryScreen({ navigation }) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[s.secondaryBtn, { borderColor: '#2A2A2A' }]}
+                style={[s.secondaryBtn, { borderColor: theme.border }]}
                 onPress={() => setStep(2)} activeOpacity={0.8}
               >
-                <Text style={[s.secondaryBtnTxt, { color: '#6A6A6A' }]}>Change Partner</Text>
+                <Text style={[s.secondaryBtnTxt, { color: theme.hint }]}>Change Partner</Text>
               </TouchableOpacity>
             </ScrollView>
           )}
@@ -1140,6 +1025,7 @@ export default function RequestDeliveryScreen({ navigation }) {
         onClose={closeSearchModal}
         onSwitchToPin={switchToMapPin}
         accentColor={accentColor}
+        theme={theme}
       />
     </View>
   );
@@ -1155,7 +1041,6 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', zIndex: 99,
   },
 
-  // Crosshair pin styles
   crosshairWrap: {
     position: 'absolute', top: '50%', left: '50%',
     marginTop: -56, marginLeft: -20,
@@ -1179,33 +1064,31 @@ const s = StyleSheet.create({
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, zIndex: 99,
   },
   pinLabelDot: { width: 8, height: 8, borderRadius: 4 },
-  pinLabelTxt: { fontSize: 13, fontWeight: '600', color: '#FFFFFF' },
+  pinLabelTxt: { fontSize: 13, fontWeight: '600' },
   confirmBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     paddingHorizontal: 20, paddingTop: 18,
-    borderTopWidth: 1, borderTopColor: '#2A2A2A', zIndex: 99,
+    borderTopWidth: 1, zIndex: 99,
   },
   confirmBarInner: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 14 },
   confirmBarDot:   { width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0 },
-  confirmBarLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 2, color: '#6A6A6A', marginBottom: 4 },
-  confirmBarAddr:  { fontSize: 14, fontWeight: '600', color: '#F2EEE6', lineHeight: 20 },
+  confirmBarLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 2, marginBottom: 4 },
+  confirmBarAddr:  { fontSize: 14, fontWeight: '600', lineHeight: 20 },
   confirmBarBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     borderRadius: 16, height: 52,
   },
-  confirmBarBtnTxt: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
+  confirmBarBtnTxt: { fontSize: 15, fontWeight: '800'},
 
-  // Bottom sheet – now uses top to fill space (no maxHeight)
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1,
     paddingHorizontal: 24, paddingTop: 22,
   },
-  sheetTitle: { fontSize: 20, fontWeight: '900', letterSpacing: -0.3, marginBottom: 4, color: '#F2EEE6' },
+  sheetTitle: { fontSize: 20, fontWeight: '900', letterSpacing: -0.3, marginBottom: 4 },
   sheetSub:   { fontSize: 12, fontWeight: '500', marginBottom: 16 },
 
-  // Location row styles
   locationRow: { flexDirection: 'row', gap: 12, alignItems: 'stretch', marginBottom: 20 },
   routeDots:   { alignItems: 'center', paddingTop: 18, paddingBottom: 18 },
   routeDot:    { width: 10, height: 10, borderRadius: 5 },
@@ -1220,32 +1103,27 @@ const s = StyleSheet.create({
   locBtnIcon:          { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   locBtnIconSecondary: { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
 
-  // Quick destinations styles
   quickLabel:   { fontSize: 9, fontWeight: '700', letterSpacing: 2.5, marginBottom: 10 },
   quickChip:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8 },
   quickChipTxt: { fontSize: 12, fontWeight: '600' },
 
   sectionLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 2.5, marginBottom: 10 },
 
-  // Buttons
   primaryBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 16, marginTop: 4 },
   primaryBtnTxt:  { fontSize: 15, fontWeight: '800' },
   secondaryBtn:   { borderRadius: 14, paddingVertical: 12, alignItems: 'center', borderWidth: 1, marginTop: 8 },
   secondaryBtnTxt:{ fontSize: 14, fontWeight: '600' },
 
-  // Fee badge
   feeBadge:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
   feeItem:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10 },
   feeVal:     { fontSize: 13, fontWeight: '700' },
   feeDivider: { width: 1 },
 
-  // Empty state
   empty:    { alignItems: 'center', paddingVertical: 24 },
   emptyTxt: { fontSize: 13, marginTop: 10, marginBottom: 14 },
   retryBtn: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 8 },
   retryTxt: { fontSize: 13, fontWeight: '700' },
 
-  // Confirm step styles
   confirmRoute:     { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 10 },
   confirmRow:       { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   cDot:             { width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0 },

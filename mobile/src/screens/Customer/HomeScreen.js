@@ -19,10 +19,12 @@ import ActiveRideBanner      from '../../components/ActiveRideBanner';
 import ActiveDeliveryBanner  from '../../components/ActiveDeliveryBanner';
 import MaintenanceBanner     from '../../components/MaintenanceBanner';
 import { checkMaintenance }  from '../../utils/maintenanceCheck';
+import { useInactivityLogout } from '../../hooks/useInactivityLogout';
 
 const { width, height } = Dimensions.get('window');
 const H_PAD   = 20;
 const CARD_W  = width - H_PAD * 2;
+const TAB_CONTENT_H = 54;   // Consistent with navigators
 
 // ── Glass helpers ─────────────────────────────────────────────────────────────
 const G = {
@@ -123,7 +125,6 @@ const ServiceCarousel = ({ cards, theme, mode }) => {
           const isActive  = idx === activeIdx;
           const darkMode  = mode === 'dark';
 
-          // Filled cards: accent-tinted glass; outlined: pure glass
           const bgColors  = isFilled
             ? (darkMode ? ['rgba(255,255,255,0.10)','rgba(255,255,255,0.04)'] : ['rgba(0,0,0,0.08)','rgba(0,0,0,0.02)'])
             : (darkMode ? ['rgba(255,255,255,0.06)','rgba(255,255,255,0.02)'] : ['rgba(255,255,255,0.95)','rgba(255,255,255,0.80)']);
@@ -142,7 +143,6 @@ const ServiceCarousel = ({ cards, theme, mode }) => {
                   end={{ x:1, y:1 }}
                   style={StyleSheet.absoluteFill}
                 />
-                {/* Shimmer top edge */}
                 <View style={[sc.shimmer, { backgroundColor: isFilled ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.10)' }]} />
 
                 <View style={sc.topRow}>
@@ -200,24 +200,28 @@ const sc = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HAMBURGER DRAWER  (unchanged logic, glass visual)
+// HAMBURGER DRAWER - FIXED & SAFE
 // ─────────────────────────────────────────────────────────────────────────────
-import { Modal, SafeAreaView } from 'react-native';
+import { Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { CommonActions } from '@react-navigation/native';
 
 const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
+  const { logout } = useAuth();
+
   const slideA = useRef(new Animated.Value(-320)).current;
   const bgA    = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       Animated.parallel([
-        Animated.spring(slideA,{ toValue:0,    useNativeDriver:true, tension:80, friction:12 }),
-        Animated.timing(bgA,   { toValue:1,    duration:250, useNativeDriver:true }),
+        Animated.spring(slideA, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }),
+        Animated.timing(bgA, { toValue: 1, duration: 250, useNativeDriver: true }),
       ]).start();
     } else {
       Animated.parallel([
-        Animated.spring(slideA,{ toValue:-320, useNativeDriver:true, tension:100, friction:14 }),
-        Animated.timing(bgA,   { toValue:0,    duration:200, useNativeDriver:true }),
+        Animated.spring(slideA, { toValue: -320, useNativeDriver: true, tension: 100, friction: 14 }),
+        Animated.timing(bgA, { toValue: 0, duration: 200, useNativeDriver: true }),
       ]).start();
     }
   }, [visible]);
@@ -225,16 +229,48 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
   const go = (dest, params) => {
     onClose();
     setTimeout(() => {
-      if(['WalletTab','ProfileTab','HistoryTab'].includes(dest)) navigation.getParent()?.navigate(dest);
-      else navigation.navigate(dest, params);
+      if (['WalletTab','ProfileTab','HistoryTab'].includes(dest)) {
+        navigation.getParent()?.navigate(dest);
+      } else {
+        navigation.navigate(dest, params);
+      }
     }, 250);
+  };
+
+  const handleLogout = () => {
+    onClose();
+    setTimeout(async () => {
+      Alert.alert(
+        'Sign Out',
+        'Are you sure you want to sign out?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Sign Out',
+            style: 'destructive',
+            onPress: async () => {
+              await logout();
+              // Safe reset to Login screen
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'Auth', params: { screen: 'Login' } }],
+                })
+              );
+            },
+          },
+        ]
+      );
+    }, 300);
   };
 
   const MENU_ITEMS = [
     { icon:'home-outline',             label:'Home',           dest:null },
     { icon:'car-outline',              label:'Book a Ride',    dest:'RequestRide' },
     { icon:'cube-outline',             label:'Send a Package', dest:'RequestDelivery' },
-    { icon:'people-outline',           label:'Nearby Drivers', dest:'NearbyDrivers', params:{ pickupAddress:'', pickupLat:6.5244, pickupLng:3.3792, dropoffAddress:'', dropoffLat:6.4281, dropoffLng:3.4219, vehicleType:'CAR' } },
+    { icon:'people-outline',           label:'Nearby Drivers', dest:'NearbyDrivers', 
+      params:{ pickupAddress:'', pickupLat:6.5244, pickupLng:3.3792, dropoffAddress:'', dropoffLat:6.4281, dropoffLng:3.4219, vehicleType:'CAR' } 
+    },
     { icon:'time-outline',             label:'My History',     dest:'HistoryTab' },
     { icon:'wallet-outline',           label:'Wallet',         dest:'WalletTab' },
     { icon:'shield-checkmark-outline', label:'Shield',         dest:'Shield' },
@@ -253,25 +289,47 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
       <Animated.View style={[dm.scrim, { opacity: bgA }]}>
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
-      <Animated.View style={[dm.panel, { backgroundColor: panelBg, borderRightColor: G.border(mode), transform:[{ translateX: slideA }] }]}>
-        <SafeAreaView style={{ flex:1 }}>
+
+      <Animated.View style={[dm.panel, { 
+        backgroundColor: panelBg, 
+        borderRightColor: G.border(mode), 
+        transform: [{ translateX: slideA }] 
+      }]}>
+        <SafeAreaView style={{ flex: 1 }}>
+          {/* User Header */}
           <View style={[dm.userHeader, { borderBottomColor: G.border(mode) }]}>
             <View style={[dm.avatar, { backgroundColor: G.cardMid(mode) }]}>
-              {user?.profileImage
-                ? <Image source={{ uri: user.profileImage }} style={dm.avatarImg} />
-                : <Text style={[dm.avatarTxt, { color: theme.foreground }]}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
-              }
+              {user?.profileImage ? (
+                <Image source={{ uri: user.profileImage }} style={dm.avatarImg} />
+              ) : (
+                <Text style={[dm.avatarTxt, { color: theme.foreground }]}>
+                  {user?.firstName?.[0]}{user?.lastName?.[0]}
+                </Text>
+              )}
             </View>
             <View style={{ flex:1, minWidth:0 }}>
-              <Text style={[dm.userName, { color: theme.foreground }]} numberOfLines={1}>{user?.firstName} {user?.lastName}</Text>
-              <Text style={[dm.userEmail, { color: theme.hint }]} numberOfLines={1}>{user?.email}</Text>
+              <Text style={[dm.userName, { color: theme.foreground }]} numberOfLines={1}>
+                {user?.firstName} {user?.lastName}
+              </Text>
+              <Text style={[dm.userEmail, { color: theme.hint }]} numberOfLines={1}>
+                {user?.email}
+              </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={[dm.closeBtn, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}>
+            <TouchableOpacity 
+              onPress={onClose} 
+              style={[dm.closeBtn, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}
+            >
               <Ionicons name="close" size={18} color={theme.foreground} />
             </TouchableOpacity>
           </View>
-          <ScrollView style={{ flex:1 }} showsVerticalScrollIndicator={false}>
-            <View style={{ paddingVertical:8 }}>
+
+          {/* Menu Items */}
+          <ScrollView
+            style={{ flex: 1 }}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 20 }}
+          >
+            <View style={{ paddingVertical: 8 }}>
               {MENU_ITEMS.map((item, i) => (
                 <TouchableOpacity
                   key={i}
@@ -288,6 +346,20 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
               ))}
             </View>
           </ScrollView>
+
+          {/* Logout Button */}
+          <TouchableOpacity
+            style={[dm.logoutRow, { borderTopColor: G.border(mode) }]}
+            onPress={handleLogout}
+            activeOpacity={0.7}
+          >
+            <View style={[dm.menuIcon, { backgroundColor: 'rgba(224,85,85,0.10)' }]}>
+              <Ionicons name="log-out-outline" size={18} color="#E05555" />
+            </View>
+            <Text style={dm.logoutTxt}>Sign Out</Text>
+          </TouchableOpacity>
+
+          {/* Footer */}
           <View style={[dm.footer, { borderTopColor: G.border(mode) }]}>
             <Text style={[dm.footerTxt, { color: theme.hint }]}>DrivAfrica · v1.0.0</Text>
           </View>
@@ -310,13 +382,16 @@ const dm = StyleSheet.create({
   menuItem:   { flexDirection:'row', alignItems:'center', gap:14, paddingHorizontal:20, paddingVertical:14, borderBottomWidth:StyleSheet.hairlineWidth },
   menuIcon:   { width:38, height:38, borderRadius:12, justifyContent:'center', alignItems:'center', flexShrink:0 },
   menuLabel:  { flex:1, fontSize:14, fontWeight:'600' },
+  logoutRow:  { flexDirection:'row', alignItems:'center', gap:14, paddingHorizontal:20, paddingVertical:16, borderTopWidth:StyleSheet.hairlineWidth },
+  logoutTxt:  { flex:1, fontSize:14, fontWeight:'700', color:'#E05555' },
   footer:     { padding:20, borderTopWidth:1 },
   footerTxt:  { fontSize:11, textAlign:'center' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GLASS WALLET STRIP
+// GLASS WALLET STRIP + STATS + TIPS + HISTORY (unchanged from previous version)
 // ─────────────────────────────────────────────────────────────────────────────
+
 const WalletStrip = ({ balance, onTopUp, theme, mode }) => (
   <View style={[wl.wrap, { borderColor: G.borderHi(mode), overflow:'hidden' }]}>
     <LinearGradient
@@ -324,7 +399,6 @@ const WalletStrip = ({ balance, onTopUp, theme, mode }) => (
       start={{ x:0, y:0 }} end={{ x:1, y:1 }}
       style={StyleSheet.absoluteFill}
     />
-    {/* Top shimmer */}
     <View style={[wl.shimmer, { backgroundColor: mode==='dark' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.9)' }]} />
     <View style={[wl.iconWrap, { backgroundColor: G.icon(mode) }]}>
       <Ionicons name="wallet-outline" size={20} color={theme.foreground} />
@@ -351,9 +425,6 @@ const wl = StyleSheet.create({
   btnTxt:  { fontSize:12, fontWeight:'800' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STATS ROW
-// ─────────────────────────────────────────────────────────────────────────────
 const StatsRow = ({ stats, theme, mode }) => (
   <View style={[sr.wrap, { borderColor: G.border(mode), overflow:'hidden' }]}>
     <LinearGradient
@@ -385,9 +456,6 @@ const sr = StyleSheet.create({
   divider: { width:1, height:32 },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TIPS
-// ─────────────────────────────────────────────────────────────────────────────
 const TipCard = ({ item, theme, mode }) => (
   <View style={tp.card}>
     <View style={[tp.iconWrap, { backgroundColor: G.icon(mode) }]}>
@@ -457,9 +525,6 @@ const tp = StyleSheet.create({
   showMoreTxt:  { fontSize:12, fontWeight:'700' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HISTORY ITEM
-// ─────────────────────────────────────────────────────────────────────────────
 const STATUS_META = {
   COMPLETED:   { label:'Done',      dot:'#5DAA72' },
   CANCELLED:   { label:'Cancelled', dot:'#E05555' },
@@ -499,9 +564,6 @@ const hi = StyleSheet.create({
   statusTxt: { fontSize:10, fontWeight:'600' },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EMPTY + CHOOSE DRIVER
-// ─────────────────────────────────────────────────────────────────────────────
 const EmptyHistory = ({ theme, mode, onBook }) => (
   <View style={eh.wrap}>
     <View style={[eh.iconWrap, { backgroundColor: G.icon(mode), borderColor: G.border(mode) }]}>
@@ -560,6 +622,8 @@ export default function HomeScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
 
+  useInactivityLogout();
+
   const [drawerOpen,      setDrawerOpen]      = useState(false);
   const [stats,           setStats]           = useState(null);
   const [loading,         setLoading]         = useState(true);
@@ -601,9 +665,11 @@ export default function HomeScreen({ navigation }) {
       if (delHistRes.status  === 'fulfilled') setDeliveryHistory(delHistRes.value?.data?.deliveries ?? delHistRes.value?.deliveries ?? []);
       const maint = await checkMaintenance();
       setMaintenance(maint);
-    } catch {}
-    finally {
-      setLoading(false); setHistoryLoading(false);
+    } catch (e) {
+      console.warn('Fetch error:', e);
+    } finally {
+      setLoading(false); 
+      setHistoryLoading(false);
       Animated.parallel([
         Animated.timing(fadeA,  { toValue:1, duration:550, useNativeDriver:true }),
         Animated.timing(slideA, { toValue:0, duration:550, useNativeDriver:true }),
@@ -616,8 +682,8 @@ export default function HomeScreen({ navigation }) {
     Alert.alert('Platform Under Maintenance', maintenance.message + endsMsg);
   };
 
-  const goToRide      = () => { if(maintenance.isOn){showMaintenanceAlert();return;} navigation.navigate('RequestRide'); };
-  const goToNearby    = () => { if(maintenance.isOn){showMaintenanceAlert();return;} navigation.navigate('NearbyDrivers',{ pickupAddress:'', pickupLat:6.5244, pickupLng:3.3792, dropoffAddress:'', dropoffLat:6.4281, dropoffLng:3.4219, vehicleType:'CAR' }); };
+  const goToRide   = () => { if(maintenance.isOn){showMaintenanceAlert();return;} navigation.navigate('RequestRide'); };
+  const goToNearby = () => { if(maintenance.isOn){showMaintenanceAlert();return;} navigation.navigate('NearbyDrivers',{ pickupAddress:'', pickupLat:6.5244, pickupLng:3.3792, dropoffAddress:'', dropoffLat:6.4281, dropoffLng:3.4219, vehicleType:'CAR' }); };
 
   const handleCancelRide = () => {
     Alert.alert('Cancel Ride?','Your ride request will be cancelled.',[
@@ -647,9 +713,7 @@ export default function HomeScreen({ navigation }) {
 
   const hasMaintBanner  = maintenance.isOn || maintenance.isScheduled;
   const paddingTop      = hasMaintBanner ? 16 : insets.top + 16;
-  
-  const TAB_CONTENT_H = 54;
-  const paddingBottom = insets.bottom + TAB_CONTENT_H + 16;
+  const paddingBottom   = insets.bottom + TAB_CONTENT_H + 32;
 
   const combinedHistory = [
     ...rideHistory.map(r => ({
@@ -701,7 +765,7 @@ export default function HomeScreen({ navigation }) {
       >
         <Animated.View style={{ opacity: fadeA, transform:[{ translateY: slideA }] }}>
 
-          {/* ── HEADER ── */}
+          {/* HEADER */}
           <View style={s.header}>
             <TouchableOpacity
               style={[s.iconBtn, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}
@@ -744,7 +808,7 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* ── ACTIVE BANNERS ── */}
+          {/* ACTIVE BANNERS */}
           {activeRide && (
             <ActiveRideBanner
               ride={activeRide} role="CUSTOMER" theme={theme}
@@ -760,7 +824,7 @@ export default function HomeScreen({ navigation }) {
             />
           )}
 
-          {/* ── WALLET ── */}
+          {/* WALLET */}
           <WalletStrip
             balance={stats?.walletBalance}
             onTopUp={() => navigation.getParent()?.navigate('WalletTab')}
@@ -768,29 +832,29 @@ export default function HomeScreen({ navigation }) {
             mode={mode}
           />
 
-          {/* ── STATS ── */}
+          {/* STATS */}
           {loading
             ? <ActivityIndicator color={theme.foreground} style={{ marginVertical:16 }} />
             : <StatsRow stats={stats} theme={theme} mode={mode} />
           }
 
-          {/* ── SERVICE CAROUSEL ── */}
+          {/* SERVICES */}
           <Text style={[s.sectionLabel, { color: theme.hint }]}>SERVICES</Text>
           <ServiceCarousel cards={serviceCards} theme={theme} mode={mode} />
 
           <View style={{ height:24 }} />
 
-          {/* ── CHOOSE DRIVER ── */}
+          {/* CHOOSE DRIVER */}
           <ChooseDriverBar theme={theme} mode={mode} onPress={goToNearby} />
 
-          {/* ── TIPS ── */}
+          {/* TIPS */}
           <Text style={[s.sectionLabel, { color: theme.hint }]}>TIPS & GUIDES</Text>
           <TipsSection title="Ride Tips"     icon="car-outline"  tips={RIDE_TIPS}     theme={theme} mode={mode} />
           <TipsSection title="Delivery Tips" icon="cube-outline" tips={DELIVERY_TIPS} theme={theme} mode={mode} />
 
           <View style={{ height:8 }} />
 
-          {/* ── RECENT TRIPS ── */}
+          {/* RECENT TRIPS */}
           <View style={s.sectionHeader}>
             <Text style={[s.sectionLabel, { color: theme.hint, marginBottom:0, marginTop:0 }]}>RECENT TRIPS</Text>
             <TouchableOpacity onPress={() => navigation.getParent()?.navigate('HistoryTab')} activeOpacity={0.7}>

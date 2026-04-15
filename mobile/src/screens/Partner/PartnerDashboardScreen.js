@@ -229,7 +229,9 @@ export default function PartnerDashboardScreen({ navigation }) {
   // ✅ FIX 2: define paddingTop / paddingBottom from insets (mirrors DriverDashboard exactly)
   const hasMaintBanner = maintenance.isOn || maintenance.isScheduled;
   const paddingTop     = hasMaintBanner ? 16 : insets.top + 16;
-  const paddingBottom  = insets.bottom + 90; // ✅ FIX 3: footer never hidden on mobile
+  
+  const TAB_CONTENT_H = 54;
+  const paddingBottom = insets.bottom + TAB_CONTENT_H + 36;
 
   const fetchData = useCallback(async () => {
     try {
