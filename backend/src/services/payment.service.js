@@ -158,6 +158,56 @@ exports.paystackVerifyAccount = async (accountNumber, bankCode) => {
   }
 };
 
+/**
+ * Create a Paystack transfer recipient (for withdrawal payouts)
+ * Alias-compatible with the name used in wallet.controller.js
+ */
+exports.paystackCreateTransferRecipient = async ({ name, accountNumber, bankCode }) => {
+  try {
+    const { data } = await paystackAPI.post('/transferrecipient', {
+      type:           'nuban',
+      name,
+      account_number: accountNumber,
+      bank_code:      bankCode,
+      currency:       'NGN',
+    });
+    if (!data.status) throw new AppError(data.message, 400);
+    return data.data; // { recipient_code, ... }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError('Failed to create transfer recipient: ' + error.message, 500);
+  }
+};
+
+/**
+ * Initiate a Paystack transfer (for withdrawal payouts)
+ * amount must be in kobo (caller multiplies by 100)
+ */
+exports.paystackInitiateTransfer = async ({ amount, recipient, reason, reference }) => {
+  try {
+    const { data } = await paystackAPI.post('/transfer', {
+      source:    'balance',
+      amount,               // kobo
+      recipient,            // recipient_code from paystackCreateTransferRecipient
+      reason:    reason ?? 'Wallet withdrawal',
+      reference: reference ?? `WD-${Date.now()}`,
+    });
+    if (!data.status) throw new AppError(data.message, 400);
+    return data.data; // { transfer_code, status, ... }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError('Paystack transfer initiation failed: ' + error.message, 500);
+  }
+};
+ 
+/**
+ * Verify a Paystack transaction by reference
+ * (alias used by verifyTopUp in wallet.controller.js)
+ */
+exports.paystackVerifyTransaction = async (reference) => {
+  return exports.paystackVerify(reference);
+};
+
 // ─────────────────────────────────────────────
 // FLUTTERWAVE (fallback / alternative)
 // ─────────────────────────────────────────────

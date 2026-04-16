@@ -1,3 +1,4 @@
+// admin-web/src/pages/Payments/PaymentDetails.tsx
 import React from 'react';
 import { useParams } from 'react-router-dom';
 import { Card } from '@/components/common';

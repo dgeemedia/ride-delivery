@@ -1,3 +1,4 @@
+// admin-web/src/types/payment.ts
 import { User } from './user';
 import { Ride } from './ride';
 import { Delivery } from './delivery';

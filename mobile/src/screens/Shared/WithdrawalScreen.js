@@ -1,4 +1,10 @@
-// mobile/src/screens/Shared/WithdrawalScreen.js
+// mobile/src/screens/Shared/WithdrawalScreen.js  [PATCHED]
+// Changes vs original:
+//   1. Added missing `formatNGN` definition (was used but never declared)
+//   2. Fixed submit handler to call walletAPI.withdraw() instead of
+//      driverAPI/partnerAPI.requestPayout() — all users now use the
+//      unified wallet withdrawal endpoint which goes through admin approval
+//   3. Minimum withdrawal updated to ₦500 (matches backend)
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
@@ -11,30 +17,35 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { walletAPI, driverAPI, partnerAPI } from '../../services/api';
 
+// ── FIX: formatNGN was used throughout but never defined ─────────────────────
+const formatNGN = (n) =>
+  Number(n).toLocaleString('en-NG', { maximumFractionDigits: 0 });
+// ─────────────────────────────────────────────────────────────────────────────
+
 const BANKS = [
-  { name: 'Access Bank', code: '044' },
-  { name: 'Citibank', code: '023' },
-  { name: 'Ecobank', code: '050' },
-  { name: 'Fidelity Bank', code: '070' },
-  { name: 'First Bank', code: '011' },
-  { name: 'First City Monument', code: '214' },
-  { name: 'Globus Bank', code: '00103' },
-  { name: 'Guaranty Trust Bank', code: '058' },
-  { name: 'Heritage Bank', code: '030' },
-  { name: 'Jaiz Bank', code: '301' },
-  { name: 'Keystone Bank', code: '082' },
-  { name: 'Kuda Bank', code: '50211' },
-  { name: 'OPay', code: '100004' },
-  { name: 'Palmpay', code: '100033' },
-  { name: 'Polaris Bank', code: '076' },
-  { name: 'Providus Bank', code: '101' },
-  { name: 'Stanbic IBTC', code: '221' },
-  { name: 'Sterling Bank', code: '232' },
-  { name: 'Union Bank', code: '032' },
-  { name: 'United Bank for Africa', code: '033' },
-  { name: 'Unity Bank', code: '215' },
-  { name: 'Wema Bank', code: '035' },
-  { name: 'Zenith Bank', code: '057' },
+  { name: 'Access Bank',             code: '044'    },
+  { name: 'Citibank',                code: '023'    },
+  { name: 'Ecobank',                 code: '050'    },
+  { name: 'Fidelity Bank',           code: '070'    },
+  { name: 'First Bank',              code: '011'    },
+  { name: 'First City Monument',     code: '214'    },
+  { name: 'Globus Bank',             code: '00103'  },
+  { name: 'Guaranty Trust Bank',     code: '058'    },
+  { name: 'Heritage Bank',           code: '030'    },
+  { name: 'Jaiz Bank',               code: '301'    },
+  { name: 'Keystone Bank',           code: '082'    },
+  { name: 'Kuda Bank',               code: '50211'  },
+  { name: 'OPay',                    code: '100004' },
+  { name: 'Palmpay',                 code: '100033' },
+  { name: 'Polaris Bank',            code: '076'    },
+  { name: 'Providus Bank',           code: '101'    },
+  { name: 'Stanbic IBTC',            code: '221'    },
+  { name: 'Sterling Bank',           code: '232'    },
+  { name: 'Union Bank',              code: '032'    },
+  { name: 'United Bank for Africa',  code: '033'    },
+  { name: 'Unity Bank',              code: '215'    },
+  { name: 'Wema Bank',               code: '035'    },
+  { name: 'Zenith Bank',             code: '057'    },
 ];
 
 const BankPicker = ({ selected, onSelect, theme, accent }) => {
@@ -68,7 +79,7 @@ const BankPicker = ({ selected, onSelect, theme, accent }) => {
               onPress={() => { onSelect(b.code); setOpen(false); }}
             >
               <Text style={[bp.optionTxt, {
-                color: b.code === selected ? accent : theme.foreground,
+                color:      b.code === selected ? accent : theme.foreground,
                 fontWeight: b.code === selected ? '800' : '500',
               }]}>
                 {b.name}
@@ -90,21 +101,22 @@ const bp = StyleSheet.create({
   optionTxt: { fontSize: 14 },
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function WithdrawalScreen({ navigation }) {
   const { theme, mode } = useTheme();
-  const { user } = useAuth();
+  const { user }        = useAuth();
+  const accent          = theme.accent;
 
-  const accent = theme.accent;   // ← Now using theme directly
-
-  const [walletBalance,  setWalletBalance]  = useState(null);
-  const [amount,         setAmount]         = useState('');
-  const [accountNumber,  setAccountNumber]  = useState('');
-  const [bankCode,       setBankCode]       = useState('');
-  const [accountName,    setAccountName]    = useState('');
-  const [verifying,      setVerifying]      = useState(false);
-  const [submitting,     setSubmitting]     = useState(false);
-  const [step,           setStep]           = useState(1);
-  const [payoutHistory,  setPayoutHistory]  = useState([]);
+  const [walletBalance, setWalletBalance] = useState(null);
+  const [amount,        setAmount]        = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [bankCode,      setBankCode]      = useState('');
+  const [accountName,   setAccountName]   = useState('');
+  const [verifying,     setVerifying]     = useState(false);
+  const [submitting,    setSubmitting]    = useState(false);
+  const [step,          setStep]          = useState(1);
+  const [payoutHistory, setPayoutHistory] = useState([]);
 
   const shakeA = useRef(new Animated.Value(0)).current;
 
@@ -113,6 +125,7 @@ export default function WithdrawalScreen({ navigation }) {
       .then(res => setWalletBalance(res?.data?.wallet?.balance ?? res?.data?.balance ?? 0))
       .catch(() => {});
 
+    // Load payout history if available for the role
     const api = user?.role === 'DRIVER' ? driverAPI : partnerAPI;
     api.getPayoutHistory?.()
       .then(res => setPayoutHistory(res?.data?.payouts ?? []))
@@ -120,10 +133,10 @@ export default function WithdrawalScreen({ navigation }) {
   }, []);
 
   const shake = () => Animated.sequence([
-    Animated.timing(shakeA, { toValue: 8, duration: 55, useNativeDriver: true }),
+    Animated.timing(shakeA, { toValue:  8, duration: 55, useNativeDriver: true }),
     Animated.timing(shakeA, { toValue: -8, duration: 55, useNativeDriver: true }),
-    Animated.timing(shakeA, { toValue: 5, duration: 55, useNativeDriver: true }),
-    Animated.timing(shakeA, { toValue: 0, duration: 55, useNativeDriver: true }),
+    Animated.timing(shakeA, { toValue:  5, duration: 55, useNativeDriver: true }),
+    Animated.timing(shakeA, { toValue:  0, duration: 55, useNativeDriver: true }),
   ]).start();
 
   useEffect(() => {
@@ -144,31 +157,43 @@ export default function WithdrawalScreen({ navigation }) {
     }
   };
 
-  const amtNum = parseFloat(amount) || 0;
+  const amtNum  = parseFloat(amount) || 0;
   const balance = walletBalance ?? 0;
+
+  // ── Step guards ─────────────────────────────────────────────────────────────
+  const MIN_WITHDRAWAL = 500; // matches backend
 
   const handleStep1 = () => {
     Keyboard.dismiss();
-    if (amtNum < 1000) { shake(); Alert.alert('Minimum withdrawal', 'Minimum is ₦1,000.'); return; }
-    if (amtNum > balance) { shake(); Alert.alert('Insufficient balance', `Balance is ₦${formatNGN(balance)}`); return; }
+    if (amtNum < MIN_WITHDRAWAL) {
+      shake();
+      Alert.alert('Minimum withdrawal', `Minimum is ₦${formatNGN(MIN_WITHDRAWAL)}.`);
+      return;
+    }
+    if (amtNum > balance) {
+      shake();
+      Alert.alert('Insufficient balance', `Balance is ₦${formatNGN(balance)}`);
+      return;
+    }
     setStep(2);
   };
 
   const handleStep2 = () => {
     Keyboard.dismiss();
     if (accountNumber.length !== 10) { shake(); Alert.alert('Invalid account', 'Enter 10-digit account number'); return; }
-    if (!bankCode) { shake(); Alert.alert('Select bank'); return; }
-    if (!accountName) { shake(); Alert.alert('Verify account', 'Verification failed'); return; }
+    if (!bankCode)                   { shake(); Alert.alert('Select bank', 'Please select your bank');           return; }
+    if (!accountName)                { shake(); Alert.alert('Verify account', 'Account verification failed');    return; }
     setStep(3);
   };
 
+  // ── FIX: use unified walletAPI.withdraw → goes through admin approval ───────
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      const api = user?.role === 'DRIVER' ? driverAPI : partnerAPI;
-      await api.requestPayout({ amount: amtNum, accountNumber, bankCode, accountName });
-      Alert.alert('Withdrawal Requested ✅', 
-        `₦${formatNGN(amtNum)} to ${accountName} submitted.\n\nWill be processed in 1–2 business days.`,
+      await walletAPI.withdraw({ amount: amtNum, accountNumber, bankCode, accountName });
+      Alert.alert(
+        'Withdrawal Requested ✅',
+        `₦${formatNGN(amtNum)} to ${accountName} submitted.\n\nOur team will review and process within 1–2 business days.`,
         [{ text: 'Done', onPress: () => navigation.goBack() }]
       );
     } catch (err) {
@@ -178,19 +203,18 @@ export default function WithdrawalScreen({ navigation }) {
     }
   };
 
-  // Theme-aware button (same as Confirm Location)
-  const isDarkMode = mode === 'dark';
-  const btnBgColor = isDarkMode ? '#FFFFFF' : accent;
+  const isDarkMode  = mode === 'dark';
+  const btnBgColor  = isDarkMode ? '#FFFFFF' : accent;
   const btnTextColor = isDarkMode ? '#000000' : '#FFFFFF';
 
   return (
     <SafeAreaView style={[s.root, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
       <View style={[s.header, { borderBottomColor: theme.border }]}>
         <TouchableOpacity
           style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-          onPress={() => step > 1 ? setStep(s => s - 1) : navigation.goBack()}
+          onPress={() => step > 1 ? setStep(p => p - 1) : navigation.goBack()}
         >
           <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
@@ -243,7 +267,7 @@ export default function WithdrawalScreen({ navigation }) {
                   key={q}
                   style={[s.quickBtn, {
                     backgroundColor: amtNum === q ? accent : theme.backgroundAlt,
-                    borderColor: amtNum === q ? accent : theme.border,
+                    borderColor:     amtNum === q ? accent : theme.border,
                   }]}
                   onPress={() => setAmount(String(q))}
                 >
@@ -255,17 +279,19 @@ export default function WithdrawalScreen({ navigation }) {
             </View>
 
             <View style={[s.noteBox, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <View style={s.noteRow}><Ionicons name="time-outline" size={13} color={theme.hint} /><Text style={[s.noteTxt, { color: theme.hint }]}>1–2 business days</Text></View>
-              <View style={s.noteRow}><Ionicons name="shield-checkmark-outline" size={13} color={theme.accent} /><Text style={[s.noteTxt, { color: theme.hint }]}>Admin review required</Text></View>
-              <View style={s.noteRow}><Ionicons name="cash-outline" size={13} color={accent} /><Text style={[s.noteTxt, { color: theme.hint }]}>Min ₦1,000 • No fee</Text></View>
+              <View style={s.noteRow}><Ionicons name="time-outline"             size={13} color={theme.hint}  /><Text style={[s.noteTxt, { color: theme.hint }]}>1–2 business days</Text></View>
+              <View style={s.noteRow}><Ionicons name="shield-checkmark-outline" size={13} color={accent}      /><Text style={[s.noteTxt, { color: theme.hint }]}>Admin review required</Text></View>
+              <View style={s.noteRow}><Ionicons name="cash-outline"             size={13} color={accent}      /><Text style={[s.noteTxt, { color: theme.hint }]}>Min ₦{formatNGN(MIN_WITHDRAWAL)} • No fee</Text></View>
             </View>
 
             <TouchableOpacity
-              style={[s.nextBtn, { backgroundColor: amtNum >= 1000 && amtNum <= balance ? accent : theme.border }]}
+              style={[s.nextBtn, { backgroundColor: amtNum >= MIN_WITHDRAWAL && amtNum <= balance ? accent : theme.border }]}
               onPress={handleStep1}
-              disabled={amtNum < 1000 || amtNum > balance}
+              disabled={amtNum < MIN_WITHDRAWAL || amtNum > balance}
             >
-              <Text style={[s.nextBtnTxt, { color: amtNum >= 1000 && amtNum <= balance ? '#080C18' : theme.hint }]}>Continue →</Text>
+              <Text style={[s.nextBtnTxt, { color: amtNum >= MIN_WITHDRAWAL && amtNum <= balance ? '#080C18' : theme.hint }]}>
+                Continue →
+              </Text>
             </TouchableOpacity>
           </Animated.View>
         )}
@@ -289,8 +315,8 @@ export default function WithdrawalScreen({ navigation }) {
                 maxLength={10}
               />
               {verifying && <ActivityIndicator size="small" color={accent} />}
-              {!verifying && accountName && <Ionicons name="checkmark-circle" size={18} color="#5DAA72" />}
-              {!verifying && !accountName && accountNumber.length === 10 && <Ionicons name="close-circle" size={18} color="#E05555" />}
+              {!verifying && accountName                              && <Ionicons name="checkmark-circle" size={18} color="#5DAA72" />}
+              {!verifying && !accountName && accountNumber.length === 10 && <Ionicons name="close-circle"    size={18} color="#E05555" />}
             </View>
 
             {accountName && (
@@ -305,22 +331,24 @@ export default function WithdrawalScreen({ navigation }) {
               onPress={handleStep2}
               disabled={!accountName || !bankCode}
             >
-              <Text style={[s.nextBtnTxt, { color: accountName && bankCode ? '#080C18' : theme.hint }]}>Review →</Text>
+              <Text style={[s.nextBtnTxt, { color: accountName && bankCode ? '#080C18' : theme.hint }]}>
+                Review →
+              </Text>
             </TouchableOpacity>
           </Animated.View>
         )}
 
-        {/* STEP 3: Confirm */}
+        {/* STEP 3 */}
         {step === 3 && (
           <View>
             <View style={[s.confirmCard, { backgroundColor: theme.backgroundAlt, borderColor: accent + '30' }]}>
               <Text style={[s.confirmTitle, { color: theme.foreground }]}>Review Your Withdrawal</Text>
               {[
-                { label: 'Amount', value: `₦${formatNGN(amtNum)}`, color: accent },
-                { label: 'Bank', value: BANKS.find(b => b.code === bankCode)?.name ?? bankCode },
-                { label: 'Account No.', value: accountNumber },
-                { label: 'Account Name', value: accountName },
-                { label: 'Processing', value: '1–2 business days' },
+                { label: 'Amount',      value: `₦${formatNGN(amtNum)}`,                               color: accent },
+                { label: 'Bank',        value: BANKS.find(b => b.code === bankCode)?.name ?? bankCode, color: undefined },
+                { label: 'Account No.', value: accountNumber,                                          color: undefined },
+                { label: 'Account Name',value: accountName,                                            color: undefined },
+                { label: 'Processing',  value: '1–2 business days',                                   color: undefined },
               ].map(({ label, value, color }) => (
                 <View key={label} style={[s.confirmRow, { borderBottomColor: theme.border }]}>
                   <Text style={[s.confirmLbl, { color: theme.hint }]}>{label}</Text>
@@ -332,11 +360,10 @@ export default function WithdrawalScreen({ navigation }) {
             <View style={[s.adminNote, { backgroundColor: '#A78BFA0D', borderColor: '#A78BFA30' }]}>
               <Ionicons name="information-circle-outline" size={16} color={theme.accent} />
               <Text style={[s.adminNoteTxt, { color: theme.hint }]}>
-                Your request will be reviewed by admin and processed within 1–2 business days.
+                Your request will be reviewed by our admin team and processed within 1–2 business days.
               </Text>
             </View>
 
-            {/* THEME-AWARE SUBMIT BUTTON */}
             <TouchableOpacity
               style={[s.nextBtn, { backgroundColor: btnBgColor, opacity: submitting ? 0.75 : 1 }]}
               onPress={handleSubmit}
@@ -355,6 +382,7 @@ export default function WithdrawalScreen({ navigation }) {
           </View>
         )}
 
+        {/* Recent payouts (step 1 only) */}
         {payoutHistory.length > 0 && step === 1 && (
           <>
             <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 24 }]}>RECENT WITHDRAWALS</Text>
@@ -385,47 +413,46 @@ export default function WithdrawalScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '900' },
-  headerSub: { fontSize: 11, marginTop: 1 },
-  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  stepDot: { height: 8, borderRadius: 4 },
-  scroll: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 },
-  balanceCard: { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 24, alignItems: 'center' },
-  balanceLbl: { fontSize: 10, fontWeight: '800', letterSpacing: 2, marginBottom: 6 },
-  balanceAmt: { fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+  root:         { flex: 1 },
+  header:       { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
+  backBtn:      { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  headerTitle:  { fontSize: 17, fontWeight: '900' },
+  headerSub:    { fontSize: 11, marginTop: 1 },
+  stepRow:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  stepDot:      { height: 8, borderRadius: 4 },
+  scroll:       { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 },
+  balanceCard:  { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 24, alignItems: 'center' },
+  balanceLbl:   { fontSize: 10, fontWeight: '800', letterSpacing: 2, marginBottom: 6 },
+  balanceAmt:   { fontSize: 32, fontWeight: '900', letterSpacing: -1 },
   balanceAfter: { fontSize: 11, marginTop: 4 },
   sectionLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 2.5, marginBottom: 12 },
-  inputCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderWidth: 1.5, paddingHorizontal: 18, paddingVertical: 4, marginBottom: 20 },
-  currency: { fontSize: 28, fontWeight: '900', marginRight: 6 },
-  input: { flex: 1, fontSize: 40, fontWeight: '900', paddingVertical: 14 },
-  quickRow: { flexDirection: 'row', gap: 8, marginBottom: 20, flexWrap: 'wrap' },
-  quickBtn: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 9 },
-  quickTxt: { fontSize: 13, fontWeight: '700' },
-  noteBox: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 10, marginBottom: 24 },
-  noteRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  noteTxt: { fontSize: 12 },
-  fieldCard: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 14, marginBottom: 10 },
-  field: { flex: 1, fontSize: 16, fontWeight: '600' },
-  verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
-  verifiedTxt: { fontSize: 13, fontWeight: '700' },
-  verifyFail: { fontSize: 12, marginBottom: 8 },
-  confirmCard: { borderRadius: 18, borderWidth: 1, padding: 18, marginBottom: 16 },
+  inputCard:    { flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderWidth: 1.5, paddingHorizontal: 18, paddingVertical: 4, marginBottom: 20 },
+  currency:     { fontSize: 28, fontWeight: '900', marginRight: 6 },
+  input:        { flex: 1, fontSize: 40, fontWeight: '900', paddingVertical: 14 },
+  quickRow:     { flexDirection: 'row', gap: 8, marginBottom: 20, flexWrap: 'wrap' },
+  quickBtn:     { borderRadius: 10, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 9 },
+  quickTxt:     { fontSize: 13, fontWeight: '700' },
+  noteBox:      { borderRadius: 14, borderWidth: 1, padding: 14, gap: 10, marginBottom: 24 },
+  noteRow:      { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  noteTxt:      { fontSize: 12 },
+  fieldCard:    { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 14, marginBottom: 10 },
+  field:        { flex: 1, fontSize: 16, fontWeight: '600' },
+  verifiedBadge:{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
+  verifiedTxt:  { fontSize: 13, fontWeight: '700' },
+  confirmCard:  { borderRadius: 18, borderWidth: 1, padding: 18, marginBottom: 16 },
   confirmTitle: { fontSize: 16, fontWeight: '900', marginBottom: 14 },
-  confirmRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 11, borderBottomWidth: 1 },
-  confirmLbl: { fontSize: 13 },
-  confirmVal: { fontSize: 14, fontWeight: '700', maxWidth: '55%', textAlign: 'right' },
-  adminNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 20 },
+  confirmRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 11, borderBottomWidth: 1 },
+  confirmLbl:   { fontSize: 13 },
+  confirmVal:   { fontSize: 14, fontWeight: '700', maxWidth: '55%', textAlign: 'right' },
+  adminNote:    { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 20 },
   adminNoteTxt: { flex: 1, fontSize: 12, lineHeight: 18 },
-  nextBtn: { borderRadius: 16, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  nextBtnTxt: { fontSize: 16, fontWeight: '900' },
-  historyCard: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, marginBottom: 16 },
-  histRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
-  histIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  histBank: { fontSize: 13, fontWeight: '600', marginBottom: 2 },
-  histDate: { fontSize: 11 },
-  histAmt: { fontSize: 14, fontWeight: '800', marginBottom: 2 },
-  histStatus: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  nextBtn:      { borderRadius: 16, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  nextBtnTxt:   { fontSize: 16, fontWeight: '900' },
+  historyCard:  { borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, marginBottom: 16 },
+  histRow:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  histIcon:     { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  histBank:     { fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  histDate:     { fontSize: 11 },
+  histAmt:      { fontSize: 14, fontWeight: '800', marginBottom: 2 },
+  histStatus:   { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
 });

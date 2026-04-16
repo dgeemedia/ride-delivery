@@ -1,4 +1,4 @@
-// mobile/src/services/api.js
+// mobile/src/services/api.js  [UPDATED]
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/constants';
@@ -45,27 +45,19 @@ export const authAPI = {
 // RIDE
 // ─────────────────────────────────────────────────────────────────────────────
 export const rideAPI = {
-  getEstimate:   (params)     => api.get('/rides/estimate', { params }),
-  requestRide:   (data)       => api.post('/rides/request', data),
-  getActiveRide: ()           => api.get('/rides/active'),
-  getRideHistory:(params)     => api.get('/rides/history', { params }),
-  getRideById:   (id)         => api.get(`/rides/${id}`),
-
-  // Driver actions
-  acceptRide:      (id)       => api.put(`/rides/${id}/accept`),
-  arrivedAtPickup: (id)       => api.put(`/rides/${id}/arrived`),
-  startRide:       (id)       => api.put(`/rides/${id}/start`),
-  completeRide:    (id, data) => api.put(`/rides/${id}/complete`, data),
-  cancelRide:      (id, data) => api.put(`/rides/${id}/cancel`, data),
-
-  // Customer — find & book a specific driver
-  getNearbyDrivers:      (params) => api.get('/rides/nearby-drivers', { params }),
-  requestSpecificDriver: (data)   => api.post('/rides/request-driver', data),
-
-  // FIX: rateRide was missing — backend route POST /rides/:id/rate exists
-  // (exports.rateRide in ride.controller.js) but was never exposed here.
-  // Without this, RateRideScreen had no way to submit a rating.
-  rateRide: (id, data) => api.post(`/rides/${id}/rate`, data),
+  getEstimate:           (params)     => api.get('/rides/estimate', { params }),
+  requestRide:           (data)       => api.post('/rides/request', data),
+  getActiveRide:         ()           => api.get('/rides/active'),
+  getRideHistory:        (params)     => api.get('/rides/history', { params }),
+  getRideById:           (id)         => api.get(`/rides/${id}`),
+  acceptRide:            (id)         => api.put(`/rides/${id}/accept`),
+  arrivedAtPickup:       (id)         => api.put(`/rides/${id}/arrived`),
+  startRide:             (id)         => api.put(`/rides/${id}/start`),
+  completeRide:          (id, data)   => api.put(`/rides/${id}/complete`, data),
+  cancelRide:            (id, data)   => api.put(`/rides/${id}/cancel`, data),
+  getNearbyDrivers:      (params)     => api.get('/rides/nearby-drivers', { params }),
+  requestSpecificDriver: (data)       => api.post('/rides/request-driver', data),
+  rateRide:              (id, data)   => api.post(`/rides/${id}/rate`, data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,29 +91,29 @@ export const userAPI = {
 // DRIVER
 // ─────────────────────────────────────────────────────────────────────────────
 export const driverAPI = {
-  getProfile:         ()       => api.get('/drivers/profile'),
-  updateProfile:      (data)   => api.post('/drivers/profile', data),
-  updateStatus:       (data)   => api.put('/drivers/status', data),
-  getEarnings:        (params) => api.get('/drivers/earnings', { params }),
-  getStats:           ()       => api.get('/drivers/stats'),
-  getNearbyRequests:  ()       => api.get('/drivers/nearby-requests'),
-  requestPayout:      (data)   => api.post('/drivers/payout/request', data),
-  getPayoutHistory:   (params) => api.get('/drivers/payout/history', { params }),
+  getProfile:        ()       => api.get('/drivers/profile'),
+  updateProfile:     (data)   => api.post('/drivers/profile', data),
+  updateStatus:      (data)   => api.put('/drivers/status', data),
+  getEarnings:       (params) => api.get('/drivers/earnings', { params }),
+  getStats:          ()       => api.get('/drivers/stats'),
+  getNearbyRequests: ()       => api.get('/drivers/nearby-requests'),
+  requestPayout:     (data)   => api.post('/drivers/payout/request', data),
+  getPayoutHistory:  (params) => api.get('/drivers/payout/history', { params }),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PARTNER
 // ─────────────────────────────────────────────────────────────────────────────
 export const partnerAPI = {
-  getProfile:         ()        => api.get('/partners/profile'),
-  updateProfile:      (data)    => api.post('/partners/profile', data),
-  updateStatus:       (data)    => api.put('/partners/status', data),
-  getEarnings:        (params)  => api.get('/partners/earnings', { params }),
-  getStats:           ()        => api.get('/partners/stats'),
-  getNearbyRequests:  ()        => api.get('/partners/nearby-requests'),
-  updateFloorPrice:   (price)   => api.post('/partners/profile', { preferredFloorPrice: price }),
-  requestPayout:      (data)    => api.post('/partners/payout/request', data),
-  getPayoutHistory:   (params)  => api.get('/partners/payout/history', { params }),
+  getProfile:        ()        => api.get('/partners/profile'),
+  updateProfile:     (data)    => api.post('/partners/profile', data),
+  updateStatus:      (data)    => api.put('/partners/status', data),
+  getEarnings:       (params)  => api.get('/partners/earnings', { params }),
+  getStats:          ()        => api.get('/partners/stats'),
+  getNearbyRequests: ()        => api.get('/partners/nearby-requests'),
+  updateFloorPrice:  (price)   => api.post('/partners/profile', { preferredFloorPrice: price }),
+  requestPayout:     (data)    => api.post('/partners/payout/request', data),
+  getPayoutHistory:  (params)  => api.get('/partners/payout/history', { params }),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,16 +132,57 @@ export const notificationAPI = {
 // WALLET
 // ─────────────────────────────────────────────────────────────────────────────
 export const walletAPI = {
+  // ── Info ───────────────────────────────────────────────────────────────────
   getWallet:              ()       => api.get('/wallet'),
   getTransactions:        (params) => api.get('/wallet/transactions', { params }),
+
+  // ── User lookup (for TransferScreen recipient search) ─────────────────────
+  lookupUser:             (phone)  => api.get('/wallet/lookup-user', { params: { phone } }),
+
+  // ── Top-up ─────────────────────────────────────────────────────────────────
   initializeTopUp:        (data)   => api.post('/wallet/topup/initialize', data),
   paystackTopup:          (data)   => api.post('/wallet/topup/paystack', data),
   verifyPaystackTopup:    (data)   => api.post('/wallet/topup/paystack/verify', data),
   flutterwaveTopup:       (data)   => api.post('/wallet/topup/flutterwave', data),
   verifyFlutterwaveTopup: (data)   => api.post('/wallet/topup/flutterwave/verify', data),
+
+  // ── Bank account verification ──────────────────────────────────────────────
   verifyBankAccount:      (params) => api.get('/wallet/verify-account', { params }),
+
+  // ── Peer transfer (PENDING → admin approval) ──────────────────────────────
   transfer:               (data)   => api.post('/wallet/transfer', data),
+
+  // ── Bank withdrawal (PENDING → admin approval) ────────────────────────────
   withdraw:               (data)   => api.post('/wallet/withdraw', data),
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYMENT
+// ─────────────────────────────────────────────────────────────────────────────
+export const paymentAPI = {
+  // Paystack
+  initializePaystack: (data)       => api.post('/payments/paystack/initialize', data),
+  verifyPaystack:     (data)       => api.post('/payments/paystack/verify', data),
+
+  // Flutterwave
+  initializeFlutterwave: (data)    => api.post('/payments/flutterwave/initialize', data),
+  verifyFlutterwave:  (data)       => api.post('/payments/flutterwave/verify', data),
+
+  // Pay for ride/delivery
+  payWithWallet:      (data)       => api.post('/payments/wallet', data),
+  payWithCash:        (data)       => api.post('/payments/cash', data),
+
+  // History & stats
+  getHistory:         (params)     => api.get('/payments/history', { params }),
+  getStats:           (params)     => api.get('/payments/stats', { params }),
+  getById:            (id)         => api.get(`/payments/${id}`),
+
+  // Refund
+  requestRefund:      (id, data)   => api.post(`/payments/${id}/refund`, data),
+
+  // Banks
+  listBanks:          ()           => api.get('/payments/banks'),
+  verifyBankAccount:  (data)       => api.post('/payments/verify-account', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,16 +199,16 @@ export const supportAPI = {
 // SHIELD
 // ─────────────────────────────────────────────────────────────────────────────
 export const shieldAPI = {
-  listBeneficiaries: ()         => api.get('/shield/beneficiaries'),
-  addBeneficiary:    (data)     => api.post('/shield/beneficiaries', data),
-  updateBeneficiary: (id, d)    => api.put(`/shield/beneficiaries/${id}`, d),
-  deleteBeneficiary: (id)       => api.delete(`/shield/beneficiaries/${id}`),
-  activate:          (data)     => api.post('/shield/activate', data),
-  deactivate:        (data)     => api.post('/shield/deactivate', data),
-  arrivedSafe:       (data)     => api.post('/shield/arrived-safe', data),
-  getSession:        (params)   => api.get('/shield/session', { params }),
-  driverConfirmSafe: (sessionId)=> api.post('/shield/driver/confirm-safe', { sessionId }),
-  getView:           (token)    => api.get(`/shield/view/${token}`),
+  listBeneficiaries: ()          => api.get('/shield/beneficiaries'),
+  addBeneficiary:    (data)      => api.post('/shield/beneficiaries', data),
+  updateBeneficiary: (id, d)     => api.put(`/shield/beneficiaries/${id}`, d),
+  deleteBeneficiary: (id)        => api.delete(`/shield/beneficiaries/${id}`),
+  activate:          (data)      => api.post('/shield/activate', data),
+  deactivate:        (data)      => api.post('/shield/deactivate', data),
+  arrivedSafe:       (data)      => api.post('/shield/arrived-safe', data),
+  getSession:        (params)    => api.get('/shield/session', { params }),
+  driverConfirmSafe: (sessionId) => api.post('/shield/driver/confirm-safe', { sessionId }),
+  getView:           (token)     => api.get(`/shield/view/${token}`),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

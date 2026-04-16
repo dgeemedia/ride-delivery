@@ -1,6 +1,6 @@
-// backend/src/routes/wallet.routes.js
+// backend/src/routes/wallet.routes.js  [UPDATED]
 const express = require('express');
-const { body, query } = require('express-validator');
+const { body, query, param } = require('express-validator');
 const walletController = require('../controllers/wallet.controller');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
 
@@ -13,7 +13,7 @@ const router = express.Router();
 /**
  * @route   POST /api/wallet/topup/verify
  * @desc    Paystack webhook — verifies payment and credits wallet automatically
- * @access  Public (Paystack server calls this)
+ * @access  Public
  */
 router.post('/topup/verify', walletController.verifyTopUp);
 
@@ -35,7 +35,7 @@ router.get('/', walletController.getWallet);
 
 /**
  * @route   GET /api/wallet/transactions
- * @desc    Get paginated transaction history (optional ?type=CREDIT|DEBIT|WITHDRAWAL|REFUND)
+ * @desc    Get paginated transaction history
  * @access  Private
  */
 router.get(
@@ -48,14 +48,24 @@ router.get(
   walletController.getTransactions
 );
 
+/**
+ * @route   GET /api/wallet/lookup-user
+ * @desc    Look up a registered user by phone number (used in TransferScreen)
+ * @access  Private
+ */
+router.get(
+  '/lookup-user',
+  [query('phone').notEmpty().withMessage('Phone number is required')],
+  walletController.lookupUser
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TOP-UP — Paystack
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * @route   POST /api/wallet/topup/initialize
- * @desc    Initialize Paystack top-up → returns authorizationUrl to open in browser
- *          Used by WalletTopUpScreen for drivers, partners, and customers.
+ * @desc    Initialize Paystack top-up → returns authorizationUrl
  * @access  Private
  */
 router.post(
@@ -66,7 +76,7 @@ router.post(
 
 /**
  * @route   POST /api/wallet/topup/paystack
- * @desc    Legacy Paystack top-up (kept for backward compatibility)
+ * @desc    Legacy Paystack top-up initialize
  * @access  Private
  */
 router.post(
@@ -90,22 +100,12 @@ router.post(
 // TOP-UP — Flutterwave
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * @route   POST /api/wallet/topup/flutterwave
- * @desc    Initialize Flutterwave top-up
- * @access  Private
- */
 router.post(
   '/topup/flutterwave',
   [body('amount').isFloat({ min: 100 })],
   walletController.flutterwaveTopup
 );
 
-/**
- * @route   POST /api/wallet/topup/flutterwave/verify
- * @desc    Verify Flutterwave top-up by transaction ID
- * @access  Private
- */
 router.post(
   '/topup/flutterwave/verify',
   [body('transactionId').notEmpty()],
@@ -119,52 +119,49 @@ router.post(
 /**
  * @route   GET /api/wallet/verify-account
  * @desc    Verify a Nigerian bank account (used in WithdrawalScreen)
- *          Returns account_name from Paystack name-enquiry API.
  * @access  Private
  */
 router.get(
   '/verify-account',
   [
-    query('accountNumber').notEmpty().isLength({ min: 10, max: 10 }).withMessage('Account number must be 10 digits'),
+    query('accountNumber').notEmpty().isLength({ min: 10, max: 10 }),
     query('bankCode').notEmpty(),
   ],
   walletController.verifyBankAccount
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TRANSFER
+// PEER TRANSFER (pending admin approval)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * @route   POST /api/wallet/transfer
- * @desc    Transfer funds to another Diakite user by phone number
+ * @desc    Initiate a peer transfer — funds held PENDING until admin approves
  * @access  Private
  */
 router.post(
   '/transfer',
   [
-    body('recipientPhone').isMobilePhone(),
-    body('amount').isFloat({ min: 1 }),
+    body('recipientPhone').isMobilePhone().withMessage('Valid phone number required'),
+    body('amount').isFloat({ min: 50 }).withMessage('Minimum transfer amount is ₦50'),
     body('note').optional().isString().isLength({ max: 200 }),
   ],
   walletController.transfer
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WITHDRAWAL (legacy direct — still available)
+// WITHDRAWAL (pending admin approval)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * @route   POST /api/wallet/withdraw
- * @desc    Legacy direct withdrawal (Paystack transfer). Drivers/partners should
- *          use /api/drivers/payout/request or /api/partners/payout/request which
- *          goes through the admin approval flow.
+ * @desc    Request a bank withdrawal — creates a Payout record for admin to approve
  * @access  Private
  */
 router.post(
   '/withdraw',
   [
-    body('amount').isFloat({ min: 500 }),
+    body('amount').isFloat({ min: 500 }).withMessage('Minimum withdrawal is ₦500'),
     body('accountNumber').notEmpty().isLength({ min: 10, max: 10 }),
     body('bankCode').notEmpty(),
     body('accountName').notEmpty(),
@@ -173,46 +170,112 @@ router.post(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN — Payout approval / rejection
-// These are mounted at /api/wallet/admin/... for simplicity.
-// Alternatively, mount a separate admin router at /api/admin.
+// ADMIN — Wallet stats dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @route   GET /api/wallet/admin/stats
+ * @desc    Aggregated wallet stats for admin dashboard
+ * @access  Private (ADMIN | SUPER_ADMIN)
+ */
+router.get(
+  '/admin/stats',
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  walletController.adminGetWalletStats
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN — Payout (withdrawal) management
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * @route   GET /api/wallet/admin/payouts
- * @desc    List all payout requests (default: PENDING). Admin only.
- *          Query params: ?status=PENDING|PROCESSING|COMPLETED|FAILED&page=1&limit=20
+ * @desc    List payout requests. ?status=PENDING|COMPLETED|FAILED|ALL
  * @access  Private (ADMIN | SUPER_ADMIN)
  */
 router.get(
   '/admin/payouts',
   authorize('ADMIN', 'SUPER_ADMIN'),
-  [query('status').optional().isIn(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'])],
+  [
+    query('status').optional().isIn(['PENDING', 'COMPLETED', 'FAILED', 'ALL']),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+  ],
   walletController.adminGetPayouts
 );
 
 /**
  * @route   PUT /api/wallet/admin/payouts/:id/approve
- * @desc    Admin approves a payout → marks COMPLETED, notifies driver/partner
+ * @desc    Approve a payout → initiates Paystack bank transfer
  * @access  Private (ADMIN | SUPER_ADMIN)
  */
 router.put(
   '/admin/payouts/:id/approve',
   authorize('ADMIN', 'SUPER_ADMIN'),
-  [body('note').optional().isString().isLength({ max: 500 })],
+  [
+    param('id').isUUID(),
+    body('note').optional().isString().isLength({ max: 500 }),
+  ],
   walletController.adminApprovePayout
 );
 
 /**
  * @route   PUT /api/wallet/admin/payouts/:id/reject
- * @desc    Admin rejects a payout → refunds wallet, notifies driver/partner
+ * @desc    Reject a payout → refunds wallet
  * @access  Private (ADMIN | SUPER_ADMIN)
  */
 router.put(
   '/admin/payouts/:id/reject',
   authorize('ADMIN', 'SUPER_ADMIN'),
-  [body('reason').optional().isString().isLength({ max: 500 })],
+  [
+    param('id').isUUID(),
+    body('reason').optional().isString().isLength({ max: 500 }),
+  ],
   walletController.adminRejectPayout
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN — Peer transfer management
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @route   GET /api/wallet/admin/transfers
+ * @desc    List peer transfer requests. ?status=PENDING|COMPLETED|FAILED|ALL
+ * @access  Private (ADMIN | SUPER_ADMIN)
+ */
+router.get(
+  '/admin/transfers',
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  [
+    query('status').optional().isIn(['PENDING', 'COMPLETED', 'FAILED', 'ALL']),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+  ],
+  walletController.adminGetTransfers
+);
+
+/**
+ * @route   PUT /api/wallet/admin/transfers/:reference/approve
+ * @desc    Approve a peer transfer → credits recipient
+ * @access  Private (ADMIN | SUPER_ADMIN)
+ */
+router.put(
+  '/admin/transfers/:reference/approve',
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  [body('note').optional().isString().isLength({ max: 500 })],
+  walletController.adminApproveTransfer
+);
+
+/**
+ * @route   PUT /api/wallet/admin/transfers/:reference/reject
+ * @desc    Reject a peer transfer → refunds sender
+ * @access  Private (ADMIN | SUPER_ADMIN)
+ */
+router.put(
+  '/admin/transfers/:reference/reject',
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  [body('reason').optional().isString().isLength({ max: 500 })],
+  walletController.adminRejectTransfer
 );
 
 module.exports = router;
