@@ -7,6 +7,7 @@ const fareEngine = require('../utils/fareEngine');
 const notificationService = require('../services/notification.service');
 const { broadcastToPartners, emitToPartner } = require('../services/socket.service');
 const shieldService = require('../services/shield.service');
+const commissionService = require('../services/commission.service');
 const { logger } = require('../utils/logger');
 
 exports.getFeeEstimate = async (req, res) => {
@@ -332,6 +333,22 @@ exports.completeDelivery = async (req, res) => {
 
   await shieldService.closeSessionsForDelivery(id).catch(() => {});
 
+  // Write commission/ledger record — non-critical, never fails the response
+  await commissionService.createCommissionRecord({
+    paymentId:        payment.id,
+    serviceType:      'DELIVERY',
+    deliveryId:       id,
+    earnerUserId:     delivery.partnerId,
+    grossAmount:      finalFee,
+    bookingFee:       0,
+    commissionRate:   commissionRate ?? 0.15,
+    commissionAmount: platformFee,
+    earnerAmount:     partnerEarnings,
+    surgeMultiplier:  1.0,
+  }).catch(err => {
+    console.error('[commission] Failed to write ledger for delivery', id, err.message);
+  });
+
   await notificationService.notify({
     userId:  delivery.customerId,
     title:   'Package Delivered! ✅',
@@ -476,11 +493,7 @@ exports.rateDelivery = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/deliveries/nearby-partners
 //
-// FIX: Previously sorted purely by distanceKm, ignoring the rating stored on
-// every DeliveryPartnerProfile. This made ratings cosmetic only — they were
-// shown but never influenced who the customer saw first.
-//
-// New ranking uses the same weighted blend as getNearbyDrivers:
+// Ranking uses a weighted blend:
 //   score = (normalised_rating × 0.65) − (normalised_distance × 0.35)
 //
 // New partners (rating = 0) get a neutral 3.0 so they aren't buried.
@@ -504,14 +517,11 @@ exports.getNearbyPartners = async (req, res) => {
       distanceKm: parseFloat(calculateDistance(lat, lng, p.currentLat, p.currentLng).toFixed(2)),
     }))
     .filter(p => p.distanceKm <= radius)
-    // FIX: rank by rating+distance blend instead of distance-only
     .sort((a, b) => {
-      // New partners with 0 ratings get a neutral 3.0 to avoid burying them
       const ratingA = (a.rating > 0 ? a.rating : 3.0) / 5;
       const ratingB = (b.rating > 0 ? b.rating : 3.0) / 5;
       const distA   = a.distanceKm / radius;
       const distB   = b.distanceKm / radius;
-      // Higher score = shown first
       const scoreA  = ratingA * 0.65 - distA * 0.35;
       const scoreB  = ratingB * 0.65 - distB * 0.35;
       return scoreB - scoreA;

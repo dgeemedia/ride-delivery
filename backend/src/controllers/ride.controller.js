@@ -13,6 +13,7 @@ const {
 const notificationService = require('../services/notification.service');
 const { broadcastToDrivers } = require('../services/socket.service');
 const shieldService = require('../services/shield.service');
+const commissionService = require('../services/commission.service');
 
 const getIO = (req) => req.app.get('io');
 
@@ -374,6 +375,22 @@ exports.completeRide = async (req, res) => {
 
   await shieldService.closeSessionsForRide(id).catch(() => {});
 
+  // Write commission/ledger record — non-critical, never fails the response
+  await commissionService.createCommissionRecord({
+    paymentId:        payment.id,
+    serviceType:      'RIDE',
+    rideId:           id,
+    earnerUserId:     ride.driverId,
+    grossAmount:      finalFare,
+    bookingFee:       finalFareBreakdown.bookingFee    ?? 0,
+    commissionRate:   finalFareBreakdown.commissionRate ?? 0.20,
+    commissionAmount: platformFee,
+    earnerAmount:     driverEarnings,
+    surgeMultiplier:  finalFareBreakdown.surgeMultiplier ?? 1.0,
+  }).catch(err => {
+    console.error('[commission] Failed to write ledger for ride', id, err.message);
+  });
+
   const surgeNote   = finalFareBreakdown.surgeLabel ? ` (${finalFareBreakdown.surgeLabel} pricing applied)` : '';
   const trafficNote = finalFareBreakdown.actualMinutes > (ride.distance / 18 * 60 * 1.2)
     ? ' Traffic surcharge included.' : '';
@@ -539,22 +556,8 @@ exports.rateRide = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/rides/nearby-drivers
 //
-// FIX: Previously sorted purely by distanceKm, ignoring the rating field that
-// is stored on every DriverProfile. Ratings are meaningless if they never
-// influence which drivers a customer sees first.
-//
-// New ranking uses a weighted blend:
+// Ranking uses a weighted blend:
 //   score = (normalised_rating × 0.65) − (normalised_distance × 0.35)
-//
-// Normalisation:
-//   rating    → rating / 5           (range 0–1, higher is better)
-//   distance  → distanceKm / radius  (range 0–1, lower is better, so we subtract)
-//
-// Weight reasoning:
-//   65 % rating — the whole point of the rating system is to surface better
-//                 drivers; a 5-star driver 3 km away should beat a 2-star
-//                 driver 1 km away.
-//   35 % distance — proximity still matters for ETA, just not exclusively.
 //
 // New drivers (rating = 0) are treated as rating = 3.0 (neutral) so they
 // aren't systematically buried below experienced drivers at similar distances.
@@ -584,14 +587,11 @@ exports.getNearbyDrivers = async (req, res) => {
       distanceKm: parseFloat(calculateDistance(lat, lng, d.currentLat, d.currentLng).toFixed(2)),
     }))
     .filter(d => d.distanceKm <= radius)
-    // FIX: rank by rating+distance blend instead of distance-only
     .sort((a, b) => {
-      // New drivers with 0 ratings get a neutral 3.0 to avoid burying them
       const ratingA = (a.rating > 0 ? a.rating : 3.0) / 5;
       const ratingB = (b.rating > 0 ? b.rating : 3.0) / 5;
       const distA   = a.distanceKm / radius;
       const distB   = b.distanceKm / radius;
-      // Higher score = shown first
       const scoreA  = ratingA * 0.65 - distA * 0.35;
       const scoreB  = ratingB * 0.65 - distB * 0.35;
       return scoreB - scoreA;

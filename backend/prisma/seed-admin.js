@@ -11,27 +11,27 @@ const prisma           = new PrismaClient();
 
 const ADMINS = [
   {
-    email: 'superadmin@diakite.com', password: 'SuperAdmin@123456',
+    email: 'superadmin@diakite.com', password: 'Diakite1@',
     firstName: 'Super', lastName: 'Admin', phone: '+2348000000001',
     role: 'SUPER_ADMIN', adminDepartment: null,
   },
   {
-    email: 'admin@diakite.com', password: 'Admin@123456',
+    email: 'admin@diakite.com', password: 'Diakite1@',
     firstName: 'General', lastName: 'Admin', phone: '+2348000000002',
     role: 'ADMIN', adminDepartment: null,         // full admin — all sections
   },
   {
-    email: 'rides@diakite.com', password: 'Rides@123456',
+    email: 'rides@diakite.com', password: 'Diakite1@',
     firstName: 'Rides', lastName: 'Admin', phone: '+2348000000003',
     role: 'ADMIN', adminDepartment: 'RIDES',       // drivers + rides only
   },
   {
-    email: 'deliveries@diakite.com', password: 'Deliveries@123456',
+    email: 'deliveries@diakite.com', password: 'Diakite1@',
     firstName: 'Deliveries', lastName: 'Admin', phone: '+2348000000004',
     role: 'ADMIN', adminDepartment: 'DELIVERIES',  // partners + deliveries only
   },
   {
-    email: 'support@diakite.com', password: 'Support@123456',
+    email: 'support@diakite.com', password: 'Diakite1@',
     firstName: 'Support', lastName: 'Agent', phone: '+2348000000005',
     role: 'SUPPORT', adminDepartment: 'SUPPORT',   // tickets + read-only users
   },

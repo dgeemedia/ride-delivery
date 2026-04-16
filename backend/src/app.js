@@ -126,6 +126,11 @@ app.use(
   express.raw({ type: 'application/json' }),
   (req, _res, next) => { req.rawBody = req.body; next(); }
 );
+app.use(
+  '/api/wallet/topup/verify',
+  express.raw({ type: 'application/json' }),
+  (req, _res, next) => { req.rawBody = req.body; next(); }
+);
 
 if (ENABLE_DUOPAY) {
   app.use(

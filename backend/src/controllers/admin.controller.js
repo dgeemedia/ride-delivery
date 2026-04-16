@@ -8,6 +8,7 @@ const shieldService = require('../services/shield.service');
 const { invalidateFareCache } = require('../utils/fareEngine');
 const bcrypt = require('bcryptjs');
 const { invalidateMaintenanceCache } = require('../middleware/maintenance.middleware');
+const commissionService = require('../services/commission.service');
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -327,17 +328,167 @@ exports.getDeliveries = async (req, res) => {
 // PAYMENT MANAGEMENT
 // ─────────────────────────────────────────────
 
+/**
+ * @desc    Get all payments (paginated, filterable)
+ * @route   GET /api/admin/payments
+ * @access  Private (ADMIN | SUPER_ADMIN)
+ */
 exports.getPayments = async (req, res) => {
-  const { page = 1, limit = 20, status, method } = req.query;
-  const skip = (page - 1) * limit;
+  const {
+    page   = 1,
+    limit  = 25,
+    status,
+    method,
+    search,
+    hasRide,
+    hasDelivery,
+  } = req.query;
+ 
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+ 
   const where = {};
-  if (status) where.status = status;
-  if (method) where.method = method;
+  if (status)            where.status  = status;
+  if (method)            where.method  = method;
+  if (hasRide === 'true')     where.rideId     = { not: null };
+  if (hasDelivery === 'true') where.deliveryId = { not: null };
+  if (search) {
+    where.OR = [
+      { transactionId: { contains: search, mode: 'insensitive' } },
+      { user: { firstName: { contains: search, mode: 'insensitive' } } },
+      { user: { lastName:  { contains: search, mode: 'insensitive' } } },
+      { user: { email:     { contains: search, mode: 'insensitive' } } },
+      { user: { phone:     { contains: search } } },
+    ];
+  }
+ 
   const [payments, total] = await Promise.all([
-    prisma.payment.findMany({ where, include: { user: { select: { firstName: true, lastName: true, email: true } }, ride: { select: { pickupAddress: true, dropoffAddress: true } }, delivery: { select: { pickupAddress: true, dropoffAddress: true } } }, skip: parseInt(skip), take: parseInt(limit), orderBy: { createdAt: 'desc' } }),
+    prisma.payment.findMany({
+      where,
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+        // Join CommissionLedger for platformFee / earnerAmount
+        commissionLedger: { select: { commissionAmount: true, earnerAmount: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: parseInt(limit),
+    }),
     prisma.payment.count({ where }),
   ]);
-  res.status(200).json({ success: true, data: { payments, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } } });
+ 
+  // Flatten commission fields into payment object
+  const enriched = payments.map(p => ({
+    ...p,
+    platformFee:    p.commissionLedger?.commissionAmount ?? p.platformFee   ?? undefined,
+    driverEarnings: p.commissionLedger?.earnerAmount     ?? p.driverEarnings ?? undefined,
+    commissionLedger: undefined, // don't double-send
+  }));
+ 
+  res.status(200).json({
+    success: true,
+    data: {
+      payments: enriched,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+    },
+  });
+};
+
+exports.getPaymentById = async (req, res) => {
+  const { id } = req.params;
+  const payment = await prisma.payment.findUnique({
+    where: { id },
+    include: {
+      user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      commissionLedger: { select: { commissionAmount: true, earnerAmount: true } },
+    },
+  });
+  if (!payment) throw new AppError('Payment not found', 404);
+  res.status(200).json({ success: true, data: { payment } });
+};
+ 
+/**
+ * @desc    Payment aggregated stats (for PaymentList stat cards)
+ * @route   GET /api/admin/payments/stats
+ * @access  Private (ADMIN | SUPER_ADMIN)
+ */
+exports.getPaymentStats = async (req, res) => {
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+ 
+  const [
+    totalRevenue, todayRevenue,
+    totalCommission, todayCommission,
+    pendingCount, refundedTotal,
+    byMethod,
+  ] = await Promise.all([
+    prisma.payment.aggregate({
+      where: { status: 'COMPLETED' },
+      _sum: { amount: true },
+    }),
+    prisma.payment.aggregate({
+      where: { status: 'COMPLETED', createdAt: { gte: todayStart } },
+      _sum: { amount: true },
+    }),
+    // Commission from CommissionLedger if available, else from platformFee column
+    prisma.commissionLedger.aggregate({ _sum: { commissionAmount: true } }).catch(() => ({ _sum: { commissionAmount: 0 } })),
+    prisma.commissionLedger.aggregate({
+      where: { createdAt: { gte: todayStart } },
+      _sum: { commissionAmount: true },
+    }).catch(() => ({ _sum: { commissionAmount: 0 } })),
+    prisma.payment.count({ where: { status: 'PENDING' } }),
+    prisma.payment.aggregate({
+      where: { status: 'REFUNDED' },
+      _sum: { amount: true },
+    }),
+    prisma.payment.groupBy({
+      by: ['method'],
+      where: { status: 'COMPLETED' },
+      _sum:   { amount: true },
+      _count: { id: true },
+    }),
+  ]);
+ 
+  res.status(200).json({
+    success: true,
+    data: {
+      totalRevenue:     totalRevenue._sum.amount        ?? 0,
+      todayRevenue:     todayRevenue._sum.amount        ?? 0,
+      totalCommission:  totalCommission._sum.commissionAmount ?? 0,
+      todayCommission:  todayCommission._sum.commissionAmount ?? 0,
+      pendingCount,
+      refundedTotal:    refundedTotal._sum.amount       ?? 0,
+      byMethod: byMethod.map(m => ({
+        method: m.method,
+        count:  m._count.id,
+        total:  m._sum.amount ?? 0,
+      })),
+    },
+  });
+};
+
+// ─────────────────────────────────────────────
+// COMMISSION ANALYTICS
+// ─────────────────────────────────────────────
+/**
+ * @desc    Commission stats for analytics page
+ * @route   GET /api/admin/analytics/commission
+ * @access  Private (ADMIN | SUPER_ADMIN)
+ */
+exports.getCommissionAnalytics = async (req, res) => {
+  const { from, to, serviceType, days } = req.query;
+ 
+  const [stats, daily] = await Promise.all([
+    commissionService.getCommissionStats({
+      from:        from ? new Date(from) : undefined,
+      to:          to   ? new Date(to)   : undefined,
+      serviceType: serviceType || undefined,
+    }),
+    commissionService.getDailyCommission({
+      days:        parseInt(days ?? '30'),
+      serviceType: serviceType || undefined,
+    }),
+  ]);
+ 
+  res.status(200).json({ success: true, data: { ...stats, daily } });
 };
 
 // ─────────────────────────────────────────────

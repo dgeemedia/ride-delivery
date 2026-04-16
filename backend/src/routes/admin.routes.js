@@ -63,7 +63,12 @@ router.get('/deliveries/:id',  param('id').isUUID(), requireScope('DELIVERIES','
 router.put('/deliveries/:id/cancel', param('id').isUUID(), body('reason').optional().isString(), requireScope('DELIVERIES'), adminController.cancelDelivery);
 
 // PAYMENTS
-router.get('/payments', authorize('ADMIN','SUPER_ADMIN'), adminController.getPayments);
+router.get('/payments',        authorize('ADMIN','SUPER_ADMIN'), adminController.getPayments);
+router.get('/payments/stats',  authorize('ADMIN','SUPER_ADMIN'), adminController.getPaymentStats);
+router.get('/payments/:id',    authorize('ADMIN','SUPER_ADMIN'), param('id').isUUID(), adminController.getPaymentById);
+
+// COMMISSION ANALYTICS
+router.get('/analytics/commission', authorize('ADMIN','SUPER_ADMIN'), adminController.getCommissionAnalytics);
 
 // ANALYTICS
 router.get('/analytics/revenue',     authorize('ADMIN','SUPER_ADMIN'), adminController.getRevenueAnalytics);

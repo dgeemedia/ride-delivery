@@ -284,32 +284,41 @@ const PayoutManagement: React.FC = () => {
   const confirmAction = async (noteOrReason: string) => {
     setModal(m => ({ ...m, loading: true }));
     const { type, id } = modal;
-
+    
     try {
-      if (type === 'approve_payout') {
-        await api.put(`/wallet/admin/payouts/${id}/approve`, { note: noteOrReason });
-        toast.success('Payout approved and bank transfer initiated');
+        if (type === 'approve_payout') {
+        const res = await api.put(`/wallet/admin/payouts/${id}/approve`, { note: noteOrReason });
+        const { paystack, transferError } = res.data?.data ?? {};
+    
+        if (paystack === 'failed') {
+            // Approved in DB but Paystack transfer failed — show warning, not success
+            toast.error(`⚠️ Payout approved but bank transfer failed: ${transferError ?? 'Unknown error'}. Ops retry needed.`, {
+            duration: 8000,
+            });
+        } else {
+            toast.success('Payout approved and bank transfer initiated');
+        }
         loadPayouts();
-      } else if (type === 'reject_payout') {
+        } else if (type === 'reject_payout') {
         await api.put(`/wallet/admin/payouts/${id}/reject`, { reason: noteOrReason });
         toast.success('Payout rejected and wallet refunded');
         loadPayouts();
-      } else if (type === 'approve_transfer') {
+        } else if (type === 'approve_transfer') {
         await api.put(`/wallet/admin/transfers/${id}/approve`, { note: noteOrReason });
         toast.success('Transfer approved. Recipient credited.');
         loadTransfers();
-      } else if (type === 'reject_transfer') {
+        } else if (type === 'reject_transfer') {
         await api.put(`/wallet/admin/transfers/${id}/reject`, { reason: noteOrReason });
         toast.success('Transfer rejected and sender refunded.');
         loadTransfers();
-      }
-      loadStats();
-      closeModal();
+        }
+        loadStats();
+        closeModal();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Action failed');
-      setModal(m => ({ ...m, loading: false }));
+        toast.error(err?.response?.data?.message ?? 'Action failed');
+        setModal(m => ({ ...m, loading: false }));
     }
-  };
+ };
 
   // ── Status filter tabs ──────────────────────────────────────────────────────
 

@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Car, Package, Navigation,
   CreditCard, BarChart3, Settings, X, Truck,
-  MessageCircle, Shield, LogOut, Building2, Zap, Wallet, DollarSign,
+  MessageCircle, Shield, LogOut, Building2, Zap, Wallet,
 } from 'lucide-react';
 import { useUIStore } from '@/store/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -12,27 +12,29 @@ import { cn } from '@/utils/helpers';
 import api from '@/services/api';
 import logo from '@/assets/images/diakite.png';
 
-// ─── Feature flags (set in admin-web/.env) ────────────────────────────────────
+// ─── Feature flags ────────────────────────────────────────────────────────────
 const ENABLE_SHIELD    = import.meta.env.VITE_ENABLE_SHIELD    === 'true';
 const ENABLE_CORPORATE = import.meta.env.VITE_ENABLE_CORPORATE === 'true';
 const ENABLE_DUOPAY    = import.meta.env.VITE_ENABLE_DUOPAY    === 'true';
 
 interface Counts {
-  pendingDrivers:  number;
-  pendingPartners: number;
-  openTickets:     number;
-  shieldActive:    number;
+  pendingDrivers:   number;
+  pendingPartners:  number;
+  openTickets:      number;
+  shieldActive:     number;
+  pendingPayouts:   number;
+  pendingTransfers: number;
 }
 
 interface NavItem {
-  name:      string;
-  href:      string;
-  icon:      React.ElementType;
-  show:      boolean;
-  badge?:    number;
+  name:       string;
+  href:       string;
+  icon:       React.ElementType;
+  show:       boolean;
+  badge?:     number;
   badgeColor?: string;
-  end?:      boolean;
-  children?: { name: string; href: string; show: boolean }[];
+  end?:       boolean;
+  children?:  { name: string; href: string; show: boolean }[];
 }
 
 const Sidebar: React.FC = () => {
@@ -41,26 +43,37 @@ const Sidebar: React.FC = () => {
   const navigate = useNavigate();
 
   const [counts, setCounts] = useState<Counts>({
-    pendingDrivers: 0, pendingPartners: 0, openTickets: 0, shieldActive: 0,
+    pendingDrivers:   0,
+    pendingPartners:  0,
+    openTickets:      0,
+    shieldActive:     0,
+    pendingPayouts:   0,
+    pendingTransfers: 0,
   });
 
   useEffect(() => {
-    // Only fetch shield stats if SHIELD is enabled
     const requests: Promise<any>[] = [
       api.get('/admin/dashboard/stats'),
       ENABLE_SHIELD
         ? api.get('/admin/shield/stats')
         : Promise.resolve({ data: { data: { activeSessions: 0 } } }),
+      api.get('/wallet/admin/stats').catch(() => ({
+        data: { data: { pendingPayouts: 0, pendingTransfers: 0 } },
+      })),
     ];
 
-    Promise.allSettled(requests).then(([statsRes, shieldRes]) => {
-      const d = statsRes.status === 'fulfilled' ? statsRes.value.data?.data : null;
+    Promise.allSettled(requests).then(([statsRes, shieldRes, walletRes]) => {
+      const d = statsRes.status  === 'fulfilled' ? statsRes.value.data?.data  : null;
       const s = shieldRes.status === 'fulfilled' ? shieldRes.value.data?.data : null;
+      const w = walletRes.status === 'fulfilled' ? walletRes.value.data?.data : null;
+
       setCounts({
-        pendingDrivers:  d?.pending?.drivers     ?? 0,
-        pendingPartners: d?.pending?.partners    ?? 0,
-        openTickets:     d?.support?.openTickets ?? 0,
-        shieldActive:    s?.activeSessions       ?? 0,
+        pendingDrivers:   d?.pending?.drivers     ?? 0,
+        pendingPartners:  d?.pending?.partners    ?? 0,
+        openTickets:      d?.support?.openTickets ?? 0,
+        shieldActive:     s?.activeSessions       ?? 0,
+        pendingPayouts:   w?.pendingPayouts        ?? 0,
+        pendingTransfers: w?.pendingTransfers      ?? 0,
       });
     });
   }, []);
@@ -125,13 +138,13 @@ const Sidebar: React.FC = () => {
       ],
     },
     {
-      name: 'Wallets', href: '/wallets', icon: DollarSign,
+      name: 'Wallets', href: '/wallets', icon: Wallet,
       show: can.viewPayments,
       badge: (counts.pendingPayouts + counts.pendingTransfers) || undefined,
       badgeColor: 'bg-yellow-500',
     },
 
-    // ─── Feature-flagged nav items ─────────────────────────────────────────────
+    // ─── Feature-flagged nav items ────────────────────────────────────────────
     {
       name: 'SHIELD', href: '/shield', icon: Shield,
       show: ENABLE_SHIELD,
@@ -154,7 +167,7 @@ const Sidebar: React.FC = () => {
         { name: 'Defaults', href: '/duopay/defaults', show: can.viewPayments },
       ],
     },
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
     {
       name: 'Support Tickets', href: '/support/tickets', icon: MessageCircle,
       show: can.viewTickets,

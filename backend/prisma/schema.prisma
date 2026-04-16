@@ -37,6 +37,7 @@ model User {
   companyEmployments   CompanyEmployee[]       @relation("CompanyEmployees")
   customerDeliveries   Delivery[]              @relation("CustomerDeliveries")
   partnerDeliveries    Delivery[]              @relation("PartnerDeliveries")
+  commissions CommissionLedger[]               @relation("CommissionEarner")
   deliveryProfile      DeliveryPartnerProfile?
   driverProfile        DriverProfile?
   duoPayAccount        DuoPayAccount?
@@ -209,6 +210,7 @@ model Payment {
   platformFee    Float?
   driverEarnings Float?
   refundAmount   Float?
+  commissionLedger CommissionLedger?
   refundedAt     DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @default(now()) @updatedAt
@@ -275,6 +277,8 @@ model Payout {
   accountName   String
   reference     String?      @unique
   recipientCode String?
+  transferCode  String?
+  transferError String?
   processedAt   DateTime?
   failureReason String?
   createdAt     DateTime     @default(now())
@@ -418,6 +422,40 @@ model AppFeedback {
 
   @@index([userId])
   @@index([rating])
+  @@index([createdAt])
+}
+
+model CommissionLedger {
+  id               String      @id @default(uuid())
+
+  // Link to the payment that generated this commission
+  paymentId        String      @unique
+  payment          Payment     @relation(fields: [paymentId], references: [id])
+
+  // Service context
+  serviceType      String      // 'RIDE' | 'DELIVERY'
+  rideId           String?     // set when serviceType = RIDE
+  deliveryId       String?     // set when serviceType = DELIVERY
+
+  // Earning user (driver / partner)
+  earnerUserId     String
+  earnerUser       User        @relation("CommissionEarner", fields: [earnerUserId], references: [id])
+
+  // Fare breakdown — all in NGN
+  grossAmount      Float       // total charged to customer (actualFare / actualFee)
+  bookingFee       Float       @default(0)   // flat booking fee deducted first
+  commissionRate   Float       // decimal e.g. 0.20 = 20%
+  commissionAmount Float       // actual NGN earned by platform
+  earnerAmount     Float       // actual NGN kept by driver/partner (driverEarnings)
+
+  // Surge info
+  surgeMultiplier  Float       @default(1.0)
+
+  currency         String      @default("NGN")
+  createdAt        DateTime    @default(now())
+
+  @@index([serviceType])
+  @@index([earnerUserId])
   @@index([createdAt])
 }
 

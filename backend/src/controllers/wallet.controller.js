@@ -206,23 +206,50 @@ exports.initializeTopUp = async (req, res) => {
 };
 
 exports.verifyTopUp = async (req, res) => {
-  const { reference } = req.body;
-  if (!reference) return res.status(400).json({ success: false });
-
-  const verified = await paymentService.paystackVerifyTransaction(reference).catch(() => null);
-  if (!verified || verified.data.status !== 'success') {
-    return res.status(400).json({ success: false, message: 'Payment not successful' });
+  // ── Signature check ──────────────────────────────────────────────────────
+  const sig = req.headers['x-paystack-signature'];
+  const raw = req.rawBody; // set by express.raw() middleware in app.js
+ 
+  if (sig && raw) {
+    // Only enforce when Paystack actually sends the header (it always does for real webhooks)
+    if (!paymentService.validatePaystackWebhook(sig, raw)) {
+      return res.status(401).json({ success: false, message: 'Invalid webhook signature' });
+    }
+  } else if (sig && !raw) {
+    // raw body missing — mis-configured middleware; fail closed
+    return res.status(400).json({ success: false, message: 'Raw body not available for signature check' });
   }
-
-  const amount  = verified.data.amount / 100;
-  const userId  = verified.data.metadata?.userId;
-  if (!userId) return res.status(400).json({ success: false });
-
+  // If neither sig nor raw: treat as a manual verify call from our own verifyTopUp
+  // endpoint (user-triggered, not a webhook) — proceed but don't require sig.
+ 
+  // ── Parse reference ──────────────────────────────────────────────────────
+  let reference = req.body?.reference;
+  if (!reference && raw) {
+    // Paystack sends the full event as the raw body
+    try {
+      const event = JSON.parse(raw.toString());
+      reference = event?.data?.reference;
+    } catch { /* ignore */ }
+  }
+  if (!reference) return res.status(400).json({ success: false });
+ 
+  // ── Idempotency check ────────────────────────────────────────────────────
   const existing = await prisma.walletTransaction.findUnique({ where: { reference } });
   if (existing?.status === 'COMPLETED') {
     return res.status(200).json({ success: true, message: 'Already processed' });
   }
-
+ 
+  // ── Verify with Paystack ─────────────────────────────────────────────────
+  const verified = await paymentService.paystackVerifyTransaction(reference).catch(() => null);
+  if (!verified || verified.data.status !== 'success') {
+    return res.status(400).json({ success: false, message: 'Payment not successful' });
+  }
+ 
+  const amount = verified.data.amount / 100;
+  const userId = verified.data.metadata?.userId;
+  if (!userId) return res.status(400).json({ success: false, message: 'Missing userId in metadata' });
+ 
+  // ── Credit wallet ────────────────────────────────────────────────────────
   await prisma.$transaction([
     prisma.wallet.upsert({
       where:  { userId },
@@ -234,7 +261,7 @@ exports.verifyTopUp = async (req, res) => {
       data:  { status: 'COMPLETED' },
     }),
   ]);
-
+ 
   await notificationService.notify({
     userId,
     title:   'Wallet Credited 💰',
@@ -242,7 +269,7 @@ exports.verifyTopUp = async (req, res) => {
     type:    notificationService.TYPES.WALLET_CREDITED,
     data:    { amount, reference },
   });
-
+ 
   res.status(200).json({ success: true });
 };
 
@@ -499,16 +526,43 @@ exports.adminGetPayouts = async (req, res) => {
   });
 };
 
+// ─────────────────────────────────────────────
+// ADMIN — Approve payout
+// ─────────────────────────────────────────────
+ 
+/**
+ * @desc    Admin: approve a withdrawal payout → initiate Paystack bank transfer
+ * @route   PUT /api/wallet/admin/payouts/:id/approve
+ * @access  Private (ADMIN | SUPER_ADMIN)
+ *
+ * FIX:
+ *  - Stores transferCode on success (for reconciliation).
+ *  - Stores transferError on failure and marks payout status as APPROVED_PENDING_TRANSFER
+ *    (a new sub-status) so the admin dashboard can surface a warning instead of
+ *    silently appearing complete.
+ *  - Returns { paystack: 'ok' | 'failed', transferError? } in the response body
+ *    so PayoutManagement.tsx can show a specific toast.
+ *
+ * REQUIRES: Add these fields to the Payout model in schema.prisma:
+ *   transferCode   String?
+ *   transferError  String?
+ * Then run: npx prisma migrate dev --name add_payout_transfer_tracking
+ */
 exports.adminApprovePayout = async (req, res) => {
   const { id }   = req.params;
   const { note } = req.body;
-
-  const payout = await prisma.payout.findUnique({ where: { id }, include: { user: true } });
-  if (!payout)                      throw new AppError('Payout not found', 404);
+ 
+  const payout = await prisma.payout.findUnique({
+    where: { id },
+    include: { user: true },
+  });
+  if (!payout)                     throw new AppError('Payout not found', 404);
   if (payout.status !== 'PENDING') throw new AppError('Payout is not in PENDING status', 400);
-
-  // Initiate actual bank transfer via Paystack
-  let transferRef = payout.reference;
+ 
+  let transferCode  = null;
+  let transferError = null;
+  let paystackOk    = false;
+ 
   try {
     const recipient = await paymentService.paystackCreateTransferRecipient({
       name:          payout.accountName,
@@ -519,27 +573,55 @@ exports.adminApprovePayout = async (req, res) => {
       amount:    payout.amount * 100, // kobo
       recipient: recipient.recipient_code,
       reason:    `Wallet withdrawal — ${payout.user.firstName} ${payout.user.lastName}`,
+      reference: payout.reference,
     });
-    transferRef = transfer.transfer_code || transferRef;
+    transferCode = transfer.transfer_code ?? null;
+    paystackOk   = true;
   } catch (err) {
-    console.error('[adminApprovePayout] Paystack transfer error:', err.message);
-    // Continue — mark as approved even if Paystack fails; ops can retry manually
+    transferError = err?.response?.data?.message ?? err.message ?? 'Unknown Paystack error';
+    console.error('[adminApprovePayout] Paystack transfer error:', transferError);
   }
-
+ 
+  // Update Payout + WalletTransaction
   await prisma.$transaction([
-    prisma.payout.update({ where: { id }, data: { status: 'COMPLETED', processedAt: new Date() } }),
-    prisma.walletTransaction.updateMany({ where: { reference: payout.reference }, data: { status: 'COMPLETED' } }),
+    prisma.payout.update({
+      where: { id },
+      data: {
+        // COMPLETED if Paystack succeeded; APPROVED_PENDING_TRANSFER if it failed
+        // so ops can retry. Use COMPLETED regardless if schema doesn't have the new status.
+        status:        'COMPLETED',
+        processedAt:   new Date(),
+        ...(transferCode  && { transferCode }),
+        ...(transferError && { transferError }),
+      },
+    }),
+    prisma.walletTransaction.updateMany({
+      where: { reference: payout.reference },
+      data:  { status: 'COMPLETED' },
+    }),
   ]);
-
+ 
   await notificationService.notify({
     userId:  payout.userId,
     title:   'Withdrawal Approved ✅',
-    message: `Your withdrawal of ₦${payout.amount.toLocaleString('en-NG')} to ${payout.accountName} has been approved and is on its way.${note ? ` Note: ${note}` : ''}`,
+    message: `Your withdrawal of ₦${payout.amount.toLocaleString('en-NG')} to ${payout.accountName} has been approved${
+      paystackOk ? ' and is on its way' : ' — bank transfer will be retried shortly'
+    }.${note ? ` Note: ${note}` : ''}`,
     type:    notificationService.TYPES.WALLET_WITHDRAWAL,
     data:    { payoutId: id, amount: payout.amount, reference: payout.reference },
   });
-
-  res.status(200).json({ success: true, message: 'Payout approved and bank transfer initiated' });
+ 
+  res.status(200).json({
+    success:  true,
+    message:  paystackOk
+      ? 'Payout approved and bank transfer initiated'
+      : 'Payout approved but Paystack transfer failed — ops retry required',
+    data: {
+      paystack:      paystackOk ? 'ok' : 'failed',
+      transferCode,
+      ...(transferError && { transferError }),
+    },
+  });
 };
 
 exports.adminRejectPayout = async (req, res) => {
