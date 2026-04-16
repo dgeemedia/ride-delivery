@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Car, Package, Navigation,
   CreditCard, BarChart3, Settings, X, Truck,
-  MessageCircle, Shield, LogOut, Building2, Zap,
+  MessageCircle, Shield, LogOut, Building2, Zap, Wallet, DollarSign,
 } from 'lucide-react';
 import { useUIStore } from '@/store/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -124,6 +124,13 @@ const Sidebar: React.FC = () => {
         { name: 'Live Map',       href: '/deliveries/live', show: can.manageDeliveries },
       ],
     },
+    {
+      name: 'Wallets', href: '/wallets', icon: DollarSign,
+      show: can.viewPayments,
+      badge: (counts.pendingPayouts + counts.pendingTransfers) || undefined,
+      badgeColor: 'bg-yellow-500',
+    },
+
     // ─── Feature-flagged nav items ─────────────────────────────────────────────
     {
       name: 'SHIELD', href: '/shield', icon: Shield,

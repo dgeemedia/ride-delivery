@@ -28,6 +28,7 @@ import PaymentList        from '@/pages/Payments/PaymentList';
 import Analytics          from '@/pages/Analytics/Overview';
 import GeneralSettings    from '@/pages/Settings/GeneralSettings';
 import NotificationsPage  from '@/pages/Notifications/NotificationsPage';
+import PayoutManagement   from '@/pages/Wallets/PayoutManagement';
 
 // Feature-flagged page imports — only used when flags are enabled
 import ShieldMonitor      from '@/pages/Shield/ShieldMonitor';
@@ -92,6 +93,9 @@ function App() {
           <Route path="/deliveries"     element={<ProtectedRoute><DeliveryList /></ProtectedRoute>} />
           <Route path="/deliveries/:id" element={<ProtectedRoute><DeliveryDetails /></ProtectedRoute>} />
 
+          {/* wallet management */}
+          <Route path="/wallets" element={<ProtectedRoute><PayoutManagement /></ProtectedRoute>} />
+          
           {/* Support */}
           <Route path="/support/tickets"     element={<ProtectedRoute><TicketList /></ProtectedRoute>} />
           <Route path="/support/tickets/:id" element={<ProtectedRoute><TicketDetail /></ProtectedRoute>} />
