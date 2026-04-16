@@ -2,11 +2,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   CheckCircle, XCircle, Clock, DollarSign, ArrowLeftRight,
-  Building2, RefreshCw, ChevronDown, Search, Filter,
+  Building2, RefreshCw, Filter,
 } from 'lucide-react';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
-import { formatCurrency } from '@/utils/helpers';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
