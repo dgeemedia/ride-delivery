@@ -2,25 +2,32 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 
-import LoginScreen      from '../screens/Auth/LoginScreen';
-import RegisterScreen   from '../screens/Auth/RegisterScreen';
-import OnboardingScreen from '../screens/Auth/OnboardingScreen';
+import LoginScreen            from '../screens/Auth/LoginScreen';
+import RegisterScreen         from '../screens/Auth/RegisterScreen';
+import OnboardingScreen       from '../screens/Auth/OnboardingScreen';
+import OtpVerificationScreen  from '../screens/Auth/OtpVerificationScreen';
 
 const Stack = createStackNavigator();
 
-const AuthNavigator = () => {
-  return (
-    // initialRouteName="Login" means logout always lands on the sign-in screen.
-    // Onboarding is still reachable for new users via RegisterScreen or deep link.
-    <Stack.Navigator
-      initialRouteName="Login"
-      screenOptions={{ headerShown: false }}
-    >
-      <Stack.Screen name="Login"      component={LoginScreen} />
-      <Stack.Screen name="Register"   component={RegisterScreen} />
-      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-    </Stack.Navigator>
-  );
-};
+const AuthNavigator = () => (
+  <Stack.Navigator
+    initialRouteName="Login"
+    screenOptions={{ headerShown: false }}
+  >
+    <Stack.Screen name="Login"           component={LoginScreen}           />
+    <Stack.Screen name="Register"        component={RegisterScreen}        />
+    <Stack.Screen name="Onboarding"      component={OnboardingScreen}      />
+    {/*
+      OtpVerification is pushed by LoginScreen when the backend signals
+      requiresOtp: true. It receives { tempToken, method, maskedContact }
+      as route.params.
+    */}
+    <Stack.Screen
+      name="OtpVerification"
+      component={OtpVerificationScreen}
+      options={{ gestureEnabled: false }} // prevent swipe-back bypassing 2FA
+    />
+  </Stack.Navigator>
+);
 
 export default AuthNavigator;

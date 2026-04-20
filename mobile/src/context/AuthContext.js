@@ -8,18 +8,14 @@ import socketService from '../services/socket';
 
 const AuthContext = createContext();
 
-// ── Device ID helper (duplicated here so AuthContext is self-contained) ───────
-// api.js also uses this helper — both read from the same AsyncStorage key,
-// so the ID is always consistent within the same app installation.
+// ── Stable device ID (reads same AsyncStorage key as api.js) ─────────────────
 const getOrCreateDeviceId = async () => {
   try {
     let id = await AsyncStorage.getItem('deviceId');
     if (!id) {
       id =
-        Date.now().toString(36) +
-        '-' +
-        Math.random().toString(36).substring(2, 10) +
-        '-' +
+        Date.now().toString(36) + '-' +
+        Math.random().toString(36).substring(2, 10) + '-' +
         Math.random().toString(36).substring(2, 10);
       await AsyncStorage.setItem('deviceId', id);
     }
@@ -30,37 +26,32 @@ const getOrCreateDeviceId = async () => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user,    setUser]    = useState(null);
-  const [token,   setToken]   = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user,           setUser]           = useState(null);
+  const [token,          setToken]          = useState(null);
+  const [loading,        setLoading]        = useState(true);
 
-  // Keep a ref to the latest logout so the force-logout listener always
-  // calls the most-recent version without needing to re-subscribe.
+  // ── Biometric lock ─────────────────────────────────────────────────────────
+  // true when the app has returned from background and needs biometric before
+  // revealing the main UI. The session (token + user) is still valid in memory.
+  const [biometricLocked, setBiometricLocked] = useState(false);
+
   const logoutRef = useRef(null);
 
   useEffect(() => { loadStoredAuth(); }, []);
 
-  // ── Subscribe to force-logout events from the API 401 interceptor ──────────
+  // ── Force-logout from API 401 (device conflict / session expired) ──────────
   useEffect(() => {
     const unsubscribe = onForceLogout((reason) => {
-      console.log('[AuthContext] force-logout received, reason:', reason);
-
-      // Clear React state immediately (UI redirects to Auth via AppNavigator)
       setToken(null);
       setUser(null);
-
-      // Disconnect socket
+      setBiometricLocked(false);
       try { socketService.disconnect(); } catch {}
-
-      // Inform the user why they were signed out
       const message =
         reason === 'device_conflict'
           ? 'Your account was signed in on another device. You have been signed out.'
           : 'Your session has expired. Please sign in again.';
-
       Alert.alert('Signed Out', message);
     });
-
     return unsubscribe;
   }, []);
 
@@ -81,44 +72,83 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ── Login — sends deviceId so the backend can enforce single-device policy ──
+  // ─────────────────────────────────────────────────────────────────────────
+  // login
+  // Returns:
+  //   { success: true }                                    — logged in
+  //   { success: true, requiresOtp, tempToken, ... }       — 2FA pending
+  //   { success: false, message }                          — error
+  // ─────────────────────────────────────────────────────────────────────────
   const login = async (credentials) => {
     try {
       const deviceId = await getOrCreateDeviceId();
-
-      // Pass deviceId in the body — backend uses it to invalidate other sessions
       const response = await authAPI.login({ ...credentials, deviceId });
 
-      const { user: u, token: t } = response.data;
+      if (response.requiresOtp) {
+        // 2FA gated — don't persist anything yet; hand back details to the caller
+        return {
+          success:       true,
+          requiresOtp:   true,
+          tempToken:     response.data.tempToken,
+          method:        response.data.method,
+          maskedContact: response.data.maskedContact,
+        };
+      }
 
-      await AsyncStorage.setItem('authToken', t);
-      await AsyncStorage.setItem('user', JSON.stringify(u));
-      setToken(t);
-      setUser(u);
-      socketService.connect().catch(() => {});
-      return { success: true };
+      const { user: u, token: t } = response.data;
+      await _persistSession(u, t);
+      return { success: true, token: t };
     } catch (error) {
-      console.log('LOGIN ERROR FULL:', error.response?.data);
       const message =
         error.response?.data?.message ||
         error.response?.data?.errors?.[0]?.msg ||
-        error.message ||
-        'Login failed';
+        error.message || 'Login failed';
       return { success: false, message };
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // verifyOtp — completes 2FA login
+  // ─────────────────────────────────────────────────────────────────────────
+  const verifyOtp = async (code, tempToken) => {
+    try {
+      const response = await authAPI.verifyOtp({ code, tempToken });
+      const { user: u, token: t } = response.data;
+      await _persistSession(u, t);
+      return { success: true, token: t };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Verification failed',
+      };
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // resendOtp — get a fresh OTP within an active 2FA session
+  // ─────────────────────────────────────────────────────────────────────────
+  const resendOtp = async (tempToken) => {
+    try {
+      const response = await authAPI.resendOtp({ tempToken });
+      return { success: true, ...response.data };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Could not resend code',
+      };
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // register
+  // ─────────────────────────────────────────────────────────────────────────
   const register = async (userData) => {
     try {
       const deviceId = await getOrCreateDeviceId();
       const response = await authAPI.register({ ...userData, deviceId });
       const { user: u, token: t } = response.data;
-      await AsyncStorage.setItem('authToken', t);
-      await AsyncStorage.setItem('user', JSON.stringify(u));
-      setToken(t);
-      setUser(u);
-      socketService.connect().catch(() => {});
-      return { success: true };
+      await _persistSession(u, t);
+      return { success: true, token: t };
     } catch (error) {
       return {
         success: false,
@@ -127,40 +157,52 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Biometric lock / unlock
+  // ─────────────────────────────────────────────────────────────────────────
+  const biometricLock   = () => setBiometricLocked(true);
+  const biometricUnlock = () => setBiometricLocked(false);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // updateUser / logout
+  // ─────────────────────────────────────────────────────────────────────────
   const updateUser = async (updatedFields) => {
     const updated = { ...user, ...updatedFields };
     await AsyncStorage.setItem('user', JSON.stringify(updated));
     setUser(updated);
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // logout — state is cleared FIRST, unconditionally, so the UI always
-  // responds immediately. Backend call and storage cleanup happen after.
-  // ─────────────────────────────────────────────────────────────────────────
   const logout = async () => {
-    // 1. Immediately clear React state → AppNavigator redirects to Auth
     setToken(null);
     setUser(null);
-
-    // 2. Disconnect socket
+    setBiometricLocked(false);
     try { socketService.disconnect(); } catch {}
-
-    // 3. Clear persisted storage (non-blocking)
-    try {
-      await AsyncStorage.multiRemove(['authToken', 'user']);
-    } catch (e) {
-      console.warn('AsyncStorage clear failed (non-critical):', e);
-    }
-
-    // 4. Tell the backend to invalidate the session (non-blocking)
+    try { await AsyncStorage.multiRemove(['authToken', 'user']); } catch {}
     try { await authAPI.logout(); } catch {}
   };
 
-  // Keep ref in sync so the force-logout closure can call it
   logoutRef.current = logout;
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // _persistSession — internal: write to storage + set React state
+  // ─────────────────────────────────────────────────────────────────────────
+  const _persistSession = async (u, t) => {
+    await AsyncStorage.setItem('authToken', t);
+    await AsyncStorage.setItem('user', JSON.stringify(u));
+    setToken(t);
+    setUser(u);
+    setBiometricLocked(false);
+    socketService.connect().catch(() => {});
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{
+      user, token, loading,
+      biometricLocked,
+      login, register, logout, updateUser,
+      verifyOtp, resendOtp,
+      biometricLock, biometricUnlock,
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -35,6 +35,9 @@ module.exports = {
         'expo-font',
       ],
       [
+        'expo-secure-store',
+      ],
+      [
         'expo-location',
         {
           locationWhenInUsePermission:

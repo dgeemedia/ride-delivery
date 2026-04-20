@@ -2,12 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, StatusBar, Dimensions, Animated, ActivityIndicator, Platform,
+  Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
+  Platform, Switch, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { userAPI, driverAPI, partnerAPI } from '../../services/api';
+import { userAPI, driverAPI, partnerAPI, authAPI } from '../../services/api';
+import { useBiometric } from '../../hooks/useBiometric';
 
 const { width } = Dimensions.get('window');
 
@@ -83,6 +85,37 @@ const mi = StyleSheet.create({
   value:   { fontSize: 13, fontWeight: '600' },
 });
 
+// ─── ToggleRow ─────────────────────────────────────────────────────────────────
+const ToggleRow = ({ icon, label, sublabel, value, onValueChange, theme, last, loading }) => (
+  <View style={[tr.row, !last && { borderBottomWidth: 1, borderBottomColor: theme.border }]}>
+    <View style={[tr.iconWrap, { backgroundColor: theme.accent + '14' }]}>
+      <Ionicons name={icon} size={17} color={theme.accent} />
+    </View>
+    <View style={{ flex: 1 }}>
+      <Text style={[tr.label, { color: theme.foreground }]}>{label}</Text>
+      {sublabel ? <Text style={[tr.sublabel, { color: theme.hint }]}>{sublabel}</Text> : null}
+    </View>
+    {loading
+      ? <ActivityIndicator size="small" color={theme.accent} />
+      : (
+        <Switch
+          value={value}
+          onValueChange={onValueChange}
+          trackColor={{ false: theme.border, true: theme.accent + '88' }}
+          thumbColor={value ? theme.accent : theme.hint}
+          ios_backgroundColor={theme.border}
+        />
+      )
+    }
+  </View>
+);
+const tr = StyleSheet.create({
+  row:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  iconWrap:{ width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  label:   { fontSize: 14, fontWeight: '500', marginBottom: 2 },
+  sublabel:{ fontSize: 11, fontWeight: '400' },
+});
+
 // ─── DocBadge ─────────────────────────────────────────────────────────────────
 const DocBadge = ({ label, uploaded, theme }) => {
   const color = uploaded ? theme.accent : theme.hint;
@@ -110,13 +143,74 @@ const sec = StyleSheet.create({
   title: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 6 },
 });
 
+// ─── MethodModal ─────────────────────────────────────────────────────────────
+// Lets user pick SMS or EMAIL when enabling 2FA
+const MethodModal = ({ visible, onSelect, onDismiss, theme }) => (
+  <Modal transparent visible={visible} animationType="fade" onRequestClose={onDismiss}>
+    <TouchableOpacity style={mm.overlay} activeOpacity={1} onPress={onDismiss}>
+      <View style={[mm.sheet, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+        <Text style={[mm.title, { color: theme.foreground }]}>Choose verification method</Text>
+        <Text style={[mm.sub, { color: theme.hint }]}>An OTP will be sent to confirm setup.</Text>
+
+        {[
+          { method: 'SMS',   icon: 'phone-portrait-outline', label: 'SMS',   desc: 'Code sent to your phone number' },
+          { method: 'EMAIL', icon: 'mail-outline',           label: 'Email', desc: 'Code sent to your email address' },
+        ].map(({ method, icon, label, desc }) => (
+          <TouchableOpacity
+            key={method}
+            style={[mm.option, { borderColor: theme.border }]}
+            onPress={() => onSelect(method)}
+            activeOpacity={0.7}
+          >
+            <View style={[mm.optIcon, { backgroundColor: theme.accent + '14' }]}>
+              <Ionicons name={icon} size={20} color={theme.accent} />
+            </View>
+            <View>
+              <Text style={[mm.optLabel, { color: theme.foreground }]}>{label}</Text>
+              <Text style={[mm.optDesc, { color: theme.hint }]}>{desc}</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+
+        <TouchableOpacity onPress={onDismiss} style={mm.cancel}>
+          <Text style={[mm.cancelTxt, { color: theme.hint }]}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  </Modal>
+);
+const mm = StyleSheet.create({
+  overlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  sheet:    { borderRadius: 20, borderWidth: 1, margin: 16, padding: 22 },
+  title:    { fontSize: 17, fontWeight: '800', marginBottom: 6 },
+  sub:      { fontSize: 13, marginBottom: 20 },
+  option:   { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 10 },
+  optIcon:  { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  optLabel: { fontSize: 15, fontWeight: '700' },
+  optDesc:  { fontSize: 12, marginTop: 2 },
+  cancel:   { alignItems: 'center', paddingVertical: 12 },
+  cancelTxt:{ fontSize: 14, fontWeight: '600' },
+});
+
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
-  const { user, logout }                                     = useAuth();
+  const { user, logout, updateUser }                         = useAuth();
   const { theme, mode, accentId, changeAccent, changeMode }  = useTheme();
+  const { isAvailable, isEnabled, biometricType, enable, disable } = useBiometric();
+
   const [stats,   setStats]   = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // ── 2FA state ──────────────────────────────────────────────────────────────
+  const [twoFaEnabled,    setTwoFaEnabled]    = useState(user?.twoFactorEnabled ?? false);
+  const [twoFaMethod,     setTwoFaMethod]     = useState(user?.twoFactorMethod  ?? 'SMS');
+  const [twoFaLoading,    setTwoFaLoading]    = useState(false);
+  const [showMethodModal, setShowMethodModal] = useState(false);
+
+  // ── Biometric state ────────────────────────────────────────────────────────
+  const [bioLoading, setBioLoading] = useState(false);
+
   const fadeA = useRef(new Animated.Value(0)).current;
 
   const role = user?.role ?? 'CUSTOMER';
@@ -126,6 +220,12 @@ export default function ProfileScreen({ navigation }) {
     fetchData();
     Animated.timing(fadeA, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
+
+  // Keep local 2FA state in sync with auth context user
+  useEffect(() => {
+    setTwoFaEnabled(user?.twoFactorEnabled ?? false);
+    setTwoFaMethod(user?.twoFactorMethod ?? 'SMS');
+  }, [user?.twoFactorEnabled, user?.twoFactorMethod]);
 
   const fetchData = async () => {
     try {
@@ -141,9 +241,7 @@ export default function ProfileScreen({ navigation }) {
 
   const confirmLogout = () => {
     if (Platform.OS === 'web') {
-      if (window.confirm('Sign out of Diakite?')) {
-        logout();
-      }
+      if (window.confirm('Sign out of Diakite?')) logout();
     } else {
       Alert.alert('Sign Out', 'Are you sure?', [
         { text: 'Cancel', style: 'cancel' },
@@ -152,6 +250,119 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
+  // ── 2FA toggle handler ─────────────────────────────────────────────────────
+  const handle2faToggle = async (value) => {
+    if (value) {
+      // Enabling: show method picker first
+      setShowMethodModal(true);
+    } else {
+      // Disabling: ask for password confirmation
+      if (Platform.OS === 'web') {
+        const pwd = window.prompt('Enter your password to disable 2FA:');
+        if (pwd) await disable2FA(pwd);
+      } else {
+        Alert.prompt(
+          'Disable 2FA',
+          'Enter your password to confirm.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Disable', style: 'destructive', onPress: disable2FA },
+          ],
+          'secure-text'
+        );
+      }
+    }
+  };
+
+  const enable2FA = async (method) => {
+    setShowMethodModal(false);
+    setTwoFaLoading(true);
+    try {
+      const res = await authAPI.setup2FA({ method });
+      if (res?.data) {
+        // Navigate to OTP screen to confirm setup
+        navigation.navigate('OtpVerification', {
+          tempToken:      res.data.tempToken,
+          method:         res.data.method,
+          maskedContact:  res.data.maskedContact,
+          purpose:        'SETUP_2FA',
+          onSuccess: () => {
+            // After OTP confirmed on that screen, confirm2FA is called there
+            // Refresh user object
+            setTwoFaEnabled(true);
+            setTwoFaMethod(method);
+            updateUser?.({ twoFactorEnabled: true, twoFactorMethod: method });
+          },
+        });
+      }
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message ?? 'Could not start 2FA setup. Try again.');
+    } finally {
+      setTwoFaLoading(false);
+    }
+  };
+
+  const disable2FA = async (password) => {
+    if (!password) return;
+    setTwoFaLoading(true);
+    try {
+      await authAPI.disable2FA({ password });
+      setTwoFaEnabled(false);
+      setTwoFaMethod(null);
+      updateUser?.({ twoFactorEnabled: false, twoFactorMethod: null });
+      Alert.alert('2FA Disabled', 'Two-factor authentication has been turned off.');
+    } catch (err) {
+      Alert.alert('Error', err?.response?.data?.message ?? 'Incorrect password or request failed.');
+    } finally {
+      setTwoFaLoading(false);
+    }
+  };
+
+  // ── Biometric toggle handler ───────────────────────────────────────────────
+  const handleBiometricToggle = async (value) => {
+    if (!isAvailable) {
+      Alert.alert(
+        'Not Available',
+        'Biometric authentication is not set up on this device. Please enable it in your device settings first.'
+      );
+      return;
+    }
+
+    setBioLoading(true);
+    try {
+      if (value) {
+        // enable() typically prompts biometric and stores the token
+        const success = await enable();
+        if (!success) {
+          Alert.alert('Failed', 'Could not enable biometric login. Please try again.');
+        }
+      } else {
+        Alert.alert(
+          'Disable Biometric Login',
+          'You will need to enter your password to sign in next time.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Disable', style: 'destructive', onPress: async () => {
+              await disable?.();
+            }},
+          ]
+        );
+      }
+    } catch {
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+    } finally {
+      setBioLoading(false);
+    }
+  };
+
+  const biometricLabel = biometricType === 'faceid'
+    ? 'Face ID'
+    : biometricType === 'iris'
+    ? 'Iris Scan'
+    : 'Fingerprint';
+
+  const biometricIcon = biometricType === 'faceid' ? 'scan-outline' : 'finger-print-outline';
+
   const dp = profile?.driverProfile;
   const pp = profile?.deliveryProfile;
 
@@ -159,6 +370,14 @@ export default function ProfileScreen({ navigation }) {
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
+
+      {/* Method picker modal */}
+      <MethodModal
+        visible={showMethodModal}
+        onSelect={enable2FA}
+        onDismiss={() => setShowMethodModal(false)}
+        theme={theme}
+      />
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: fadeA }}>
@@ -275,6 +494,55 @@ export default function ProfileScreen({ navigation }) {
               )}
             </Section>
           )}
+
+          {/* ── SECURITY ───────────────────────────────────────────────────── */}
+          <Section title="SECURITY" theme={theme}>
+            {/* 2FA toggle */}
+            <ToggleRow
+              icon="shield-checkmark-outline"
+              label="Two-Factor Authentication"
+              sublabel={
+                twoFaEnabled
+                  ? `Active · ${twoFaMethod === 'EMAIL' ? 'Email' : 'SMS'} verification`
+                  : 'Adds an extra login step via SMS or Email'
+              }
+              value={twoFaEnabled}
+              onValueChange={handle2faToggle}
+              theme={theme}
+              loading={twoFaLoading}
+            />
+
+            {/* Biometric toggle — only shown if hardware is available */}
+            {isAvailable && (
+              <ToggleRow
+                icon={biometricIcon}
+                label={`${biometricLabel} Login`}
+                sublabel={
+                  isEnabled
+                    ? 'Unlock the app with biometrics'
+                    : `Use ${biometricLabel} instead of password`
+                }
+                value={isEnabled}
+                onValueChange={handleBiometricToggle}
+                theme={theme}
+                loading={bioLoading}
+                last
+              />
+            )}
+
+            {/* If biometric not available, show disabled state */}
+            {!isAvailable && (
+              <View style={[tr.row, { opacity: 0.4, paddingBottom: 10 }]}>
+                <View style={[tr.iconWrap, { backgroundColor: theme.accent + '14' }]}>
+                  <Ionicons name="finger-print-outline" size={17} color={theme.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[tr.label, { color: theme.foreground }]}>Biometric Login</Text>
+                  <Text style={[tr.sublabel, { color: theme.hint }]}>Not available on this device</Text>
+                </View>
+              </View>
+            )}
+          </Section>
 
           {/* Appearance */}
           <Section title="APPEARANCE" theme={theme}>

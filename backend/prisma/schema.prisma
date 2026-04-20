@@ -30,6 +30,10 @@ model User {
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @default(now()) @updatedAt
   adminDepartment      String?
+  // ── 2FA fields ────────────────────────────────────────────────────────────
+  twoFactorEnabled     Boolean                 @default(false)
+  twoFactorMethod      String?                 // 'SMS' | 'EMAIL'
+  // ── Relations ─────────────────────────────────────────────────────────────
   activityLogs         ActivityLog[]
   adminProfile         AdminProfile?
   appFeedback          AppFeedback[]
@@ -42,6 +46,7 @@ model User {
   driverProfile        DriverProfile?
   duoPayAccount        DuoPayAccount?
   notifications        Notification[]
+  otpVerifications     OtpVerification[]
   payments             Payment[]
   payouts              Payout[]
   ratings              Rating[]
@@ -52,7 +57,6 @@ model User {
   supportTickets       SupportTicket[]
   ticketReplies        TicketReply[]           @relation("TicketReplyAuthor")
   wallet               Wallet?
-  // ── ADDED: Transfer relations ─────────────────────────────────────────────
   sentTransfers        Transfer[]              @relation("SentTransfers")
   receivedTransfers    Transfer[]              @relation("ReceivedTransfers")
 
@@ -61,6 +65,23 @@ model User {
   @@index([role])
   @@index([isActive])
   @@index([adminDepartment])
+}
+
+model OtpVerification {
+  id        String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId    String
+  code      String   // SHA-256 hashed OTP
+  purpose   String   // 'LOGIN' | 'SETUP_2FA'
+  tempToken String   @unique
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tempToken])
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model DriverProfile {
@@ -299,11 +320,11 @@ model Transfer {
   recipientId String
   amount      Float
   note        String?
-  status      String   @default("PENDING")   // PENDING | COMPLETED | FAILED
+  status      String   @default("PENDING") // PENDING | COMPLETED | FAILED
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 
-  sender    User @relation("SentTransfers",     fields: [senderId],    references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sender    User @relation("SentTransfers", fields: [senderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   recipient User @relation("ReceivedTransfers", fields: [recipientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([senderId])

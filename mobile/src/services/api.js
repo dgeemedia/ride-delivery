@@ -10,27 +10,19 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Returns a stable device ID, creating one on first call.
- * Using a simple random string — no extra packages needed.
- */
+// ── Device ID helper ──────────────────────────────────────────────────────────
 const getOrCreateDeviceId = async () => {
   try {
     let id = await AsyncStorage.getItem('deviceId');
     if (!id) {
       id =
-        Date.now().toString(36) +
-        '-' +
-        Math.random().toString(36).substring(2, 10) +
-        '-' +
+        Date.now().toString(36) + '-' +
+        Math.random().toString(36).substring(2, 10) + '-' +
         Math.random().toString(36).substring(2, 10);
       await AsyncStorage.setItem('deviceId', id);
     }
     return id;
   } catch {
-    // If storage fails, return a session-only ID (won't persist)
     return 'fallback-' + Math.random().toString(36).substring(2);
   }
 };
@@ -43,7 +35,6 @@ api.interceptors.request.use(
       getOrCreateDeviceId(),
     ]);
     if (token) config.headers.Authorization = `Bearer ${token}`;
-    // Device ID header — backend uses this to enforce single-device sessions
     config.headers['X-Device-ID'] = deviceId;
     return config;
   },
@@ -55,11 +46,7 @@ api.interceptors.response.use(
   (response) => response.data,
   async (error) => {
     if (error.response?.status === 401) {
-      // Clean up stored credentials
       await AsyncStorage.multiRemove(['authToken', 'user']).catch(() => {});
-
-      // Signal AuthContext to clear React state and redirect to Login.
-      // Using an event bus avoids importing AuthContext here (circular dep).
       const reason = error.response?.data?.code ?? 'session_expired';
       emitForceLogout(reason);
     }
@@ -75,6 +62,13 @@ export const authAPI = {
   login:          (data) => api.post('/auth/login', data),
   getCurrentUser: ()     => api.get('/auth/me'),
   logout:         ()     => api.post('/auth/logout'),
+
+  // ── 2FA ───────────────────────────────────────────────────────────────────
+  verifyOtp:      (data) => api.post('/auth/verify-otp', data),
+  resendOtp:      (data) => api.post('/auth/resend-otp', data),
+  setup2FA:       (data) => api.post('/auth/2fa/setup', data),
+  confirm2FA:     (data) => api.post('/auth/2fa/confirm', data),
+  disable2FA:     (data) => api.post('/auth/2fa/disable', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

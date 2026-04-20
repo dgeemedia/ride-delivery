@@ -1,86 +1,94 @@
 // mobile/src/hooks/useInactivityLogout.js
 // ─────────────────────────────────────────────────────────────────────────────
-// Two-tier security:
-//  1. App goes to background → logout after BACKGROUND_GRACE_MS (default 30 s).
-//     This covers "closed from recent apps" and "phone locked" scenarios.
-//     A short grace period avoids signing the user out if they just switch apps
-//     briefly (e.g. to copy a phone number).
+// Three-tier security:
 //
-//  2. App stays in foreground but is idle → logout after INACTIVITY_TIMEOUT
-//     (default 10 min). Call resetTimer() on any user interaction (tap, scroll).
+//  1. App goes to background (phone locked / switched apps)
+//     → If biometric is enabled: lock the UI (BiometricLockScreen)
+//       without destroying the session. User must verify on return.
+//     → If biometric is NOT enabled: start BACKGROUND_GRACE_MS timer.
+//       If the app doesn't return in time, full logout.
+//
+//  2. App returns to foreground
+//     → Cancel background grace timer (if running).
+//     → Restart foreground inactivity timer.
+//     → If biometric-locked: BiometricLockScreen handles the prompt.
+//
+//  3. Foreground inactivity (no user interaction for INACTIVITY_TIMEOUT_MS)
+//     → Full logout regardless of biometric state.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useCallback } from 'react';
 import { AppState } from 'react-native';
-import { useAuth } from '../context/AuthContext';
+import { useAuth }      from '../context/AuthContext';
+import { useBiometric } from './useBiometric';
 
-// How long the app can be in the background before the session is killed.
-// 30 seconds is short enough to be secure, long enough not to irritate someone
-// who briefly switches to their camera or contacts.
-const BACKGROUND_GRACE_MS = 30 * 1000;
-
-// How long the app can sit idle in the foreground before logging out.
-const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+const BACKGROUND_GRACE_MS  = 30 * 1000;       // 30 seconds
+const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 export const useInactivityLogout = () => {
-  const { logout } = useAuth();
+  const { logout, biometricLock } = useAuth();
+  const { isEnabled: bioEnabled }  = useBiometric();
+
   const inactivityRef = useRef(null);
   const backgroundRef = useRef(null);
   const appStateRef   = useRef(AppState.currentState);
 
-  // ── Clear both timers ───────────────────────────────────────────────────────
   const clearTimers = useCallback(() => {
     if (inactivityRef.current) clearTimeout(inactivityRef.current);
     if (backgroundRef.current) clearTimeout(backgroundRef.current);
   }, []);
 
-  // ── Reset the in-foreground inactivity timer ────────────────────────────────
+  // ── Foreground inactivity timer — full logout after idle ──────────────────
   const resetTimer = useCallback(() => {
     if (inactivityRef.current) clearTimeout(inactivityRef.current);
     inactivityRef.current = setTimeout(() => {
-      console.log('[Security] Inactivity timeout → logging out');
+      console.log('[Security] Foreground inactivity timeout → logging out');
       logout();
     }, INACTIVITY_TIMEOUT_MS);
   }, [logout]);
 
-  // ── AppState change handler ─────────────────────────────────────────────────
+  // ── AppState handler ───────────────────────────────────────────────────────
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       const prev = appStateRef.current;
       appStateRef.current = nextState;
 
       if (nextState === 'active') {
-        // App came back to foreground — cancel the background timer and
-        // restart the foreground inactivity timer.
+        // Returned to foreground — cancel background timer, restart inactivity
         if (backgroundRef.current) {
           clearTimeout(backgroundRef.current);
           backgroundRef.current = null;
         }
         resetTimer();
+        // Note: if biometricLocked === true, AppNavigator is already showing
+        // BiometricLockScreen. We don't need to trigger the prompt here.
       } else if (
         (prev === 'active' || prev === 'inactive') &&
         (nextState === 'background' || nextState === 'inactive')
       ) {
-        // App moved to background / phone locked.
-        // Start a grace-period timer; if the app isn't foregrounded within it,
-        // log the user out.
-        if (backgroundRef.current) clearTimeout(backgroundRef.current);
-        backgroundRef.current = setTimeout(() => {
-          console.log('[Security] Background grace period expired → logging out');
-          logout();
-        }, BACKGROUND_GRACE_MS);
+        // App moved to background
+        if (bioEnabled) {
+          // Biometric enrolled → lock UI immediately (session preserved)
+          console.log('[Security] App backgrounded + biometric enabled → locking');
+          biometricLock();
+        } else {
+          // No biometric → grace-period timer before full logout
+          if (backgroundRef.current) clearTimeout(backgroundRef.current);
+          backgroundRef.current = setTimeout(() => {
+            console.log('[Security] Background grace period expired → logging out');
+            logout();
+          }, BACKGROUND_GRACE_MS);
+        }
       }
     });
 
-    // Kick off the initial foreground inactivity timer
     resetTimer();
 
     return () => {
       subscription.remove();
       clearTimers();
     };
-  }, [resetTimer, logout, clearTimers]);
+  }, [resetTimer, logout, biometricLock, bioEnabled, clearTimers]);
 
-  // Return resetTimer so screens can call it on user interactions
-  // e.g. wrap a ScrollView's onScroll, or call on any button press.
+  // Expose resetTimer so screens can call it on user interactions
   return { resetTimer };
 };
