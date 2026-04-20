@@ -37,7 +37,7 @@ model User {
   companyEmployments   CompanyEmployee[]       @relation("CompanyEmployees")
   customerDeliveries   Delivery[]              @relation("CustomerDeliveries")
   partnerDeliveries    Delivery[]              @relation("PartnerDeliveries")
-  commissions CommissionLedger[]               @relation("CommissionEarner")
+  commissions          CommissionLedger[]      @relation("CommissionEarner")
   deliveryProfile      DeliveryPartnerProfile?
   driverProfile        DriverProfile?
   duoPayAccount        DuoPayAccount?
@@ -52,6 +52,9 @@ model User {
   supportTickets       SupportTicket[]
   ticketReplies        TicketReply[]           @relation("TicketReplyAuthor")
   wallet               Wallet?
+  // ── ADDED: Transfer relations ─────────────────────────────────────────────
+  sentTransfers        Transfer[]              @relation("SentTransfers")
+  receivedTransfers    Transfer[]              @relation("ReceivedTransfers")
 
   @@index([email])
   @@index([phone])
@@ -197,26 +200,26 @@ model Delivery {
 }
 
 model Payment {
-  id             String        @id @default(dbgenerated("(gen_random_uuid())::text"))
-  userId         String
-  rideId         String?       @unique
-  deliveryId     String?       @unique
-  amount         Float
-  currency       String        @default("NGN")
-  method         PaymentMethod
-  status         PaymentStatus @default(PENDING)
-  transactionId  String?       @unique
-  receiptUrl     String?
-  platformFee    Float?
-  driverEarnings Float?
-  refundAmount   Float?
+  id               String            @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId           String
+  rideId           String?           @unique
+  deliveryId       String?           @unique
+  amount           Float
+  currency         String            @default("NGN")
+  method           PaymentMethod
+  status           PaymentStatus     @default(PENDING)
+  transactionId    String?           @unique
+  receiptUrl       String?
+  platformFee      Float?
+  driverEarnings   Float?
+  refundAmount     Float?
   commissionLedger CommissionLedger?
-  refundedAt     DateTime?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @default(now()) @updatedAt
-  delivery       Delivery?     @relation(fields: [deliveryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  ride           Ride?         @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  user           User          @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  refundedAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @default(now()) @updatedAt
+  delivery         Delivery?         @relation(fields: [deliveryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ride             Ride?             @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user             User              @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([userId])
   @@index([status])
@@ -287,6 +290,26 @@ model Payout {
 
   @@index([userId])
   @@index([status])
+}
+
+model Transfer {
+  id          String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  reference   String   @unique
+  senderId    String
+  recipientId String
+  amount      Float
+  note        String?
+  status      String   @default("PENDING")   // PENDING | COMPLETED | FAILED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  sender    User @relation("SentTransfers",     fields: [senderId],    references: [id], onDelete: NoAction, onUpdate: NoAction)
+  recipient User @relation("ReceivedTransfers", fields: [recipientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model AdminProfile {
@@ -426,33 +449,22 @@ model AppFeedback {
 }
 
 model CommissionLedger {
-  id               String      @id @default(uuid())
-
-  // Link to the payment that generated this commission
-  paymentId        String      @unique
-  payment          Payment     @relation(fields: [paymentId], references: [id])
-
-  // Service context
-  serviceType      String      // 'RIDE' | 'DELIVERY'
-  rideId           String?     // set when serviceType = RIDE
-  deliveryId       String?     // set when serviceType = DELIVERY
-
-  // Earning user (driver / partner)
+  id               String   @id @default(uuid())
+  paymentId        String   @unique
+  payment          Payment  @relation(fields: [paymentId], references: [id])
+  serviceType      String
+  rideId           String?
+  deliveryId       String?
   earnerUserId     String
-  earnerUser       User        @relation("CommissionEarner", fields: [earnerUserId], references: [id])
-
-  // Fare breakdown — all in NGN
-  grossAmount      Float       // total charged to customer (actualFare / actualFee)
-  bookingFee       Float       @default(0)   // flat booking fee deducted first
-  commissionRate   Float       // decimal e.g. 0.20 = 20%
-  commissionAmount Float       // actual NGN earned by platform
-  earnerAmount     Float       // actual NGN kept by driver/partner (driverEarnings)
-
-  // Surge info
-  surgeMultiplier  Float       @default(1.0)
-
-  currency         String      @default("NGN")
-  createdAt        DateTime    @default(now())
+  earnerUser       User     @relation("CommissionEarner", fields: [earnerUserId], references: [id])
+  grossAmount      Float
+  bookingFee       Float    @default(0)
+  commissionRate   Float
+  commissionAmount Float
+  earnerAmount     Float
+  surgeMultiplier  Float    @default(1.0)
+  currency         String   @default("NGN")
+  createdAt        DateTime @default(now())
 
   @@index([serviceType])
   @@index([earnerUserId])

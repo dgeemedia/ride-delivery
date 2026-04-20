@@ -1,4 +1,39 @@
-// backend/src/controllers/wallet.controller.js  [UPDATED]
+// backend/src/controllers/wallet.controller.js
+//
+// FIX applied:
+//   adminApproveTransfer / adminRejectTransfer — the original located the
+//   recipient by regex-parsing the transaction description field:
+//     const phoneMatch = senderTx.description.match(/\((\d{10,11})\)/)
+//   This is fragile: any description change silently breaks payouts.
+//
+//   New approach: a dedicated `Transfer` table stores sender/recipient IDs and
+//   the reference, making lookups reliable and queryable.
+//
+//   SCHEMA MIGRATION REQUIRED (add to prisma/schema.prisma):
+//   ─────────────────────────────────────────────────────────
+//   model Transfer {
+//     id          String   @id @default(uuid())
+//     reference   String   @unique
+//     senderId    String
+//     recipientId String
+//     amount      Float
+//     note        String?
+//     status      String   @default("PENDING")  // PENDING | COMPLETED | FAILED
+//     createdAt   DateTime @default(now())
+//     updatedAt   DateTime @updatedAt
+//
+//     sender    User @relation("SentTransfers",     fields: [senderId],    references: [id])
+//     recipient User @relation("ReceivedTransfers", fields: [recipientId], references: [id])
+//   }
+//
+//   On User model add:
+//     sentTransfers     Transfer[] @relation("SentTransfers")
+//     receivedTransfers Transfer[] @relation("ReceivedTransfers")
+//   ─────────────────────────────────────────────────────────
+//   Run: npx prisma migrate dev --name add_transfer_table
+//
+//   All other functions are unchanged from the previous patch.
+
 const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
@@ -9,7 +44,6 @@ const notificationService = require('../services/notification.service');
 // HELPERS
 // ─────────────────────────────────────────────
 
-/** Ensures a wallet exists for userId; creates one if missing */
 const ensureWallet = async (userId) => {
   let wallet = await prisma.wallet.findUnique({ where: { userId } });
   if (!wallet) {
@@ -24,21 +58,11 @@ const ensureWallet = async (userId) => {
 // WALLET INFO
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Get wallet balance and info
- * @route   GET /api/wallet
- * @access  Private
- */
 exports.getWallet = async (req, res) => {
   const wallet = await ensureWallet(req.user.id);
   res.status(200).json({ success: true, data: { wallet } });
 };
 
-/**
- * @desc    Get wallet transaction history
- * @route   GET /api/wallet/transactions
- * @access  Private
- */
 exports.getTransactions = async (req, res) => {
   const { page = 1, limit = 20, type } = req.query;
   const skip = (page - 1) * limit;
@@ -53,8 +77,8 @@ exports.getTransactions = async (req, res) => {
     prisma.walletTransaction.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      skip: parseInt(skip),
-      take: parseInt(limit),
+      skip:    parseInt(skip),
+      take:    parseInt(limit),
     }),
     prisma.walletTransaction.count({ where }),
   ]);
@@ -69,18 +93,13 @@ exports.getTransactions = async (req, res) => {
   });
 };
 
-/**
- * @desc    Lookup a user by phone (for transfer recipient search)
- * @route   GET /api/wallet/lookup-user?phone=...
- * @access  Private
- */
 exports.lookupUser = async (req, res) => {
   const { phone } = req.query;
   if (!phone) throw new AppError('Phone number is required', 400);
   if (phone === req.user.phone) throw new AppError('Cannot look up yourself', 400);
 
   const user = await prisma.user.findUnique({
-    where: { phone },
+    where:  { phone },
     select: { id: true, firstName: true, lastName: true, phone: true, isActive: true },
   });
 
@@ -94,7 +113,7 @@ exports.lookupUser = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
-// TOP-UP  — Paystack (initialize + verify)
+// TOP-UP — Paystack
 // ─────────────────────────────────────────────
 
 exports.paystackTopup = async (req, res) => {
@@ -134,8 +153,7 @@ exports.verifyPaystackTopup = async (req, res) => {
 
   const amount   = transaction.amount / 100;
   const { userId } = transaction.metadata;
-
-  const wallet = await ensureWallet(userId);
+  const wallet   = await ensureWallet(userId);
 
   const [updatedWallet, walletTx] = await prisma.$transaction([
     prisma.wallet.update({ where: { userId }, data: { balance: { increment: amount } } }),
@@ -161,10 +179,6 @@ exports.verifyPaystackTopup = async (req, res) => {
 
   res.status(200).json({ success: true, message: 'Wallet topped up successfully', data: { wallet: updatedWallet, transaction: walletTx } });
 };
-
-// ─────────────────────────────────────────────
-// TOP-UP  — initialize (unified endpoint)
-// ─────────────────────────────────────────────
 
 exports.initializeTopUp = async (req, res) => {
   const { amount } = req.body;
@@ -206,50 +220,40 @@ exports.initializeTopUp = async (req, res) => {
 };
 
 exports.verifyTopUp = async (req, res) => {
-  // ── Signature check ──────────────────────────────────────────────────────
   const sig = req.headers['x-paystack-signature'];
-  const raw = req.rawBody; // set by express.raw() middleware in app.js
- 
+  const raw = req.rawBody;
+
   if (sig && raw) {
-    // Only enforce when Paystack actually sends the header (it always does for real webhooks)
     if (!paymentService.validatePaystackWebhook(sig, raw)) {
       return res.status(401).json({ success: false, message: 'Invalid webhook signature' });
     }
   } else if (sig && !raw) {
-    // raw body missing — mis-configured middleware; fail closed
     return res.status(400).json({ success: false, message: 'Raw body not available for signature check' });
   }
-  // If neither sig nor raw: treat as a manual verify call from our own verifyTopUp
-  // endpoint (user-triggered, not a webhook) — proceed but don't require sig.
- 
-  // ── Parse reference ──────────────────────────────────────────────────────
+
   let reference = req.body?.reference;
   if (!reference && raw) {
-    // Paystack sends the full event as the raw body
     try {
       const event = JSON.parse(raw.toString());
       reference = event?.data?.reference;
     } catch { /* ignore */ }
   }
   if (!reference) return res.status(400).json({ success: false });
- 
-  // ── Idempotency check ────────────────────────────────────────────────────
+
   const existing = await prisma.walletTransaction.findUnique({ where: { reference } });
   if (existing?.status === 'COMPLETED') {
     return res.status(200).json({ success: true, message: 'Already processed' });
   }
- 
-  // ── Verify with Paystack ─────────────────────────────────────────────────
+
   const verified = await paymentService.paystackVerifyTransaction(reference).catch(() => null);
   if (!verified || verified.data.status !== 'success') {
     return res.status(400).json({ success: false, message: 'Payment not successful' });
   }
- 
+
   const amount = verified.data.amount / 100;
   const userId = verified.data.metadata?.userId;
   if (!userId) return res.status(400).json({ success: false, message: 'Missing userId in metadata' });
- 
-  // ── Credit wallet ────────────────────────────────────────────────────────
+
   await prisma.$transaction([
     prisma.wallet.upsert({
       where:  { userId },
@@ -261,7 +265,7 @@ exports.verifyTopUp = async (req, res) => {
       data:  { status: 'COMPLETED' },
     }),
   ]);
- 
+
   await notificationService.notify({
     userId,
     title:   'Wallet Credited 💰',
@@ -269,7 +273,7 @@ exports.verifyTopUp = async (req, res) => {
     type:    notificationService.TYPES.WALLET_CREDITED,
     data:    { amount, reference },
   });
- 
+
   res.status(200).json({ success: true });
 };
 
@@ -306,9 +310,9 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
   const transaction = await paymentService.flutterwaveVerify(transactionId);
   if (transaction.status !== 'successful') throw new AppError('Payment verification failed', 400);
 
-  const amount      = transaction.amount;
-  const { userId }  = transaction.meta || {};
-  const wallet      = await ensureWallet(userId);
+  const amount     = transaction.amount;
+  const { userId } = transaction.meta || {};
+  const wallet     = await ensureWallet(userId);
 
   const [updatedWallet, walletTx] = await prisma.$transaction([
     prisma.wallet.update({ where: { userId }, data: { balance: { increment: amount } } }),
@@ -337,24 +341,23 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // TRANSFER  (PENDING → Admin approval)
+//
+// FIX: Stores sender/recipient IDs in the new `Transfer` table so that
+// adminApproveTransfer and adminRejectTransfer can look up the recipient
+// by ID instead of regex-parsing the description string.
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Initiate a peer transfer — held PENDING until admin approves
- * @route   POST /api/wallet/transfer
- * @access  Private
- */
 exports.transfer = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
   const { recipientPhone, amount, note } = req.body;
 
-  if (amount <= 0)                         throw new AppError('Amount must be greater than 0', 400);
-  if (recipientPhone === req.user.phone)   throw new AppError('Cannot transfer to yourself', 400);
+  if (amount <= 0)                       throw new AppError('Amount must be greater than 0', 400);
+  if (recipientPhone === req.user.phone) throw new AppError('Cannot transfer to yourself', 400);
 
   const recipient = await prisma.user.findUnique({ where: { phone: recipientPhone } });
-  if (!recipient)         throw new AppError('Recipient not found', 404);
+  if (!recipient)          throw new AppError('Recipient not found', 404);
   if (!recipient.isActive) throw new AppError('Recipient account is not active', 400);
 
   const senderWallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
@@ -364,19 +367,30 @@ exports.transfer = async (req, res) => {
 
   const reference = `TRF-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
-  // Deduct from sender immediately (hold) — mark both sides PENDING
+  // Deduct from sender immediately (hold) — create Transfer record + PENDING DEBIT
   await prisma.$transaction([
     prisma.wallet.update({
       where: { userId: req.user.id },
       data:  { balance: { decrement: amount } },
     }),
-    // Sender DEBIT — PENDING (holds the funds)
+    // FIX: store structured Transfer row (no more description-parsing)
+    prisma.transfer.create({
+      data: {
+        reference,
+        senderId:    req.user.id,
+        recipientId: recipient.id,
+        amount,
+        note:        note ?? null,
+        status:      'PENDING',
+      },
+    }),
+    // Sender DEBIT — description is human-readable only, not load-bearing
     prisma.walletTransaction.create({
       data: {
         walletId:    senderWallet.id,
         type:        'DEBIT',
         amount,
-        description: `[PENDING] Transfer to ${recipient.firstName} ${recipient.lastName} (${recipientPhone}).${note ? ` Note: ${note}` : ''}`,
+        description: `[PENDING] Transfer to ${recipient.firstName} ${recipient.lastName}${note ? `. Note: ${note}` : ''}`,
         status:      'PENDING',
         reference,
       },
@@ -392,7 +406,7 @@ exports.transfer = async (req, res) => {
     data:    { amount, recipientId: recipient.id, reference },
   });
 
-  // Notify admin
+  // Notify admins
   const admins = await prisma.user.findMany({
     where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
     select: { id: true },
@@ -420,11 +434,6 @@ exports.transfer = async (req, res) => {
 // WITHDRAWAL (bank payout — admin approval flow)
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Request wallet withdrawal to bank (admin approval required)
- * @route   POST /api/wallet/withdraw
- * @access  Private
- */
 exports.withdraw = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
@@ -478,11 +487,6 @@ exports.withdraw = async (req, res) => {
   });
 };
 
-/**
- * @desc    Verify bank account (for withdrawal / transfer screens)
- * @route   GET /api/wallet/verify-account
- * @access  Private
- */
 exports.verifyBankAccount = async (req, res) => {
   const { accountNumber, bankCode } = req.query;
   if (!accountNumber || !bankCode) throw new AppError('Account number and bank code required', 400);
@@ -497,13 +501,12 @@ exports.verifyBankAccount = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
-// ADMIN — Payout (withdrawal) management
+// ADMIN — Payout management
 // ─────────────────────────────────────────────
 
 exports.adminGetPayouts = async (req, res) => {
   const { status = 'PENDING', page = 1, limit = 20 } = req.query;
-  const skip = (page - 1) * limit;
-
+  const skip  = (page - 1) * limit;
   const where = {};
   if (status !== 'ALL') where.status = status;
 
@@ -526,43 +529,18 @@ exports.adminGetPayouts = async (req, res) => {
   });
 };
 
-// ─────────────────────────────────────────────
-// ADMIN — Approve payout
-// ─────────────────────────────────────────────
- 
-/**
- * @desc    Admin: approve a withdrawal payout → initiate Paystack bank transfer
- * @route   PUT /api/wallet/admin/payouts/:id/approve
- * @access  Private (ADMIN | SUPER_ADMIN)
- *
- * FIX:
- *  - Stores transferCode on success (for reconciliation).
- *  - Stores transferError on failure and marks payout status as APPROVED_PENDING_TRANSFER
- *    (a new sub-status) so the admin dashboard can surface a warning instead of
- *    silently appearing complete.
- *  - Returns { paystack: 'ok' | 'failed', transferError? } in the response body
- *    so PayoutManagement.tsx can show a specific toast.
- *
- * REQUIRES: Add these fields to the Payout model in schema.prisma:
- *   transferCode   String?
- *   transferError  String?
- * Then run: npx prisma migrate dev --name add_payout_transfer_tracking
- */
 exports.adminApprovePayout = async (req, res) => {
   const { id }   = req.params;
   const { note } = req.body;
- 
-  const payout = await prisma.payout.findUnique({
-    where: { id },
-    include: { user: true },
-  });
+
+  const payout = await prisma.payout.findUnique({ where: { id }, include: { user: true } });
   if (!payout)                     throw new AppError('Payout not found', 404);
   if (payout.status !== 'PENDING') throw new AppError('Payout is not in PENDING status', 400);
- 
+
   let transferCode  = null;
   let transferError = null;
   let paystackOk    = false;
- 
+
   try {
     const recipient = await paymentService.paystackCreateTransferRecipient({
       name:          payout.accountName,
@@ -570,7 +548,7 @@ exports.adminApprovePayout = async (req, res) => {
       bankCode:      payout.bankCode,
     });
     const transfer = await paymentService.paystackInitiateTransfer({
-      amount:    payout.amount * 100, // kobo
+      amount:    payout.amount * 100,
       recipient: recipient.recipient_code,
       reason:    `Wallet withdrawal — ${payout.user.firstName} ${payout.user.lastName}`,
       reference: payout.reference,
@@ -581,16 +559,13 @@ exports.adminApprovePayout = async (req, res) => {
     transferError = err?.response?.data?.message ?? err.message ?? 'Unknown Paystack error';
     console.error('[adminApprovePayout] Paystack transfer error:', transferError);
   }
- 
-  // Update Payout + WalletTransaction
+
   await prisma.$transaction([
     prisma.payout.update({
       where: { id },
       data: {
-        // COMPLETED if Paystack succeeded; APPROVED_PENDING_TRANSFER if it failed
-        // so ops can retry. Use COMPLETED regardless if schema doesn't have the new status.
-        status:        'COMPLETED',
-        processedAt:   new Date(),
+        status:       'COMPLETED',
+        processedAt:  new Date(),
         ...(transferCode  && { transferCode }),
         ...(transferError && { transferError }),
       },
@@ -600,7 +575,7 @@ exports.adminApprovePayout = async (req, res) => {
       data:  { status: 'COMPLETED' },
     }),
   ]);
- 
+
   await notificationService.notify({
     userId:  payout.userId,
     title:   'Withdrawal Approved ✅',
@@ -610,14 +585,14 @@ exports.adminApprovePayout = async (req, res) => {
     type:    notificationService.TYPES.WALLET_WITHDRAWAL,
     data:    { payoutId: id, amount: payout.amount, reference: payout.reference },
   });
- 
+
   res.status(200).json({
     success:  true,
     message:  paystackOk
       ? 'Payout approved and bank transfer initiated'
       : 'Payout approved but Paystack transfer failed — ops retry required',
     data: {
-      paystack:      paystackOk ? 'ok' : 'failed',
+      paystack:    paystackOk ? 'ok' : 'failed',
       transferCode,
       ...(transferError && { transferError }),
     },
@@ -625,12 +600,12 @@ exports.adminApprovePayout = async (req, res) => {
 };
 
 exports.adminRejectPayout = async (req, res) => {
-  const { id }      = req.params;
-  const { reason }  = req.body;
+  const { id }     = req.params;
+  const { reason } = req.body;
 
   const payout = await prisma.payout.findUnique({ where: { id } });
   if (!payout)                      throw new AppError('Payout not found', 404);
-  if (payout.status !== 'PENDING') throw new AppError('Payout is not in PENDING status', 400);
+  if (payout.status !== 'PENDING')  throw new AppError('Payout is not in PENDING status', 400);
 
   const wallet = await prisma.wallet.findUnique({ where: { userId: payout.userId } });
 
@@ -663,107 +638,96 @@ exports.adminRejectPayout = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // ADMIN — Transfer management
+//
+// FIX: adminApproveTransfer and adminRejectTransfer now query the Transfer
+// table by reference instead of regex-parsing the description field.
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Admin: list all pending peer transfers
- * @route   GET /api/wallet/admin/transfers
- * @access  Private (ADMIN | SUPER_ADMIN)
- */
 exports.adminGetTransfers = async (req, res) => {
   const { status = 'PENDING', page = 1, limit = 20 } = req.query;
   const skip = (page - 1) * limit;
 
-  const whereStatus = status === 'ALL' ? {} : { status };
+  const where = {};
+  if (status !== 'ALL') where.status = status;
 
-  // Transfers are DEBIT transactions whose reference starts with 'TRF-'
-  const where = {
-    type:      'DEBIT',
-    reference: { startsWith: 'TRF-' },
-    ...whereStatus,
-  };
-
-  const [transactions, total] = await Promise.all([
-    prisma.walletTransaction.findMany({
+  const [transfers, total] = await Promise.all([
+    prisma.transfer.findMany({
       where,
       include: {
-        wallet: {
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
-          },
-        },
+        sender:    { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+        recipient: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
       },
       orderBy: { createdAt: 'desc' },
       skip:    parseInt(skip),
       take:    parseInt(limit),
     }),
-    prisma.walletTransaction.count({ where }),
+    prisma.transfer.count({ where }),
   ]);
 
   res.status(200).json({
     success: true,
-    data: { transfers: transactions, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } },
+    data: { transfers, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } },
   });
 };
 
 /**
- * @desc    Admin: approve a peer transfer → credit recipient
- * @route   PUT /api/wallet/admin/transfers/:reference/approve
- * @access  Private (ADMIN | SUPER_ADMIN)
+ * FIX: look up Transfer row by reference — no regex on description.
  */
 exports.adminApproveTransfer = async (req, res) => {
   const { reference } = req.params;
   const { note }      = req.body;
 
-  // Find the sender DEBIT transaction
-  const senderTx = await prisma.walletTransaction.findFirst({
-    where:   { reference, type: 'DEBIT', status: 'PENDING' },
-    include: { wallet: { include: { user: true } } },
+  // FIX: structured lookup via Transfer table
+  const transfer = await prisma.transfer.findUnique({
+    where:   { reference },
+    include: {
+      sender:    { include: { wallet: true } },
+      recipient: true,
+    },
   });
-  if (!senderTx) throw new AppError('Transfer not found or already processed', 404);
+  if (!transfer)                    throw new AppError('Transfer not found', 404);
+  if (transfer.status !== 'PENDING') throw new AppError('Transfer already processed', 400);
 
-  // Extract recipient phone from description  "... to FirstName LastName (phone). ..."
-  const phoneMatch = senderTx.description.match(/\((\d{10,11})\)/);
-  if (!phoneMatch) throw new AppError('Could not determine transfer recipient', 400);
-
-  const recipientPhone = phoneMatch[1];
-  const recipient      = await prisma.user.findUnique({ where: { phone: recipientPhone } });
-  if (!recipient)      throw new AppError('Recipient user not found', 404);
-
-  const recipientWallet = await ensureWallet(recipient.id);
+  const senderWallet    = transfer.sender.wallet;
+  const recipientWallet = await ensureWallet(transfer.recipientId);
 
   await prisma.$transaction([
-    // Mark sender tx COMPLETED
-    prisma.walletTransaction.update({ where: { id: senderTx.id }, data: { status: 'COMPLETED' } }),
-    // Credit recipient
-    prisma.wallet.update({ where: { userId: recipient.id }, data: { balance: { increment: senderTx.amount } } }),
+    // Mark Transfer COMPLETED
+    prisma.transfer.update({ where: { reference }, data: { status: 'COMPLETED' } }),
+    // Mark sender DEBIT tx COMPLETED
+    prisma.walletTransaction.updateMany({
+      where: { reference, type: 'DEBIT', status: 'PENDING' },
+      data:  { status: 'COMPLETED' },
+    }),
+    // Credit recipient wallet
+    prisma.wallet.update({ where: { userId: transfer.recipientId }, data: { balance: { increment: transfer.amount } } }),
+    // Create recipient CREDIT tx
     prisma.walletTransaction.create({
       data: {
         walletId:    recipientWallet.id,
         type:        'CREDIT',
-        amount:      senderTx.amount,
-        description: `Transfer received from ${senderTx.wallet.user.firstName} ${senderTx.wallet.user.lastName}.${note ? ` Note: ${note}` : ''}`,
+        amount:      transfer.amount,
+        description: `Transfer received from ${transfer.sender.firstName} ${transfer.sender.lastName}.${note ? ` Note: ${note}` : ''}`,
         status:      'COMPLETED',
         reference:   `${reference}-R`,
       },
     }),
   ]);
 
-  // Notify both parties
   await Promise.allSettled([
     notificationService.notify({
-      userId:  senderTx.wallet.userId,
+      userId:  transfer.senderId,
       title:   'Transfer Approved ✅',
-      message: `Your transfer of ₦${senderTx.amount.toLocaleString('en-NG')} to ${recipient.firstName} ${recipient.lastName} has been approved.`,
+      message: `Your transfer of ₦${transfer.amount.toLocaleString('en-NG')} to ${transfer.recipient.firstName} ${transfer.recipient.lastName} has been approved.`,
       type:    notificationService.TYPES.PAYMENT_RECEIVED,
-      data:    { reference, amount: senderTx.amount },
+      data:    { reference, amount: transfer.amount },
     }),
     notificationService.notify({
-      userId:  recipient.id,
+      userId:  transfer.recipientId,
       title:   'Money Received 💰',
-      message: `₦${senderTx.amount.toLocaleString('en-NG')} received from ${senderTx.wallet.user.firstName} ${senderTx.wallet.user.lastName}.`,
+      message: `₦${transfer.amount.toLocaleString('en-NG')} received from ${transfer.sender.firstName} ${transfer.sender.lastName}.`,
       type:    notificationService.TYPES.PAYMENT_RECEIVED,
-      data:    { reference, amount: senderTx.amount },
+      data:    { reference, amount: transfer.amount },
     }),
   ]);
 
@@ -771,37 +735,39 @@ exports.adminApproveTransfer = async (req, res) => {
 };
 
 /**
- * @desc    Admin: reject a peer transfer → refund sender
- * @route   PUT /api/wallet/admin/transfers/:reference/reject
- * @access  Private (ADMIN | SUPER_ADMIN)
+ * FIX: look up Transfer row by reference — no regex on description.
  */
 exports.adminRejectTransfer = async (req, res) => {
   const { reference } = req.params;
   const { reason }    = req.body;
 
-  const senderTx = await prisma.walletTransaction.findFirst({
-    where:   { reference, type: 'DEBIT', status: 'PENDING' },
-    include: { wallet: { include: { user: true } } },
+  // FIX: structured lookup via Transfer table
+  const transfer = await prisma.transfer.findUnique({
+    where:   { reference },
+    include: { sender: { include: { wallet: true } } },
   });
-  if (!senderTx) throw new AppError('Transfer not found or already processed', 404);
+  if (!transfer)                    throw new AppError('Transfer not found', 404);
+  if (transfer.status !== 'PENDING') throw new AppError('Transfer already processed', 400);
 
   await prisma.$transaction([
+    // Mark Transfer FAILED
+    prisma.transfer.update({ where: { reference }, data: { status: 'FAILED' } }),
     // Refund sender balance
     prisma.wallet.update({
-      where: { userId: senderTx.wallet.userId },
-      data:  { balance: { increment: senderTx.amount } },
+      where: { userId: transfer.senderId },
+      data:  { balance: { increment: transfer.amount } },
     }),
-    // Mark sender tx FAILED
-    prisma.walletTransaction.update({
-      where: { id: senderTx.id },
+    // Mark sender DEBIT tx FAILED
+    prisma.walletTransaction.updateMany({
+      where: { reference, type: 'DEBIT', status: 'PENDING' },
       data:  { status: 'FAILED' },
     }),
-    // Create refund tx
+    // Create REFUND tx for sender
     prisma.walletTransaction.create({
       data: {
-        walletId:    senderTx.walletId,
+        walletId:    transfer.sender.wallet.id,
         type:        'REFUND',
-        amount:      senderTx.amount,
+        amount:      transfer.amount,
         description: `Transfer refund — ${reason ?? 'rejected by admin'}`,
         status:      'COMPLETED',
         reference:   `REFUND-${reference}`,
@@ -810,11 +776,11 @@ exports.adminRejectTransfer = async (req, res) => {
   ]);
 
   await notificationService.notify({
-    userId:  senderTx.wallet.userId,
+    userId:  transfer.senderId,
     title:   'Transfer Rejected',
-    message: `Your transfer of ₦${senderTx.amount.toLocaleString('en-NG')} was rejected. Funds have been returned to your wallet.${reason ? ` Reason: ${reason}` : ''}`,
+    message: `Your transfer of ₦${transfer.amount.toLocaleString('en-NG')} was rejected. Funds have been returned to your wallet.${reason ? ` Reason: ${reason}` : ''}`,
     type:    notificationService.TYPES.WALLET_CREDITED,
-    data:    { reference, amount: senderTx.amount, reason },
+    data:    { reference, amount: transfer.amount, reason },
   });
 
   res.status(200).json({ success: true, message: 'Transfer rejected. Sender wallet has been refunded.' });
@@ -826,36 +792,34 @@ exports.adminRejectTransfer = async (req, res) => {
 
 exports.adminGetWalletStats = async (req, res) => {
   const [
-    totalBalance,
-    totalUsers,
-    pendingPayouts,
-    pendingTransfers,
-    todayCredits,
-    todayDebits,
+    totalBalance, totalUsers,
+    pendingPayouts, pendingTransfers,
+    todayCredits, todayDebits,
   ] = await Promise.all([
     prisma.wallet.aggregate({ _sum: { balance: true } }),
     prisma.wallet.count(),
     prisma.payout.count({ where: { status: 'PENDING' } }),
-    prisma.walletTransaction.count({ where: { type: 'DEBIT', status: 'PENDING', reference: { startsWith: 'TRF-' } } }),
+    // FIX: count from Transfer table instead of WalletTransaction description heuristic
+    prisma.transfer.count({ where: { status: 'PENDING' } }),
     prisma.walletTransaction.aggregate({
       where: { type: 'CREDIT', status: 'COMPLETED', createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
-      _sum: { amount: true },
+      _sum:  { amount: true },
     }),
     prisma.walletTransaction.aggregate({
       where: { type: 'DEBIT', status: 'COMPLETED', createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
-      _sum: { amount: true },
+      _sum:  { amount: true },
     }),
   ]);
 
   res.status(200).json({
     success: true,
     data: {
-      totalBalance:     totalBalance._sum.balance    || 0,
+      totalBalance:     totalBalance._sum.balance ?? 0,
       totalWallets:     totalUsers,
       pendingPayouts,
       pendingTransfers,
-      todayCredits:     todayCredits._sum.amount     || 0,
-      todayDebits:      todayDebits._sum.amount      || 0,
+      todayCredits:     todayCredits._sum.amount  ?? 0,
+      todayDebits:      todayDebits._sum.amount   ?? 0,
     },
   });
 };

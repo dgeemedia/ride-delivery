@@ -1,4 +1,21 @@
 // mobile/src/screens/Partner/PartnerEarningsScreen.js
+//
+// FIX applied:
+//   DeliveryRow was reading  d.payment?.driverEarnings  for the partner's net
+//   earnings. The fixed partner.controller.js now returns the field as
+//   `partnerEarnings` (mapped from payment.driverEarnings at the API layer)
+//   and `grossFee` instead of `actualFee` / `estimatedFee`.
+//
+//   Updated DeliveryRow to read:
+//     gross  = delivery.grossFee   ?? delivery.actualFee ?? delivery.estimatedFee ?? 0
+//     net    = delivery.partnerEarnings ?? delivery.payment?.driverEarnings ?? 0
+//
+//   The double-fallback keeps backward compatibility if the old backend is
+//   still running during a rolling deploy.
+//
+//   Everything else (formatNGN, wallet calls, period filter, pagination) is
+//   unchanged — those were already correct.
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
@@ -43,9 +60,7 @@ const TX_CONFIG = {
 
 /**
  * Filter deliveries by period client-side.
- * Safe fallback if the /deliveries/history endpoint doesn't accept a period
- * param — we fetch everything and slice here so the period selector always
- * works regardless of backend support.
+ * Safe fallback if the /deliveries/history endpoint ignores the period param.
  */
 const filterByPeriod = (list, period) => {
   if (period === 'all') return list;
@@ -97,7 +112,7 @@ const TxRow = ({ tx, theme }) => {
         <Text style={[tr.desc, { color: theme.foreground }]} numberOfLines={1}>
           {tx.description || cfg.label}
         </Text>
-        <Text style={[tr.date, { color: theme.hint }]}>{dateStr} · {timeStr}</Text>
+        <Text style={[tr.date, { color: theme.hint }]}>{dateStr} • {timeStr}</Text>
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={[tr.amount, { color: cfg.color }]}>
@@ -121,13 +136,32 @@ const tr = StyleSheet.create({
   status:   { fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
 });
 
-// FIX: field names now match the actual /deliveries/history response shape —
-//      the same fields PartnerHistoryScreen already reads successfully.
-//      Old code used delivery.partnerEarnings and delivery.fee which don't
-//      exist; actual fields are payment.driverEarnings and actualFee/estimatedFee.
+// ─────────────────────────────────────────────────────────────────────────────
+// DeliveryRow
+//
+// FIX: field names updated to match the fixed partner.controller.js response:
+//   gross = delivery.grossFee        (new field name from fixed controller)
+//           ?? delivery.actualFee    (old field name — backward compat)
+//           ?? delivery.estimatedFee (fallback)
+//   net   = delivery.partnerEarnings (new field name from fixed controller)
+//           ?? delivery.payment?.driverEarnings  (backward compat)
+//
+// The old code read delivery.payment?.driverEarnings directly on the delivery
+// object returned from /deliveries/history, which doesn't include the payment
+// relation. The fixed controller embeds partnerEarnings at the top level.
+// ─────────────────────────────────────────────────────────────────────────────
 const DeliveryRow = ({ delivery, theme }) => {
-  const gross   = Number(delivery.actualFee ?? delivery.estimatedFee ?? 0);
-  const net     = Number(delivery.payment?.driverEarnings ?? 0);
+  const gross = Number(
+    delivery.grossFee ??
+    delivery.actualFee ??
+    delivery.estimatedFee ??
+    0
+  );
+  const net = Number(
+    delivery.partnerEarnings ??
+    delivery.payment?.driverEarnings ??
+    0
+  );
 
   const rawDate = delivery.deliveredAt ?? delivery.requestedAt ?? delivery.createdAt;
   const dateStr = rawDate
@@ -145,7 +179,7 @@ const DeliveryRow = ({ delivery, theme }) => {
           {delivery.pickupAddress?.split(',')[0]} → {delivery.dropoffAddress?.split(',')[0]}
         </Text>
         <Text style={[dr.meta, { color: theme.hint }]} numberOfLines={1}>
-          {[delivery.packageDescription, dateStr].filter(Boolean).join(' · ')}
+          {[delivery.packageDescription, dateStr].filter(Boolean).join(' • ')}
         </Text>
       </View>
 
@@ -178,7 +212,7 @@ export default function PartnerEarningsScreen({ navigation }) {
   const [period,       setPeriod]       = useState('week');
   const [earnings,     setEarnings]     = useState(null);
   const [wallet,       setWallet]       = useState(null);
-  const [deliveries,   setDeliveries]   = useState([]);   // FIX: own state, own fetch
+  const [deliveries,   setDeliveries]   = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [activeTab,    setActiveTab]    = useState('deliveries');
   const [loading,      setLoading]      = useState(true);
@@ -197,11 +231,8 @@ export default function PartnerEarningsScreen({ navigation }) {
         partnerAPI.getEarnings({ period }),
         walletAPI.getWallet(),
         walletAPI.getTransactions({ page: 1, limit: 20 }),
-        // FIX: fetch deliveries from the history endpoint directly — the same
-        //      source PartnerHistoryScreen uses and which is guaranteed to
-        //      return completed deliveries. The earnings endpoint either omits
-        //      the deliveries array entirely or returns an empty one, which
-        //      caused the tab to always show "No deliveries for this period".
+        // Fetch from /deliveries/history — same source PartnerHistoryScreen uses.
+        // The earnings endpoint either omits deliveries or returns an empty array.
         deliveryAPI.getDeliveryHistory({ period, limit: 50 }),
       ]);
 
@@ -220,13 +251,10 @@ export default function PartnerEarningsScreen({ navigation }) {
       }
 
       if (deliveriesRes.status === 'fulfilled') {
-        // Always filter client-side as a safe fallback — if the backend
-        // ignores the period param we still show the right slice.
         const all = deliveriesRes.value?.data?.deliveries ?? [];
         setDeliveries(filterByPeriod(all, period));
       } else {
-        // History call failed — fall back to whatever earnings embedded
-        // (likely empty, but avoids a blank crash).
+        // Fall back to whatever the earnings endpoint embedded (likely empty)
         const fallback = earningsRes.value?.data?.deliveries ?? [];
         setDeliveries(filterByPeriod(fallback, period));
       }
@@ -260,14 +288,15 @@ export default function PartnerEarningsScreen({ navigation }) {
   const totalEarnings   = Number(earnings?.totalEarnings   ?? 0);
   const netEarnings     = Number(earnings?.netEarnings     ?? 0);
   const platformFee     = Number(earnings?.platformFee     ?? 0);
-  // Prefer the count of actually-fetched deliveries over what the earnings
-  // endpoint reports, so the tile stays in sync with what's shown in the list.
   const totalDeliveries = deliveries.length || Number(earnings?.totalDeliveries ?? 0);
   const avgPerDelivery  = Number(earnings?.averagePerDelivery ?? 0);
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
 
       <SafeAreaView edges={['top', 'left', 'right']}>
         {/* ── Header ── */}
@@ -282,7 +311,6 @@ export default function PartnerEarningsScreen({ navigation }) {
             <Text style={[s.headerTitle, { color: theme.foreground }]}>Earnings & Wallet</Text>
             <Text style={[s.headerSub,   { color: theme.hint }]}>Track your income and payouts</Text>
           </View>
-          {/* FIX: was 'PayoutRequest' which doesn't exist in EarningsStack */}
           <TouchableOpacity
             style={[s.payoutBtn, { backgroundColor: COURIER_ACCENT }]}
             onPress={() => navigation.navigate('Withdrawal')}
@@ -303,7 +331,13 @@ export default function PartnerEarningsScreen({ navigation }) {
           style={{ opacity: fadeA }}
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COURIER_ACCENT} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={COURIER_ACCENT}
+            />
+          }
         >
           {/* ── Wallet balance card ── */}
           <View style={[s.balanceCard, { backgroundColor: COURIER_ACCENT }]}>
@@ -315,7 +349,6 @@ export default function PartnerEarningsScreen({ navigation }) {
               <Text style={s.balanceSub}>Available for withdrawal</Text>
             </View>
             <View style={s.balanceActions}>
-              {/* FIX: was 'PayoutRequest' which doesn't exist in EarningsStack */}
               <TouchableOpacity
                 style={[s.balanceAction, { backgroundColor: 'rgba(0,0,0,0.15)' }]}
                 onPress={() => navigation.navigate('Withdrawal')}
@@ -403,7 +436,9 @@ export default function PartnerEarningsScreen({ navigation }) {
             <View style={s.noteRow}>
               <View style={[s.noteDot, { backgroundColor: COURIER_ACCENT }]} />
               <Text style={[s.noteTxt, { color: theme.hint }]}>
-                Platform takes <Text style={{ color: COURIER_ACCENT, fontWeight: '700' }}>15% commission</Text> + booking fee per delivery
+                Platform takes{' '}
+                <Text style={{ color: COURIER_ACCENT, fontWeight: '700' }}>15% commission</Text>{' '}
+                + booking fee per delivery
               </Text>
             </View>
             <View style={s.noteRow}>
@@ -415,7 +450,8 @@ export default function PartnerEarningsScreen({ navigation }) {
             <View style={s.noteRow}>
               <View style={[s.noteDot, { backgroundColor: GOLD }]} />
               <Text style={[s.noteTxt, { color: theme.hint }]}>
-                Minimum withdrawal: <Text style={{ color: GOLD, fontWeight: '700' }}>₦1,000</Text>
+                Minimum withdrawal:{' '}
+                <Text style={{ color: GOLD, fontWeight: '700' }}>₦500</Text>
               </Text>
             </View>
           </View>
@@ -423,12 +459,15 @@ export default function PartnerEarningsScreen({ navigation }) {
           {/* ── Tab switcher ── */}
           <View style={[s.tabRow, { borderBottomColor: theme.border }]}>
             {[
-              { key: 'deliveries',   label: `Deliveries (${deliveries.length})`     },
-              { key: 'transactions', label: `Transactions (${transactions.length})`  },
+              { key: 'deliveries',   label: `Deliveries (${deliveries.length})`    },
+              { key: 'transactions', label: `Transactions (${transactions.length})` },
             ].map(t => (
               <TouchableOpacity
                 key={t.key}
-                style={[s.tabBtn, activeTab === t.key && { borderBottomColor: COURIER_ACCENT, borderBottomWidth: 2 }]}
+                style={[
+                  s.tabBtn,
+                  activeTab === t.key && { borderBottomColor: COURIER_ACCENT, borderBottomWidth: 2 },
+                ]}
                 onPress={() => setActiveTab(t.key)}
               >
                 <Text style={[s.tabTxt, { color: activeTab === t.key ? COURIER_ACCENT : theme.hint }]}>

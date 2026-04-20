@@ -11,6 +11,7 @@ import { RideProvider }     from './src/context/RideContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import AppNavigator         from './src/navigation/AppNavigator';
 import ErrorBoundary        from './src/components/ErrorBoundary';
+import * as NavigationBar   from 'expo-navigation-bar';
 
 // Keep splash visible until we explicitly hide it
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -41,7 +42,14 @@ export default function App() {
   useEffect(() => {
     async function prepare() {
       try {
-        // Minimum splash hold — replace with real asset pre-loading if needed
+        
+          if (Platform.OS === 'android') {
+            await NavigationBar.setPositionAsync('absolute');
+            await NavigationBar.setBackgroundColorAsync('#00000000');
+            await NavigationBar.setButtonStyleAsync('dark');
+          }
+
+            // Minimum splash hold — replace with real asset pre-loading if needed
         await new Promise(resolve => setTimeout(resolve, 300));
       } catch (e) {
         console.warn('[App] prepare error:', e);
