@@ -1,7 +1,8 @@
-// mobile/src/services/api.js  [UPDATED]
+// mobile/src/services/api.js
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/constants';
+import { emitForceLogout } from './authEvents';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -9,11 +10,41 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// ── Request interceptor — attach auth token ───────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Returns a stable device ID, creating one on first call.
+ * Using a simple random string — no extra packages needed.
+ */
+const getOrCreateDeviceId = async () => {
+  try {
+    let id = await AsyncStorage.getItem('deviceId');
+    if (!id) {
+      id =
+        Date.now().toString(36) +
+        '-' +
+        Math.random().toString(36).substring(2, 10) +
+        '-' +
+        Math.random().toString(36).substring(2, 10);
+      await AsyncStorage.setItem('deviceId', id);
+    }
+    return id;
+  } catch {
+    // If storage fails, return a session-only ID (won't persist)
+    return 'fallback-' + Math.random().toString(36).substring(2);
+  }
+};
+
+// ── Request interceptor — attach auth token + device ID ───────────────────────
 api.interceptors.request.use(
   async (config) => {
-    const token = await AsyncStorage.getItem('authToken');
+    const [token, deviceId] = await Promise.all([
+      AsyncStorage.getItem('authToken'),
+      getOrCreateDeviceId(),
+    ]);
     if (token) config.headers.Authorization = `Bearer ${token}`;
+    // Device ID header — backend uses this to enforce single-device sessions
+    config.headers['X-Device-ID'] = deviceId;
     return config;
   },
   (error) => Promise.reject(error)
@@ -24,8 +55,13 @@ api.interceptors.response.use(
   (response) => response.data,
   async (error) => {
     if (error.response?.status === 401) {
-      await AsyncStorage.removeItem('authToken');
-      await AsyncStorage.removeItem('user');
+      // Clean up stored credentials
+      await AsyncStorage.multiRemove(['authToken', 'user']).catch(() => {});
+
+      // Signal AuthContext to clear React state and redirect to Login.
+      // Using an event bus avoids importing AuthContext here (circular dep).
+      const reason = error.response?.data?.code ?? 'session_expired';
+      emitForceLogout(reason);
     }
     return Promise.reject(error);
   }
@@ -132,27 +168,16 @@ export const notificationAPI = {
 // WALLET
 // ─────────────────────────────────────────────────────────────────────────────
 export const walletAPI = {
-  // ── Info ───────────────────────────────────────────────────────────────────
   getWallet:              ()       => api.get('/wallet'),
   getTransactions:        (params) => api.get('/wallet/transactions', { params }),
-
-  // ── User lookup (for TransferScreen recipient search) ─────────────────────
   lookupUser:             (phone)  => api.get('/wallet/lookup-user', { params: { phone } }),
-
-  // ── Top-up ─────────────────────────────────────────────────────────────────
   initializeTopUp:        (data)   => api.post('/wallet/topup/initialize', data),
   paystackTopup:          (data)   => api.post('/wallet/topup/paystack', data),
   verifyPaystackTopup:    (data)   => api.post('/wallet/topup/paystack/verify', data),
   flutterwaveTopup:       (data)   => api.post('/wallet/topup/flutterwave', data),
   verifyFlutterwaveTopup: (data)   => api.post('/wallet/topup/flutterwave/verify', data),
-
-  // ── Bank account verification ──────────────────────────────────────────────
   verifyBankAccount:      (params) => api.get('/wallet/verify-account', { params }),
-
-  // ── Peer transfer (PENDING → admin approval) ──────────────────────────────
   transfer:               (data)   => api.post('/wallet/transfer', data),
-
-  // ── Bank withdrawal (PENDING → admin approval) ────────────────────────────
   withdraw:               (data)   => api.post('/wallet/withdraw', data),
 };
 
@@ -160,29 +185,18 @@ export const walletAPI = {
 // PAYMENT
 // ─────────────────────────────────────────────────────────────────────────────
 export const paymentAPI = {
-  // Paystack
-  initializePaystack: (data)       => api.post('/payments/paystack/initialize', data),
-  verifyPaystack:     (data)       => api.post('/payments/paystack/verify', data),
-
-  // Flutterwave
-  initializeFlutterwave: (data)    => api.post('/payments/flutterwave/initialize', data),
-  verifyFlutterwave:  (data)       => api.post('/payments/flutterwave/verify', data),
-
-  // Pay for ride/delivery
-  payWithWallet:      (data)       => api.post('/payments/wallet', data),
-  payWithCash:        (data)       => api.post('/payments/cash', data),
-
-  // History & stats
-  getHistory:         (params)     => api.get('/payments/history', { params }),
-  getStats:           (params)     => api.get('/payments/stats', { params }),
-  getById:            (id)         => api.get(`/payments/${id}`),
-
-  // Refund
-  requestRefund:      (id, data)   => api.post(`/payments/${id}/refund`, data),
-
-  // Banks
-  listBanks:          ()           => api.get('/payments/banks'),
-  verifyBankAccount:  (data)       => api.post('/payments/verify-account', data),
+  initializePaystack:    (data)     => api.post('/payments/paystack/initialize', data),
+  verifyPaystack:        (data)     => api.post('/payments/paystack/verify', data),
+  initializeFlutterwave: (data)     => api.post('/payments/flutterwave/initialize', data),
+  verifyFlutterwave:     (data)     => api.post('/payments/flutterwave/verify', data),
+  payWithWallet:         (data)     => api.post('/payments/wallet', data),
+  payWithCash:           (data)     => api.post('/payments/cash', data),
+  getHistory:            (params)   => api.get('/payments/history', { params }),
+  getStats:              (params)   => api.get('/payments/stats', { params }),
+  getById:               (id)       => api.get(`/payments/${id}`),
+  requestRefund:         (id, data) => api.post(`/payments/${id}/refund`, data),
+  listBanks:             ()         => api.get('/payments/banks'),
+  verifyBankAccount:     (data)     => api.post('/payments/verify-account', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

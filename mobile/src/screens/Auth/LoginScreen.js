@@ -11,7 +11,7 @@ import { Ionicons }       from '@expo/vector-icons';
 import { useAuth }        from '../../context/AuthContext';
 import { useTheme }       from '../../context/ThemeContext';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 const LOGO = require('../../../assets/diakite_dark.png');
 
 const G = {
@@ -123,15 +123,7 @@ export default function LoginScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Back */}
-          <TouchableOpacity
-            style={[s.back, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={18} color={theme.foreground} />
-          </TouchableOpacity>
-
-          {/* Header */}
+          {/* Header — starts at the top, no back button above it */}
           <Animated.View style={[s.header, { opacity: hdrO, transform:[{ translateY: hdrY }] }]}>
             {/* Logo badge */}
             <View style={[s.logoBadge, {
@@ -207,17 +199,17 @@ export default function LoginScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  root: { flex:1 },
-  orb1: { position:'absolute', width:width*1.3, height:width*1.3, borderRadius:width*0.65, top:-width*0.8, alignSelf:'center', opacity:1 },
-  orb2: { position:'absolute', width:width*0.7, height:width*0.7, borderRadius:width*0.35, bottom:-width*0.2, left:-width*0.1, opacity:1 },
+  root:   { flex:1 },
+  orb1:   { position:'absolute', width:width*1.3, height:width*1.3, borderRadius:width*0.65, top:-width*0.8, alignSelf:'center' },
+  orb2:   { position:'absolute', width:width*0.7, height:width*0.7, borderRadius:width*0.35, bottom:-width*0.2, left:-width*0.1 },
   scroll: { paddingHorizontal:32, paddingBottom:60 },
 
-  back: {
-    marginTop: Platform.OS === 'ios' ? 58 : 42,
-    width:42, height:42, borderRadius:13, borderWidth:1,
-    justifyContent:'center', alignItems:'center', marginBottom:36,
+  // Header now sits at the top of the scroll with extra top padding
+  // to clear the status bar — no back button above it any more.
+  header: {
+    marginTop: Platform.OS === 'ios' ? 72 : 56,
+    marginBottom: 44,
   },
-  header: { marginBottom:44 },
 
   logoBadge: {
     width:74, height:74, borderRadius:20, borderWidth:1,
