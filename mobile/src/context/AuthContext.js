@@ -8,7 +8,6 @@ import socketService from '../services/socket';
 
 const AuthContext = createContext();
 
-// ── Stable device ID (reads same AsyncStorage key as api.js) ─────────────────
 const getOrCreateDeviceId = async () => {
   try {
     let id = await AsyncStorage.getItem('deviceId');
@@ -26,20 +25,15 @@ const getOrCreateDeviceId = async () => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user,           setUser]           = useState(null);
-  const [token,          setToken]          = useState(null);
-  const [loading,        setLoading]        = useState(true);
-
-  // ── Biometric lock ─────────────────────────────────────────────────────────
-  // true when the app has returned from background and needs biometric before
-  // revealing the main UI. The session (token + user) is still valid in memory.
+  const [user,            setUser]           = useState(null);
+  const [token,           setToken]          = useState(null);
+  const [loading,         setLoading]        = useState(true);
   const [biometricLocked, setBiometricLocked] = useState(false);
 
   const logoutRef = useRef(null);
 
   useEffect(() => { loadStoredAuth(); }, []);
 
-  // ── Force-logout from API 401 (device conflict / session expired) ──────────
   useEffect(() => {
     const unsubscribe = onForceLogout((reason) => {
       setToken(null);
@@ -73,11 +67,37 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
+  // biometricLogin
+  // Called from LoginScreen after on-device biometric passes.
+  // Uses the SecureStore token to call /auth/me and restore the full session
+  // by updating React state directly — no navigation tricks needed.
+  //
+  // Returns { success: true } or { success: false, message }
+  // ─────────────────────────────────────────────────────────────────────────
+  const biometricLogin = async (secureToken) => {
+    try {
+      // Temporarily write the token so the request interceptor can attach it
+      await AsyncStorage.setItem('authToken', secureToken);
+
+      const response = await authAPI.getCurrentUser();
+      const { user: u } = response.data;
+
+      // Session is valid — persist and update state
+      await _persistSession(u, secureToken);
+      return { success: true };
+    } catch (error) {
+      // Token expired or invalid — clean up so we don't keep a dead token
+      await AsyncStorage.multiRemove(['authToken', 'user']).catch(() => {});
+      const message =
+        error.response?.status === 401
+          ? 'Your session has expired. Please sign in with your password.'
+          : error.message || 'Biometric login failed.';
+      return { success: false, message };
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
   // login
-  // Returns:
-  //   { success: true }                                    — logged in
-  //   { success: true, requiresOtp, tempToken, ... }       — 2FA pending
-  //   { success: false, message }                          — error
   // ─────────────────────────────────────────────────────────────────────────
   const login = async (credentials) => {
     try {
@@ -85,7 +105,6 @@ export const AuthProvider = ({ children }) => {
       const response = await authAPI.login({ ...credentials, deviceId });
 
       if (response.requiresOtp) {
-        // 2FA gated — don't persist anything yet; hand back details to the caller
         return {
           success:       true,
           requiresOtp:   true,
@@ -125,7 +144,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // resendOtp — get a fresh OTP within an active 2FA session
+  // resendOtp
   // ─────────────────────────────────────────────────────────────────────────
   const resendOtp = async (tempToken) => {
     try {
@@ -184,7 +203,7 @@ export const AuthProvider = ({ children }) => {
   logoutRef.current = logout;
 
   // ─────────────────────────────────────────────────────────────────────────
-  // _persistSession — internal: write to storage + set React state
+  // _persistSession — write storage + update all React state in one shot
   // ─────────────────────────────────────────────────────────────────────────
   const _persistSession = async (u, t) => {
     await AsyncStorage.setItem('authToken', t);
@@ -200,6 +219,7 @@ export const AuthProvider = ({ children }) => {
       user, token, loading,
       biometricLocked,
       login, register, logout, updateUser,
+      biometricLogin,
       verifyOtp, resendOtp,
       biometricLock, biometricUnlock,
     }}>

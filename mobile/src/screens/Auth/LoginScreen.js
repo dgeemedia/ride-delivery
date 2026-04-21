@@ -11,8 +11,6 @@ import { Ionicons }       from '@expo/vector-icons';
 import { useAuth }        from '../../context/AuthContext';
 import { useTheme }       from '../../context/ThemeContext';
 import { useBiometric }   from '../../hooks/useBiometric';
-import AsyncStorage       from '@react-native-async-storage/async-storage';
-import { authAPI }        from '../../services/api';
 
 const { width } = Dimensions.get('window');
 const LOGO = require('../../../assets/diakite_dark.png');
@@ -82,9 +80,9 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secure
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function LoginScreen({ navigation }) {
-  const { theme, mode }    = useTheme();
-  const { login }          = useAuth();
-  const darkMode           = mode === 'dark';
+  const { theme, mode }   = useTheme();
+  const { login, biometricLogin } = useAuth();
+  const darkMode          = mode === 'dark';
 
   const {
     isAvailable: bioAvailable,
@@ -92,12 +90,15 @@ export default function LoginScreen({ navigation }) {
     biometricType,
     authenticate,
     getSecureToken,
+    updateSecureToken,
     enable: enableBiometric,
+    disable: disableBiometric,
   } = useBiometric();
 
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [loading,  setLoading]  = useState(false);
+  const [bioLoading, setBioLoading] = useState(false);
 
   const hdrO = useRef(new Animated.Value(0)).current;
   const hdrY = useRef(new Animated.Value(-32)).current;
@@ -138,7 +139,10 @@ export default function LoginScreen({ navigation }) {
       return;
     }
 
-    // Successful login — offer biometric if not yet enabled
+    // Successful login — keep SecureStore token fresh
+    if (res.token) await updateSecureToken(res.token);
+
+    // Offer biometric enrolment on first successful password login
     if (bioAvailable && !bioEnabled && res.token) {
       Alert.alert(
         `Enable ${bioLabel} Login?`,
@@ -152,36 +156,51 @@ export default function LoginScreen({ navigation }) {
   };
 
   // ── Biometric login ────────────────────────────────────────────────────────
-  // Biometric verifies the user's identity on-device.
-  // If approved, we use the securely stored JWT to restore the session
-  // by validating it against /auth/me. If the token is expired, the API
-  // interceptor fires a 401 → force-logout → back to this screen with password.
+  // Flow:
+  //  1. Prompt on-device biometric (expo-local-authentication)
+  //  2. Read the JWT from SecureStore (only accessible after biometric passes)
+  //  3. Call AuthContext.biometricLogin(token) → hits /auth/me → updates state
+  //
+  // AuthContext.biometricLogin calls _persistSession which sets user + token
+  // in React state directly, so AppNavigator immediately routes to the main app.
+  // No navigation.reset or AsyncStorage tricks needed.
   const handleBiometricLogin = async () => {
-    const verified = await authenticate();
-    if (!verified) return; // cancelled or failed
+    if (bioLoading) return;
 
+    // Step 1 — on-device verification
+    const verified = await authenticate();
+    if (!verified) return; // user cancelled or hardware failed
+
+    setBioLoading(true);
+
+    // Step 2 — retrieve stored token (only readable after biometric passes)
     const storedToken = await getSecureToken();
+
     if (!storedToken) {
+      setBioLoading(false);
       Alert.alert(
         'Setup Required',
-        'Please sign in with your password to re-enable biometric login.'
+        'Please sign in with your password to re-enable biometric login.',
+        [{ text: 'OK' }]
       );
       return;
     }
 
-    try {
-      // Temporarily set the token so the API interceptor can attach it
-      await AsyncStorage.setItem('authToken', storedToken);
-      const response = await authAPI.getCurrentUser();
-      const { user: u } = response.data;
-      await AsyncStorage.setItem('user', JSON.stringify(u));
-      // Reload stored auth — easiest trigger is navigation reset to self,
-      // which causes AuthProvider to re-run loadStoredAuth via mount.
-      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-    } catch {
-      // Token invalid (401 already handled by interceptor / force-logout)
-      await AsyncStorage.multiRemove(['authToken', 'user']);
+    // Step 3 — restore session via AuthContext (updates React state properly)
+    const res = await biometricLogin(storedToken);
+    setBioLoading(false);
+
+    if (!res.success) {
+      // Token expired — clear biometric so the stale token doesn't keep failing
+      await disableBiometric();
+      Alert.alert(
+        'Session Expired',
+        res.message || 'Please sign in with your password to continue.',
+        [{ text: 'OK' }]
+      );
     }
+    // On success: AuthContext user + token are now set → AppNavigator
+    // re-renders and routes to the correct role navigator automatically.
   };
 
   const bioLabel = biometricType === 'faceid' ? 'Face ID' : biometricType === 'iris' ? 'Iris' : 'Fingerprint';
@@ -228,7 +247,7 @@ export default function LoginScreen({ navigation }) {
               style={[s.signBtn, loading && s.signBtnDim, { overflow: 'hidden' }]}
               activeOpacity={0.85}
               onPress={handleLogin}
-              disabled={loading}
+              disabled={loading || bioLoading}
             >
               <LinearGradient
                 colors={darkMode ? ['rgba(255,255,255,1)', 'rgba(220,220,220,1)'] : ['rgba(0,0,0,1)', 'rgba(30,30,30,1)']}
@@ -242,11 +261,16 @@ export default function LoginScreen({ navigation }) {
               {!loading && <Ionicons name="arrow-forward" size={18} color={theme.accentFg} />}
             </TouchableOpacity>
 
-            {/* Biometric — only shown after the user has enrolled */}
+            {/* Biometric — only rendered after user has enrolled */}
             {bioAvailable && bioEnabled && (
               <TouchableOpacity
-                style={[s.bioBtn, { backgroundColor: G.card(mode), borderColor: G.border(mode), overflow: 'hidden' }]}
+                style={[
+                  s.bioBtn,
+                  { backgroundColor: G.card(mode), borderColor: G.border(mode), overflow: 'hidden' },
+                  bioLoading && s.signBtnDim,
+                ]}
                 onPress={handleBiometricLogin}
+                disabled={bioLoading || loading}
                 activeOpacity={0.8}
               >
                 <LinearGradient
@@ -254,8 +278,10 @@ export default function LoginScreen({ navigation }) {
                   start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                   style={StyleSheet.absoluteFill}
                 />
-                <Ionicons name={bioIcon} size={20} color={theme.foreground} />
-                <Text style={[s.bioTxt, { color: theme.foreground }]}>Sign in with {bioLabel}</Text>
+                <Ionicons name={bioLoading ? 'hourglass-outline' : bioIcon} size={20} color={theme.foreground} />
+                <Text style={[s.bioTxt, { color: theme.foreground }]}>
+                  {bioLoading ? 'Verifying…' : `Sign in with ${bioLabel}`}
+                </Text>
               </TouchableOpacity>
             )}
 
@@ -318,7 +344,7 @@ const s = StyleSheet.create({
 
   signBtn:    { borderRadius: 16, height: 56, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, marginBottom: 14, overflow: 'hidden' },
   btnShimmer: { position: 'absolute', top: 0, left: 0, right: 0, height: 1 },
-  signBtnDim: { opacity: 0.6 },
+  signBtnDim: { opacity: 0.5 },
   signBtnTxt: { fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
 
   bioBtn: { borderRadius: 16, height: 54, borderWidth: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, marginBottom: 32 },
