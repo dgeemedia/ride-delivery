@@ -115,32 +115,31 @@ const ProfileStack = () => (
 
 // ── Glass Tab Bar Background ─────────────────────────────────────────────────
 const GlassTabBar = ({ mode }) => {
+  const insets = useSafeAreaInsets();
   const darkMode = mode === 'dark';
+
+  const style = {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: darkMode 
+      ? 'rgba(4,4,4,0.94)' 
+      : 'rgba(252,252,252,0.96)',
+    paddingBottom: insets.bottom,   // helps on some devices
+  };
+
   if (Platform.OS === 'ios') {
-    return (
-      <BlurView
-        intensity={darkMode ? 80 : 60}
-        tint={darkMode ? 'dark' : 'light'}
-        style={StyleSheet.absoluteFill}
-      />
-    );
+    return <BlurView intensity={darkMode ? 80 : 60} tint={darkMode ? 'dark' : 'light'} style={style} />;
   }
-  return (
-    <View style={[
-      StyleSheet.absoluteFill,
-      { backgroundColor: darkMode ? 'rgba(4,4,4,0.94)' : 'rgba(252,252,252,0.96)' },
-    ]} />
-  );
+  return <View style={style} />;
 };
 
 // ── CUSTOMER NAVIGATOR ───────────────────────────────────────────────────────
 const CustomerNavigator = () => {
   const { theme, mode } = useTheme();
-  const insets          = useSafeAreaInsets();
-  const darkMode        = mode === 'dark';
+  const insets = useSafeAreaInsets();
+  const darkMode = mode === 'dark';
 
-  const TAB_CONTENT_H = 54;
-  const tabBarHeight  = TAB_CONTENT_H + insets.bottom;
+  const TAB_CONTENT_H = 54;                    // icons + labels height
+  const tabBarHeight = TAB_CONTENT_H + insets.bottom;
 
   return (
     <Tab.Navigator
@@ -166,25 +165,40 @@ const CustomerNavigator = () => {
 
         tabBarActiveTintColor:   theme.foreground,
         tabBarInactiveTintColor: darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
+
         tabBarLabelStyle: {
-          fontSize:     10,
-          fontWeight:   '700',
+          fontSize:      10,
+          fontWeight:    '700',
           letterSpacing: 0.3,
-          marginTop:    2,
+          marginTop:     2,
         },
 
+        // ── FIXED TAB BAR STYLE ─────────────────────────────────────
         tabBarStyle: {
-          position:        'absolute',
+          backgroundColor: 'transparent',     // important for glass effect
+          borderTopColor:  darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          borderTopWidth:  StyleSheet.hairlineWidth,
+
+          // Dynamic height including safe area bottom inset
+          height:          tabBarHeight,
+
+          // This is the most important fix for Android gesture navigation
+          paddingBottom:   insets.bottom + 8,   // was +16 → too much in some cases
+
+          paddingTop:      8,                   // reduced from 10
+          paddingHorizontal: 10,                // optional: better spacing
+
+          // Remove absolute positioning when using safe area properly
+          position:        'relative',          // or just remove it
           bottom:          0,
           left:            0,
           right:           0,
           elevation:       0,
-          height:          tabBarHeight,
-          paddingBottom:   insets.bottom + 16,
-          paddingTop:      10,
-          backgroundColor: 'transparent',
-          borderTopColor:  darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-          borderTopWidth:  StyleSheet.hairlineWidth,
+
+          // Extra safety for Android gesture navigation
+          paddingBottom: Platform.OS === 'android' 
+            ? insets.bottom + 12 
+            : insets.bottom + 8,
         },
 
         tabBarBackground: () => <GlassTabBar mode={mode} />,
