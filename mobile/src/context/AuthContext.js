@@ -3,7 +3,7 @@ import React, { createContext, useState, useEffect, useRef, useContext } from 'r
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 import { authAPI } from '../services/api';
-import { onForceLogout } from '../services/authEvents';
+import { onForceLogout, suppressForceLogout } from '../services/authEvents';
 import socketService from '../services/socket';
 
 const AuthContext = createContext();
@@ -68,32 +68,41 @@ export const AuthProvider = ({ children }) => {
 
   // ─────────────────────────────────────────────────────────────────────────
   // biometricLogin
-  // Called from LoginScreen after on-device biometric passes.
-  // Uses the SecureStore token to call /auth/me and restore the full session
-  // by updating React state directly — no navigation tricks needed.
-  //
-  // Returns { success: true } or { success: false, message }
   // ─────────────────────────────────────────────────────────────────────────
   const biometricLogin = async (secureToken) => {
+    suppressForceLogout(true);         
     try {
-      // Temporarily write the token so the request interceptor can attach it
       await AsyncStorage.setItem('authToken', secureToken);
-
       const response = await authAPI.getCurrentUser();
-      const { user: u } = response.data;
 
-      // Session is valid — persist and update state
+      // Safely extract user regardless of whether backend wraps in { data: {} }
+      const u = response?.data?.user ?? response?.user ?? null;
+
+      if (!u) {
+        return { success: false, message: 'Could not retrieve your profile. Please sign in with your password.' };
+      }
+
       await _persistSession(u, secureToken);
       return { success: true };
     } catch (error) {
-      // Token expired or invalid — clean up so we don't keep a dead token
       await AsyncStorage.multiRemove(['authToken', 'user']).catch(() => {});
       const message =
         error.response?.status === 401
           ? 'Your session has expired. Please sign in with your password.'
           : error.message || 'Biometric login failed.';
       return { success: false, message };
+    } finally {
+      suppressForceLogout(false);       // ← always restore, even on throw
     }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // biometricUnlock — alias for biometricLogin (returns boolean for simplicity)
+  // Used by BiometricLockScreen to restore session after biometric prompt.
+  // ─────────────────────────────────────────────────────────────────────────
+  const biometricUnlock = async (secureToken) => {
+    const result = await biometricLogin(secureToken);
+    return result.success;
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -177,10 +186,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Biometric lock / unlock
+  // Biometric lock / unlock (simple state toggles)
   // ─────────────────────────────────────────────────────────────────────────
   const biometricLock   = () => setBiometricLocked(true);
-  const biometricUnlock = () => setBiometricLocked(false);
+
+  const biometricUnlockState = () => setBiometricLocked(false);
 
   // ─────────────────────────────────────────────────────────────────────────
   // updateUser / logout
@@ -221,7 +231,8 @@ export const AuthProvider = ({ children }) => {
       login, register, logout, updateUser,
       biometricLogin,
       verifyOtp, resendOtp,
-      biometricLock, biometricUnlock,
+      biometricLock,
+      biometricUnlock,       
     }}>
       {children}
     </AuthContext.Provider>

@@ -1,17 +1,15 @@
 // mobile/src/services/authEvents.js
-// ── Lightweight event bus ─────────────────────────────────────────────────────
-// Lets api.js fire a force-logout signal WITHOUT importing AuthContext
-// (which would create a circular dependency).
-// AuthContext subscribes on mount and calls its own logout() when it fires.
-
 const listeners = new Set();
+let _suppressForceLogout = false;
+
+export const suppressForceLogout = (v) => { _suppressForceLogout = v; };
 
 export const onForceLogout = (callback) => {
   listeners.add(callback);
-  // Return an unsubscribe function
   return () => listeners.delete(callback);
 };
 
 export const emitForceLogout = (reason = 'session_expired') => {
+  if (_suppressForceLogout) return;   // ← skip if biometric auth is in flight
   listeners.forEach((cb) => cb(reason));
 };
