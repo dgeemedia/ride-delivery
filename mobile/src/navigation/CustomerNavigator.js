@@ -1,4 +1,4 @@
-// mobile/src/navigation/CustomerNavigator.js  [UPDATED]
+// mobile/src/navigation/CustomerNavigator.js
 // ── Premium Glass Tab Bar ─────────────────────────────────────────────────────
 
 import React from 'react';
@@ -32,12 +32,9 @@ import SupportScreen             from '../screens/Shared/SupportScreen';
 import SubmitTicketScreen        from '../screens/Shared/SubmitTicketScreen';
 import MyTicketsScreen           from '../screens/Shared/MyTicketsScreen';
 import TicketDetailScreen        from '../screens/Shared/TicketDetailScreen';
-
-// ── NEW wallet-flow screens ──────────────────────────────────────────────────
 import TransferScreen            from '../screens/Shared/TransferScreen';
 import WalletTopUpScreen         from '../screens/Shared/WalletTopUpScreen';
 import WithdrawalScreen          from '../screens/Shared/WithdrawalScreen';
-// ─────────────────────────────────────────────────────────────────────────────
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -52,8 +49,8 @@ const HomeStack = () => (
     <Stack.Screen name="NearbyDrivers"       component={NearbyDriversScreen}       />
     <Stack.Screen name="RideTracking"        component={RideTrackingScreen}        />
     <Stack.Screen name="DeliveryTracking"    component={DeliveryTrackingScreen}    />
-    <Stack.Screen name="RateRide"     component={RateRideScreen}     options={{ presentation: 'modal' }} />
-    <Stack.Screen name="RateDelivery" component={RateDeliveryScreen} options={{ presentation: 'modal' }} />
+    <Stack.Screen name="RateRide"            component={RateRideScreen}            options={{ presentation: 'modal' }} />
+    <Stack.Screen name="RateDelivery"        component={RateDeliveryScreen}        options={{ presentation: 'modal' }} />
     <Stack.Screen name="Shield"              component={ShieldScreen}              />
     <Stack.Screen name="ShieldBeneficiaries" component={ShieldBeneficiariesScreen} />
     <Stack.Screen name="Corporate"           component={CorporateScreen}           />
@@ -78,23 +75,17 @@ const HistoryStack = () => (
   </Stack.Navigator>
 );
 
-// ── WalletStack — FIXED: all wallet-flow screens registered ─────────────────
 const WalletStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    {/* Main wallet dashboard */}
-    <Stack.Screen name="WalletHome"    component={WalletScreen}       />
-
-    {/* Wallet actions — previously missing, now registered */}
-    <Stack.Screen name="WalletTopUp"   component={WalletTopUpScreen}  />
-    <Stack.Screen name="Transfer"      component={TransferScreen}      />
-    <Stack.Screen name="Withdraw"      component={WithdrawalScreen}    />
-
-    {/* Other features reachable from wallet */}
-    <Stack.Screen name="DuoPay"        component={DuoPayScreen}        />
-    <Stack.Screen name="Support"       component={SupportScreen}       />
-    <Stack.Screen name="SubmitTicket"  component={SubmitTicketScreen}  />
-    <Stack.Screen name="MyTickets"     component={MyTicketsScreen}     />
-    <Stack.Screen name="TicketDetail"  component={TicketDetailScreen}  />
+    <Stack.Screen name="WalletHome"   component={WalletScreen}      />
+    <Stack.Screen name="WalletTopUp"  component={WalletTopUpScreen} />
+    <Stack.Screen name="Transfer"     component={TransferScreen}    />
+    <Stack.Screen name="Withdraw"     component={WithdrawalScreen}  />
+    <Stack.Screen name="DuoPay"       component={DuoPayScreen}      />
+    <Stack.Screen name="Support"      component={SupportScreen}     />
+    <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen}/>
+    <Stack.Screen name="MyTickets"    component={MyTicketsScreen}   />
+    <Stack.Screen name="TicketDetail" component={TicketDetailScreen}/>
   </Stack.Navigator>
 );
 
@@ -115,19 +106,21 @@ const ProfileStack = () => (
 
 // ── Glass Tab Bar Background ─────────────────────────────────────────────────
 const GlassTabBar = ({ mode }) => {
-  const insets = useSafeAreaInsets();
   const darkMode = mode === 'dark';
-
   const style = {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: darkMode 
-      ? 'rgba(4,4,4,0.94)' 
+    backgroundColor: darkMode
+      ? 'rgba(4,4,4,0.94)'
       : 'rgba(252,252,252,0.96)',
-    paddingBottom: insets.bottom,   // helps on some devices
   };
-
   if (Platform.OS === 'ios') {
-    return <BlurView intensity={darkMode ? 80 : 60} tint={darkMode ? 'dark' : 'light'} style={style} />;
+    return (
+      <BlurView
+        intensity={darkMode ? 80 : 60}
+        tint={darkMode ? 'dark' : 'light'}
+        style={style}
+      />
+    );
   }
   return <View style={style} />;
 };
@@ -135,11 +128,15 @@ const GlassTabBar = ({ mode }) => {
 // ── CUSTOMER NAVIGATOR ───────────────────────────────────────────────────────
 const CustomerNavigator = () => {
   const { theme, mode } = useTheme();
-  const insets = useSafeAreaInsets();
+  const insets   = useSafeAreaInsets();
   const darkMode = mode === 'dark';
 
-  const TAB_CONTENT_H = 54;                    // icons + labels height
-  const tabBarHeight = TAB_CONTENT_H + insets.bottom;
+  // ✅ FIX: With NavigationBar no longer set to 'absolute' in App.js,
+  //    insets.bottom will be 0 on Android (the system nav bar pushes content
+  //    up automatically). On iOS it will be the home-indicator height (~34px).
+  //    This single paddingBottom value is all that's needed — no duplication.
+  const TAB_CONTENT_H = 54;
+  const tabBarHeight  = TAB_CONTENT_H + insets.bottom;
 
   return (
     <Tab.Navigator
@@ -155,16 +152,26 @@ const CustomerNavigator = () => {
           };
           return (
             <View style={focused
-              ? [tb.iconActive, { backgroundColor: darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.07)' }]
+              ? [tb.iconActive, {
+                  backgroundColor: darkMode
+                    ? 'rgba(255,255,255,0.10)'
+                    : 'rgba(0,0,0,0.07)',
+                }]
               : tb.icon
             }>
-              <Ionicons name={icons[route.name]} size={focused ? 20 : 22} color={color} />
+              <Ionicons
+                name={icons[route.name]}
+                size={focused ? 20 : 22}
+                color={color}
+              />
             </View>
           );
         },
 
         tabBarActiveTintColor:   theme.foreground,
-        tabBarInactiveTintColor: darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
+        tabBarInactiveTintColor: darkMode
+          ? 'rgba(255,255,255,0.35)'
+          : 'rgba(0,0,0,0.35)',
 
         tabBarLabelStyle: {
           fontSize:      10,
@@ -173,32 +180,19 @@ const CustomerNavigator = () => {
           marginTop:     2,
         },
 
-        // ── FIXED TAB BAR STYLE ─────────────────────────────────────
         tabBarStyle: {
-          backgroundColor: 'transparent',     // important for glass effect
-          borderTopColor:  darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-          borderTopWidth:  StyleSheet.hairlineWidth,
-
-          // Dynamic height including safe area bottom inset
-          height:          tabBarHeight,
-
-          // This is the most important fix for Android gesture navigation
-          paddingBottom:   insets.bottom + 8,   // was +16 → too much in some cases
-
-          paddingTop:      8,                   // reduced from 10
-          paddingHorizontal: 10,                // optional: better spacing
-
-          // Remove absolute positioning when using safe area properly
-          position:        'relative',          // or just remove it
-          bottom:          0,
-          left:            0,
-          right:           0,
-          elevation:       0,
-
-          // Extra safety for Android gesture navigation
-          paddingBottom: Platform.OS === 'android' 
-            ? insets.bottom + 12 
-            : insets.bottom + 8,
+          backgroundColor:  'transparent',
+          borderTopColor:   darkMode
+            ? 'rgba(255,255,255,0.08)'
+            : 'rgba(0,0,0,0.06)',
+          borderTopWidth:   StyleSheet.hairlineWidth,
+          height:           tabBarHeight,
+          // ✅ FIX: single paddingBottom — the duplicate was silently
+          //    overwriting itself and creating unpredictable heights.
+          paddingBottom:    insets.bottom + 8,
+          paddingTop:       8,
+          paddingHorizontal: 10,
+          elevation:        0,
         },
 
         tabBarBackground: () => <GlassTabBar mode={mode} />,
