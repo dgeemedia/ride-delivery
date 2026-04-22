@@ -76,8 +76,9 @@ const PartnerNavigator = () => {
   const insets = useSafeAreaInsets();
 
   const TAB_CONTENT_H = 54;
-  const tabBarHeight  = TAB_CONTENT_H + insets.bottom;
-
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+  const tabBarHeight = TAB_CONTENT_H + insets.bottom + EXTRA_BOTTOM;
+  
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -99,7 +100,7 @@ const PartnerNavigator = () => {
           // ✅ FIX: dynamic height = content + safe area bottom inset
           height:          tabBarHeight,
           // ✅ FIX: paddingBottom pushes labels/icons above the gesture bar
-          paddingBottom:   insets.bottom + 4,
+          paddingBottom: EXTRA_BOTTOM + 4,
           paddingTop:      8,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },

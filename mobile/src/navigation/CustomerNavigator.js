@@ -136,8 +136,9 @@ const CustomerNavigator = () => {
   //    up automatically). On iOS it will be the home-indicator height (~34px).
   //    This single paddingBottom value is all that's needed — no duplication.
   const TAB_CONTENT_H = 54;
-  const tabBarHeight  = TAB_CONTENT_H + insets.bottom;
-
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+  const tabBarHeight = TAB_CONTENT_H + insets.bottom + EXTRA_BOTTOM;
+  
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -189,7 +190,7 @@ const CustomerNavigator = () => {
           height:           tabBarHeight,
           // ✅ FIX: single paddingBottom — the duplicate was silently
           //    overwriting itself and creating unpredictable heights.
-          paddingBottom:    insets.bottom + 8,
+          paddingBottom: EXTRA_BOTTOM + 4,
           paddingTop:       8,
           paddingHorizontal: 10,
           elevation:        0,
