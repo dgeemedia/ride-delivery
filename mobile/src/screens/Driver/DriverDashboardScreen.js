@@ -1,21 +1,9 @@
 // mobile/src/screens/Driver/DriverDashboardScreen.js
-// ─── CHANGE ONLY: the paddingBottom calculation ───────────────────────────────
-//
-// OLD (hardcoded, causes footer to be hidden):
-//   const paddingBottom = insets.bottom + 90;
-//
-// NEW (matches the dynamic tab bar height defined in DriverNavigator):
-//   const TAB_CONTENT_H = 54;                         // icon + label row
-//   const paddingBottom = insets.bottom + TAB_CONTENT_H + 16;  // tab bar + breathing room
-//
-// The rest of DriverDashboardScreen is unchanged.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Switch,
   ScrollView, StatusBar, Dimensions, Animated,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, Image,           // ← Image added
 } from 'react-native';
 import { Ionicons }                            from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets }     from 'react-native-safe-area-context';
@@ -218,8 +206,6 @@ export default function DriverDashboardScreen({ navigation }) {
   const hasMaintBanner = maintenance.isOn || maintenance.isScheduled;
   const paddingTop     = hasMaintBanner ? 16 : insets.top + 16;
 
-  // ✅ FIX: paddingBottom = device bottom inset + tab bar content height + gap
-  //         TAB_CONTENT_H (54) must match the value in DriverNavigator.js
   const TAB_CONTENT_H = 54;
   const paddingBottom = insets.bottom + TAB_CONTENT_H + 36;
 
@@ -364,6 +350,7 @@ export default function DriverDashboardScreen({ navigation }) {
                 {isApproved ? <VerifiedBadge theme={theme} /> : <PendingBadge theme={theme} />}
               </View>
             </View>
+
             <View style={s.headerRight}>
               <TouchableOpacity
                 style={[s.notifBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
@@ -371,11 +358,24 @@ export default function DriverDashboardScreen({ navigation }) {
               >
                 <Ionicons name="notifications-outline" size={19} color={theme.foreground} />
               </TouchableOpacity>
+
+              {/* ── Avatar: photo if available, initials fallback ── */}
               <TouchableOpacity
-                style={[s.avatarBtn, { backgroundColor: theme.accent + '18', borderColor: theme.border }]}
+                style={[
+                  s.avatarBtn,
+                  { borderColor: theme.border },
+                  !user?.profileImage && { backgroundColor: theme.accent + '18' },
+                ]}
                 onPress={goToProfile}
+                activeOpacity={0.85}
               >
-                <Text style={[s.avatarTxt, { color: theme.accent }]}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
+                {user?.profileImage ? (
+                  <Image source={{ uri: user.profileImage }} style={s.avatarImg} />
+                ) : (
+                  <Text style={[s.avatarTxt, { color: theme.accent }]}>
+                    {user?.firstName?.[0]}{user?.lastName?.[0]}
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -507,7 +507,10 @@ const s = StyleSheet.create({
   name:        { fontSize: 24, fontWeight: '900', letterSpacing: -0.3 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 },
   notifBtn:    { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  avatarBtn:   { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
+
+  // Avatar button — photo fills it, initials centered inside it
+  avatarBtn:   { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  avatarImg:   { width: 44, height: 44, borderRadius: 22 },
   avatarTxt:   { fontSize: 14, fontWeight: '800' },
 
   approvalBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 14 },

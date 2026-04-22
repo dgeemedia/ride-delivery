@@ -3,10 +3,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Switch,
   ScrollView, StatusBar, Dimensions, Animated,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, Image,           // ← Image added
 } from 'react-native';
 import { Ionicons }                            from '@expo/vector-icons';
-import { SafeAreaView, useSafeAreaInsets }     from 'react-native-safe-area-context'; // ✅ FIX 1: import useSafeAreaInsets
+import { SafeAreaView, useSafeAreaInsets }     from 'react-native-safe-area-context';
 import * as Location                           from '../../shims/Location';
 import { useAuth }                             from '../../context/AuthContext';
 import { useTheme }                            from '../../context/ThemeContext';
@@ -206,7 +206,6 @@ const wb = StyleSheet.create({
 export default function PartnerDashboardScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
-  // ✅ FIX 1: useSafeAreaInsets was missing — caused 'paddingTop doesn't exist' crash
   const insets          = useSafeAreaInsets();
 
   const [isOnline,          setIsOnline]          = useState(false);
@@ -226,10 +225,9 @@ export default function PartnerDashboardScreen({ navigation }) {
   const fadeA   = useRef(new Animated.Value(0)).current;
   const headerY = useRef(new Animated.Value(-20)).current;
 
-  // ✅ FIX 2: define paddingTop / paddingBottom from insets (mirrors DriverDashboard exactly)
   const hasMaintBanner = maintenance.isOn || maintenance.isScheduled;
   const paddingTop     = hasMaintBanner ? 16 : insets.top + 16;
-  
+
   const TAB_CONTENT_H = 54;
   const paddingBottom = insets.bottom + TAB_CONTENT_H + 36;
 
@@ -261,9 +259,7 @@ export default function PartnerDashboardScreen({ navigation }) {
           del && ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(del.status) ? del : null
         );
       }
-      if (maintResult.status === 'fulfilled') {
-        setMaintenance(maintResult.value);
-      }
+      if (maintResult.status === 'fulfilled') setMaintenance(maintResult.value);
     } catch {}
     finally {
       setLoading(false);
@@ -307,7 +303,6 @@ export default function PartnerDashboardScreen({ navigation }) {
     };
   }, [navigation, isOnline]);
 
-  // ── Go online/offline ──────────────────────────────────────────────────────
   const toggleOnline = async () => {
     if (maintenance.isOn && !isOnline) {
       const endsStr = maintenance.endsAt
@@ -368,14 +363,10 @@ export default function PartnerDashboardScreen({ navigation }) {
   ];
 
   return (
-    // ✅ FIX: edges=['left','right'] — same as DriverDashboard so SafeAreaView
-    //         does NOT consume top inset; we handle it manually via paddingTop
-    //         so the maintenance banner can sit flush under the status bar.
     <SafeAreaView style={[s.root, { backgroundColor: theme.background }]} edges={['left', 'right']}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.orb, { backgroundColor: CA }]} />
 
-      {/* Maintenance banner */}
       {hasMaintBanner && (
         <View style={{ paddingTop: insets.top }}>
           <MaintenanceBanner
@@ -404,6 +395,7 @@ export default function PartnerDashboardScreen({ navigation }) {
                 {isApproved ? <VerifiedBadge theme={theme} /> : <PendingBadge theme={theme} />}
               </View>
             </View>
+
             <View style={s.headerRight}>
               <TouchableOpacity
                 style={[s.notifBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
@@ -411,11 +403,24 @@ export default function PartnerDashboardScreen({ navigation }) {
               >
                 <Ionicons name="notifications-outline" size={19} color={theme.foreground} />
               </TouchableOpacity>
+
+              {/* ── Avatar: photo if available, initials fallback ── */}
               <TouchableOpacity
-                style={[s.avatarBtn, { backgroundColor: CA + '18', borderColor: theme.border }]}
+                style={[
+                  s.avatarBtn,
+                  { borderColor: theme.border },
+                  !user?.profileImage && { backgroundColor: CA + '18' },
+                ]}
                 onPress={goToProfile}
+                activeOpacity={0.85}
               >
-                <Text style={[s.avatarTxt, { color: CA }]}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
+                {user?.profileImage ? (
+                  <Image source={{ uri: user.profileImage }} style={s.avatarImg} />
+                ) : (
+                  <Text style={[s.avatarTxt, { color: CA }]}>
+                    {user?.firstName?.[0]}{user?.lastName?.[0]}
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -458,10 +463,8 @@ export default function PartnerDashboardScreen({ navigation }) {
             />
           )}
 
-          {/* Waiting for requests */}
           {isOnline && !activeDelivery && !maintenance.isOn && <WaitingBanner theme={theme} />}
 
-          {/* Wallet */}
           {!loading && (
             <WalletStrip
               balance={walletBalance}
@@ -472,7 +475,6 @@ export default function PartnerDashboardScreen({ navigation }) {
             />
           )}
 
-          {/* Stats */}
           {loading ? (
             <ActivityIndicator color={CA} style={{ marginBottom: 16 }} />
           ) : (
@@ -578,15 +580,9 @@ export default function PartnerDashboardScreen({ navigation }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STYLES
-// ─────────────────────────────────────────────────────────────────────────────
-
 const s = StyleSheet.create({
   root:   { flex: 1 },
   orb:    { position: 'absolute', width: width * 1.2, height: width * 1.2, borderRadius: width * 0.6, top: -width * 0.78, right: -width * 0.3, opacity: 0.04 },
-  // ✅ FIX: paddingTop/paddingBottom removed from static style — they are
-  //         set dynamically in contentContainerStyle using insets values
   scroll: { paddingHorizontal: 24 },
 
   header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 },
@@ -594,7 +590,10 @@ const s = StyleSheet.create({
   name:        { fontSize: 24, fontWeight: '900', letterSpacing: -0.3 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 },
   notifBtn:    { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  avatarBtn:   { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
+
+  // Avatar button — photo fills it, initials centered inside it
+  avatarBtn:   { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  avatarImg:   { width: 44, height: 44, borderRadius: 22 },
   avatarTxt:   { fontSize: 14, fontWeight: '800' },
 
   approvalBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 14 },

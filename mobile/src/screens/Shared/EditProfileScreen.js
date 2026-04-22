@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import { Ionicons }      from '@expo/vector-icons';
 import * as ImagePicker  from 'expo-image-picker';
-import * as FileSystem   from 'expo-file-system';
+import * as FileSystem   from 'expo-file-system/legacy';
 
 import { useAuth }  from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -18,13 +18,16 @@ import api          from '../../services/api';
 // Upload: read file as base64 → POST /api/upload/base64 → Cloudinary URL
 // ─────────────────────────────────────────────────────────────────────────────
 async function uploadToCloudinary(uri) {
-  const ext        = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-  const mimeType   = ext === 'png' ? 'image/png' : 'image/jpeg';
-  const base64Raw  = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+  const ext      = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+
+  // FIX: use the string literal 'base64' — FileSystem.EncodingType may be
+  // undefined on some Expo SDK versions / web environments.
+  const base64Raw  = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
   const base64Data = `data:${mimeType};base64,${base64Raw}`;
 
-  // axios interceptor returns response.data directly
-  // shape: { success: true, data: { url, publicId } }
+  // Axios interceptor returns response.data directly.
+  // Shape: { success: true, data: { url, publicId } }
   const res = await api.post('/upload/base64', { base64Data, folder: 'diakite/profiles' });
   const url = res?.data?.url ?? res?.url;
   if (!url) throw new Error('Upload succeeded but no URL returned.');
@@ -74,7 +77,6 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, editab
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Image picker helpers — expo-image-picker v14+ API
-// MediaTypeOptions is DEPRECATED; use mediaTypes: ['images'] array instead
 // ─────────────────────────────────────────────────────────────────────────────
 async function pickFromLibrary() {
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -88,7 +90,7 @@ async function pickFromLibrary() {
   }
 
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images'],   // ← v14+ API (not MediaTypeOptions.Images)
+    mediaTypes: ['images'],
     allowsEditing: true,
     aspect: [1, 1],
     quality: 0.82,
@@ -110,7 +112,7 @@ async function pickFromCamera() {
   }
 
   const result = await ImagePicker.launchCameraAsync({
-    mediaTypes: ['images'],   // ← v14+ API
+    mediaTypes: ['images'],
     allowsEditing: true,
     aspect: [1, 1],
     quality: 0.82,
@@ -174,9 +176,9 @@ export default function EditProfileScreen({ navigation }) {
 
   // ── Has anything changed? ───────────────────────────────────────────────────
   const hasChanges =
-    firstName     !== (user?.firstName    ?? '') ||
-    lastName      !== (user?.lastName     ?? '') ||
-    phone         !== (user?.phone        ?? '') ||
+    firstName     !== (user?.firstName ?? '') ||
+    lastName      !== (user?.lastName  ?? '') ||
+    phone         !== (user?.phone     ?? '') ||
     imageLocalUri !== null;
 
   // ── Save ────────────────────────────────────────────────────────────────────
@@ -197,7 +199,7 @@ export default function EditProfileScreen({ navigation }) {
         setImageLocalUri(null);
       }
 
-      // Step 2 — patch profile (phone sent only if non-empty)
+      // Step 2 — patch profile
       const payload = {
         firstName: firstName.trim(),
         lastName:  lastName.trim(),
@@ -223,6 +225,12 @@ export default function EditProfileScreen({ navigation }) {
   const displayUri = imageLocalUri ?? profileImage;
   const initials   = `${firstName?.[0] ?? ''}${lastName?.[0] ?? ''}`.toUpperCase();
   const busy       = saving || uploading;
+
+  // FIX: resolve foreground color for elements that sit ON the accent colour.
+  // theme.accentFg is '#000000' when accent is white (dark mode)
+  //                and '#FFFFFF' when accent is black (light mode).
+  const onAccent = theme.accentFg ?? '#FFFFFF';
+  const savedBg  = '#5DAA72';
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
@@ -262,11 +270,11 @@ export default function EditProfileScreen({ navigation }) {
                   </View>
                 )}
 
-                {/* Camera badge */}
+                {/* Camera badge — FIX: icon color uses theme.accentFg */}
                 <View style={[s.cameraBadge, { backgroundColor: theme.accent, borderColor: theme.background }]}>
                   {uploading
-                    ? <ActivityIndicator size="small" color="#FFFFFF" />
-                    : <Ionicons name="camera" size={13} color="#FFFFFF" />
+                    ? <ActivityIndicator size="small" color={onAccent} />
+                    : <Ionicons name="camera" size={13} color={onAccent} />
                   }
                 </View>
               </TouchableOpacity>
@@ -295,10 +303,11 @@ export default function EditProfileScreen({ navigation }) {
             <Text style={[s.fieldNote, { color: theme.hint }]}>Email cannot be changed. Contact support if needed.</Text>
 
             {/* ── Save button ── */}
+            {/* FIX: button bg = theme.accent; text/icon color = theme.accentFg (not hardcoded white) */}
             <TouchableOpacity
               style={[
                 s.saveBtn,
-                { backgroundColor: saved ? '#5DAA72' : theme.accent, shadowColor: theme.accent },
+                { backgroundColor: saved ? savedBg : theme.accent, shadowColor: theme.accent },
                 (!hasChanges || busy) && !saved && { opacity: 0.38 },
               ]}
               onPress={handleSave}
@@ -307,13 +316,21 @@ export default function EditProfileScreen({ navigation }) {
             >
               {busy ? (
                 <View style={s.btnRow}>
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                  <Text style={s.saveBtnTxt}>{uploading ? 'Uploading photo…' : 'Saving…'}</Text>
+                  <ActivityIndicator color={saved ? '#FFFFFF' : onAccent} size="small" />
+                  <Text style={[s.saveBtnTxt, { color: saved ? '#FFFFFF' : onAccent }]}>
+                    {uploading ? 'Uploading photo…' : 'Saving…'}
+                  </Text>
                 </View>
               ) : (
                 <View style={s.btnRow}>
-                  <Ionicons name={saved ? 'checkmark' : 'save-outline'} size={18} color="#FFFFFF" />
-                  <Text style={s.saveBtnTxt}>{saved ? 'Saved!' : 'Save Changes'}</Text>
+                  <Ionicons
+                    name={saved ? 'checkmark' : 'save-outline'}
+                    size={18}
+                    color={saved ? '#FFFFFF' : onAccent}
+                  />
+                  <Text style={[s.saveBtnTxt, { color: saved ? '#FFFFFF' : onAccent }]}>
+                    {saved ? 'Saved!' : 'Save Changes'}
+                  </Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -355,12 +372,12 @@ const s = StyleSheet.create({
   inputText:         { fontSize: 15, paddingTop: 18, paddingBottom: 4, fontWeight: '400' },
   fieldNote:         { fontSize: 11, marginTop: -4, marginBottom: 24, marginLeft: 2 },
 
-  // Button
+  // Button — text color is applied inline via theme.accentFg, not in StyleSheet
   saveBtn:           {
     borderRadius: 13, height: 54, justifyContent: 'center', alignItems: 'center',
     marginTop: 8, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28,
     shadowRadius: 14, elevation: 8,
   },
   btnRow:            { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  saveBtnTxt:        { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  saveBtnTxt:        { fontSize: 16, fontWeight: '700' },
 });

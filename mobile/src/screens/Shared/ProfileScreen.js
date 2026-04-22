@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
-  Platform, Switch, Modal,
+  Platform, Switch, Modal, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -25,17 +25,30 @@ const ACCENT_OPTIONS = [
 ];
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
-const Avatar = ({ user, theme }) => (
-  <View style={[av.ring, { borderColor: theme.accent + '40' }]}>
-    <View style={[av.circle, { backgroundColor: theme.accent + '18' }]}>
-      <Text style={[av.initials, { color: theme.accent }]}>
-        {user?.firstName?.[0]}{user?.lastName?.[0]}
-      </Text>
+// Shows profile photo when available; falls back to name initials.
+const Avatar = ({ user, theme }) => {
+  const hasPhoto = !!user?.profileImage;
+  return (
+    <View style={[av.ring, { borderColor: theme.accent + '40' }]}>
+      {hasPhoto ? (
+        <Image
+          source={{ uri: user.profileImage }}
+          style={av.photo}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={[av.circle, { backgroundColor: theme.accent + '18' }]}>
+          <Text style={[av.initials, { color: theme.accent }]}>
+            {user?.firstName?.[0]}{user?.lastName?.[0]}
+          </Text>
+        </View>
+      )}
     </View>
-  </View>
-);
+  );
+};
 const av = StyleSheet.create({
-  ring:     { width: 88, height: 88, borderRadius: 44, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', marginBottom: 14 },
+  ring:     { width: 88, height: 88, borderRadius: 44, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', marginBottom: 14, overflow: 'hidden' },
+  photo:    { width: 85, height: 85, borderRadius: 42 },
   circle:   { width: 76, height: 76, borderRadius: 38, justifyContent: 'center', alignItems: 'center' },
   initials: { fontSize: 28, fontWeight: '800' },
 });
@@ -144,7 +157,6 @@ const sec = StyleSheet.create({
 });
 
 // ─── MethodModal ─────────────────────────────────────────────────────────────
-// Lets user pick SMS or EMAIL when enabling 2FA
 const MethodModal = ({ visible, onSelect, onDismiss, theme }) => (
   <Modal transparent visible={visible} animationType="fade" onRequestClose={onDismiss}>
     <TouchableOpacity style={mm.overlay} activeOpacity={1} onPress={onDismiss}>
@@ -202,14 +214,11 @@ export default function ProfileScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ── 2FA state ──────────────────────────────────────────────────────────────
   const [twoFaEnabled,    setTwoFaEnabled]    = useState(user?.twoFactorEnabled ?? false);
   const [twoFaMethod,     setTwoFaMethod]     = useState(user?.twoFactorMethod  ?? 'SMS');
   const [twoFaLoading,    setTwoFaLoading]    = useState(false);
   const [showMethodModal, setShowMethodModal] = useState(false);
-
-  // ── Biometric state ────────────────────────────────────────────────────────
-  const [bioLoading, setBioLoading] = useState(false);
+  const [bioLoading,      setBioLoading]      = useState(false);
 
   const fadeA = useRef(new Animated.Value(0)).current;
 
@@ -221,7 +230,6 @@ export default function ProfileScreen({ navigation }) {
     Animated.timing(fadeA, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
-  // Keep local 2FA state in sync with auth context user
   useEffect(() => {
     setTwoFaEnabled(user?.twoFactorEnabled ?? false);
     setTwoFaMethod(user?.twoFactorMethod ?? 'SMS');
@@ -250,13 +258,10 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
-  // ── 2FA toggle handler ─────────────────────────────────────────────────────
   const handle2faToggle = async (value) => {
     if (value) {
-      // Enabling: show method picker first
       setShowMethodModal(true);
     } else {
-      // Disabling: ask for password confirmation
       if (Platform.OS === 'web') {
         const pwd = window.prompt('Enter your password to disable 2FA:');
         if (pwd) await disable2FA(pwd);
@@ -280,15 +285,12 @@ export default function ProfileScreen({ navigation }) {
     try {
       const res = await authAPI.setup2FA({ method });
       if (res?.data) {
-        // Navigate to OTP screen to confirm setup
         navigation.navigate('OtpVerification', {
-          tempToken:      res.data.tempToken,
-          method:         res.data.method,
-          maskedContact:  res.data.maskedContact,
-          purpose:        'SETUP_2FA',
+          tempToken:     res.data.tempToken,
+          method:        res.data.method,
+          maskedContact: res.data.maskedContact,
+          purpose:       'SETUP_2FA',
           onSuccess: () => {
-            // After OTP confirmed on that screen, confirm2FA is called there
-            // Refresh user object
             setTwoFaEnabled(true);
             setTwoFaMethod(method);
             updateUser?.({ twoFactorEnabled: true, twoFactorMethod: method });
@@ -318,33 +320,23 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
-  // ── Biometric toggle handler ───────────────────────────────────────────────
   const handleBiometricToggle = async (value) => {
     if (!isAvailable) {
-      Alert.alert(
-        'Not Available',
-        'Biometric authentication is not set up on this device. Please enable it in your device settings first.'
-      );
+      Alert.alert('Not Available', 'Biometric authentication is not set up on this device. Please enable it in your device settings first.');
       return;
     }
-
     setBioLoading(true);
     try {
       if (value) {
-        // enable() typically prompts biometric and stores the token
         const success = await enable();
-        if (!success) {
-          Alert.alert('Failed', 'Could not enable biometric login. Please try again.');
-        }
+        if (!success) Alert.alert('Failed', 'Could not enable biometric login. Please try again.');
       } else {
         Alert.alert(
           'Disable Biometric Login',
           'You will need to enter your password to sign in next time.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Disable', style: 'destructive', onPress: async () => {
-              await disable?.();
-            }},
+            { text: 'Disable', style: 'destructive', onPress: async () => { await disable?.(); } },
           ]
         );
       }
@@ -355,13 +347,8 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
-  const biometricLabel = biometricType === 'faceid'
-    ? 'Face ID'
-    : biometricType === 'iris'
-    ? 'Iris Scan'
-    : 'Fingerprint';
-
-  const biometricIcon = biometricType === 'faceid' ? 'scan-outline' : 'finger-print-outline';
+  const biometricLabel = biometricType === 'faceid' ? 'Face ID' : biometricType === 'iris' ? 'Iris Scan' : 'Fingerprint';
+  const biometricIcon  = biometricType === 'faceid' ? 'scan-outline' : 'finger-print-outline';
 
   const dp = profile?.driverProfile;
   const pp = profile?.deliveryProfile;
@@ -371,7 +358,6 @@ export default function ProfileScreen({ navigation }) {
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
-      {/* Method picker modal */}
       <MethodModal
         visible={showMethodModal}
         onSelect={enable2FA}
@@ -384,6 +370,7 @@ export default function ProfileScreen({ navigation }) {
 
           {/* Hero */}
           <View style={s.hero}>
+            {/* Avatar now shows profile photo if set, otherwise initials */}
             <Avatar user={user} theme={theme} />
             <Text style={[s.name, { color: theme.foreground }]}>{user?.firstName} {user?.lastName}</Text>
             <View style={[s.rolePill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '30' }]}>
@@ -495,9 +482,8 @@ export default function ProfileScreen({ navigation }) {
             </Section>
           )}
 
-          {/* ── SECURITY ───────────────────────────────────────────────────── */}
+          {/* Security */}
           <Section title="SECURITY" theme={theme}>
-            {/* 2FA toggle */}
             <ToggleRow
               icon="shield-checkmark-outline"
               label="Two-Factor Authentication"
@@ -511,17 +497,11 @@ export default function ProfileScreen({ navigation }) {
               theme={theme}
               loading={twoFaLoading}
             />
-
-            {/* Biometric toggle — only shown if hardware is available */}
             {isAvailable && (
               <ToggleRow
                 icon={biometricIcon}
                 label={`${biometricLabel} Login`}
-                sublabel={
-                  isEnabled
-                    ? 'Unlock the app with biometrics'
-                    : `Use ${biometricLabel} instead of password`
-                }
+                sublabel={isEnabled ? 'Unlock the app with biometrics' : `Use ${biometricLabel} instead of password`}
                 value={isEnabled}
                 onValueChange={handleBiometricToggle}
                 theme={theme}
@@ -529,8 +509,6 @@ export default function ProfileScreen({ navigation }) {
                 last
               />
             )}
-
-            {/* If biometric not available, show disabled state */}
             {!isAvailable && (
               <View style={[tr.row, { opacity: 0.4, paddingBottom: 10 }]}>
                 <View style={[tr.iconWrap, { backgroundColor: theme.accent + '14' }]}>
@@ -585,25 +563,25 @@ export default function ProfileScreen({ navigation }) {
 
           {/* Account */}
           <Section title="ACCOUNT" theme={theme}>
-            <MenuItem icon="create-outline"        label="Edit Profile"       theme={theme} onPress={() => navigation.navigate('EditProfile')} />
+            <MenuItem icon="create-outline"         label="Edit Profile"       theme={theme} onPress={() => navigation.navigate('EditProfile')} />
             {role === 'CUSTOMER' && (
-              <MenuItem icon="wallet-outline"      label="My Wallet"          theme={theme}
+              <MenuItem icon="wallet-outline"       label="My Wallet"          theme={theme}
                 value={stats ? `₦${(stats.walletBalance ?? 0).toLocaleString()}` : null}
                 onPress={() => navigation.navigate('Wallet')} />
             )}
             {(role === 'DRIVER' || role === 'DELIVERY_PARTNER') && (
-              <MenuItem icon="cash-outline"        label="Earnings & Payouts" theme={theme}
+              <MenuItem icon="cash-outline"         label="Earnings & Payouts" theme={theme}
                 onPress={() => navigation.navigate(role === 'DRIVER' ? 'DriverEarnings' : 'PartnerEarnings')} />
             )}
-            <MenuItem icon="notifications-outline" label="Notifications"     theme={theme} onPress={() => navigation.navigate('Notifications')} />
-            <MenuItem icon="lock-closed-outline"   label="Change Password"   theme={theme} last onPress={() => navigation.navigate('ChangePassword')} />
+            <MenuItem icon="notifications-outline"  label="Notifications"     theme={theme} onPress={() => navigation.navigate('Notifications')} />
+            <MenuItem icon="lock-closed-outline"    label="Change Password"   theme={theme} last onPress={() => navigation.navigate('ChangePassword')} />
           </Section>
 
           {/* Support */}
           <Section title="SUPPORT" theme={theme}>
-            <MenuItem icon="help-circle-outline"   label="Help & Support"  theme={theme} onPress={() => navigation.navigate('Support')} />
-            <MenuItem icon="star-outline"          label="Rate the App"    theme={theme} onPress={() => navigation.navigate('AppFeedback')} />
-            <MenuItem icon="document-text-outline" label="Terms & Privacy" theme={theme} last onPress={() => navigation.navigate('Terms')} />
+            <MenuItem icon="help-circle-outline"    label="Help & Support"  theme={theme} onPress={() => navigation.navigate('Support')} />
+            <MenuItem icon="star-outline"           label="Rate the App"    theme={theme} onPress={() => navigation.navigate('AppFeedback')} />
+            <MenuItem icon="document-text-outline"  label="Terms & Privacy" theme={theme} last onPress={() => navigation.navigate('Terms')} />
           </Section>
 
           {/* Sign out */}
