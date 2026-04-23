@@ -11,54 +11,46 @@ import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
 import api from '@/services/api';
 
-// ── Pricing defaults — must stay in sync with FALLBACK_RATES in fareEngine.js ──
 const PRICING_DEFAULTS = {
   ride_base_fare_car:             '500',
   ride_per_km_car:                '130',
   ride_per_minute_car:            '15',
   ride_minimum_fare_car:          '500',
   ride_cancellation_fee_car:      '200',
-
   ride_base_fare_bike:            '200',
   ride_per_km_bike:               '80',
   ride_per_minute_bike:           '8',
   ride_minimum_fare_bike:         '250',
   ride_cancellation_fee_bike:     '100',
-
   ride_base_fare_van:             '800',
   ride_per_km_van:                '180',
   ride_per_minute_van:            '20',
   ride_minimum_fare_van:          '1000',
   ride_cancellation_fee_van:      '300',
-
   ride_base_fare_tricycle:        '300',
   ride_per_km_tricycle:           '100',
   ride_per_minute_tricycle:       '10',
   ride_minimum_fare_tricycle:     '300',
   ride_cancellation_fee_tricycle: '150',
-
   ride_booking_fee:               '100',
-  platform_commission_rides:      '20',   // whole % — fareEngine divides by 100
-
+  platform_commission_rides:      '20',
   delivery_base_fee:              '500',
   delivery_per_km:                '80',
   delivery_weight_fee_per_kg:     '50',
-  platform_commission_deliveries: '15',   // whole % — fareEngine divides by 100
+  platform_commission_deliveries: '15',
 };
 
-// ── Default surge windows — stored as JSON in SystemSettings('surge_windows') ──
 const DEFAULT_SURGE_WINDOWS = [
-  { label: 'Morning Rush',  days: [1,2,3,4,5],       hourStart: 6,  hourEnd: 9,  multiplier: 1.4 },
-  { label: 'Evening Rush',  days: [1,2,3,4,5],       hourStart: 16, hourEnd: 20, multiplier: 1.5 },
-  { label: 'Friday Night',  days: [5],               hourStart: 18, hourEnd: 23, multiplier: 1.6 },
-  { label: 'Late Night',    days: [0,1,2,3,4,5,6],   hourStart: 23, hourEnd: 24, multiplier: 1.3 },
-  { label: 'Early Morning', days: [0,1,2,3,4,5,6],   hourStart: 0,  hourEnd: 5,  multiplier: 1.3 },
-  { label: 'Weekend Day',   days: [0,6],              hourStart: 10, hourEnd: 20, multiplier: 1.2 },
+  { label: 'Morning Rush',  days: [1,2,3,4,5],     hourStart: 6,  hourEnd: 9,  multiplier: 1.4 },
+  { label: 'Evening Rush',  days: [1,2,3,4,5],     hourStart: 16, hourEnd: 20, multiplier: 1.5 },
+  { label: 'Friday Night',  days: [5],             hourStart: 18, hourEnd: 23, multiplier: 1.6 },
+  { label: 'Late Night',    days: [0,1,2,3,4,5,6], hourStart: 23, hourEnd: 24, multiplier: 1.3 },
+  { label: 'Early Morning', days: [0,1,2,3,4,5,6], hourStart: 0,  hourEnd: 5,  multiplier: 1.3 },
+  { label: 'Weekend Day',   days: [0,6],            hourStart: 10, hourEnd: 20, multiplier: 1.2 },
 ];
 
 const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-// ── Password strength scorer (0–5, no deps) ──────────────────────────────────
 const getPasswordStrength = (pw: string) => {
   if (!pw) return { score: 0, label: '', color: '' };
   let score = 0;
@@ -73,7 +65,6 @@ const getPasswordStrength = (pw: string) => {
   return               { score, label: 'Strong', color: 'bg-green-500'  };
 };
 
-// ── Section wrapper — `locked` is visual only, backend auth is the real gate ──
 const Section: React.FC<{
   icon: React.ReactNode;
   title: string;
@@ -104,7 +95,6 @@ const Section: React.FC<{
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PASSWORD SECTION
-// Calls PUT /users/password. Includes a strength meter with no external deps.
 // ─────────────────────────────────────────────────────────────────────────────
 const PasswordSection: React.FC = () => {
   const [form, setForm]     = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -149,7 +139,6 @@ const PasswordSection: React.FC = () => {
             type={show.current ? 'text' : 'password'} value={form.currentPassword} onChange={handleChange} />
           <span className="absolute right-3 top-[34px]"><ToggleEye field="current" /></span>
         </div>
-
         <div className="relative">
           <Input label="New Password" name="newPassword"
             type={show.next ? 'text' : 'password'} value={form.newPassword}
@@ -171,13 +160,11 @@ const PasswordSection: React.FC = () => {
             </div>
           )}
         </div>
-
         <div className="relative">
           <Input label="Confirm New Password" name="confirmPassword"
             type={show.confirm ? 'text' : 'password'} value={form.confirmPassword} onChange={handleChange} />
           <span className="absolute right-3 top-[34px]"><ToggleEye field="confirm" /></span>
         </div>
-
         <Button loading={loading} onClick={handleSubmit}>
           <Save className="h-4 w-4" />Update Password
         </Button>
@@ -187,20 +174,20 @@ const PasswordSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PLATFORM SECTION
-// Saves platform_name, support_email, support_phone, platform_logo,
-// and maintenance_mode to SystemSettings.
+// PLATFORM SECTION  ← only section changed from original
+// Now stores support_whatsapp separately from support_phone.
 // ─────────────────────────────────────────────────────────────────────────────
 const PlatformSection: React.FC = () => {
   const [form, setForm] = useState({
-    name: 'Diakite',
-    supportEmail: 'support@diakite.com',
-    supportPhone: '+2348000000000',
-    logoUrl: '',
-    maintenance: false,
+    name:               'Diakite',
+    supportEmail:       'support@diakite.com',
+    supportPhone:       '+2348000000000',
+    supportWhatsapp:    '+2348000000000',   // ← new — defaults to same as phone
+    logoUrl:            '',
+    maintenance:        false,
     maintenanceMessage: '',
-    maintenanceStartsAt: '',  // ISO datetime-local string
-    maintenanceEndsAt: '',    // ISO datetime-local string
+    maintenanceStartsAt: '',
+    maintenanceEndsAt:   '',
   });
   const [loading,  setLoading]  = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -211,14 +198,15 @@ const PlatformSection: React.FC = () => {
         const s = res.data?.settings ?? {};
         setForm(f => ({
           ...f,
-          name:               s['platform_name']?.value        ?? f.name,
-          supportEmail:       s['support_email']?.value        ?? f.supportEmail,
-          supportPhone:       s['support_phone']?.value        ?? f.supportPhone,
-          logoUrl:            s['platform_logo']?.value        ?? '',
-          maintenance:        s['maintenance_mode']?.value === true
-                           || s['maintenance_mode']?.value === 'true',
-          maintenanceMessage: s['maintenance_message']?.value  ?? '',
-          // Convert stored ISO → datetime-local format (strip seconds+Z)
+          name:            s['platform_name']?.value   ?? f.name,
+          supportEmail:    s['support_email']?.value   ?? f.supportEmail,
+          supportPhone:    s['support_phone']?.value   ?? f.supportPhone,
+          // Fall back to support_phone if support_whatsapp hasn't been saved yet
+          supportWhatsapp: s['support_whatsapp']?.value ?? s['support_phone']?.value ?? f.supportWhatsapp,
+          logoUrl:         s['platform_logo']?.value   ?? '',
+          maintenance:     s['maintenance_mode']?.value === true
+                        || s['maintenance_mode']?.value === 'true',
+          maintenanceMessage:  s['maintenance_message']?.value ?? '',
           maintenanceStartsAt: s['maintenance_starts_at']?.value
             ? new Date(s['maintenance_starts_at'].value).toISOString().slice(0,16)
             : '',
@@ -231,27 +219,19 @@ const PlatformSection: React.FC = () => {
       .finally(() => setFetching(false));
   }, []);
 
-  // Auto-expire the toggle in the UI when endsAt passes
   useEffect(() => {
     if (!form.maintenance || !form.maintenanceEndsAt) return;
-
     const endsAt = new Date(form.maintenanceEndsAt);
     const msUntilExpiry = endsAt.getTime() - Date.now();
-    if (msUntilExpiry <= 0) {
-      setForm(f => ({ ...f, maintenance: false }));
-      return;
-    }
-
+    if (msUntilExpiry <= 0) { setForm(f => ({ ...f, maintenance: false })); return; }
     const timer = setTimeout(() => {
       setForm(f => ({ ...f, maintenance: false }));
       toast.success('Maintenance window has expired — toggle turned off automatically');
     }, msUntilExpiry);
-
     return () => clearTimeout(timer);
   }, [form.maintenance, form.maintenanceEndsAt]);
 
   const handleSave = async () => {
-    // Validate: if both are set, end must be after start
     if (form.maintenanceStartsAt && form.maintenanceEndsAt) {
       if (new Date(form.maintenanceEndsAt) <= new Date(form.maintenanceStartsAt)) {
         toast.error('End time must be after start time');
@@ -261,11 +241,12 @@ const PlatformSection: React.FC = () => {
     setLoading(true);
     try {
       await Promise.all([
-        settingsAPI.updateSetting('platform_name',    form.name),
-        settingsAPI.updateSetting('support_email',    form.supportEmail),
-        settingsAPI.updateSetting('support_phone',    form.supportPhone),
-        settingsAPI.updateSetting('platform_logo',    form.logoUrl),
-        settingsAPI.updateSetting('maintenance_mode', String(form.maintenance)),
+        settingsAPI.updateSetting('platform_name',       form.name),
+        settingsAPI.updateSetting('support_email',       form.supportEmail),
+        settingsAPI.updateSetting('support_phone',       form.supportPhone),
+        settingsAPI.updateSetting('support_whatsapp',    form.supportWhatsapp),   // ← new
+        settingsAPI.updateSetting('platform_logo',       form.logoUrl),
+        settingsAPI.updateSetting('maintenance_mode',    String(form.maintenance)),
         settingsAPI.updateSetting('maintenance_message', form.maintenanceMessage),
         settingsAPI.updateSetting('maintenance_starts_at',
           form.maintenanceStartsAt ? new Date(form.maintenanceStartsAt).toISOString() : ''),
@@ -277,10 +258,9 @@ const PlatformSection: React.FC = () => {
     finally   { setLoading(false); }
   };
 
-  // Derive a human-readable status line
   const statusLabel = (() => {
     if (!form.maintenance) return null;
-    const now = new Date();
+    const now    = new Date();
     const starts = form.maintenanceStartsAt ? new Date(form.maintenanceStartsAt) : null;
     const ends   = form.maintenanceEndsAt   ? new Date(form.maintenanceEndsAt)   : null;
     if (starts && starts > now) return `Scheduled — starts ${starts.toLocaleString('en-NG')}`;
@@ -298,9 +278,30 @@ const PlatformSection: React.FC = () => {
           onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
         <Input label="Support Email"  value={form.supportEmail} disabled={fetching} type="email"
           onChange={e => setForm(f => ({ ...f, supportEmail: e.target.value }))} />
-        <Input label="Support Phone"  value={form.supportPhone} disabled={fetching}
-          onChange={e => setForm(f => ({ ...f, supportPhone: e.target.value }))} />
-        <Input label="Logo URL (CDN)" value={form.logoUrl}      disabled={fetching}
+
+        {/* Phone and WhatsApp side-by-side with a helper note */}
+        <div>
+          <Input label="Support Phone (call)"  value={form.supportPhone} disabled={fetching}
+            hint="E.164 format e.g. +2348012345678"
+            onChange={e => setForm(f => ({ ...f, supportPhone: e.target.value }))} />
+        </div>
+        <div>
+          <Input label="WhatsApp Number" value={form.supportWhatsapp} disabled={fetching}
+            hint="Can differ from call number — E.164 format"
+            onChange={e => setForm(f => ({ ...f, supportWhatsapp: e.target.value }))} />
+          {/* Quick-copy button: populate WhatsApp from Phone */}
+          {form.supportPhone && form.supportPhone !== form.supportWhatsapp && (
+            <button
+              type="button"
+              className="mt-1 text-xs text-primary-500 hover:text-primary-700 font-medium"
+              onClick={() => setForm(f => ({ ...f, supportWhatsapp: f.supportPhone }))}
+            >
+              ← Copy from Support Phone
+            </button>
+          )}
+        </div>
+
+        <Input label="Logo URL (CDN)" value={form.logoUrl} disabled={fetching}
           hint="Paste a publicly accessible image URL"
           onChange={e => setForm(f => ({ ...f, logoUrl: e.target.value }))} />
       </div>
@@ -314,9 +315,8 @@ const PlatformSection: React.FC = () => {
         </div>
       )}
 
-      {/* ── Maintenance block ── */}
+      {/* Maintenance block — unchanged */}
       <div className="mt-5 max-w-2xl border border-orange-200 bg-orange-50 rounded-lg p-4 space-y-4">
-        {/* Header row */}
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-gray-900">Maintenance Mode</p>
@@ -335,7 +335,6 @@ const PlatformSection: React.FC = () => {
           </button>
         </div>
 
-        {/* Status pill */}
         {statusLabel && (
           <div className="inline-flex items-center gap-1.5 text-xs font-semibold
             bg-orange-100 text-orange-700 px-3 py-1 rounded-full">
@@ -344,13 +343,10 @@ const PlatformSection: React.FC = () => {
           </div>
         )}
 
-        {/* Fields — always visible when maintenance is toggled on */}
         {form.maintenance && (
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Message shown to users
-              </label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Message shown to users</label>
               <textarea
                 rows={3}
                 className="w-full px-3 py-2 rounded-lg border border-orange-300 text-sm
@@ -360,19 +356,15 @@ const PlatformSection: React.FC = () => {
                 onChange={e => setForm(f => ({ ...f, maintenanceMessage: e.target.value }))}
               />
             </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Start date &amp; time <span className="text-gray-400">(optional)</span>
                 </label>
-                <input
-                  type="datetime-local"
-                  value={form.maintenanceStartsAt}
+                <input type="datetime-local" value={form.maintenanceStartsAt}
                   onChange={e => setForm(f => ({ ...f, maintenanceStartsAt: e.target.value }))}
                   className="w-full px-3 py-2 rounded-lg border border-orange-300 text-sm
-                    focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-                />
+                    focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white" />
                 <p className="text-xs text-gray-400 mt-1">
                   If set, users see a warning banner before this time but can still use the app.
                 </p>
@@ -381,13 +373,10 @@ const PlatformSection: React.FC = () => {
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   End date &amp; time <span className="text-gray-400">(optional)</span>
                 </label>
-                <input
-                  type="datetime-local"
-                  value={form.maintenanceEndsAt}
+                <input type="datetime-local" value={form.maintenanceEndsAt}
                   onChange={e => setForm(f => ({ ...f, maintenanceEndsAt: e.target.value }))}
                   className="w-full px-3 py-2 rounded-lg border border-orange-300 text-sm
-                    focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-                />
+                    focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white" />
                 <p className="text-xs text-gray-400 mt-1">
                   Maintenance auto-expires at this time. Leave blank for manual off.
                 </p>
@@ -407,9 +396,7 @@ const PlatformSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PRICING SECTION
-// Full vehicle coverage: Car, Bike/Motorcycle, Van, Tricycle + Deliveries.
-// Changes are live on the next fare request — no server restart needed.
+// PRICING SECTION — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 type PricingState = typeof PRICING_DEFAULTS;
 
@@ -465,9 +452,7 @@ const PricingSection: React.FC = () => {
 
   const VehicleBlock = ({ label, prefix }: { label: string; prefix: 'car' | 'bike' | 'van' | 'tricycle' }) => (
     <>
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 mt-4 col-span-full">
-        {label}
-      </p>
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 mt-4 col-span-full">{label}</p>
       <Field label="Base Fare"        k={`ride_base_fare_${prefix}`        as keyof PricingState} />
       <Field label="Per KM"           k={`ride_per_km_${prefix}`           as keyof PricingState} />
       <Field label="Per Minute"       k={`ride_per_minute_${prefix}`       as keyof PricingState} />
@@ -484,13 +469,12 @@ const PricingSection: React.FC = () => {
 
       <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Rides</p>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-2">
-        <VehicleBlock label="Car"              prefix="car"      />
-        <VehicleBlock label="Bike / Motorcycle" prefix="bike"    />
-        <VehicleBlock label="Van"              prefix="van"      />
-        <VehicleBlock label="Tricycle"         prefix="tricycle" />
+        <VehicleBlock label="Car"               prefix="car"      />
+        <VehicleBlock label="Bike / Motorcycle" prefix="bike"     />
+        <VehicleBlock label="Van"               prefix="van"      />
+        <VehicleBlock label="Tricycle"          prefix="tricycle" />
       </div>
 
-      {/* Shared — bikes 0.5×, vans 1.5×, tricycles 0.75× booking fee in fareEngine */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 mb-6">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 col-span-full">
           Shared — applies to all vehicle types
@@ -515,9 +499,7 @@ const PricingSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SURGE SECTION
-// Windows stored as JSON in SystemSettings('surge_windows').
-// fareEngine.js reads this key in _loadFromDB() instead of using a hardcoded array.
+// SURGE SECTION — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 type SurgeWindow = { label: string; days: number[]; hourStart: number; hourEnd: number; multiplier: number };
 
@@ -587,7 +569,6 @@ const SurgeSection: React.FC = () => {
                   : <ChevronDown className="h-4 w-4 text-gray-400" />}
               </div>
             </div>
-
             {expanded === i && (
               <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="col-span-2">
@@ -648,13 +629,10 @@ const SurgeSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NOTIFICATIONS SECTION
-// Quiet hours and broadcast cap stored in SystemSettings.
-// notification.service.js must read these before dispatching broadcasts.
-// Transactional notifications (ride accepted, payment, etc.) bypass quiet hours.
+// NOTIFICATIONS SECTION — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 const NotificationsSection: React.FC = () => {
-  const [form, setForm]     = useState({ quietStart: '23', quietEnd: '7', maxPerDay: '3' });
+  const [form, setForm]         = useState({ quietStart: '23', quietEnd: '7', maxPerDay: '3' });
   const [loading, setLoading]   = useState(false);
   const [fetching, setFetching] = useState(true);
 
@@ -701,7 +679,6 @@ const NotificationsSection: React.FC = () => {
     <Section icon={<Bell className="h-4 w-4" />}
       title="Notification Settings" subtitle="Control broadcast frequency and quiet hours">
       {fetching && <p className="text-xs text-gray-400 mb-4 animate-pulse">Loading…</p>}
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-xl">
         <Field label="Quiet Hours Start (0–23)" value={form.quietStart}
           hint="e.g. 23 = 11 PM" onChange={v => setForm(f => ({ ...f, quietStart: v }))} />
@@ -723,9 +700,7 @@ const NotificationsSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ONBOARDING BONUS — SUPER_ADMIN only
-// Two-step: Preview (dry run) → Disburse (commit).
-// Credits approved drivers/partners with ₦0 balance. Safe to re-run.
+// ONBOARDING BONUS — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 const OnboardingBonusSection: React.FC = () => {
   const [driverBonus,  setDriverBonus]  = useState('5000');
@@ -780,7 +755,6 @@ const OnboardingBonusSection: React.FC = () => {
         wallet is <strong>₦0</strong>. The bonus is <strong>non-withdrawable</strong> — used only
         as a security deposit to accept rides/deliveries. Safe to re-run.
       </Alert>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-sm mb-5">
         {([
           { label: 'Driver Bonus',  value: driverBonus,  setter: setDriverBonus  },
@@ -797,7 +771,6 @@ const OnboardingBonusSection: React.FC = () => {
           </div>
         ))}
       </div>
-
       {preview && (
         <Alert variant="warning" className="mb-4">
           <strong>Preview:</strong> {preview.eligibleDrivers} driver(s) and {preview.eligiblePartners} partner(s) eligible.
@@ -809,7 +782,6 @@ const OnboardingBonusSection: React.FC = () => {
           ✅ <strong>{result.drivers}</strong> driver(s) and <strong>{result.partners}</strong> partner(s) credited.
         </Alert>
       )}
-
       <div className="flex items-center gap-3 flex-wrap">
         <Button variant="secondary" loading={previewing} onClick={handlePreview}>
           <Search className="h-4 w-4" />Preview Eligible
@@ -818,8 +790,6 @@ const OnboardingBonusSection: React.FC = () => {
           <Gift className="h-4 w-4" />Disburse Bonuses
         </Button>
       </div>
-
-      {/* Disbursement history from ActivityLog */}
       <div className="mt-6 border-t border-gray-100 pt-4">
         <button onClick={() => { if (!logsOpen && logs.length === 0) loadLogs(); setLogsOpen(o => !o); }}
           className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900">
@@ -827,13 +797,10 @@ const OnboardingBonusSection: React.FC = () => {
           Disbursement History
           {logsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
-
         {logsOpen && (
           <div className="mt-3">
             {logsLoading && <p className="text-xs text-gray-400 animate-pulse">Loading…</p>}
-            {!logsLoading && logs.length === 0 && (
-              <p className="text-xs text-gray-400">No disbursements found.</p>
-            )}
+            {!logsLoading && logs.length === 0 && <p className="text-xs text-gray-400">No disbursements found.</p>}
             {!logsLoading && logs.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left">
@@ -868,7 +835,7 @@ const OnboardingBonusSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AUDIT LOG — visible to all admins, lazy-loaded on toggle
+// AUDIT LOG — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 const AuditLogSection: React.FC = () => {
   const [logs,    setLogs]    = useState<any[]>([]);
@@ -898,13 +865,10 @@ const AuditLogSection: React.FC = () => {
           </button>
         )}
       </button>
-
       {open && (
         <>
           {loading && <p className="text-xs text-gray-400 animate-pulse">Loading…</p>}
-          {!loading && logs.length === 0 && (
-            <p className="text-xs text-gray-400">No settings changes recorded yet.</p>
-          )}
+          {!loading && logs.length === 0 && <p className="text-xs text-gray-400">No settings changes recorded yet.</p>}
           {!loading && logs.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
@@ -936,8 +900,7 @@ const AuditLogSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DANGER ZONE — SUPER_ADMIN only
-// Clear Fare Cache: writes fare_cache_bust key → triggers invalidateFareCache()
+// DANGER ZONE — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 const DangerZoneSection: React.FC = () => {
   const [cacheLoading, setCacheLoading] = useState(false);

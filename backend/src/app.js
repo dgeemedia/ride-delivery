@@ -93,6 +93,15 @@ const globalLimiter = rateLimit({
 });
 app.use('/api/', globalLimiter);
 
+const statusLimiter = rateLimit({
+  windowMs: 60 * 1000,   // 1 minute
+  max:      30,
+  message:  'Too many status requests, please try again shortly.',
+  standardHeaders: true,
+  legacyHeaders:   false,
+});
+app.use('/api/status/', statusLimiter);
+  
 // SHIELD view limiter — only registered when SHIELD is enabled
 if (ENABLE_SHIELD) {
   const shieldViewLimiter = rateLimit({

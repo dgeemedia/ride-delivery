@@ -1,15 +1,23 @@
 // mobile/src/screens/Shared/SupportScreen.js
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  StatusBar, Dimensions, Animated, Linking, Alert, Platform,
+  StatusBar, Dimensions, Animated, Linking, Alert,
 } from 'react-native';
-import { Ionicons }              from '@expo/vector-icons';
-import { useSafeAreaInsets }     from 'react-native-safe-area-context';
-import { useTheme }              from '../../context/ThemeContext';
-import { useAuth }               from '../../context/AuthContext';
+import { Ionicons }          from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme }          from '../../context/ThemeContext';
+import { useAuth }           from '../../context/AuthContext';
+import { settingsAPI }       from '../../services/api';
 
 const { width } = Dimensions.get('window');
+
+// ── Defaults shown instantly while the fetch is in flight ────────────────────
+const CONTACT_DEFAULTS = {
+  email:    'support@diakite.app',
+  phone:    '+2348000000000',
+  whatsapp: '2348000000000',   // wa.me format — no leading +
+};
 
 const Section = ({ title, children, theme }) => (
   <View style={[sec.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
@@ -35,8 +43,8 @@ const MenuItem = ({ icon, label, onPress, danger, value, theme, last, badge }) =
       </View>
       <Text style={[mi.label, { color }]}>{label}</Text>
       <View style={mi.right}>
-        {value  && <Text style={[mi.value, { color: theme.hint }]}>{value}</Text>}
-        {badge  && (
+        {value && <Text style={[mi.value, { color: theme.hint }]}>{value}</Text>}
+        {badge && (
           <View style={[mi.badge, { backgroundColor: theme.accent }]}>
             <Text style={[mi.badgeTxt, { color: theme.accentFg ?? '#111' }]}>{badge}</Text>
           </View>
@@ -69,6 +77,27 @@ export default function SupportScreen({ navigation }) {
   const { user }        = useAuth();
   const insets          = useSafeAreaInsets();
   const fadeA           = useRef(new Animated.Value(0)).current;
+
+  // ── Live contact info — three independent fields ──────────────────────────
+  const [contact, setContact] = useState(CONTACT_DEFAULTS);
+
+  useEffect(() => {
+    settingsAPI.getContactSettings()
+      .then(res => {
+        const s = res?.data ?? {};
+
+        const phone    = s.support_phone    || CONTACT_DEFAULTS.phone;
+        const whatsapp = s.support_whatsapp || phone; // fall back to phone if not set
+
+        setContact({
+          email:    s.support_email || CONTACT_DEFAULTS.email,
+          phone,
+          // wa.me expects the number without a leading +
+          whatsapp: whatsapp.replace(/^\+/, ''),
+        });
+      })
+      .catch(() => { /* silently keep defaults */ });
+  }, []);
 
   useEffect(() => {
     Animated.timing(fadeA, { toValue: 1, duration: 500, useNativeDriver: true }).start();
@@ -107,7 +136,7 @@ export default function SupportScreen({ navigation }) {
             </Text>
           </View>
 
-          {/* ── SUPPORT TICKETS — new primary section ── */}
+          {/* Support Tickets */}
           <Section title="SUPPORT TICKETS" theme={theme}>
             <MenuItem
               icon="chatbubble-ellipses-outline"
@@ -124,28 +153,29 @@ export default function SupportScreen({ navigation }) {
             />
           </Section>
 
-          {/* Contact */}
+          {/* Contact — all three values driven by admin settings */}
           <Section title="CONTACT US" theme={theme}>
             <MenuItem
               icon="mail-outline"
               label="Email Support"
-              value="support@diakite.app"
+              value={contact.email}
               theme={theme}
-              onPress={() => openURL('mailto:support@diakite.app')}
+              onPress={() => openURL(`mailto:${contact.email}`)}
             />
             <MenuItem
               icon="call-outline"
               label="Call Us"
-              value="+234 800 000 0000"
+              value={contact.phone}
               theme={theme}
-              onPress={() => openURL('tel:+2348000000000')}
+              onPress={() => openURL(`tel:${contact.phone}`)}
             />
             <MenuItem
               icon="logo-whatsapp"
               label="WhatsApp"
+              value={`+${contact.whatsapp}`}          // display with + prefix
               theme={theme}
               last
-              onPress={() => openURL('https://wa.me/2348000000000')}
+              onPress={() => openURL(`https://wa.me/${contact.whatsapp}`)}
             />
           </Section>
 
@@ -168,7 +198,7 @@ export default function SupportScreen({ navigation }) {
               label="Report an Issue"
               theme={theme}
               last
-              onPress={() => navigation.navigate('SubmitTicket')}   // ← was Alert, now navigates
+              onPress={() => navigation.navigate('SubmitTicket')}
             />
           </Section>
 
@@ -211,7 +241,7 @@ const s = StyleSheet.create({
     width: 42, height: 42, borderRadius: 13, borderWidth: 1,
     justifyContent: 'center', alignItems: 'center',
   },
-  scroll: { paddingHorizontal: 24 },
+  scroll:    { paddingHorizontal: 24 },
   hero:      { alignItems: 'center', paddingBottom: 28 },
   heroIcon:  { width: 72, height: 72, borderRadius: 36, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   heroTitle: { fontSize: 22, fontWeight: '800', marginBottom: 8, letterSpacing: -0.3 },
