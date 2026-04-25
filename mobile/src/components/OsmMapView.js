@@ -2,67 +2,39 @@
 /**
  * OsmMapView.js
  * ─────────────────────────────────────────────────────────────────────────────
- * A fully interactive map component using Leaflet + OpenStreetMap tiles.
- * Drop-in fallback for react-native-maps — no API key required.
+ * Interactive Leaflet + OpenStreetMap map. No API key required.
  *
- * Supports:
- *   • Pan / pinch-zoom
- *   • Markers (with colour and icon label)
- *   • Polyline between two points
- *   • animateToRegion() / fitToCoordinates() via ref
- *   • onRegionChange / onRegionChangeComplete callbacks
- *   • showsUserLocation (uses device GPS via browser geolocation)
- *   • Dark-map style matching your DARK_MAP_STYLE
+ * Platform support:
+ *   • iOS / Android  → react-native-webview (WebView)
+ *   • Web            → <iframe srcdoc>  (no WebView dependency)
  *
- * Usage — exactly like react-native-maps:
- *
- *   import OsmMapView, { Marker, Polyline } from './OsmMapView';
- *
- *   const mapRef = useRef(null);
- *
- *   <OsmMapView
- *     ref={mapRef}
- *     style={StyleSheet.absoluteFillObject}
- *     initialRegion={{ latitude: 6.5244, longitude: 3.3792, latitudeDelta: 0.012, longitudeDelta: 0.012 }}
- *     showsUserLocation
- *     onMapReady={() => console.log('ready')}
- *     onRegionChangeComplete={(region) => console.log(region)}
- *   >
- *     <Marker coordinate={{ latitude: 6.5244, longitude: 3.3792 }} pinColor="#C9A96E" />
- *     <Polyline
- *       coordinates={[{ latitude: 6.52, longitude: 3.38 }, { latitude: 6.43, longitude: 3.42 }]}
- *       strokeColor="#C9A96E"
- *       strokeWidth={3}
- *     />
- *   </OsmMapView>
- *
- *   // Imperative control (same API as react-native-maps):
- *   mapRef.current.animateToRegion({ latitude, longitude, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 600);
- *   mapRef.current.fitToCoordinates([{ latitude, longitude }, ...], { edgePadding: { top, right, bottom, left } });
+ * Drop-in replacement for react-native-maps:
+ *   import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from './OsmMapView';
  */
 
 import React, {
   forwardRef,
   useImperativeHandle,
   useRef,
-  useEffect,
   useMemo,
   Children,
+  useEffect,
 } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { View, StyleSheet, Platform } from 'react-native';
+
+// Only import WebView on native — web doesn't have it
+let WebView = null;
+if (Platform.OS !== 'web') {
+  try {
+    WebView = require('react-native-webview').WebView;
+  } catch {
+    console.warn('[OsmMapView] react-native-webview not installed');
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Collect Marker / Polyline children into plain descriptors
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Convert a react-native-maps region to a Leaflet bounds array. */
-const regionToBounds = (r) => [
-  [r.latitude - r.latitudeDelta / 2, r.longitude - r.longitudeDelta / 2],
-  [r.latitude + r.latitudeDelta / 2, r.longitude + r.longitudeDelta / 2],
-];
-
-/** Collect Marker and Polyline children into a simple descriptor list. */
 function collectDescriptors(children) {
   const markers = [];
   const polylines = [];
@@ -72,14 +44,13 @@ function collectDescriptors(children) {
     const type = child.type?.displayName ?? child.type?.name ?? '';
 
     if (type === 'OsmMarker') {
-      const { coordinate, pinColor, title, description } = child.props;
+      const { coordinate, pinColor, title } = child.props;
       if (coordinate?.latitude != null) {
         markers.push({
-          lat: coordinate.latitude,
-          lng: coordinate.longitude,
+          lat:   coordinate.latitude,
+          lng:   coordinate.longitude,
           color: pinColor ?? '#C9A96E',
           title: title ?? '',
-          desc: description ?? '',
         });
       }
     }
@@ -89,7 +60,7 @@ function collectDescriptors(children) {
       if (Array.isArray(coordinates) && coordinates.length >= 2) {
         polylines.push({
           coords: coordinates.map((c) => [c.latitude, c.longitude]),
-          color: strokeColor ?? '#C9A96E',
+          color:  strokeColor ?? '#C9A96E',
           weight: strokeWidth ?? 3,
           dashed: Array.isArray(lineDashPattern),
         });
@@ -101,12 +72,13 @@ function collectDescriptors(children) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HTML template — Leaflet with dark CartoDB tiles
+// Shared Leaflet HTML builder
 // ─────────────────────────────────────────────────────────────────────────────
-const buildHTML = ({ initialRegion, showsUserLocation, markers, polylines }) => {
-  const lat = initialRegion?.latitude ?? 6.5244;
-  const lng = initialRegion?.longitude ?? 3.3792;
-  const zoom = Math.round(Math.log2(360 / (initialRegion?.longitudeDelta ?? 0.05))) + 1;
+function buildHTML({ initialRegion, showsUserLocation, markers, polylines }) {
+  const lat  = initialRegion?.latitude  ?? 6.5244;
+  const lng  = initialRegion?.longitude ?? 3.3792;
+  const dLng = initialRegion?.longitudeDelta ?? 0.05;
+  const zoom = Math.max(10, Math.min(18, Math.round(Math.log2(360 / dLng)) + 1));
 
   return `<!DOCTYPE html>
 <html>
@@ -115,28 +87,23 @@ const buildHTML = ({ initialRegion, showsUserLocation, markers, polylines }) => 
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body, #map { width: 100%; height: 100%; background: #1a1a1a; }
-  .leaflet-control-zoom { display: none; }
-  .leaflet-control-attribution { display: none; }
-  /* Custom marker dots */
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body,#map { width:100%; height:100%; background:#1a1a1a; }
+  .leaflet-control-zoom,.leaflet-control-attribution { display:none; }
   .osm-dot {
-    width: 16px; height: 16px; border-radius: 50%;
-    border: 2.5px solid rgba(255,255,255,0.8);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    width:14px; height:14px; border-radius:50%;
+    border:2px solid rgba(255,255,255,0.8);
+    box-shadow:0 2px 8px rgba(0,0,0,0.6);
   }
-  /* User location pulse */
   .user-dot {
-    width: 14px; height: 14px; border-radius: 50%;
-    background: #4285F4;
-    border: 3px solid white;
-    box-shadow: 0 0 0 0 rgba(66,133,244,0.6);
-    animation: pulse 2s infinite;
+    width:12px; height:12px; border-radius:50%;
+    background:#4285F4; border:3px solid white;
+    animation:pulse 2s infinite;
   }
   @keyframes pulse {
-    0%   { box-shadow: 0 0 0 0   rgba(66,133,244,0.6); }
-    70%  { box-shadow: 0 0 0 12px rgba(66,133,244,0); }
-    100% { box-shadow: 0 0 0 0   rgba(66,133,244,0); }
+    0%   { box-shadow:0 0 0 0   rgba(66,133,244,0.6); }
+    70%  { box-shadow:0 0 0 10px rgba(66,133,244,0);   }
+    100% { box-shadow:0 0 0 0   rgba(66,133,244,0);    }
   }
 </style>
 </head>
@@ -144,266 +111,262 @@ const buildHTML = ({ initialRegion, showsUserLocation, markers, polylines }) => 
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-(function() {
-  // ── Map init ──────────────────────────────────────────────────────────────
-  const map = L.map('map', {
-    center: [${lat}, ${lng}],
-    zoom: ${Math.max(10, Math.min(18, zoom))},
-    zoomControl: false,
-    attributionControl: false,
+(function(){
+  var map = L.map('map',{
+    center:[${lat},${lng}], zoom:${zoom},
+    zoomControl:false, attributionControl:false,
   });
 
-  // CartoDB Dark Matter — no API key, great dark style
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19,
-    subdomains: 'abcd',
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    maxZoom:19, subdomains:'abcd',
   }).addTo(map);
 
-  // ── Helper: coloured dot marker ───────────────────────────────────────────
-  function dotIcon(color) {
+  function dotIcon(color){
     return L.divIcon({
-      html: '<div class="osm-dot" style="background:' + color + '"></div>',
-      iconSize: [16, 16],
-      iconAnchor: [8, 8],
-      className: '',
+      html:'<div class="osm-dot" style="background:'+color+'"></div>',
+      iconSize:[14,14], iconAnchor:[7,7], className:'',
     });
   }
 
-  // ── Render markers ────────────────────────────────────────────────────────
-  const markerData = ${JSON.stringify(markers)};
-  markerData.forEach(function(m) {
-    const marker = L.marker([m.lat, m.lng], { icon: dotIcon(m.color) }).addTo(map);
-    if (m.title) marker.bindTooltip(m.title);
+  var markerData = ${JSON.stringify(markers)};
+  markerData.forEach(function(m){
+    var mk = L.marker([m.lat,m.lng],{icon:dotIcon(m.color)}).addTo(map);
+    if(m.title) mk.bindTooltip(m.title);
   });
 
-  // ── Render polylines ──────────────────────────────────────────────────────
-  const polylineData = ${JSON.stringify(polylines)};
-  polylineData.forEach(function(p) {
-    L.polyline(p.coords, {
-      color: p.color,
-      weight: p.weight,
-      dashArray: p.dashed ? '8,5' : null,
-      opacity: 0.9,
+  var polylineData = ${JSON.stringify(polylines)};
+  polylineData.forEach(function(p){
+    L.polyline(p.coords,{
+      color:p.color, weight:p.weight,
+      dashArray:p.dashed?'8,5':null, opacity:0.9,
     }).addTo(map);
   });
 
-  // ── User location ─────────────────────────────────────────────────────────
   ${showsUserLocation ? `
-  if (navigator.geolocation) {
-    const userIcon = L.divIcon({
-      html: '<div class="user-dot"></div>',
-      iconSize: [14, 14], iconAnchor: [7, 7], className: '',
-    });
-    let userMarker = null;
-    const watchId = navigator.geolocation.watchPosition(function(pos) {
-      const latlng = [pos.coords.latitude, pos.coords.longitude];
-      if (!userMarker) {
-        userMarker = L.marker(latlng, { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
-      } else {
-        userMarker.setLatLng(latlng);
-      }
-    }, null, { enableHighAccuracy: true, timeout: 10000 });
-  }
-  ` : ''}
+  if(navigator.geolocation){
+    var userIcon=L.divIcon({html:'<div class="user-dot"></div>',iconSize:[12,12],iconAnchor:[6,6],className:''});
+    var uMk=null;
+    navigator.geolocation.watchPosition(function(pos){
+      var ll=[pos.coords.latitude,pos.coords.longitude];
+      if(!uMk){ uMk=L.marker(ll,{icon:userIcon,zIndexOffset:1000}).addTo(map); }
+      else { uMk.setLatLng(ll); }
+    },null,{enableHighAccuracy:true,timeout:10000});
+  }` : ''}
 
-  // ── Region change events → RN bridge ─────────────────────────────────────
-  let regionChangeTimer = null;
-  function emitRegion(type) {
-    const c = map.getCenter();
-    const b = map.getBounds();
-    const msg = JSON.stringify({
-      type,
-      region: {
-        latitude:       c.lat,
-        longitude:      c.lng,
-        latitudeDelta:  b.getNorth() - b.getSouth(),
-        longitudeDelta: b.getEast()  - b.getWest(),
-      }
-    });
-    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
+  function postMsg(type){
+    var c=map.getCenter(), b=map.getBounds();
+    var msg=JSON.stringify({type:type,region:{
+      latitude:c.lat, longitude:c.lng,
+      latitudeDelta:b.getNorth()-b.getSouth(),
+      longitudeDelta:b.getEast()-b.getWest(),
+    }});
+    if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
+    try{ window.parent.postMessage(msg,'*'); }catch(e){}
   }
 
-  map.on('move', function() {
-    clearTimeout(regionChangeTimer);
-    emitRegion('regionChange');
-  });
-  map.on('moveend', function() {
-    clearTimeout(regionChangeTimer);
-    regionChangeTimer = setTimeout(function() { emitRegion('regionChangeComplete'); }, 80);
+  var moveTimer=null;
+  map.on('move',function(){ clearTimeout(moveTimer); postMsg('regionChange'); });
+  map.on('moveend',function(){
+    clearTimeout(moveTimer);
+    moveTimer=setTimeout(function(){ postMsg('regionChangeComplete'); },80);
   });
 
-  // ── Imperative commands from RN ───────────────────────────────────────────
-  window.osmCmd = function(json) {
-    const cmd = JSON.parse(json);
-    if (cmd.type === 'flyTo') {
-      map.flyTo([cmd.lat, cmd.lng], cmd.zoom ?? map.getZoom(), { duration: (cmd.duration ?? 500) / 1000 });
+  window.osmCmd=function(json){
+    var cmd=JSON.parse(json);
+    if(cmd.type==='flyTo'){
+      map.flyTo([cmd.lat,cmd.lng],cmd.zoom||map.getZoom(),{duration:(cmd.duration||500)/1000});
     }
-    if (cmd.type === 'fitBounds') {
-      map.fitBounds(cmd.bounds, { paddingTopLeft: [cmd.padLeft ?? 60, cmd.padTop ?? 80], paddingBottomRight: [cmd.padRight ?? 60, cmd.padBottom ?? 80], animate: true });
-    }
-    if (cmd.type === 'updateMarkers') {
-      // Re-render by injecting updated HTML — handled by full reload via key change
+    if(cmd.type==='fitBounds'){
+      map.fitBounds(cmd.bounds,{
+        paddingTopLeft:[cmd.padLeft||60,cmd.padTop||80],
+        paddingBottomRight:[cmd.padRight||60,cmd.padBottom||80],
+        animate:true,
+      });
     }
   };
 
-  // Notify RN the map is ready
-  setTimeout(function() {
-    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
-  }, 400);
+  setTimeout(function(){
+    var msg=JSON.stringify({type:'ready'});
+    if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
+    try{ window.parent.postMessage(msg,'*'); }catch(e){}
+  },400);
 })();
 </script>
 </body>
 </html>`;
-};
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OsmMapView
+// Web renderer — <iframe srcdoc>, no WebView dependency
 // ─────────────────────────────────────────────────────────────────────────────
-const OsmMapView = forwardRef(function OsmMapView(
-  {
-    style,
-    initialRegion,
-    showsUserLocation = false,
-    onMapReady,
-    onRegionChange,
-    onRegionChangeComplete,
-    scrollEnabled = true,
-    zoomEnabled = true,
-    children,
-  },
+const WebMapView = forwardRef(function WebMapView(
+  { style, initialRegion, showsUserLocation, onMapReady,
+    onRegionChange, onRegionChangeComplete, children },
   ref
 ) {
-  const webViewRef = useRef(null);
+  const iframeRef = useRef(null);
+  const { markers, polylines } = useMemo(() => collectDescriptors(children), [children]);
 
-  // Collect child descriptors
-  const { markers, polylines } = useMemo(
-    () => collectDescriptors(children),
-    [children]
-  );
-
-  // Build the HTML once (children changes → key change re-mounts WebView)
   const html = useMemo(
     () => buildHTML({ initialRegion, showsUserLocation, markers, polylines }),
-    // Re-build when map data changes; NOT on every render
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      initialRegion?.latitude,
-      initialRegion?.longitude,
-      initialRegion?.latitudeDelta,
-      JSON.stringify(markers),
-      JSON.stringify(polylines),
-      showsUserLocation,
+      initialRegion?.latitude, initialRegion?.longitude, initialRegion?.latitudeDelta,
+      JSON.stringify(markers), JSON.stringify(polylines), showsUserLocation,
     ]
   );
 
-  // ── Imperative API (mirrors react-native-maps MapView ref) ───────────────
+  useEffect(() => {
+    const handler = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'ready')                onMapReady?.();
+        if (msg.type === 'regionChange')         onRegionChange?.(msg.region);
+        if (msg.type === 'regionChangeComplete') onRegionChangeComplete?.(msg.region);
+      } catch {}
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [onMapReady, onRegionChange, onRegionChangeComplete]);
+
   useImperativeHandle(ref, () => ({
     animateToRegion(region, duration = 500) {
-      const zoom = Math.round(Math.log2(360 / (region.longitudeDelta ?? 0.012))) + 1;
-      const cmd = JSON.stringify({
-        type: 'flyTo',
-        lat: region.latitude,
-        lng: region.longitude,
-        zoom: Math.max(10, Math.min(18, zoom)),
-        duration,
+      const zoom = Math.max(10, Math.min(18, Math.round(Math.log2(360 / (region.longitudeDelta ?? 0.012))) + 1));
+      const cmd  = JSON.stringify({ type: 'flyTo', lat: region.latitude, lng: region.longitude, zoom, duration });
+      try { iframeRef.current?.contentWindow?.osmCmd?.(cmd); } catch {}
+    },
+    fitToCoordinates(coords, { edgePadding = {} } = {}) {
+      if (!coords?.length) return;
+      const lats   = coords.map((c) => c.latitude);
+      const lngs   = coords.map((c) => c.longitude);
+      const bounds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
+      const cmd    = JSON.stringify({
+        type: 'fitBounds', bounds,
+        padTop: edgePadding.top ?? 80,    padRight:  edgePadding.right  ?? 60,
+        padBottom: edgePadding.bottom ?? 80, padLeft: edgePadding.left   ?? 60,
       });
+      try { iframeRef.current?.contentWindow?.osmCmd?.(cmd); } catch {}
+    },
+  }));
+
+  return (
+    <View style={[webStyles.container, style]}>
+      <iframe
+        ref={iframeRef}
+        srcDoc={html}
+        style={webStyles.iframe}
+        sandbox="allow-scripts allow-same-origin"
+        title="map"
+      />
+    </View>
+  );
+});
+
+// Web styles as plain objects (no StyleSheet on web for iframe)
+const webStyles = {
+  container: { overflow: 'hidden', flex: 1 },
+  iframe: { width: '100%', height: '100%', border: 'none', display: 'block' },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Native renderer — react-native-webview
+// ─────────────────────────────────────────────────────────────────────────────
+const NativeMapView = forwardRef(function NativeMapView(
+  { style, initialRegion, showsUserLocation, onMapReady,
+    onRegionChange, onRegionChangeComplete, children },
+  ref
+) {
+  const webViewRef = useRef(null);
+  const { markers, polylines } = useMemo(() => collectDescriptors(children), [children]);
+
+  const html = useMemo(
+    () => buildHTML({ initialRegion, showsUserLocation, markers, polylines }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      initialRegion?.latitude, initialRegion?.longitude, initialRegion?.latitudeDelta,
+      JSON.stringify(markers), JSON.stringify(polylines), showsUserLocation,
+    ]
+  );
+
+  useImperativeHandle(ref, () => ({
+    animateToRegion(region, duration = 500) {
+      const zoom = Math.max(10, Math.min(18, Math.round(Math.log2(360 / (region.longitudeDelta ?? 0.012))) + 1));
+      const cmd  = JSON.stringify({ type: 'flyTo', lat: region.latitude, lng: region.longitude, zoom, duration });
       webViewRef.current?.injectJavaScript(`window.osmCmd(${JSON.stringify(cmd)});true;`);
     },
     fitToCoordinates(coords, { edgePadding = {} } = {}) {
       if (!coords?.length) return;
-      const lats = coords.map((c) => c.latitude);
-      const lngs = coords.map((c) => c.longitude);
-      const bounds = [
-        [Math.min(...lats), Math.min(...lngs)],
-        [Math.max(...lats), Math.max(...lngs)],
-      ];
-      const cmd = JSON.stringify({
-        type: 'fitBounds',
-        bounds,
-        padTop:    edgePadding.top    ?? 80,
-        padRight:  edgePadding.right  ?? 60,
-        padBottom: edgePadding.bottom ?? 80,
-        padLeft:   edgePadding.left   ?? 60,
+      const lats   = coords.map((c) => c.latitude);
+      const lngs   = coords.map((c) => c.longitude);
+      const bounds = [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]];
+      const cmd    = JSON.stringify({
+        type: 'fitBounds', bounds,
+        padTop: edgePadding.top ?? 80,    padRight:  edgePadding.right  ?? 60,
+        padBottom: edgePadding.bottom ?? 80, padLeft: edgePadding.left   ?? 60,
       });
       webViewRef.current?.injectJavaScript(`window.osmCmd(${JSON.stringify(cmd)});true;`);
     },
   }));
 
-  // ── Bridge messages from Leaflet → RN callbacks ───────────────────────────
   const handleMessage = (event) => {
     try {
       const msg = JSON.parse(event.nativeEvent.data);
-      if (msg.type === 'ready') {
-        onMapReady?.();
-      } else if (msg.type === 'regionChange') {
-        onRegionChange?.(msg.region);
-      } else if (msg.type === 'regionChangeComplete') {
-        onRegionChangeComplete?.(msg.region);
-      }
+      if (msg.type === 'ready')                onMapReady?.();
+      if (msg.type === 'regionChange')         onRegionChange?.(msg.region);
+      if (msg.type === 'regionChangeComplete') onRegionChangeComplete?.(msg.region);
     } catch {}
   };
 
+  if (!WebView) {
+    return <View style={[nativeStyles.container, nativeStyles.placeholder, style]} />;
+  }
+
   return (
-    <View style={[styles.container, style]}>
+    <View style={[nativeStyles.container, style]}>
       <WebView
         ref={webViewRef}
         source={{ html }}
         style={StyleSheet.absoluteFillObject}
-        scrollEnabled={false}          // WebView scroll ≠ map scroll
+        scrollEnabled={false}
         bounces={false}
         javaScriptEnabled
         domStorageEnabled
         geolocationEnabled={showsUserLocation}
         allowsInlineMediaPlayback
-        mediaPlaybackRequiresUserAction={false}
         onMessage={handleMessage}
         originWhitelist={['*']}
         mixedContentMode="always"
-        // Disable safe-area so the map fills the parent completely
         contentInsetAdjustmentBehavior="never"
       />
     </View>
   );
 });
 
+const nativeStyles = StyleSheet.create({
+  container:   { overflow: 'hidden' },
+  placeholder: { backgroundColor: '#1a1a1a' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OsmMapView — auto-selects platform renderer
+// ─────────────────────────────────────────────────────────────────────────────
+const OsmMapView = forwardRef(function OsmMapView(props, ref) {
+  if (Platform.OS === 'web') return <WebMapView ref={ref} {...props} />;
+  return <NativeMapView ref={ref} {...props} />;
+});
+
 OsmMapView.displayName = 'OsmMapView';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Marker & Polyline (display-name-tagged so OsmMapView can identify them)
+// Marker & Polyline — declarative, read by OsmMapView via displayName
 // ─────────────────────────────────────────────────────────────────────────────
+function OsmMarker()   { return null; }
+OsmMarker.displayName  = 'OsmMarker';
 
-/**
- * <Marker coordinate={{ latitude, longitude }} pinColor="#C9A96E" title="Pickup" />
- * Renders as a coloured dot on the map.
- * Children (custom marker views) are ignored in the WebView implementation —
- * use pinColor for colour customisation.
- */
-function OsmMarker() {
-  // Purely declarative — rendered inside the HTML, not as a RN view
-  return null;
-}
-OsmMarker.displayName = 'OsmMarker';
-
-/**
- * <Polyline
- *   coordinates={[{ latitude, longitude }, ...]}
- *   strokeColor="#C9A96E"
- *   strokeWidth={3}
- *   lineDashPattern={[8, 5]}
- * />
- */
-function OsmPolyline() {
-  return null;
-}
+function OsmPolyline()  { return null; }
 OsmPolyline.displayName = 'OsmPolyline';
 
-// PROVIDER_GOOGLE constant (no-op here, accepted for API compatibility)
-export const PROVIDER_GOOGLE = 'google';
+export const PROVIDER_GOOGLE  = 'google';
 export const PROVIDER_DEFAULT = 'default';
-
-const styles = StyleSheet.create({
-  container: { overflow: 'hidden' },
-});
-
 export { OsmMarker as Marker, OsmPolyline as Polyline };
 export default OsmMapView;
