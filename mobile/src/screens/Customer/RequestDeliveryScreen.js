@@ -6,7 +6,7 @@ import {
   StatusBar, Platform, KeyboardAvoidingView, Alert,
   FlatList, Image, Modal, SafeAreaView,
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../../components/SmartMapView';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
