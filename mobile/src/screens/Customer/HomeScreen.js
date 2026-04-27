@@ -268,13 +268,15 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
     { icon:'home-outline',             label:'Home',           dest:null },
     { icon:'car-outline',              label:'Book a Ride',    dest:'RequestRide' },
     { icon:'cube-outline',             label:'Send a Package', dest:'RequestDelivery' },
-    { icon:'people-outline',           label:'Nearby Drivers', dest:'NearbyDrivers', 
-      params:{ pickupAddress:'', pickupLat:6.5244, pickupLng:3.3792, dropoffAddress:'', dropoffLat:6.4281, dropoffLng:3.4219, vehicleType:'CAR' } 
+    { icon:'people-outline',           label:'Nearby Drivers', dest:'NearbyDrivers',
+      params:{ pickupAddress:'', pickupLat:6.5244, pickupLng:3.3792, dropoffAddress:'', dropoffLat:6.4281, dropoffLng:3.4219, vehicleType:'CAR' }
     },
     { icon:'time-outline',             label:'My History',     dest:'HistoryTab' },
     { icon:'wallet-outline',           label:'Wallet',         dest:'WalletTab' },
-    { icon:'shield-checkmark-outline', label:'Shield',         dest:'Shield' },
-    { icon:'business-outline',         label:'Corporate',      dest:'Corporate' },
+    // ── Uncomment below when Shield, Corporate & DuoPay are ready to launch ──
+    // { icon:'shield-checkmark-outline', label:'Shield',         dest:'Shield' },
+    // { icon:'business-outline',         label:'Corporate',      dest:'Corporate' },
+    // ─────────────────────────────────────────────────────────────────────────
     { icon:'notifications-outline',    label:'Notifications',  dest:'Notifications' },
     { icon:'headset-outline',          label:'Support',        dest:'Support' },
     { icon:'person-outline',           label:'Profile',        dest:'ProfileTab' },
@@ -290,10 +292,10 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
 
-      <Animated.View style={[dm.panel, { 
-        backgroundColor: panelBg, 
-        borderRightColor: G.border(mode), 
-        transform: [{ translateX: slideA }] 
+      <Animated.View style={[dm.panel, {
+        backgroundColor: panelBg,
+        borderRightColor: G.border(mode),
+        transform: [{ translateX: slideA }]
       }]}>
         <SafeAreaView style={{ flex: 1 }}>
           {/* User Header */}
@@ -315,8 +317,8 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
                 {user?.email}
               </Text>
             </View>
-            <TouchableOpacity 
-              onPress={onClose} 
+            <TouchableOpacity
+              onPress={onClose}
               style={[dm.closeBtn, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}
             >
               <Ionicons name="close" size={18} color={theme.foreground} />
@@ -668,7 +670,7 @@ export default function HomeScreen({ navigation }) {
     } catch (e) {
       console.warn('Fetch error:', e);
     } finally {
-      setLoading(false); 
+      setLoading(false);
       setHistoryLoading(false);
       Animated.parallel([
         Animated.timing(fadeA,  { toValue:1, duration:550, useNativeDriver:true }),

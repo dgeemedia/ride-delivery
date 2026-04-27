@@ -10,6 +10,9 @@ const PUBLIC_SETTING_KEYS = [
   'support_phone',
   'support_whatsapp',   // ← new — may differ from support_phone
   'platform_name',
+  'help_center_url',
+  'terms_url',
+  'privacy_url',
 ];
 
 router.get('/maintenance', async (req, res) => {
@@ -33,26 +36,23 @@ router.get('/maintenance', async (req, res) => {
   }
 });
 
+// The mobile app calls this once on Support / Terms screen mount.
 router.get('/contact', async (req, res) => {
   try {
     const rows = await prisma.systemSettings.findMany({
       where:  { key: { in: PUBLIC_SETTING_KEYS } },
       select: { key: true, value: true },
     });
-
+ 
     const data = Object.fromEntries(rows.map(r => [r.key, r.value]));
+    // Return every known key — empty string if not yet configured
     const safe = Object.fromEntries(PUBLIC_SETTING_KEYS.map(k => [k, data[k] ?? '']));
-
+ 
     return res.json({ success: true, data: safe });
   } catch {
     return res.json({
       success: true,
-      data: {
-        support_email:    '',
-        support_phone:    '',
-        support_whatsapp: '',
-        platform_name:    '',
-      },
+      data: Object.fromEntries(PUBLIC_SETTING_KEYS.map(k => [k, ''])),
     });
   }
 });

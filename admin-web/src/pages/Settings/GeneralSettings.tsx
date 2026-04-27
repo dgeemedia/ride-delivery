@@ -97,10 +97,11 @@ const Section: React.FC<{
 // PASSWORD SECTION
 // ─────────────────────────────────────────────────────────────────────────────
 const PasswordSection: React.FC = () => {
-  const [form, setForm]     = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
-  const [show, setShow]     = useState({ current: false, next: false, confirm: false });
+  // ← bug fix: removed helpCenterUrl/termsUrl/privacyUrl that leaked in here
+  const [form, setForm]       = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [show, setShow]       = useState({ current: false, next: false, confirm: false });
   const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState('');
+  const [error, setError]     = useState('');
   const strength = getPasswordStrength(form.newPassword);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -174,16 +175,21 @@ const PasswordSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PLATFORM SECTION  ← only section changed from original
-// Now stores support_whatsapp separately from support_phone.
+// PLATFORM SECTION
+// Stores support_whatsapp separately from support_phone.
+// Also stores help_center_url, terms_url, privacy_url.
 // ─────────────────────────────────────────────────────────────────────────────
 const PlatformSection: React.FC = () => {
   const [form, setForm] = useState({
     name:               'Diakite',
     supportEmail:       'support@diakite.com',
     supportPhone:       '+2348000000000',
-    supportWhatsapp:    '+2348000000000',   // ← new — defaults to same as phone
+    supportWhatsapp:    '+2348000000000',
     logoUrl:            '',
+    // ← new URL fields
+    helpCenterUrl:      '',
+    termsUrl:           '',
+    privacyUrl:         '',
     maintenance:        false,
     maintenanceMessage: '',
     maintenanceStartsAt: '',
@@ -198,12 +204,15 @@ const PlatformSection: React.FC = () => {
         const s = res.data?.settings ?? {};
         setForm(f => ({
           ...f,
-          name:            s['platform_name']?.value   ?? f.name,
-          supportEmail:    s['support_email']?.value   ?? f.supportEmail,
-          supportPhone:    s['support_phone']?.value   ?? f.supportPhone,
-          // Fall back to support_phone if support_whatsapp hasn't been saved yet
+          name:            s['platform_name']?.value    ?? f.name,
+          supportEmail:    s['support_email']?.value    ?? f.supportEmail,
+          supportPhone:    s['support_phone']?.value    ?? f.supportPhone,
           supportWhatsapp: s['support_whatsapp']?.value ?? s['support_phone']?.value ?? f.supportWhatsapp,
-          logoUrl:         s['platform_logo']?.value   ?? '',
+          logoUrl:         s['platform_logo']?.value    ?? '',
+          // ← load URL fields — fall back to empty string if not yet saved
+          helpCenterUrl:   s['help_center_url']?.value  ?? '',
+          termsUrl:        s['terms_url']?.value         ?? '',
+          privacyUrl:      s['privacy_url']?.value       ?? '',
           maintenance:     s['maintenance_mode']?.value === true
                         || s['maintenance_mode']?.value === 'true',
           maintenanceMessage:  s['maintenance_message']?.value ?? '',
@@ -244,8 +253,12 @@ const PlatformSection: React.FC = () => {
         settingsAPI.updateSetting('platform_name',       form.name),
         settingsAPI.updateSetting('support_email',       form.supportEmail),
         settingsAPI.updateSetting('support_phone',       form.supportPhone),
-        settingsAPI.updateSetting('support_whatsapp',    form.supportWhatsapp),   // ← new
+        settingsAPI.updateSetting('support_whatsapp',    form.supportWhatsapp),
         settingsAPI.updateSetting('platform_logo',       form.logoUrl),
+        // ← save URL fields
+        settingsAPI.updateSetting('help_center_url',     form.helpCenterUrl),
+        settingsAPI.updateSetting('terms_url',           form.termsUrl),
+        settingsAPI.updateSetting('privacy_url',         form.privacyUrl),
         settingsAPI.updateSetting('maintenance_mode',    String(form.maintenance)),
         settingsAPI.updateSetting('maintenance_message', form.maintenanceMessage),
         settingsAPI.updateSetting('maintenance_starts_at',
@@ -279,7 +292,6 @@ const PlatformSection: React.FC = () => {
         <Input label="Support Email"  value={form.supportEmail} disabled={fetching} type="email"
           onChange={e => setForm(f => ({ ...f, supportEmail: e.target.value }))} />
 
-        {/* Phone and WhatsApp side-by-side with a helper note */}
         <div>
           <Input label="Support Phone (call)"  value={form.supportPhone} disabled={fetching}
             hint="E.164 format e.g. +2348012345678"
@@ -289,7 +301,6 @@ const PlatformSection: React.FC = () => {
           <Input label="WhatsApp Number" value={form.supportWhatsapp} disabled={fetching}
             hint="Can differ from call number — E.164 format"
             onChange={e => setForm(f => ({ ...f, supportWhatsapp: e.target.value }))} />
-          {/* Quick-copy button: populate WhatsApp from Phone */}
           {form.supportPhone && form.supportPhone !== form.supportWhatsapp && (
             <button
               type="button"
@@ -315,7 +326,40 @@ const PlatformSection: React.FC = () => {
         </div>
       )}
 
-      {/* Maintenance block — unchanged */}
+      {/* ── Legal & Help URLs ─────────────────────────────────────────────── */}
+      <div className="mt-6 max-w-2xl">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
+          Legal &amp; Help URLs
+        </p>
+        <p className="text-xs text-gray-500 mb-3">
+          These are served to the mobile app — users tap them to open the respective pages.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Input
+            label="Help Center URL"
+            value={form.helpCenterUrl}
+            disabled={fetching}
+            hint="e.g. https://diakite.app/help"
+            onChange={e => setForm(f => ({ ...f, helpCenterUrl: e.target.value }))}
+          />
+          <Input
+            label="Terms of Service URL"
+            value={form.termsUrl}
+            disabled={fetching}
+            hint="e.g. https://diakite.app/terms"
+            onChange={e => setForm(f => ({ ...f, termsUrl: e.target.value }))}
+          />
+          <Input
+            label="Privacy Policy URL"
+            value={form.privacyUrl}
+            disabled={fetching}
+            hint="e.g. https://diakite.app/privacy"
+            onChange={e => setForm(f => ({ ...f, privacyUrl: e.target.value }))}
+          />
+        </div>
+      </div>
+
+      {/* ── Maintenance block ─────────────────────────────────────────────── */}
       <div className="mt-5 max-w-2xl border border-orange-200 bg-orange-50 rounded-lg p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div>

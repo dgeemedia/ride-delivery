@@ -18,10 +18,12 @@ import RideTrackingScreen        from '../screens/Customer/RideTrackingScreen';
 import DeliveryTrackingScreen    from '../screens/Customer/DeliveryTrackingScreen';
 import HistoryScreen             from '../screens/Customer/HistoryScreen';
 import WalletScreen              from '../screens/Customer/WalletScreen';
-import ShieldScreen              from '../screens/Customer/ShieldScreen';
-import ShieldBeneficiariesScreen from '../screens/Customer/ShieldBeneficiariesScreen';
-import CorporateScreen           from '../screens/Customer/CorporateScreen';
-import DuoPayScreen              from '../screens/Customer/DuoPayScreen';
+// ── Uncomment below when Shield, Corporate & DuoPay are ready to launch ───────
+// import ShieldScreen              from '../screens/Customer/ShieldScreen';
+// import ShieldBeneficiariesScreen from '../screens/Customer/ShieldBeneficiariesScreen';
+// import CorporateScreen           from '../screens/Customer/CorporateScreen';
+// import DuoPayScreen              from '../screens/Customer/DuoPayScreen';
+// ─────────────────────────────────────────────────────────────────────────────
 import RateRideScreen            from '../screens/Customer/RateRideScreen';
 import RateDeliveryScreen        from '../screens/Customer/RateDeliveryScreen';
 import ProfileScreen             from '../screens/Shared/ProfileScreen';
@@ -51,10 +53,12 @@ const HomeStack = () => (
     <Stack.Screen name="DeliveryTracking"    component={DeliveryTrackingScreen}    />
     <Stack.Screen name="RateRide"            component={RateRideScreen}            options={{ presentation: 'modal' }} />
     <Stack.Screen name="RateDelivery"        component={RateDeliveryScreen}        options={{ presentation: 'modal' }} />
-    <Stack.Screen name="Shield"              component={ShieldScreen}              />
-    <Stack.Screen name="ShieldBeneficiaries" component={ShieldBeneficiariesScreen} />
-    <Stack.Screen name="Corporate"           component={CorporateScreen}           />
-    <Stack.Screen name="DuoPay"              component={DuoPayScreen}              />
+    {/* ── Uncomment below when Shield, Corporate & DuoPay are ready to launch ── */}
+    {/* <Stack.Screen name="Shield"              component={ShieldScreen}              /> */}
+    {/* <Stack.Screen name="ShieldBeneficiaries" component={ShieldBeneficiariesScreen} /> */}
+    {/* <Stack.Screen name="Corporate"           component={CorporateScreen}           /> */}
+    {/* <Stack.Screen name="DuoPay"              component={DuoPayScreen}              /> */}
+    {/* ─────────────────────────────────────────────────────────────────────── */}
     <Stack.Screen name="Notifications"       component={NotificationsScreen}       />
     <Stack.Screen name="Support"             component={SupportScreen}             />
     <Stack.Screen name="SubmitTicket"        component={SubmitTicketScreen}        />
@@ -81,7 +85,9 @@ const WalletStack = () => (
     <Stack.Screen name="WalletTopUp"  component={WalletTopUpScreen} />
     <Stack.Screen name="Transfer"     component={TransferScreen}    />
     <Stack.Screen name="Withdraw"     component={WithdrawalScreen}  />
-    <Stack.Screen name="DuoPay"       component={DuoPayScreen}      />
+    {/* ── Uncomment below when DuoPay is ready to launch ─────────────────── */}
+    {/* <Stack.Screen name="DuoPay"       component={DuoPayScreen}      /> */}
+    {/* ─────────────────────────────────────────────────────────────────────── */}
     <Stack.Screen name="Support"      component={SupportScreen}     />
     <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen}/>
     <Stack.Screen name="MyTickets"    component={MyTicketsScreen}   />
@@ -95,8 +101,10 @@ const ProfileStack = () => (
     <Stack.Screen name="EditProfile"    component={EditProfileScreen}    />
     <Stack.Screen name="Notifications"  component={NotificationsScreen}  />
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-    <Stack.Screen name="Corporate"      component={CorporateScreen}      />
-    <Stack.Screen name="DuoPay"         component={DuoPayScreen}         />
+    {/* ── Uncomment below when Corporate & DuoPay are ready to launch ─────── */}
+    {/* <Stack.Screen name="Corporate"      component={CorporateScreen}      /> */}
+    {/* <Stack.Screen name="DuoPay"         component={DuoPayScreen}         /> */}
+    {/* ─────────────────────────────────────────────────────────────────────── */}
     <Stack.Screen name="Support"        component={SupportScreen}        />
     <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}   />
     <Stack.Screen name="MyTickets"      component={MyTicketsScreen}      />
@@ -138,7 +146,7 @@ const CustomerNavigator = () => {
   const TAB_CONTENT_H = 54;
   const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
   const tabBarHeight = TAB_CONTENT_H + insets.bottom + EXTRA_BOTTOM;
-  
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({

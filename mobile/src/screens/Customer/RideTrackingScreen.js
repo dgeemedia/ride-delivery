@@ -9,7 +9,9 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../../components/Sma
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
-import { rideAPI, shieldAPI } from '../../services/api';
+// ── Uncomment shieldAPI below when Shield is ready to launch ──────────────────
+import { rideAPI/*, shieldAPI*/ } from '../../services/api';
+// ─────────────────────────────────────────────────────────────────────────────
 import socketService          from '../../services/socket';
 
 const { height } = Dimensions.get('window');
@@ -124,7 +126,9 @@ export default function RideTrackingScreen({ route, navigation }) {
   const [driverLocation, setDriverLocation] = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [cancelling,     setCancelling]     = useState(false);
-  const [shieldActive,   setShieldActive]   = useState(false);
+  // ── Uncomment when Shield is ready to launch ────────────────────────────────
+  // const [shieldActive, setShieldActive] = useState(false);
+  // ────────────────────────────────────────────────────────────────────────────
 
   const mapRef          = useRef(null);
   const sheetA          = useRef(new Animated.Value(0)).current;
@@ -146,10 +150,12 @@ export default function RideTrackingScreen({ route, navigation }) {
 
       if (r?.id) {
         socketService.joinRide(r.id);
-        try {
-          const sRes = await shieldAPI.getSession({ rideId: r.id });
-          setShieldActive(!!sRes?.data?.session);
-        } catch {}
+        // ── Uncomment when Shield is ready to launch ────────────────────────
+        // try {
+        //   const sRes = await shieldAPI.getSession({ rideId: r.id });
+        //   setShieldActive(!!sRes?.data?.session);
+        // } catch {}
+        // ───────────────────────────────────────────────────────────────────
       }
     } catch (err) {
       console.error('[RideTracking] loadRide:', err?.message);
@@ -195,21 +201,27 @@ export default function RideTrackingScreen({ route, navigation }) {
       mapRef.current?.animateToRegion({ ...loc, latitudeDelta: 0.03, longitudeDelta: 0.03 }, 800);
     };
 
-    const handleShieldActivated   = () => setShieldActive(true);
-    const handleShieldDeactivated = () => setShieldActive(false);
+    // ── Uncomment when Shield is ready to launch ──────────────────────────────
+    // const handleShieldActivated   = () => setShieldActive(true);
+    // const handleShieldDeactivated = () => setShieldActive(false);
+    // ─────────────────────────────────────────────────────────────────────────
 
     socketService.on('ride:status:update',     handleStatus);
     socketService.on('ride:cancelled',         handleCancelled);
     socketService.on('driver:location:update', handleDriverLoc);
-    socketService.on('shield:activated',       handleShieldActivated);
-    socketService.on('shield:deactivated',     handleShieldDeactivated);
+    // ── Uncomment when Shield is ready to launch ──────────────────────────────
+    // socketService.on('shield:activated',   handleShieldActivated);
+    // socketService.on('shield:deactivated', handleShieldDeactivated);
+    // ─────────────────────────────────────────────────────────────────────────
 
     return () => {
       socketService.off('ride:status:update',     handleStatus);
       socketService.off('ride:cancelled',         handleCancelled);
       socketService.off('driver:location:update', handleDriverLoc);
-      socketService.off('shield:activated',       handleShieldActivated);
-      socketService.off('shield:deactivated',     handleShieldDeactivated);
+      // ── Uncomment when Shield is ready to launch ──────────────────────────
+      // socketService.off('shield:activated',   handleShieldActivated);
+      // socketService.off('shield:deactivated', handleShieldDeactivated);
+      // ─────────────────────────────────────────────────────────────────────
       if (rideId) socketService.leaveRide(rideId);
     };
   }, [rideId]);
@@ -405,7 +417,7 @@ export default function RideTrackingScreen({ route, navigation }) {
           <DriverInfoCard ride={ride} theme={theme} />
           <RouteCard      ride={ride} theme={theme} />
 
-          {/* Shield button */}
+          {/* ── Uncomment when Shield is ready to launch ──────────────────────
           {isActiveTrip && (
             <TouchableOpacity
               style={[s.shieldBtn, {
@@ -422,6 +434,7 @@ export default function RideTrackingScreen({ route, navigation }) {
               <Ionicons name="chevron-forward" size={14} color="#4CAF50" />
             </TouchableOpacity>
           )}
+          ─────────────────────────────────────────────────────────────────── */}
 
           {/* Cancel button */}
           {canCancel && (
@@ -510,7 +523,7 @@ const s = StyleSheet.create({
   fareValue:   { fontSize: 14, fontWeight: '900' },
   fareDivider: { width: 1 },
 
-  // Shield
+  // Shield — styles kept for when Shield is uncommented
   shieldBtn:    { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
   shieldBtnTxt: { flex: 1, fontSize: 13, fontWeight: '700', color: '#4CAF50' },
 

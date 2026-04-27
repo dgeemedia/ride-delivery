@@ -13,10 +13,15 @@ import { settingsAPI }       from '../../services/api';
 const { width } = Dimensions.get('window');
 
 // ── Defaults shown instantly while the fetch is in flight ────────────────────
+// All six values come from the admin Platform Settings page.
+// If the admin hasn't saved a value yet, these fallbacks are used.
 const CONTACT_DEFAULTS = {
-  email:    'support@diakite.app',
-  phone:    '+2348000000000',
-  whatsapp: '2348000000000',   // wa.me format — no leading +
+  email:      'support@diakite.app',
+  phone:      '+2348000000000',
+  whatsapp:   '2348000000000',            // wa.me format — no leading +
+  helpUrl:    'https://diakite.app/help',
+  termsUrl:   'https://diakite.app/terms',
+  privacyUrl: 'https://diakite.app/privacy',
 };
 
 const Section = ({ title, children, theme }) => (
@@ -78,7 +83,7 @@ export default function SupportScreen({ navigation }) {
   const insets          = useSafeAreaInsets();
   const fadeA           = useRef(new Animated.Value(0)).current;
 
-  // ── Live contact info — three independent fields ──────────────────────────
+  // ── All contact/legal info driven by admin settings ───────────────────────
   const [contact, setContact] = useState(CONTACT_DEFAULTS);
 
   useEffect(() => {
@@ -90,10 +95,14 @@ export default function SupportScreen({ navigation }) {
         const whatsapp = s.support_whatsapp || phone; // fall back to phone if not set
 
         setContact({
-          email:    s.support_email || CONTACT_DEFAULTS.email,
+          email:    s.support_email    || CONTACT_DEFAULTS.email,
           phone,
           // wa.me expects the number without a leading +
           whatsapp: whatsapp.replace(/^\+/, ''),
+          // URL fields — fall back to defaults if admin hasn't saved them yet
+          helpUrl:    s.help_center_url || CONTACT_DEFAULTS.helpUrl,
+          termsUrl:   s.terms_url       || CONTACT_DEFAULTS.termsUrl,
+          privacyUrl: s.privacy_url     || CONTACT_DEFAULTS.privacyUrl,
         });
       })
       .catch(() => { /* silently keep defaults */ });
@@ -138,12 +147,12 @@ export default function SupportScreen({ navigation }) {
 
           {/* Support Tickets */}
           <Section title="SUPPORT TICKETS" theme={theme}>
-            <MenuItem
+            {/*<MenuItem
               icon="chatbubble-ellipses-outline"
               label="Submit a Ticket"
               theme={theme}
               onPress={() => navigation.navigate('SubmitTicket')}
-            />
+            />*/}
             <MenuItem
               icon="list-outline"
               label="My Tickets"
@@ -172,27 +181,27 @@ export default function SupportScreen({ navigation }) {
             <MenuItem
               icon="logo-whatsapp"
               label="WhatsApp"
-              value={`+${contact.whatsapp}`}          // display with + prefix
+              value={`+${contact.whatsapp}`}
               theme={theme}
               last
               onPress={() => openURL(`https://wa.me/${contact.whatsapp}`)}
             />
           </Section>
 
-          {/* Self-service */}
+          {/* Self-service — helpUrl now from admin settings */}
           <Section title="SELF-SERVICE" theme={theme}>
             <MenuItem
               icon="help-buoy-outline"
               label="Help Center"
               theme={theme}
-              onPress={() => openURL('https://diakite.app/help')}
+              onPress={() => openURL(contact.helpUrl)}   // ← was hardcoded
             />
-            <MenuItem
+            {/*<MenuItem
               icon="chatbubble-outline"
               label="Live Chat"
               theme={theme}
               onPress={() => Alert.alert('Coming Soon', 'Live chat will be available in the next update.')}
-            />
+            />*/}
             <MenuItem
               icon="warning-outline"
               label="Report an Issue"
@@ -202,20 +211,20 @@ export default function SupportScreen({ navigation }) {
             />
           </Section>
 
-          {/* Legal */}
+          {/* Legal — termsUrl and privacyUrl now from admin settings */}
           <Section title="LEGAL" theme={theme}>
             <MenuItem
               icon="document-text-outline"
               label="Terms of Service"
               theme={theme}
-              onPress={() => openURL('https://diakite.app/terms')}
+              onPress={() => openURL(contact.termsUrl)}    // ← was hardcoded
             />
             <MenuItem
               icon="shield-checkmark-outline"
               label="Privacy Policy"
               theme={theme}
               last
-              onPress={() => openURL('https://diakite.app/privacy')}
+              onPress={() => openURL(contact.privacyUrl)}  // ← was hardcoded
             />
           </Section>
 

@@ -1,5 +1,5 @@
 // mobile/src/screens/Auth/LoginScreen.js
-// ── Premium Glass Edition · Onyx Theme ───────────────────────────────────────
+// ── Premium Glass Edition • Onyx Theme ───────────────────────────────────────
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
@@ -213,7 +213,11 @@ export default function LoginScreen({ navigation }) {
       <View style={[s.orb1, { backgroundColor: darkMode ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.03)' }]} />
       <View style={[s.orb2, { backgroundColor: darkMode ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.02)' }]} />
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0}
+      >
         <ScrollView
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
