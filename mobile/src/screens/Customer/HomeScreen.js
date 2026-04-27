@@ -39,7 +39,7 @@ const G = {
 // ── Tips data ─────────────────────────────────────────────────────────────────
 const RIDE_TIPS = [
   { id:'r1', icon:'location-outline',      title:'Pin your pickup precisely',  body:"Drag the map pin to your exact door — saves your driver hunting time." },
-  { id:'r2', icon:'shield-checkmark-outline',title:'Share your trip link',     body:"Tap 'Share Trip' once matched and send the live link to family." },
+  // { id:'r2', icon:'shield-checkmark-outline',title:'Share your trip link',     body:"Tap 'Share Trip' once matched and send the live link to family." },
   { id:'r3', icon:'star-outline',           title:'Rate every ride',           body:"Honest ratings help the best drivers rise to the top." },
   { id:'r4', icon:'cash-outline',           title:'Fund your wallet first',    body:"Pre-funded wallet rides are always faster to confirm than cash." },
   { id:'r5', icon:'time-outline',           title:'Book 10 mins early',        body:"Scheduling a little ahead guarantees a driver before you step outside." },
