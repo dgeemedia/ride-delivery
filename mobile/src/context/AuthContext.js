@@ -174,14 +174,31 @@ export const AuthProvider = ({ children }) => {
     try {
       const deviceId = await getOrCreateDeviceId();
       const response = await authAPI.register({ ...userData, deviceId });
+
+      // Handle OTP-gated registration (if enabled)
+      if (response.requiresOtp) {
+        return {
+          success: true,
+          requiresOtp: true,
+          tempToken: response.data.tempToken,
+          method: response.data.method,
+          maskedContact: response.data.maskedContact,
+        };
+      }
+
       const { user: u, token: t } = response.data;
       await _persistSession(u, t);
       return { success: true, token: t };
     } catch (error) {
-      return {
-        success: false,
-        message: error.response?.data?.message || 'Registration failed',
-      };
+      // error is already the unwrapped backend payload thanks to the interceptor
+      let message = 'Registration failed';
+      if (error.errors && Array.isArray(error.errors)) {
+        // Join all validation messages into one string
+        message = error.errors.map(e => e.msg).join('\n');
+      } else if (error.message) {
+        message = error.message;
+      }
+      return { success: false, message };
     }
   };
 

@@ -12,7 +12,10 @@ router.post(
   '/register',
   [
     body('email').isEmail().normalizeEmail(),
-    body('phone').isMobilePhone(),
+    // ✅ Accept Nigerian numbers: starts with 0, 7-10 digits, or international +234
+    body('phone')
+      .matches(/^(\+234|0)[7-9]\d{9}$/)
+      .withMessage('Please enter a valid Nigerian phone number'),
     body('password').isLength({ min: 8 }),
     body('firstName').trim().notEmpty(),
     body('lastName').trim().notEmpty(),

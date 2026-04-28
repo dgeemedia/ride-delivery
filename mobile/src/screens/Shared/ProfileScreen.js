@@ -556,7 +556,6 @@ export default function ProfileScreen({ navigation }) {
           <Section title="SUPPORT" theme={theme}>
             <MenuItem icon="help-circle-outline"    label="Help & Support"  theme={theme} onPress={() => navigation.navigate('Support')} />
             <MenuItem icon="star-outline"           label="Rate the App"    theme={theme} onPress={() => navigation.navigate('AppFeedback')} />
-            <MenuItem icon="document-text-outline"  label="Terms & Privacy" theme={theme} last onPress={() => navigation.navigate('Terms')} />
           </Section>
 
           {/* Sign out */}

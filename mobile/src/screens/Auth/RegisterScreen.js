@@ -281,28 +281,79 @@ export default function RegisterScreen({ navigation }) {
   };
 
   const handleFinalRegister = async () => {
-    setLoading(true);
-    try {
-      const res = await register({ firstName, lastName, email, phone, password, role: roleId });
-      if (!res.success) { setLoading(false); return Alert.alert('Registration Failed', res.message); }
-      if (roleId === 'DRIVER') {
-        try {
-          await driverAPI.updateProfile({ licenseNumber, vehicleType, vehicleMake, vehicleModel, vehicleYear: parseInt(vehicleYear), vehicleColor, vehiclePlate });
-        } catch {
-          Alert.alert('Almost Done!', 'Account created! Complete your vehicle documents in your profile.');
-        }
+  setLoading(true);
+  try {
+    const res = await register({
+      firstName,
+      lastName,
+      email,
+      phone,
+      password,
+      role: roleId,
+    });
+
+    // ── Validation or server error ──────────────────────────────────────
+    if (!res.success) {
+      setLoading(false);
+      return Alert.alert('Registration Failed', res.message);
+    }
+
+    // ── OTP gated registration (ENABLE_REGISTRATION_OTP=true) ───────────
+    if (res.requiresOtp) {
+      setLoading(false);
+      // Navigate to the same OTP screen used for login 2FA
+      navigation.navigate('OtpVerification', {
+        tempToken: res.tempToken,
+        method: res.method,            // 'SMS' or 'EMAIL'
+        maskedContact: res.maskedContact,
+        purpose: 'REGISTER',           // optional – OTP screen can handle this
+      });
+      return;
+    }
+
+    // ── Registration succeeded – set up role‑specific profile ───────────
+    if (roleId === 'DRIVER') {
+      try {
+        await driverAPI.updateProfile({
+          licenseNumber,
+          vehicleType,
+          vehicleMake,
+          vehicleModel,
+          vehicleYear: parseInt(vehicleYear),
+          vehicleColor,
+          vehiclePlate,
+        });
+      } catch {
+        Alert.alert(
+          'Almost Done!',
+          'Account created! Complete your vehicle documents in your profile.'
+        );
       }
-      if (roleId === 'DELIVERY_PARTNER') {
-        try {
-          await partnerAPI.updateProfile({ vehicleType: courierVehicleType, ...(courierVehiclePlate && { vehiclePlate: courierVehiclePlate }) });
-        } catch {
-          Alert.alert('Almost Done!', 'Account created! Upload your ID documents in your profile.');
-        }
+    }
+
+    if (roleId === 'DELIVERY_PARTNER') {
+      try {
+        await partnerAPI.updateProfile({
+          vehicleType: courierVehicleType,
+          ...(courierVehiclePlate && { vehiclePlate: courierVehiclePlate }),
+        });
+      } catch {
+        Alert.alert(
+          'Almost Done!',
+          'Account created! Upload your ID documents in your profile.'
+        );
       }
-    } catch (err) {
-      Alert.alert('Error', err.message || 'Something went wrong.');
-    } finally { setLoading(false); }
-  };
+    }
+
+    // Registration + profile setup finished
+    // AuthContext already logged the user in (persisted session)
+    // No need to call anything else – navigation will happen automatically
+  } catch (err) {
+    Alert.alert('Error', err.message || 'Something went wrong.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ── Shared CTA button ───────────────────────────────────────────────────────
   const PrimaryBtn = ({ label, onPress, disabled, icon }) => (
