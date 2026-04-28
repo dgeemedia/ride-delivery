@@ -67,8 +67,8 @@ router.post(
 // ─── FEEDBACK ────────────────────────────────────────────────────────────────
 router.post('/feedback', [
   body('rating').isInt({ min: 1, max: 5 }),
-  body('comment').optional().isString(),
-  body('category').isIn(['app_experience', 'driver_quality', 'pricing', 'delivery_quality', 'other']),
+  body('comment').optional({ nullable: true }).isString(),
+  body('category').isIn(['general', 'ui_ux', 'performance', 'feature', 'bug', 'pricing']),
   body('platform').isIn(['ios', 'android', 'web']),
   body('appVersion').optional().isString(),
 ], userController.submitFeedback);

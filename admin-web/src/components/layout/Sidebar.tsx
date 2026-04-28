@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Car, Package, Navigation,
   CreditCard, BarChart3, Settings, X, Truck,
-  MessageCircle, Shield, LogOut, Building2, Zap, Wallet,
+  MessageCircle, Shield, LogOut, Building2, Zap, Wallet, Star,
 } from 'lucide-react';
 import { useUIStore } from '@/store/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -101,6 +101,10 @@ const Sidebar: React.FC = () => {
     },
     {
       name: 'Users', href: '/users', icon: Users,
+      show: can.viewUsers,
+    },
+    {
+      name: 'App Feedback', href: '/feedback', icon: Star,
       show: can.viewUsers,
     },
     {

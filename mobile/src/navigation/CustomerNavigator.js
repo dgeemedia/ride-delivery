@@ -37,6 +37,7 @@ import TicketDetailScreen        from '../screens/Shared/TicketDetailScreen';
 import TransferScreen            from '../screens/Shared/TransferScreen';
 import WalletTopUpScreen         from '../screens/Shared/WalletTopUpScreen';
 import WithdrawalScreen          from '../screens/Shared/WithdrawalScreen';
+import AppFeedbackScreen         from '../screens/Shared/AppFeedbackScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -101,6 +102,7 @@ const ProfileStack = () => (
     <Stack.Screen name="EditProfile"    component={EditProfileScreen}    />
     <Stack.Screen name="Notifications"  component={NotificationsScreen}  />
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+    <Stack.Screen name="AppFeedback"    component={AppFeedbackScreen}    />
     {/* ── Uncomment below when Corporate & DuoPay are ready to launch ─────── */}
     {/* <Stack.Screen name="Corporate"      component={CorporateScreen}      /> */}
     {/* <Stack.Screen name="DuoPay"         component={DuoPayScreen}         /> */}

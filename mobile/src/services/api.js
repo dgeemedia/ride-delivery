@@ -50,7 +50,11 @@ api.interceptors.response.use(
       const reason = error.response?.data?.code ?? 'session_expired';
       emitForceLogout(reason);
     }
-    return Promise.reject(error);
+ 
+    // Re-reject with the unwrapped backend payload so catch blocks can do:
+    //   err?.message  or  err?.errors
+    // instead of  err?.response?.data?.message
+    return Promise.reject(error.response?.data ?? error);
   }
 );
 
@@ -115,6 +119,7 @@ export const userAPI = {
   getProfile:    ()     => api.get('/users/profile'),
   updateProfile: (data) => api.put('/users/profile', data),
   getStats:      ()     => api.get('/users/stats'),
+  submitFeedback: (data) => api.post('/users/feedback', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

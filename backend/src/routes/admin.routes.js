@@ -154,4 +154,8 @@ router.post('/duopay/accounts/:id/waive',           param('id').isUUID(),   auth
 router.post('/duopay/accounts/:id/transactions/:txId/waive', param('id').isUUID(), param('txId').isUUID(), authorize('ADMIN', 'SUPER_ADMIN'), adminController.waiveDuoPayTransaction);
 router.post('/duopay/run-overdue-check',                                     authorize('ADMIN', 'SUPER_ADMIN'), adminController.runDuoPayOverdueCheck);
 
+// APP FEEDBACK
+router.get('/feedback',       adminController.getAppFeedback);
+router.get('/feedback/stats', adminController.getAppFeedbackStats);
+
 module.exports = router;

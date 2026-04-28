@@ -19,11 +19,6 @@ const ROLE_META = {
   DELIVERY_PARTNER: { label: 'Courier', icon: 'bicycle-outline'  },
 };
 
-const ACCENT_OPTIONS = [
-  { id: 'onyx',  label: 'Onyx',  color: '#FFFFFF' },
-  { id: 'chalk', label: 'Chalk', color: '#EAE5DA' },
-];
-
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 // Shows profile photo when available; falls back to name initials.
 const Avatar = ({ user, theme }) => {
@@ -207,7 +202,7 @@ const mm = StyleSheet.create({
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
   const { user, logout, updateUser }                         = useAuth();
-  const { theme, mode, accentId, changeAccent, changeMode }  = useTheme();
+  const { theme, mode, changeMode }                          = useTheme(); // accentId & changeAccent removed
   const { isAvailable, isEnabled, biometricType, enable, disable } = useBiometric();
 
   const [stats,   setStats]   = useState(null);
@@ -370,7 +365,6 @@ export default function ProfileScreen({ navigation }) {
 
           {/* Hero */}
           <View style={s.hero}>
-            {/* Avatar now shows profile photo if set, otherwise initials */}
             <Avatar user={user} theme={theme} />
             <Text style={[s.name, { color: theme.foreground }]}>{user?.firstName} {user?.lastName}</Text>
             <View style={[s.rolePill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '30' }]}>
@@ -522,27 +516,8 @@ export default function ProfileScreen({ navigation }) {
             )}
           </Section>
 
-          {/* Appearance */}
+          {/* Appearance – only dark/light toggle, no accent swatches */}
           <Section title="APPEARANCE" theme={theme}>
-            <View style={s.swatchRow}>
-              {ACCENT_OPTIONS.map(opt => {
-                const active = accentId === opt.id;
-                return (
-                  <TouchableOpacity
-                    key={opt.id}
-                    onPress={() => changeAccent(opt.id)}
-                    style={[s.swatch, {
-                      backgroundColor: active ? opt.color + '18' : 'transparent',
-                      borderColor:     active ? opt.color        : theme.border,
-                    }]}
-                    activeOpacity={0.75}
-                  >
-                    <View style={[s.swatchDot, { backgroundColor: opt.color }]} />
-                    <Text style={[s.swatchTxt, { color: active ? opt.color : theme.hint }]}>{opt.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
             <View style={[s.modeToggle, { backgroundColor: theme.background, borderColor: theme.border }]}>
               {['dark', 'light'].map(m => {
                 const active = mode === m;
@@ -615,10 +590,6 @@ const s = StyleSheet.create({
   docRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14, marginBottom: 6 },
   pendingNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderTopWidth: 1, paddingTop: 12, marginTop: 8, paddingBottom: 8 },
   pendingTxt:  { flex: 1, fontSize: 12, lineHeight: 18 },
-  swatchRow:   { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  swatch:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
-  swatchDot:   { width: 8, height: 8, borderRadius: 4 },
-  swatchTxt:   { fontSize: 11, fontWeight: '700' },
   modeToggle:  { flexDirection: 'row', borderRadius: 10, borderWidth: 1, overflow: 'hidden', height: 38, marginBottom: 10 },
   modeBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   modeTxt:     { fontSize: 12, fontWeight: '600' },

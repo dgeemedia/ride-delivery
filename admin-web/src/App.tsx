@@ -29,6 +29,8 @@ import Analytics          from '@/pages/Analytics/Overview';
 import GeneralSettings    from '@/pages/Settings/GeneralSettings';
 import NotificationsPage  from '@/pages/Notifications/NotificationsPage';
 import PayoutManagement   from '@/pages/Wallets/PayoutManagement';
+import AppFeedbackList from '@/pages/Feedback/AppFeedbackList';
+
 
 // Feature-flagged page imports — only used when flags are enabled
 import ShieldMonitor      from '@/pages/Shield/ShieldMonitor';
@@ -95,6 +97,9 @@ function App() {
 
           {/* wallet management */}
           <Route path="/wallets" element={<ProtectedRoute><PayoutManagement /></ProtectedRoute>} />
+
+          {/* Feedback */}
+          <Route path="/feedback" element={<ProtectedRoute><AppFeedbackList /></ProtectedRoute>} />
           
           {/* Support */}
           <Route path="/support/tickets"     element={<ProtectedRoute><TicketList /></ProtectedRoute>} />

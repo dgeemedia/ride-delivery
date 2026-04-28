@@ -23,6 +23,7 @@ import SupportScreen           from '../screens/Shared/SupportScreen';
 import SubmitTicketScreen      from '../screens/Shared/SubmitTicketScreen';
 import MyTicketsScreen         from '../screens/Shared/MyTicketsScreen';
 import TicketDetailScreen      from '../screens/Shared/TicketDetailScreen';
+import AppFeedbackScreen       from '../screens/Shared/AppFeedbackScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -33,6 +34,7 @@ const DashboardStack = () => (
     <Stack.Screen name="IncomingDelivery" component={IncomingDeliveryScreen}  />
     <Stack.Screen name="ActiveDelivery"   component={ActiveDeliveryScreen}    />
     <Stack.Screen name="FloorPrice"       component={CourierFloorPriceScreen} />
+    <Stack.Screen name="AppFeedback"    component={AppFeedbackScreen}    />
     <Stack.Screen name="Notifications"    component={NotificationsScreen}     />
     <Stack.Screen name="Support"          component={SupportScreen}           />
     <Stack.Screen name="SubmitTicket"     component={SubmitTicketScreen}      />
@@ -61,6 +63,7 @@ const ProfileStack = () => (
     <Stack.Screen name="Notifications"  component={NotificationsScreen}      />
     <Stack.Screen name="ChangePassword" component={ChangePasswordScreen}     />
     <Stack.Screen name="FloorPrice"     component={CourierFloorPriceScreen}  />
+    <Stack.Screen name="AppFeedback"    component={AppFeedbackScreen}        />
     <Stack.Screen name="Support"        component={SupportScreen}            />
     <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}       />
     <Stack.Screen name="MyTickets"      component={MyTicketsScreen}          />

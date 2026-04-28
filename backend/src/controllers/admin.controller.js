@@ -2007,4 +2007,61 @@ exports.previewOnboardingBonuses = async (req, res) => {
   });
 };
 
+// APP FEEDBACK
+exports.getAppFeedback = async (req, res) => {
+  const { page = 1, limit = 20, rating, category } = req.query;
+  const skip  = (parseInt(page) - 1) * parseInt(limit);
+  const where = {};
+  if (rating)   where.rating   = parseInt(rating);
+  if (category) where.category = category;
+ 
+  const [feedback, total] = await Promise.all([
+    prisma.appFeedback.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: parseInt(limit),
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true, role: true },
+        },
+      },
+    }),
+    prisma.appFeedback.count({ where }),
+  ]);
+ 
+  res.status(200).json({
+    success: true,
+    data: {
+      feedback,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+    },
+  });
+};
+ 
+exports.getAppFeedbackStats = async (req, res) => {
+  const [total, ratingGroups, categoryGroups, avgResult] = await Promise.all([
+    prisma.appFeedback.count(),
+    prisma.appFeedback.groupBy({ by: ['rating'],   _count: { rating: true }   }),
+    prisma.appFeedback.groupBy({ by: ['category'], _count: { category: true } }),
+    prisma.appFeedback.aggregate({ _avg: { rating: true } }),
+  ]);
+ 
+  const distribution = {};
+  ratingGroups.forEach(r => { distribution[String(r.rating)] = r._count.rating; });
+ 
+  const byCategory = {};
+  categoryGroups.forEach(c => { byCategory[c.category] = c._count.category; });
+ 
+  res.status(200).json({
+    success: true,
+    data: {
+      total,
+      averageRating: avgResult._avg.rating ?? 0,
+      distribution,
+      byCategory,
+    },
+  });
+};
+
 module.exports = exports;
