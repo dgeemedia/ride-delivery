@@ -67,14 +67,14 @@ export default function AppFeedbackScreen({ navigation }) {
         rating,
         comment:    comment.trim() || null,
         category:   category.trim(),
-        platform:   (Platform.OS ?? 'android').toLowerCase(),   // ← guard
+        platform:   (Platform.OS ?? 'android').toLowerCase(),  
         appVersion: Constants.expoConfig?.version
                 ?? Constants.manifest?.version
-                ?? '1.0.0',                                    // ← fallback chain
+                ?? '1.0.0',                                    
       });
       setSubmitted(true);
     } catch (err) {
-    console.log('Full error:', JSON.stringify(err));  // ← add this
+    
     const msg =
         err?.message ??
         err?.errors?.[0]?.msg ??
