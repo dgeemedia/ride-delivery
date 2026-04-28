@@ -12,16 +12,10 @@ import { settingsAPI }       from '../../services/api';
 
 const { width } = Dimensions.get('window');
 
-// ── Defaults shown instantly while the fetch is in flight ────────────────────
-// All six values come from the admin Platform Settings page.
-// If the admin hasn't saved a value yet, these fallbacks are used.
 const CONTACT_DEFAULTS = {
-  email:      'support@diakite.app',
-  phone:      '+2348000000000',
-  whatsapp:   '2348000000000',            // wa.me format — no leading +
-  helpUrl:    'https://diakite.app/help',
-  termsUrl:   'https://diakite.app/terms',
-  privacyUrl: 'https://diakite.app/privacy',
+  email:    'support@diakite.app',
+  phone:    '+2348000000000',
+  whatsapp: '2348000000000',   // wa.me format — no leading +
 };
 
 const Section = ({ title, children, theme }) => (
@@ -83,34 +77,30 @@ export default function SupportScreen({ navigation }) {
   const insets          = useSafeAreaInsets();
   const fadeA           = useRef(new Animated.Value(0)).current;
 
-  // ── All contact/legal info driven by admin settings ───────────────────────
   const [contact, setContact] = useState(CONTACT_DEFAULTS);
 
   useEffect(() => {
     settingsAPI.getContactSettings()
       .then(res => {
-        const s = res?.data ?? {};
-
+        const s        = res?.data ?? {};
         const phone    = s.support_phone    || CONTACT_DEFAULTS.phone;
-        const whatsapp = s.support_whatsapp || phone; // fall back to phone if not set
-
+        const whatsapp = s.support_whatsapp || phone;
         setContact({
-          email:    s.support_email    || CONTACT_DEFAULTS.email,
+          email:    s.support_email || CONTACT_DEFAULTS.email,
           phone,
-          // wa.me expects the number without a leading +
           whatsapp: whatsapp.replace(/^\+/, ''),
-          // URL fields — fall back to defaults if admin hasn't saved them yet
-          helpUrl:    s.help_center_url || CONTACT_DEFAULTS.helpUrl,
-          termsUrl:   s.terms_url       || CONTACT_DEFAULTS.termsUrl,
-          privacyUrl: s.privacy_url     || CONTACT_DEFAULTS.privacyUrl,
         });
       })
-      .catch(() => { /* silently keep defaults */ });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     Animated.timing(fadeA, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
+
+  // Helper: navigate to LegalScreen with the right content key and title
+  const openLegal = (contentKey, title) =>
+    navigation.navigate('Legal', { contentKey, title });
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
@@ -140,19 +130,17 @@ export default function SupportScreen({ navigation }) {
               <Ionicons name="headset-outline" size={32} color={theme.accent} />
             </View>
             <Text style={[s.heroTitle, { color: theme.foreground }]}>Help & Support</Text>
-            <Text style={[s.heroSub, { color: theme.hint }]}>
-              We're here to help. Reach out anytime.
-            </Text>
+            <Text style={[s.heroSub, { color: theme.hint }]}>We're here to help. Reach out anytime.</Text>
           </View>
 
           {/* Support Tickets */}
           <Section title="SUPPORT TICKETS" theme={theme}>
-            {/*<MenuItem
+            <MenuItem
               icon="chatbubble-ellipses-outline"
               label="Submit a Ticket"
               theme={theme}
               onPress={() => navigation.navigate('SubmitTicket')}
-            />*/}
+            />
             <MenuItem
               icon="list-outline"
               label="My Tickets"
@@ -162,7 +150,7 @@ export default function SupportScreen({ navigation }) {
             />
           </Section>
 
-          {/* Contact — all three values driven by admin settings */}
+          {/* Contact — driven by admin settings */}
           <Section title="CONTACT US" theme={theme}>
             <MenuItem
               icon="mail-outline"
@@ -188,20 +176,21 @@ export default function SupportScreen({ navigation }) {
             />
           </Section>
 
-          {/* Self-service — helpUrl now from admin settings */}
+          {/* Self-service */}
           <Section title="SELF-SERVICE" theme={theme}>
+            {/* Help Center now opens in-app LegalScreen */}
             <MenuItem
               icon="help-buoy-outline"
               label="Help Center"
               theme={theme}
-              onPress={() => openURL(contact.helpUrl)}   // ← was hardcoded
+              onPress={() => openLegal('help_content', 'Help Center')}
             />
-            {/*<MenuItem
+            {/* <MenuItem
               icon="chatbubble-outline"
               label="Live Chat"
               theme={theme}
               onPress={() => Alert.alert('Coming Soon', 'Live chat will be available in the next update.')}
-            />*/}
+            /> */}
             <MenuItem
               icon="warning-outline"
               label="Report an Issue"
@@ -211,20 +200,20 @@ export default function SupportScreen({ navigation }) {
             />
           </Section>
 
-          {/* Legal — termsUrl and privacyUrl now from admin settings */}
+          {/* Legal — both open in-app LegalScreen */}
           <Section title="LEGAL" theme={theme}>
             <MenuItem
               icon="document-text-outline"
               label="Terms of Service"
               theme={theme}
-              onPress={() => openURL(contact.termsUrl)}    // ← was hardcoded
+              onPress={() => openLegal('terms_content', 'Terms of Service')}
             />
             <MenuItem
               icon="shield-checkmark-outline"
               label="Privacy Policy"
               theme={theme}
               last
-              onPress={() => openURL(contact.privacyUrl)}  // ← was hardcoded
+              onPress={() => openLegal('privacy_content', 'Privacy Policy')}
             />
           </Section>
 

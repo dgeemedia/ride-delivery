@@ -24,6 +24,7 @@ import SubmitTicketScreen      from '../screens/Shared/SubmitTicketScreen';
 import MyTicketsScreen         from '../screens/Shared/MyTicketsScreen';
 import TicketDetailScreen      from '../screens/Shared/TicketDetailScreen';
 import AppFeedbackScreen       from '../screens/Shared/AppFeedbackScreen';
+import LegalScreen             from '../screens/Shared/LegalScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -68,6 +69,7 @@ const ProfileStack = () => (
     <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}       />
     <Stack.Screen name="MyTickets"      component={MyTicketsScreen}          />
     <Stack.Screen name="TicketDetail"   component={TicketDetailScreen}       />
+    <Stack.Screen name="Legal"          component={LegalScreen} options={{ headerShown: false }} />
   </Stack.Navigator>
 );
 

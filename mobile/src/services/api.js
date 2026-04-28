@@ -213,6 +213,7 @@ export const supportAPI = {
 // ─────────────────────────────────────────────────────────────────────────────
 export const settingsAPI = {
   getContactSettings: () => api.get('/status/contact'),
+  getLegalContent:    () => api.get('/status/legal'),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
