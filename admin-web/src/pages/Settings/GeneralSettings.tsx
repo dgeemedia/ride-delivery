@@ -539,9 +539,9 @@ const LegalContentSection: React.FC = () => {
     setLoading(true);
     try {
       await Promise.all([
-        settingsAPI.updateSetting('terms_content',   content.terms_content,   'legal'),
-        settingsAPI.updateSetting('privacy_content', content.privacy_content, 'legal'),
-        settingsAPI.updateSetting('help_content',    content.help_content,    'legal'),
+        settingsAPI.updateSetting('terms_content',   content.terms_content),
+        settingsAPI.updateSetting('privacy_content', content.privacy_content),
+        settingsAPI.updateSetting('help_content',    content.help_content),
       ]);
       toast.success('Legal & Help content saved — live in the app immediately');
     } catch { toast.error('Failed to save content'); }

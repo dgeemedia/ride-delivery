@@ -13,6 +13,7 @@ import ActiveRideScreen      from '../screens/Driver/ActiveRideScreen';
 import FloorPriceScreen      from '../screens/Driver/FloorPriceScreen';
 import DriverHistoryScreen   from '../screens/Driver/DriverHistoryScreen';
 import EarningsScreen        from '../screens/Driver/EarningsScreen';
+import DriverDocumentsScreen from '../screens/Driver/DriverDocumentsScreen';
 import WalletTopUpScreen     from '../screens/Shared/WalletTopUpScreen';
 import WithdrawalScreen      from '../screens/Shared/WithdrawalScreen';
 import ProfileScreen         from '../screens/Shared/ProfileScreen';
@@ -45,7 +46,7 @@ const DashboardStack = () => (
     <Stack.Screen name="ActiveRide"      component={ActiveRideScreen}      />
     <Stack.Screen name="FloorPrice"      component={FloorPriceScreen}      />
     <Stack.Screen name="Notifications"   component={NotificationsScreen}   />
-    <Stack.Screen name="DriverDocuments" component={SupportScreen}         />
+    <Stack.Screen name="DriverDocuments" component={DriverDocumentsScreen} />
     <Stack.Screen name="Support"         component={SupportScreen}         />
     <Stack.Screen name="SubmitTicket"    component={SubmitTicketScreen}    />
     <Stack.Screen name="MyTickets"       component={MyTicketsScreen}       />

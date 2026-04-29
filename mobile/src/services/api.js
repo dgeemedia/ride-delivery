@@ -263,4 +263,41 @@ export const duopayAPI = {
   getTransactions: (p)    => api.get('/duopay/transactions', { params: p }),
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FILE UPLOADS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Helper: wraps a file picker result into a multipart POST */
+const uploadSingle = async (url, fieldName, file) => {
+  const form = new FormData();
+  form.append(fieldName, {
+    uri: file.uri,
+    name: file.name || file.uri.split('/').pop(),
+    type: file.type || 'image/jpeg',
+  });
+
+  // Override Content-Type to multipart/form-data – the interceptor will
+  // still attach the Authorization header and X-Device-ID automatically.
+  return api.post(url, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const uploadAPI = {
+  // Driver documents
+  uploadDriverLicense:       (image) => uploadSingle('/upload/driver/license',              'license',      image),
+  uploadVehicleRegistration: (image) => uploadSingle('/upload/driver/vehicle-registration', 'registration', image),
+  uploadInsurance:           (image) => uploadSingle('/upload/driver/insurance',            'insurance',    image),
+
+  // Partner documents
+  uploadPartnerId:           (image) => uploadSingle('/upload/partner/id',      'id',      image),
+  uploadPartnerVehicle:      (image) => uploadSingle('/upload/partner/vehicle', 'vehicle', image),
+
+  // Profile image
+  uploadProfileImage:        (image) => uploadSingle('/upload/profile-image',   'image',   image),
+
+  // Base64 fallback (already exists on backend)
+  uploadBase64:              (base64, folder) => api.post('/upload/base64', { base64Data: base64, folder }),
+};
+
 export default api;

@@ -13,6 +13,7 @@ import PartnerHistoryScreen    from '../screens/Partner/PartnerHistoryScreen';
 import IncomingDeliveryScreen  from '../screens/Partner/IncomingDeliveryScreen';
 import ActiveDeliveryScreen    from '../screens/Partner/ActiveDeliveryScreen';
 import CourierFloorPriceScreen from '../screens/Partner/CourierFloorPriceScreen';
+import PartnerDocumentsScreen  from '../screens/Partner/PartnerDocumentsScreen';
 import WalletTopUpScreen       from '../screens/Shared/WalletTopUpScreen';
 import WithdrawalScreen        from '../screens/Shared/WithdrawalScreen';
 import ProfileScreen           from '../screens/Shared/ProfileScreen';
@@ -26,6 +27,7 @@ import TicketDetailScreen      from '../screens/Shared/TicketDetailScreen';
 import AppFeedbackScreen       from '../screens/Shared/AppFeedbackScreen';
 import LegalScreen             from '../screens/Shared/LegalScreen';
 
+
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
@@ -35,7 +37,8 @@ const DashboardStack = () => (
     <Stack.Screen name="IncomingDelivery" component={IncomingDeliveryScreen}  />
     <Stack.Screen name="ActiveDelivery"   component={ActiveDeliveryScreen}    />
     <Stack.Screen name="FloorPrice"       component={CourierFloorPriceScreen} />
-    <Stack.Screen name="AppFeedback"    component={AppFeedbackScreen}    />
+    <Stack.Screen name="PartnerDocuments" component={PartnerDocumentsScreen}  />
+    <Stack.Screen name="AppFeedback"      component={AppFeedbackScreen}       />
     <Stack.Screen name="Notifications"    component={NotificationsScreen}     />
     <Stack.Screen name="Support"          component={SupportScreen}           />
     <Stack.Screen name="SubmitTicket"     component={SubmitTicketScreen}      />

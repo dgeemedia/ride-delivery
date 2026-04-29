@@ -3,18 +3,18 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Switch,
   ScrollView, StatusBar, Dimensions, Animated,
-  ActivityIndicator, Alert, Image,           // ← Image added
+  ActivityIndicator, Alert, Image,
 } from 'react-native';
-import { Ionicons }                            from '@expo/vector-icons';
-import { SafeAreaView, useSafeAreaInsets }     from 'react-native-safe-area-context';
-import * as Location                           from '../../shims/Location';
-import { useAuth }                             from '../../context/AuthContext';
-import { useTheme }                            from '../../context/ThemeContext';
-import ActiveDeliveryBanner                    from '../../components/ActiveDeliveryBanner';
-import MaintenanceBanner                       from '../../components/MaintenanceBanner';
+import { Ionicons }                        from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Location                       from '../../shims/Location';
+import { useAuth }                         from '../../context/AuthContext';
+import { useTheme }                        from '../../context/ThemeContext';
+import ActiveDeliveryBanner                from '../../components/ActiveDeliveryBanner';
+import MaintenanceBanner                   from '../../components/MaintenanceBanner';
 import { partnerAPI, userAPI, walletAPI, deliveryAPI } from '../../services/api';
-import socketService                           from '../../services/socket';
-import { checkMaintenance }                    from '../../utils/maintenanceCheck';
+import socketService                       from '../../services/socket';
+import { checkMaintenance }                from '../../utils/maintenanceCheck';
 
 const { width } = Dimensions.get('window');
 const CA     = '#34D399';
@@ -351,15 +351,17 @@ export default function PartnerDashboardScreen({ navigation }) {
   const goToWithdraw = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal',     initial: false });
   const goToProfile  = () => navigation.getParent()?.navigate('ProfileTab');
   const goToHistory  = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'PartnerHistory', initial: false });
+  const goToDocuments = () => navigation.getParent()?.navigate('PartnerDocuments'); // kept for potential inline use
 
   const isApproved = profile?.isApproved ?? false;
 
+  // Quick actions – Documents and Support wired correctly
   const quickActions = [
     { icon: 'wallet-outline',        label: 'Earnings',         color: CA,          onPress: goToEarnings },
     { icon: 'list-outline',          label: 'Delivery History', color: '#5DAA72',   onPress: goToHistory  },
-    { icon: 'trending-up-outline',   label: 'Floor Price',      color: PURPLE,      onPress: () => navigation.navigate('FloorPrice')  },
-    { icon: 'document-text-outline', label: 'Documents',        color: '#4E8DBD',   onPress: () => navigation.navigate('Support')     },
-    { icon: 'help-circle-outline',   label: 'Support',          color: theme.hint,  onPress: () => navigation.navigate('Support')     },
+    { icon: 'trending-up-outline',   label: 'Floor Price',      color: PURPLE,      onPress: () => navigation.navigate('FloorPrice') },
+    { icon: 'document-text-outline', label: 'Documents',        color: '#4E8DBD',   onPress: () => navigation.navigate('PartnerDocuments') },
+    { icon: 'help-circle-outline',   label: 'Support',          color: theme.hint,  onPress: () => navigation.navigate('Support') },
   ];
 
   return (

@@ -1,6 +1,6 @@
 // admin-web/src/pages/Feedback/AppFeedbackList.tsx
 import React, { useEffect, useState, useCallback } from 'react';
-import { Star, MessageSquare, Smartphone, RefreshCw, TrendingUp } from 'lucide-react';
+import { Star, MessageSquare, Smartphone, RefreshCw } from 'lucide-react';
 import { Card, Spinner } from '@/components/common';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
