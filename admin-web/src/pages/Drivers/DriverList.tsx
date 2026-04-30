@@ -74,24 +74,29 @@ const DriverList: React.FC = () => {
 
   useEffect(() => { loadDrivers(); }, [currentPage, statusFilter, vehicleFilter]);
 
+  const buildFilterParams = () => {
+    const base: Record<string, any> = {
+      page:        currentPage,
+      limit:       20,
+      search:      search        || undefined,
+      vehicleType: vehicleFilter || undefined,
+    };
+    if (statusFilter === 'approved:true')  { base.isApproved = 'true';  base.isRejected = 'false'; }
+    if (statusFilter === 'pending')        { base.isApproved = 'false'; base.isRejected = 'false'; }
+    if (statusFilter === 'rejected:true')  { base.isRejected = 'true'; }
+    return base;
+  };
+
   const loadDrivers = async () => {
     setLoading(true);
     try {
-      const res = await driversAPI.getDrivers({
-        page:        currentPage,
-        limit:       20,
-        search:      search        || undefined,
-        isApproved:  statusFilter  || undefined,
-        vehicleType: vehicleFilter || undefined,
-      });
+      const res = await driversAPI.getDrivers(buildFilterParams());
       setDrivers(res.data.drivers || []);
       setTotalPages(res.data.pagination.pages);
       setTotalCount(res.data.pagination.total);
     } catch {
       toast.error('Failed to load drivers');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const fetchAll = async () => {
@@ -163,9 +168,10 @@ const DriverList: React.FC = () => {
             value={statusFilter}
             onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
             options={[
-              { value: '',      label: 'All Status' },
-              { value: 'true',  label: 'Approved'   },
-              { value: 'false', label: 'Pending'     },
+              { value: '',                label: 'All Status'  },
+              { value: 'approved:true',   label: 'Approved'    },
+              { value: 'pending',         label: 'Pending'     },
+              { value: 'rejected:true',   label: 'Rejected'    },
             ]}
           />
           <Select
@@ -237,10 +243,26 @@ const DriverList: React.FC = () => {
                     <TableCell>{driver.totalRides}</TableCell>
                     <TableCell>
                       <div className="space-y-1">
-                        <Badge variant={driver.isApproved ? 'success' : 'warning'}>
-                          {driver.isApproved ? 'Approved' : 'Pending'}
-                        </Badge>
+                        {driver.isRejected ? (
+                          <Badge variant="error">Rejected</Badge>
+                        ) : driver.isApproved ? (
+                          <Badge variant="success">Approved</Badge>
+                        ) : (
+                          <Badge variant="warning">Pending</Badge>
+                        )}
                         {driver.isOnline && <Badge variant="success">Online</Badge>}
+                        {/* Document status chip */}
+                        {!driver.isApproved && !driver.isRejected && (
+                          <Badge variant={
+                            driver.documentStatus === 'COMPLETE' ? 'success'
+                            : driver.documentStatus === 'PARTIAL' ? 'warning'
+                            : 'error'
+                          }>
+                            {driver.documentStatus === 'COMPLETE' ? '3/3 docs'
+                            : driver.documentStatus === 'PARTIAL' ? 'Partial docs'
+                            : 'No docs'}
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">{formatDate(driver.createdAt)}</TableCell>

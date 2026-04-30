@@ -30,18 +30,16 @@ model User {
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @default(now()) @updatedAt
   adminDepartment      String?
-  // ── 2FA fields ────────────────────────────────────────────────────────────
   twoFactorEnabled     Boolean                 @default(false)
-  twoFactorMethod      String?                 // 'SMS' | 'EMAIL'
-  // ── Relations ─────────────────────────────────────────────────────────────
+  twoFactorMethod      String?
   activityLogs         ActivityLog[]
   adminProfile         AdminProfile?
   appFeedback          AppFeedback[]
+  commissions          CommissionLedger[]      @relation("CommissionEarner")
   company              Company?                @relation("CompanyAdmin")
   companyEmployments   CompanyEmployee[]       @relation("CompanyEmployees")
   customerDeliveries   Delivery[]              @relation("CustomerDeliveries")
   partnerDeliveries    Delivery[]              @relation("PartnerDeliveries")
-  commissions          CommissionLedger[]      @relation("CommissionEarner")
   deliveryProfile      DeliveryPartnerProfile?
   driverProfile        DriverProfile?
   duoPayAccount        DuoPayAccount?
@@ -56,9 +54,9 @@ model User {
   shieldSessions       ShieldSession[]
   supportTickets       SupportTicket[]
   ticketReplies        TicketReply[]           @relation("TicketReplyAuthor")
-  wallet               Wallet?
-  sentTransfers        Transfer[]              @relation("SentTransfers")
   receivedTransfers    Transfer[]              @relation("ReceivedTransfers")
+  sentTransfers        Transfer[]              @relation("SentTransfers")
+  wallet               Wallet?
 
   @@index([email])
   @@index([phone])
@@ -70,14 +68,13 @@ model User {
 model OtpVerification {
   id        String   @id @default(dbgenerated("(gen_random_uuid())::text"))
   userId    String
-  code      String   // SHA-256 hashed OTP
-  purpose   String   // 'LOGIN' | 'SETUP_2FA'
+  code      String
+  purpose   String
   tempToken String   @unique
   attempts  Int      @default(0)
   expiresAt DateTime
   createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([tempToken])
   @@index([userId])
@@ -94,9 +91,6 @@ model DriverProfile {
   vehicleYear         Int
   vehicleColor        String
   vehiclePlate        String      @unique
-  licenseImageUrl     String?
-  vehicleRegUrl       String?
-  insuranceUrl        String?
   isApproved          Boolean     @default(false)
   isOnline            Boolean     @default(false)
   currentLat          Float?
@@ -106,9 +100,20 @@ model DriverProfile {
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @default(now()) @updatedAt
   preferredFloorPrice Float?
+  insuranceUrl        String?     @map("insurance_url")
+  licenseImageUrl     String?     @map("license_image_url")
+  vehicleRegUrl       String?     @map("vehicle_reg_url")
+  approvedAt          DateTime?
+  approvedBy          String?
+  documentsUploadedAt DateTime?
+  isRejected          Boolean     @default(false)
+  rejectedAt          DateTime?
+  rejectedBy          String?
+  rejectionReason     String?
   user                User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([isApproved])
+  @@index([isRejected])
   @@index([isOnline, currentLat, currentLng])
 }
 
@@ -234,10 +239,10 @@ model Payment {
   platformFee      Float?
   driverEarnings   Float?
   refundAmount     Float?
-  commissionLedger CommissionLedger?
   refundedAt       DateTime?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @default(now()) @updatedAt
+  commissionLedger CommissionLedger?
   delivery         Delivery?         @relation(fields: [deliveryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   ride             Ride?             @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user             User              @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -320,12 +325,11 @@ model Transfer {
   recipientId String
   amount      Float
   note        String?
-  status      String   @default("PENDING") // PENDING | COMPLETED | FAILED
+  status      String   @default("PENDING")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
-
-  sender    User @relation("SentTransfers", fields: [senderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  recipient User @relation("ReceivedTransfers", fields: [recipientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  recipient   User     @relation("ReceivedTransfers", fields: [recipientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sender      User     @relation("SentTransfers", fields: [senderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([senderId])
   @@index([recipientId])
@@ -472,12 +476,10 @@ model AppFeedback {
 model CommissionLedger {
   id               String   @id @default(uuid())
   paymentId        String   @unique
-  payment          Payment  @relation(fields: [paymentId], references: [id])
   serviceType      String
   rideId           String?
   deliveryId       String?
   earnerUserId     String
-  earnerUser       User     @relation("CommissionEarner", fields: [earnerUserId], references: [id])
   grossAmount      Float
   bookingFee       Float    @default(0)
   commissionRate   Float
@@ -486,6 +488,8 @@ model CommissionLedger {
   surgeMultiplier  Float    @default(1.0)
   currency         String   @default("NGN")
   createdAt        DateTime @default(now())
+  earnerUser       User     @relation("CommissionEarner", fields: [earnerUserId], references: [id])
+  payment          Payment  @relation(fields: [paymentId], references: [id])
 
   @@index([serviceType])
   @@index([earnerUserId])

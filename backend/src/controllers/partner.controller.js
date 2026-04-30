@@ -1,20 +1,9 @@
 // backend/src/controllers/partner.controller.js
-//
-// FIXES applied:
-//   1. requestPayout — now creates a PENDING Payout record (admin-approval flow)
-//      instead of initiating a Paystack transfer directly. Mirrors the unified
-//      walletAPI.withdraw() path used by WithdrawalScreen.
-//   2. getEarnings — now sums payment.driverEarnings directly (same fix already
-//      applied to driver.controller.js) instead of re-deriving platformFee as
-//      totalEarnings * 0.15.  The fare engine may deduct a booking fee before
-//      applying the 15% commission, so the stored value is always correct.
-
 const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
-
 
 exports.createOrUpdateProfile = async (req, res) => {
   const errors = validationResult(req);
@@ -118,21 +107,6 @@ exports.updateStatus = async (req, res) => {
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/partners/earnings
-//
-// FIX: The original recalculated earnings as:
-//   platformFee = totalEarnings * 0.15
-//   netEarnings = totalEarnings - platformFee
-//
-// This is wrong when the fare engine deducts a booking fee before applying the
-// 15% commission:
-//   commission = (fee - bookingFee) * 0.15
-//   partnerEarnings = fee - bookingFee - commission
-//
-// We now sum payment.driverEarnings directly — the value stored correctly at
-// delivery completion — exactly like the driver.controller.js fix.
-// ─────────────────────────────────────────────────────────────────────────────
 exports.getEarnings = async (req, res) => {
   const { startDate, endDate, period = 'all' } = req.query;
 

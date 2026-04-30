@@ -8,14 +8,6 @@ const router = express.Router();
 
 router.use(authenticate);
 
-/**
- * @route   POST /api/partners/profile
- * @desc    Create or update delivery partner profile
- * @access  Private (DELIVERY_PARTNER)
- *
- * FIX: Added TRICYCLE to vehicleType allowlist — it is present in VEHICLE_TYPES
- * constants, the VehicleType enum, and the DB schema but was missing here.
- */
 router.post(
   '/profile',
   authorize('DELIVERY_PARTNER'),

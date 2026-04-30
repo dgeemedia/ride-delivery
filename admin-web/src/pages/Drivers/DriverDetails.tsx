@@ -53,9 +53,9 @@ const DriverDetails: React.FC = () => {
   const { id }   = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [driver, setDriver]         = useState<Driver | null>(null);
+  const [driver,      setDriver]      = useState<Driver | null>(null);
   const [recentRides, setRecentRides] = useState<any[]>([]);
-  const [loading, setLoading]       = useState(true);
+  const [loading,     setLoading]     = useState(true);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -71,9 +71,14 @@ const DriverDetails: React.FC = () => {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="flex justify-center py-20"><Spinner size="xl" showLabel /></div>;
-  if (!driver) return <div className="text-center py-20"><p className="text-gray-500">Driver not found.</p><Button className="mt-4" onClick={() => navigate('/drivers')}>Back</Button></div>;
+  if (!driver)  return (
+    <div className="text-center py-20">
+      <p className="text-gray-500">Driver not found.</p>
+      <Button className="mt-4" onClick={() => navigate('/drivers')}>Back</Button>
+    </div>
+  );
 
-  const user = driver.user;
+  const user   = driver.user;
   const wallet = (user as any)?.wallet;
 
   return (
@@ -88,10 +93,15 @@ const DriverDetails: React.FC = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold text-gray-900">{user.firstName} {user.lastName}</h1>
+              {/* ── Updated badge block — includes Rejected state ── */}
               <div className="flex items-center gap-2 mt-0.5">
-                <Badge variant={driver.isApproved ? 'success' : 'warning'}>
-                  {driver.isApproved ? 'Approved' : 'Pending'}
-                </Badge>
+                {driver.isRejected ? (
+                  <Badge variant="error">Rejected</Badge>
+                ) : driver.isApproved ? (
+                  <Badge variant="success">Approved</Badge>
+                ) : (
+                  <Badge variant="warning">Pending Review</Badge>
+                )}
                 {driver.isOnline && <Badge variant="success">Online</Badge>}
                 {user.isSuspended && <Badge variant="error">Suspended</Badge>}
               </div>
@@ -108,20 +118,20 @@ const DriverDetails: React.FC = () => {
           {/* Contact */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><User className="h-4 w-4 text-primary-500" />Contact Information</h3>
-            <InfoRow icon={<Mail className="h-4 w-4" />}  label="Email"  value={user.email} />
-            <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone"  value={(user as any).phone ?? '—'} />
-            <InfoRow icon={<Clock className="h-4 w-4" />} label="Joined" value={formatDate(user.createdAt)} />
+            <InfoRow icon={<Mail className="h-4 w-4" />}  label="Email"   value={user.email} />
+            <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone"   value={(user as any).phone ?? '—'} />
+            <InfoRow icon={<Clock className="h-4 w-4" />} label="Joined"  value={formatDate(user.createdAt)} />
             <InfoRow icon={<User className="h-4 w-4" />}  label="User ID" value={<span className="font-mono text-xs">{(user as any).id}</span>} />
           </Card>
 
           {/* Vehicle */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><Car className="h-4 w-4 text-warning-500" />Vehicle</h3>
-            <InfoRow icon={<Car className="h-4 w-4" />}    label="Type"    value={driver.vehicleType} />
-            <InfoRow icon={<Car className="h-4 w-4" />}    label="Make / Model / Year" value={`${driver.vehicleMake} ${driver.vehicleModel} (${driver.vehicleYear})`} />
-            <InfoRow icon={<Car className="h-4 w-4" />}    label="Color"   value={driver.vehicleColor} />
-            <InfoRow icon={<Shield className="h-4 w-4" />} label="Plate"   value={driver.vehiclePlate} />
-            <InfoRow icon={<FileText className="h-4 w-4" />} label="License number" value={driver.licenseNumber} />
+            <InfoRow icon={<Car className="h-4 w-4" />}      label="Type"                  value={driver.vehicleType} />
+            <InfoRow icon={<Car className="h-4 w-4" />}      label="Make / Model / Year"   value={`${driver.vehicleMake} ${driver.vehicleModel} (${driver.vehicleYear})`} />
+            <InfoRow icon={<Car className="h-4 w-4" />}      label="Color"                 value={driver.vehicleColor} />
+            <InfoRow icon={<Shield className="h-4 w-4" />}   label="Plate"                 value={driver.vehiclePlate} />
+            <InfoRow icon={<FileText className="h-4 w-4" />} label="License number"        value={driver.licenseNumber} />
           </Card>
 
           {/* Documents */}
@@ -136,6 +146,23 @@ const DriverDetails: React.FC = () => {
               <DocImage label="Insurance"            url={driver.insuranceUrl}    />
             </div>
           </Card>
+
+          {/* ── Rejection notice — shown after Documents card ── */}
+          {driver.isRejected && (
+            <Alert variant="error">
+              <div className="space-y-1">
+                <p className="font-semibold">Application Rejected</p>
+                {driver.rejectionReason && (
+                  <p className="text-sm">Reason: {driver.rejectionReason}</p>
+                )}
+                {driver.rejectedAt && (
+                  <p className="text-xs text-gray-500">
+                    Rejected on {formatDateTime(driver.rejectedAt)}
+                  </p>
+                )}
+              </div>
+            </Alert>
+          )}
 
           {/* Recent rides */}
           {recentRides.length > 0 && (
@@ -163,7 +190,9 @@ const DriverDetails: React.FC = () => {
                     {ride.payment && (
                       <div className="mt-1 text-xs font-medium text-gray-700">
                         ₦{ride.actualFare?.toLocaleString('en-NG') ?? ride.estimatedFare?.toLocaleString('en-NG')}
-                        {ride.payment.driverEarnings && <span className="text-green-600 ml-2">(earned: ₦{ride.payment.driverEarnings.toLocaleString('en-NG')})</span>}
+                        {ride.payment.driverEarnings && (
+                          <span className="text-green-600 ml-2">(earned: ₦{ride.payment.driverEarnings.toLocaleString('en-NG')})</span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -175,15 +204,41 @@ const DriverDetails: React.FC = () => {
 
         {/* Right column */}
         <div className="space-y-5">
-          {/* Stats */}
+          {/* ── Statistics card — full replacement ── */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Statistics</h3>
-            <InfoRow icon={<Car className="h-4 w-4" />}    label="Total rides"     value={driver.totalRides} />
-            <InfoRow icon={<Star className="h-4 w-4" />}   label="Rating"          value={`${(driver.rating ?? 0).toFixed(2)} ★`} />
-            <InfoRow icon={<CheckCircle className="h-4 w-4" />} label="Approved"   value={driver.isApproved ? 'Yes' : 'No'} />
-            <InfoRow icon={<Car className="h-4 w-4" />}    label="Currently"       value={driver.isOnline ? 'Online' : 'Offline'} />
+            <InfoRow icon={<Car className="h-4 w-4" />}           label="Total rides" value={driver.totalRides} />
+            <InfoRow icon={<Star className="h-4 w-4" />}          label="Rating"      value={`${(driver.rating ?? 0).toFixed(2)} ★`} />
+            <InfoRow icon={<CheckCircle className="h-4 w-4" />}   label="Status"      value={
+              driver.isRejected ? <Badge variant="error">Rejected</Badge>   :
+              driver.isApproved ? <Badge variant="success">Approved</Badge> :
+                                  <Badge variant="warning">Pending</Badge>
+            } />
+            {driver.isApproved && driver.approvedAt && (
+              <InfoRow icon={<CheckCircle className="h-4 w-4" />} label="Approved on"
+                value={formatDate(driver.approvedAt)} />
+            )}
+            {driver.isRejected && driver.rejectedAt && (
+              <InfoRow icon={<XCircle className="h-4 w-4" />} label="Rejected on"
+                value={formatDate(driver.rejectedAt)} />
+            )}
+            {driver.isRejected && driver.rejectionReason && (
+              <InfoRow icon={<AlertTriangle className="h-4 w-4 text-red-400" />} label="Rejection reason"
+                value={driver.rejectionReason} />
+            )}
+            <InfoRow icon={<Car className="h-4 w-4" />}           label="Currently"   value={driver.isOnline ? 'Online' : 'Offline'} />
+            <InfoRow icon={<FileText className="h-4 w-4" />}      label="Documents"   value={
+              driver.documentStatus === 'COMPLETE' ? <Badge variant="success">All uploaded</Badge>  :
+              driver.documentStatus === 'PARTIAL'  ? <Badge variant="warning">Partial</Badge>       :
+                                                     <Badge variant="error">None uploaded</Badge>
+            } />
+            {driver.documentsUploadedAt && (
+              <InfoRow icon={<Clock className="h-4 w-4" />} label="Docs uploaded"
+                value={formatDate(driver.documentsUploadedAt)} />
+            )}
             {(driver as any).currentLat && (
-              <InfoRow icon={<Car className="h-4 w-4" />}  label="Last location"   value={`${(driver as any).currentLat?.toFixed(4)}, ${(driver as any).currentLng?.toFixed(4)}`} />
+              <InfoRow icon={<Car className="h-4 w-4" />} label="Last location"
+                value={`${(driver as any).currentLat?.toFixed(4)}, ${(driver as any).currentLng?.toFixed(4)}`} />
             )}
           </Card>
 
@@ -203,11 +258,67 @@ const DriverDetails: React.FC = () => {
           {/* Account status */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Account</h3>
-            <InfoRow icon={<CheckCircle className="h-4 w-4" />} label="Active"    value={<Badge variant={user.isActive ? 'success' : 'error'}>{user.isActive ? 'Active' : 'Inactive'}</Badge>} />
-            <InfoRow icon={<CheckCircle className="h-4 w-4" />} label="Verified"  value={<Badge variant={user.isVerified ? 'success' : 'warning'}>{user.isVerified ? 'Verified' : 'Unverified'}</Badge>} />
-            <InfoRow icon={<XCircle className="h-4 w-4" />}     label="Suspended" value={<Badge variant={user.isSuspended ? 'error' : 'default'}>{user.isSuspended ? 'Yes' : 'No'}</Badge>} />
+
+            <InfoRow
+              icon={<CheckCircle className="h-4 w-4" />}
+              label="Active"
+              value={
+                <Badge variant={user.isActive ? 'success' : 'error'}>
+                  {user.isActive ? 'Active' : 'Inactive'}
+                </Badge>
+              }
+            />
+
+            {/* Email verification — separate from driver approval */}
+            <InfoRow
+              icon={<Mail className="h-4 w-4" />}
+              label="Email Verified"
+              value={
+                <Badge variant={user.isVerified ? 'success' : 'warning'}>
+                  {user.isVerified ? 'Verified' : 'Unverified'}
+                </Badge>
+              }
+            />
+
+            {/* Driver approval status — this is what "verified driver" means on the platform */}
+            <InfoRow
+              icon={<Shield className="h-4 w-4" />}
+              label="Driver Status"
+              value={
+                driver.isRejected ? (
+                  <Badge variant="error">Rejected</Badge>
+                ) : driver.isApproved ? (
+                  <Badge variant="success">Approved & Verified</Badge>
+                ) : (
+                  <Badge variant="warning">Pending Approval</Badge>
+                )
+              }
+            />
+
+            {driver.isApproved && driver.approvedAt && (
+              <InfoRow
+                icon={<Clock className="h-4 w-4" />}
+                label="Approved on"
+                value={formatDate(driver.approvedAt)}
+              />
+            )}
+
+            <InfoRow
+              icon={<XCircle className="h-4 w-4" />}
+              label="Suspended"
+              value={
+                <Badge variant={user.isSuspended ? 'error' : 'default'}>
+                  {user.isSuspended ? 'Yes' : 'No'}
+                </Badge>
+              }
+            />
+
             {user.isSuspended && user.suspensionReason && (
-              <InfoRow icon={<AlertTriangle className="h-4 w-4 text-red-400" />} label="Suspension reason" value={user.suspensionReason} />
+              <InfoRow
+                icon={<AlertTriangle className="h-4 w-4 text-red-400" />}
+                label="Suspension reason"
+                value={user.suspensionReason}
+              />
             )}
           </Card>
         </div>

@@ -41,7 +41,13 @@ router.get('/drivers',          requireScope('RIDES'),           adminController
 router.get('/drivers/pending',  requireScope('RIDES'),           adminController.getPendingDrivers);
 router.get('/drivers/:id',      param('id').isUUID(), requireScope('RIDES'), adminController.getDriverById);
 router.put('/drivers/:id/approve', param('id').isUUID(), requireScope('RIDES'), adminController.approveDriver);
-router.put('/drivers/:id/reject',  param('id').isUUID(), body('reason').notEmpty(), requireScope('RIDES'), adminController.rejectDriver);
+router.put(
+  '/drivers/:id/reject',
+  param('id').isUUID(),
+  body('reason').notEmpty().withMessage('A rejection reason is required.'),
+  requireScope('RIDES'),
+  adminController.rejectDriver
+);
 
 // PARTNER MANAGEMENT — DELIVERIES scope
 router.get('/partners',         requireScope('DELIVERIES'),           adminController.getPartners);

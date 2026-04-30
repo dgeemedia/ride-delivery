@@ -42,7 +42,7 @@ const DOC_TYPES = [
   },
 ];
 
-// ── Small floating‑label input (reused) ─────────────────────────────────────
+// ── Small floating label input (reused) ─────────────────────────────────────
 const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, autoCapitalize }) => {
   const { theme } = useTheme();
   const [focused, setFocused] = useState(false);
@@ -85,11 +85,11 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, autoCa
 // ── Main Screen ──────────────────────────────────────────────────────────────
 export default function DriverDocumentsScreen({ navigation }) {
   const { theme, mode } = useTheme();
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState({});
-  const [profileMissing, setProfileMissing] = useState(false);
-  const [creatingProfile, setCreatingProfile] = useState(false);
+  const [profile,          setProfile]          = useState(null);
+  const [loading,          setLoading]          = useState(true);
+  const [uploading,        setUploading]        = useState({});
+  const [profileMissing,   setProfileMissing]   = useState(false);
+  const [creatingProfile,  setCreatingProfile]  = useState(false);
 
   // Profile creation fields
   const [licenseNumber, setLicenseNumber] = useState('');
@@ -100,27 +100,28 @@ export default function DriverDocumentsScreen({ navigation }) {
   const [vehicleColor,  setVehicleColor]  = useState('');
   const [vehiclePlate,  setVehiclePlate]  = useState('');
 
-  const fetchProfile = async () => {
-    try {
-      const res = await driverAPI.getProfile();
-      const data = res?.data?.profile ?? res?.data;
-      setProfile(data);
-      setProfileMissing(false);
-    } catch (err) {
-      console.error('[DriverDocuments] fetchProfile error:', err);
-      if (
-        err?.message === 'Driver profile not found' ||
-        (typeof err?.message === 'string' && err.message.includes('not found'))
-      ) {
-        setProfileMissing(true);
-        setProfile(null);
-      } else {
-        Alert.alert('Error', err?.message || 'Could not load profile');
-      }
-    } finally {
-      setLoading(false);
+const fetchProfile = async () => {
+  try {
+    const res = await driverAPI.getProfile();
+    
+    // Corrected for your response interceptor
+    const profileData = res?.profile ?? res;
+    
+    setProfile(profileData);
+    setProfileMissing(false);
+  } catch (err) {
+    console.error('[DriverDocuments] fetchProfile error:', err);
+    
+    if (err?.message?.includes('not found') || err?.message === 'Driver profile not found') {
+      setProfileMissing(true);
+      setProfile(null);
+    } else {
+      Alert.alert('Error', err?.message || 'Could not load profile');
     }
-  };
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => { fetchProfile(); }, []);
 
@@ -145,7 +146,7 @@ export default function DriverDocumentsScreen({ navigation }) {
         vehicleColor,
         vehiclePlate,
       });
-      await fetchProfile(); // should now succeed and show upload section
+      await fetchProfile();
     } catch (err) {
       const msg = err?.message || err?.response?.data?.message || 'Failed to create profile.';
       Alert.alert('Error', msg);
@@ -154,11 +155,19 @@ export default function DriverDocumentsScreen({ navigation }) {
     }
   };
 
-  // ── Upload handlers (unchanged) ───────────────────────────────────────────
+  // ── Upload handler — uses uploadDocuments (not updateProfile) ─────────────
   const pickAndUpload = async (docType) => {
-    if (!profile) { Alert.alert('No Profile', 'Please complete your driver profile first.'); return; }
+    if (!profile) {
+      Alert.alert('No Profile', 'Please complete your driver profile first.');
+      return;
+    }
+
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission needed', 'We need camera roll access to upload documents.'); return; }
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'We need camera roll access to upload documents.');
+      return;
+    }
+
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -166,19 +175,28 @@ export default function DriverDocumentsScreen({ navigation }) {
         allowsEditing: true,
       });
       if (result.canceled) return;
+
       const asset = result.assets[0];
-      setUploading((prev) => ({ ...prev, [docType.key]: true }));
+      setUploading(prev => ({ ...prev, [docType.key]: true }));
+
+      // Step 1 — upload file to storage, get back a URL
       const uploadRes = await docType.uploadFn(asset);
       const url = uploadRes?.data?.url ?? uploadRes?.url;
-      if (!url) throw new Error('Upload failed – no URL returned');
-      const updatePayload = { [docType.key]: url };
-      await driverAPI.updateProfile(updatePayload);
+      if (!url) throw new Error('Upload failed — no URL returned');
+
+      // Step 2 — save URL via /drivers/documents (NOT /drivers/profile)
+      // This endpoint notifies admins that new documents are available for review.
+      await driverAPI.uploadDocuments({ [docType.key]: url });
+
       await fetchProfile();
-      Alert.alert('Success', `${docType.label} uploaded.`);
+      Alert.alert('Uploaded ✅', `${docType.label} uploaded. Admin has been notified.`);
+
     } catch (err) {
-      const msg = err?.response?.data?.message || err.message || 'Upload failed';
+      const msg = err?.response?.data?.message || err?.message || 'Upload failed';
       Alert.alert('Error', msg);
-    } finally { setUploading((prev) => ({ ...prev, [docType.key]: false })); }
+    } finally {
+      setUploading(prev => ({ ...prev, [docType.key]: false }));
+    }
   };
 
   // ── Loading ───────────────────────────────────────────────────────────────
@@ -201,12 +219,12 @@ export default function DriverDocumentsScreen({ navigation }) {
             Fill in your vehicle details below to continue.
           </Text>
 
-          <FloatInput label="License Number" iconName="card-outline" value={licenseNumber} onChangeText={setLicenseNumber} autoCapitalize="characters" />
-          <FloatInput label="Vehicle Make"   iconName="car-outline"   value={vehicleMake}   onChangeText={setVehicleMake}   autoCapitalize="words" />
-          <FloatInput label="Vehicle Model"  iconName="car-outline"   value={vehicleModel}  onChangeText={setVehicleModel}  autoCapitalize="words" />
-          <FloatInput label="Year"           iconName="calendar-outline" value={vehicleYear}  onChangeText={setVehicleYear}  keyboardType="numeric" />
-          <FloatInput label="Color"          iconName="color-palette-outline" value={vehicleColor} onChangeText={setVehicleColor} autoCapitalize="words" />
-          <FloatInput label="Plate Number"   iconName="document-text-outline" value={vehiclePlate} onChangeText={setVehiclePlate} autoCapitalize="characters" />
+          <FloatInput label="License Number" iconName="card-outline"           value={licenseNumber} onChangeText={setLicenseNumber} autoCapitalize="characters" />
+          <FloatInput label="Vehicle Make"   iconName="car-outline"            value={vehicleMake}   onChangeText={setVehicleMake}   autoCapitalize="words" />
+          <FloatInput label="Vehicle Model"  iconName="car-outline"            value={vehicleModel}  onChangeText={setVehicleModel}  autoCapitalize="words" />
+          <FloatInput label="Year"           iconName="calendar-outline"       value={vehicleYear}   onChangeText={setVehicleYear}   keyboardType="numeric" />
+          <FloatInput label="Color"          iconName="color-palette-outline"  value={vehicleColor}  onChangeText={setVehicleColor}  autoCapitalize="words" />
+          <FloatInput label="Plate Number"   iconName="document-text-outline"  value={vehiclePlate}  onChangeText={setVehiclePlate}  autoCapitalize="characters" />
 
           <Text style={[styles.sectionLabel, { color: theme.hint }]}>VEHICLE TYPE</Text>
           <View style={styles.vehicleTypeGrid}>
@@ -256,8 +274,8 @@ export default function DriverDocumentsScreen({ navigation }) {
           Upload clear photos of your documents for verification.
         </Text>
         {DOC_TYPES.map(doc => {
-          const currentUrl = profile?.[doc.key];
-          const isUploaded = !!currentUrl;
+          const currentUrl  = profile?.[doc.key];
+          const isUploaded  = !!currentUrl;
           const isUploading = uploading[doc.key];
           return (
             <View key={doc.key} style={[styles.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
@@ -266,11 +284,14 @@ export default function DriverDocumentsScreen({ navigation }) {
                 <Text style={[styles.cardTitle, { color: theme.foreground }]}>{doc.label}</Text>
                 <View style={[styles.statusDot, { backgroundColor: isUploaded ? '#5DAA72' : theme.hint }]} />
               </View>
-              {isUploaded ? <Image source={{ uri: currentUrl }} style={styles.preview} resizeMode="cover" /> :
-                <View style={[styles.placeholder, { borderColor: theme.border }]}>
-                  <Ionicons name="cloud-upload-outline" size={32} color={theme.hint} />
-                  <Text style={[styles.placeholderText, { color: theme.hint }]}>No file uploaded</Text>
-                </View>
+              {isUploaded
+                ? <Image source={{ uri: currentUrl }} style={styles.preview} resizeMode="cover" />
+                : (
+                  <View style={[styles.placeholder, { borderColor: theme.border }]}>
+                    <Ionicons name="cloud-upload-outline" size={32} color={theme.hint} />
+                    <Text style={[styles.placeholderText, { color: theme.hint }]}>No file uploaded</Text>
+                  </View>
+                )
               }
               <TouchableOpacity
                 style={[styles.uploadBtn, { backgroundColor: theme.accent, opacity: isUploading ? 0.7 : 1 }]}
@@ -278,8 +299,9 @@ export default function DriverDocumentsScreen({ navigation }) {
                 disabled={isUploading}
                 activeOpacity={0.8}
               >
-                {isUploading ? <ActivityIndicator color={theme.accentFg} /> :
-                  <Text style={[styles.uploadBtnText, { color: theme.accentFg }]}>{isUploaded ? 'Replace' : 'Upload'}</Text>
+                {isUploading
+                  ? <ActivityIndicator color={theme.accentFg} />
+                  : <Text style={[styles.uploadBtnText, { color: theme.accentFg }]}>{isUploaded ? 'Replace' : 'Upload'}</Text>
                 }
               </TouchableOpacity>
             </View>
@@ -294,42 +316,42 @@ export default function DriverDocumentsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root:   { flex: 1 },
   scroll: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 },
-  title: { fontSize: 22, fontWeight: '800', marginBottom: 8 },
+  title:   { fontSize: 22, fontWeight: '800', marginBottom: 8 },
   subtitle: { fontSize: 14, marginBottom: 24, lineHeight: 20 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   // profile creation
-  sectionLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 12, marginTop: 8 },
-  vehicleTypeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+  sectionLabel:      { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 12, marginTop: 8 },
+  vehicleTypeGrid:   { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   vehicleTypeOption: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     borderRadius: 12, borderWidth: 1.5, paddingVertical: 10, paddingHorizontal: 14,
   },
   vehicleTypeLabel: { fontSize: 14, fontWeight: '600' },
-  createBtn: { borderRadius: 13, height: 54, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
-  createBtnText: { fontSize: 16, fontWeight: '700' },
+  createBtn:        { borderRadius: 13, height: 54, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
+  createBtnText:    { fontSize: 16, fontWeight: '700' },
 
   // upload UI
-  card: { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 16 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  cardTitle: { fontSize: 16, fontWeight: '700', flex: 1 },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
-  preview: { width: '100%', aspectRatio: 16/9, borderRadius: 10, marginBottom: 12 },
-  placeholder: { aspectRatio: 16/9, borderRadius: 10, borderWidth: 1, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  card:            { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 16 },
+  cardHeader:      { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  cardTitle:       { fontSize: 16, fontWeight: '700', flex: 1 },
+  statusDot:       { width: 10, height: 10, borderRadius: 5 },
+  preview:         { width: '100%', aspectRatio: 16/9, borderRadius: 10, marginBottom: 12 },
+  placeholder:     { aspectRatio: 16/9, borderRadius: 10, borderWidth: 1, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   placeholderText: { fontSize: 12, marginTop: 8 },
-  uploadBtn: { borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
-  uploadBtnText: { fontSize: 14, fontWeight: '700' },
-  note: { fontSize: 12, textAlign: 'center', marginTop: 16, lineHeight: 18 },
+  uploadBtn:       { borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  uploadBtnText:   { fontSize: 14, fontWeight: '700' },
+  note:            { fontSize: 12, textAlign: 'center', marginTop: 16, lineHeight: 18 },
 
   // float input
-  inputBox: {
+  inputBox:   {
     flexDirection: 'row', alignItems: 'center',
     borderRadius: 12, borderWidth: 1.5, marginBottom: 12,
     height: 60, paddingHorizontal: 14,
   },
-  inputIcon: { marginRight: 10 },
+  inputIcon:  { marginRight: 10 },
   floatLabel: { position: 'absolute', left: 0 },
-  inputText: { fontSize: 15, paddingTop: 18, paddingBottom: 4, fontWeight: '400' },
+  inputText:  { fontSize: 15, paddingTop: 18, paddingBottom: 4, fontWeight: '400' },
 });

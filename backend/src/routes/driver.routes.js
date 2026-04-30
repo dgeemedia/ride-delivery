@@ -14,14 +14,6 @@ router.use(authenticate);
 // PROFILE
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * POST /api/drivers/profile
- * Create or update driver profile + vehicle info.
- * Document URLs are required on first submission.
- *
- * FIX: Added TRICYCLE to vehicleType allowlist — it is present in VEHICLE_TYPES
- * constants, the VehicleType enum, and the DB schema but was missing here.
- */
 router.post(
   '/profile',
   authorize('DRIVER'),

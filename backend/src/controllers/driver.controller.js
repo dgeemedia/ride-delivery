@@ -1,12 +1,4 @@
 // backend/src/controllers/driver.controller.js
-//
-// FIXES applied:
-//   1. requestPayout — now creates a PENDING Payout record (admin-approval flow)
-//      instead of initiating a Paystack transfer directly.  The live bank
-//      transfer is triggered only when an admin approves via
-//      PUT /api/wallet/admin/payouts/:id/approve.
-//   2. getEarnings — (already fixed in prior patch) sums payment.driverEarnings
-//      directly instead of re-deriving from actualFare * 0.80.
 
 const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
@@ -15,11 +7,14 @@ const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/drivers/profile
+// POST /api/drivers/profile  — create or update vehicle / license info
+// Documents are NOT required here. They are submitted separately via
+// POST /api/drivers/documents and admin can approve at any time regardless.
 // ─────────────────────────────────────────────────────────────────────────────
 exports.createOrUpdateProfile = async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+  if (!errors.isEmpty())
+    return res.status(400).json({ success: false, errors: errors.array() });
 
   const {
     licenseNumber, vehicleType, vehicleMake, vehicleModel,
@@ -27,59 +22,92 @@ exports.createOrUpdateProfile = async (req, res) => {
     licenseImageUrl, vehicleRegUrl, insuranceUrl,
   } = req.body;
 
-  const existingProfile = await prisma.driverProfile.findUnique({ where: { userId: req.user.id } });
+  const existingProfile = await prisma.driverProfile.findUnique({
+    where: { userId: req.user.id },
+  });
+
   let profile;
 
   if (existingProfile) {
+    // ── Update: only patch supplied fields ───────────────────────────────────
     profile = await prisma.driverProfile.update({
       where: { userId: req.user.id },
       data: {
-        ...(licenseNumber  && { licenseNumber }),
-        ...(vehicleType    && { vehicleType }),
-        ...(vehicleMake    && { vehicleMake }),
-        ...(vehicleModel   && { vehicleModel }),
-        ...(vehicleYear    && { vehicleYear }),
-        ...(vehicleColor   && { vehicleColor }),
-        ...(vehiclePlate   && { vehiclePlate }),
-        ...(licenseImageUrl && { licenseImageUrl }),
-        ...(vehicleRegUrl   && { vehicleRegUrl }),
-        ...(insuranceUrl    && { insuranceUrl }),
-      },
-    });
-  } else {
-    // ✅ FIX: Documents are NOT required at registration — they're uploaded
-    // separately in DriverDocumentsScreen. Only vehicle/license info is needed.
-    profile = await prisma.driverProfile.create({
-      data: {
-        userId: req.user.id,
-        licenseNumber,
-        vehicleType,
-        vehicleMake,
-        vehicleModel,
-        vehicleYear,
-        vehicleColor,
-        vehiclePlate,
+        ...(licenseNumber   && { licenseNumber }),
+        ...(vehicleType     && { vehicleType }),
+        ...(vehicleMake     && { vehicleMake }),
+        ...(vehicleModel    && { vehicleModel }),
+        ...(vehicleYear     && { vehicleYear }),
+        ...(vehicleColor    && { vehicleColor }),
+        ...(vehiclePlate    && { vehiclePlate }),
         ...(licenseImageUrl && { licenseImageUrl }),
         ...(vehicleRegUrl   && { vehicleRegUrl }),
         ...(insuranceUrl    && { insuranceUrl }),
       },
     });
 
-    await notificationService.notify({
-      userId:  req.user.id,
-      title:   'Profile Submitted for Review 🔍',
-      message: 'Your driver profile has been submitted. Upload your documents so our team can complete the review within 24–48 hours.',
-      type:    'profile_submitted',
-      data:    { profileId: profile.id },
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully.',
+      data: { profile },
     });
   }
 
-  res.status(200).json({
+  // ── Create: register the profile and immediately notify all admins ─────────
+  profile = await prisma.driverProfile.create({
+    data: {
+      userId: req.user.id,
+      licenseNumber,
+      vehicleType,
+      vehicleMake,
+      vehicleModel,
+      vehicleYear,
+      vehicleColor,
+      vehiclePlate,
+      ...(licenseImageUrl && { licenseImageUrl }),
+      ...(vehicleRegUrl   && { vehicleRegUrl }),
+      ...(insuranceUrl    && { insuranceUrl }),
+    },
+  });
+
+  // Notify the driver
+  await notificationService.notify({
+    userId:  req.user.id,
+    title:   'Application Submitted 🔍',
+    message: 'Your driver application is under review. You can upload your documents to speed up approval — but our team can approve you without them too.',
+    type:    'profile_submitted',
+    data:    { profileId: profile.id },
+  });
+
+  // Notify every active admin/super-admin so the pending list is actionable
+  const admins = await prisma.user.findMany({
+    where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
+    select: { id: true },
+  });
+
+  await Promise.allSettled(
+    admins.map(a =>
+      notificationService.notify({
+        userId:  a.id,
+        title:   'New Driver Application 🚗',
+        message: `${req.user.firstName} ${req.user.lastName} has submitted a driver application and is awaiting approval.`,
+        type:    'driver_pending_review',
+        data:    {
+          driverUserId:   req.user.id,
+          driverProfileId: profile.id,
+          hasDocuments:   !!(licenseImageUrl || vehicleRegUrl || insuranceUrl),
+        },
+      })
+    )
+  );
+
+  res.status(201).json({
     success: true,
-    message: existingProfile ? 'Profile updated successfully' : 'Profile created. Please upload your documents.',
-    data:    { profile },
+    message: 'Application submitted. Our team will review it — upload your documents to help speed things up.',
+    data: { profile },
   });
 };
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/drivers/profile
@@ -96,23 +124,28 @@ exports.getProfile = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/drivers/status
+// PUT /api/drivers/status  — go online / offline
+// Only approved, non-rejected drivers may go online.
 // ─────────────────────────────────────────────────────────────────────────────
 exports.updateStatus = async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+  if (!errors.isEmpty())
+    return res.status(400).json({ success: false, errors: errors.array() });
 
   const { isOnline, currentLat, currentLng } = req.body;
 
-  const profile = await prisma.driverProfile.findUnique({ where: { userId: req.user.id } });
-  if (!profile)            throw new AppError('Driver profile not found', 404);
-  if (!profile.isApproved) throw new AppError('Driver profile not approved yet', 403);
+  const profile = await prisma.driverProfile.findUnique({
+    where: { userId: req.user.id },
+  });
+  if (!profile)             throw new AppError('Driver profile not found.', 404);
+  if (profile.isRejected)   throw new AppError('Your application was not approved. Please contact support.', 403);
+  if (!profile.isApproved)  throw new AppError('Your profile is still under review. You will be notified once approved.', 403);
 
   if (!isOnline) {
     const activeRide = await prisma.ride.findFirst({
       where: { driverId: req.user.id, status: { in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } },
     });
-    if (activeRide) throw new AppError('Cannot go offline with an active ride', 400);
+    if (activeRide) throw new AppError('Cannot go offline with an active ride in progress.', 400);
   }
 
   const updatedProfile = await prisma.driverProfile.update({
@@ -126,8 +159,8 @@ exports.updateStatus = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: `Driver is now ${isOnline ? 'online' : 'offline'}`,
-    data:    { profile: updatedProfile },
+    message: `You are now ${isOnline ? 'online' : 'offline'}.`,
+    data: { profile: updatedProfile },
   });
 };
 
@@ -273,15 +306,19 @@ exports.getNearbyRequests = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/drivers/documents
+// POST /api/drivers/documents  — upload / refresh document URLs
+// Admin is notified so they can revisit the pending application.
 // ─────────────────────────────────────────────────────────────────────────────
 exports.uploadDocuments = async (req, res) => {
   const { licenseImageUrl, vehicleRegUrl, insuranceUrl } = req.body;
-  if (!licenseImageUrl && !vehicleRegUrl && !insuranceUrl)
-    throw new AppError('At least one document is required', 400);
 
-  const profile = await prisma.driverProfile.findUnique({ where: { userId: req.user.id } });
-  if (!profile) throw new AppError('Driver profile not found', 404);
+  if (!licenseImageUrl && !vehicleRegUrl && !insuranceUrl)
+    throw new AppError('At least one document URL is required.', 400);
+
+  const profile = await prisma.driverProfile.findUnique({
+    where: { userId: req.user.id },
+  });
+  if (!profile) throw new AppError('Driver profile not found.', 404);
 
   const updatedProfile = await prisma.driverProfile.update({
     where: { userId: req.user.id },
@@ -289,10 +326,45 @@ exports.uploadDocuments = async (req, res) => {
       ...(licenseImageUrl && { licenseImageUrl }),
       ...(vehicleRegUrl   && { vehicleRegUrl }),
       ...(insuranceUrl    && { insuranceUrl }),
+      documentsUploadedAt: new Date(),  // mark the timestamp
     },
   });
 
-  res.status(200).json({ success: true, message: 'Documents uploaded successfully', data: { profile: updatedProfile } });
+  // Notify driver
+  await notificationService.notify({
+    userId:  req.user.id,
+    title:   'Documents Uploaded ✅',
+    message: 'Your documents have been received. Our team will review them shortly.',
+    type:    'documents_uploaded',
+    data:    { profileId: profile.id },
+  });
+
+  // Notify admins — they can now approve with full confidence
+  const admins = await prisma.user.findMany({
+    where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
+    select: { id: true },
+  });
+
+  await Promise.allSettled(
+    admins.map(a =>
+      notificationService.notify({
+        userId:  a.id,
+        title:   'Driver Documents Uploaded 📄',
+        message: `${req.user.firstName} ${req.user.lastName} has uploaded their documents. You can now review and approve their application.`,
+        type:    'driver_documents_uploaded',
+        data:    {
+          driverUserId:    req.user.id,
+          driverProfileId: profile.id,
+        },
+      })
+    )
+  );
+
+  res.status(200).json({
+    success: true,
+    message: 'Documents uploaded. An admin will review your application.',
+    data: { profile: updatedProfile },
+  });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

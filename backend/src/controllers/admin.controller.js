@@ -153,40 +153,83 @@ exports.activateUser = async (req, res) => {
 
 exports.getPendingDrivers = async (req, res) => {
   const drivers = await prisma.driverProfile.findMany({
-    where: { isApproved: false },
-    include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, createdAt: true } } },
+    where: {
+      isApproved: false,
+      isRejected: false,
+    },
+    include: {
+      user: {
+        select: {
+          id: true, firstName: true, lastName: true,
+          email: true, phone: true,
+          profileImage: true, createdAt: true,
+        },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   });
-  res.status(200).json({ success: true, data: { drivers } });
+
+  // Attach a derived `documentStatus` to each record so the admin dashboard
+  // can surface "Has all docs", "Partial docs", or "No docs" without extra queries.
+  const enriched = drivers.map(d => ({
+    ...d,
+    documentStatus: deriveDocumentStatus(d),
+  }));
+
+  res.status(200).json({ success: true, data: { drivers: enriched } });
 };
 
-/**
- * Approve driver — optionally grant a non-withdrawable onboarding bonus.
- * Only SUPER_ADMIN can grant the bonus; regular ADMIN can still approve.
- */
+// Helper — does NOT block approval, it's purely informational for the admin UI.
+function deriveDocumentStatus(profile) {
+  const uploaded = [profile.licenseImageUrl, profile.vehicleRegUrl, profile.insuranceUrl]
+    .filter(Boolean).length;
+  if (uploaded === 3) return 'COMPLETE';
+  if (uploaded > 0)  return 'PARTIAL';
+  return 'NONE';
+}
+
 exports.approveDriver = async (req, res) => {
   const { id } = req.params;
-  const { grantBonus = false, bonusAmount = 5000 } = req.body;
-  const canGrantBonus = req.user.role === 'SUPER_ADMIN' && grantBonus && bonusAmount > 0;
+  const { grantBonus = false, bonusAmount = 5000, note = '' } = req.body;
 
-  const driver = await prisma.driverProfile.update({
+  const driver = await prisma.driverProfile.findUnique({
+    where:   { id },
+    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+  });
+  if (!driver)            throw new AppError('Driver profile not found.', 404);
+  if (driver.isApproved)  throw new AppError('Driver is already approved.', 400);
+
+  const updatedDriver = await prisma.driverProfile.update({
     where: { id },
-    data:  { isApproved: true },
+    data: {
+      isApproved:     true,
+      isRejected:     false,  // clear any prior rejection
+      approvedAt:     new Date(),
+      approvedBy:     req.user.id,
+      rejectedAt:     null,
+      rejectedBy:     null,
+      rejectionReason: null,
+    },
     include: { user: { select: { id: true, firstName: true, lastName: true } } },
   });
 
+  // Optional onboarding bonus (SUPER_ADMIN only)
   let bonusCredited = 0;
+  const canGrantBonus = req.user.role === 'SUPER_ADMIN' && grantBonus && bonusAmount > 0;
   if (canGrantBonus) {
     const wallet = await prisma.wallet.findUnique({ where: { userId: driver.userId } });
     if (wallet) {
       await prisma.$transaction([
-        prisma.wallet.update({ where: { id: wallet.id }, data: { balance: { increment: bonusAmount } } }),
+        prisma.wallet.update({
+          where: { id: wallet.id },
+          data:  { balance: { increment: bonusAmount } },
+        }),
         prisma.walletTransaction.create({
           data: {
             walletId:    wallet.id,
             type:        'CREDIT',
             amount:      bonusAmount,
-            description: 'Onboarding bonus — non-withdrawable, for accepting rides only',
+            description: 'Onboarding bonus — for accepting rides only, non-withdrawable.',
             status:      'COMPLETED',
             reference:   `ONBOARDING-DRV-${driver.userId}-${Date.now()}`,
           },
@@ -196,25 +239,170 @@ exports.approveDriver = async (req, res) => {
     }
   }
 
-  const bonusNote = bonusCredited > 0
-    ? ` We've also credited ₦${bonusCredited.toLocaleString('en-NG')} to your wallet so you can start accepting rides immediately.`
+  const docStatus     = deriveDocumentStatus(driver);
+  const docStatusNote = docStatus === 'NONE'
+    ? ' Note: this driver has not yet uploaded their documents — please follow up if required.'
+    : docStatus === 'PARTIAL'
+    ? ' Note: this driver has uploaded some but not all documents.'
     : '';
 
-  await notificationService.notify({ userId: driver.userId, title: 'Driver Application Approved! 🎉', message: `Congratulations! Your driver application has been approved. You can now go online and start accepting rides.${bonusNote}`, type: notificationService.TYPES.DRIVER_APPROVED, data: { driverProfileId: id, bonusCredited } });
-  await logActivity({ userId: req.user.id, action: 'driver_approved', entityType: 'DriverProfile', entityId: id, details: { driverUserId: driver.userId, bonusCredited }, req });
-  res.status(200).json({ success: true, message: `Driver approved successfully${bonusCredited ? ` with ₦${bonusCredited.toLocaleString('en-NG')} onboarding bonus` : ''}`, data: { driver, bonusCredited } });
+  const bonusNote = bonusCredited > 0
+    ? ` We've credited ₦${bonusCredited.toLocaleString('en-NG')} to your wallet to get you started.`
+    : '';
+
+  await notificationService.notify({
+    userId:  driver.userId,
+    title:   'Application Approved! 🎉',
+    message: `Welcome to the team, ${driver.user.firstName}! Your driver account is now active. Go online to start accepting rides.${bonusNote}${note ? ` Admin note: ${note}` : ''}`,
+    type:    notificationService.TYPES.DRIVER_APPROVED,
+    data:    { driverProfileId: id, bonusCredited, approvedBy: req.user.id },
+  });
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'driver_approved',
+    entityType: 'DriverProfile',
+    entityId:   id,
+    details:    {
+      driverUserId: driver.userId,
+      bonusCredited,
+      documentStatus: docStatus,
+      approvedWithoutDocs: docStatus === 'NONE',
+      note,
+    },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Driver approved.${bonusCredited ? ` ₦${bonusCredited.toLocaleString('en-NG')} onboarding bonus credited.` : ''}${docStatusNote}`,
+    data:    { driver: updatedDriver, bonusCredited, documentStatus: docStatus },
+  });
 };
 
 exports.rejectDriver = async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
-  const driver = await prisma.driverProfile.findUnique({ where: { id }, include: { user: { select: { id: true, firstName: true } } } });
-  if (!driver) throw new AppError('Driver profile not found', 404);
-  const driverUserId = driver.userId;
-  await prisma.driverProfile.delete({ where: { id } });
-  await notificationService.notify({ userId: driverUserId, title: 'Driver Application Not Approved', message: `Your driver application was not approved. Reason: ${reason || 'Does not meet requirements'}. You may reapply after resolving the issue.`, type: notificationService.TYPES.DRIVER_REJECTED, data: { reason } });
-  await logActivity({ userId: req.user.id, action: 'driver_rejected', entityType: 'DriverProfile', entityId: id, details: { reason, driverUserId }, req });
-  res.status(200).json({ success: true, message: 'Driver rejected', data: { driver } });
+
+  if (!reason || !reason.trim())
+    throw new AppError('A rejection reason is required.', 400);
+
+  const driver = await prisma.driverProfile.findUnique({
+    where:   { id },
+    include: { user: { select: { id: true, firstName: true } } },
+  });
+  if (!driver) throw new AppError('Driver profile not found.', 404);
+
+  await prisma.driverProfile.update({
+    where: { id },
+    data: {
+      isApproved:      false,
+      isRejected:      true,
+      rejectedAt:      new Date(),
+      rejectedBy:      req.user.id,
+      rejectionReason: reason.trim(),
+    },
+  });
+
+  await notificationService.notify({
+    userId:  driver.userId,
+    title:   'Application Not Approved',
+    message: `Unfortunately your driver application was not approved at this time. Reason: ${reason}. Please contact support if you have questions or wish to reapply.`,
+    type:    notificationService.TYPES.DRIVER_REJECTED,
+    data:    { reason, rejectedBy: req.user.id },
+  });
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'driver_rejected',
+    entityType: 'DriverProfile',
+    entityId:   id,
+    details:    { reason, driverUserId: driver.userId },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Driver application rejected. The driver has been notified.',
+    data:    { driverProfileId: id, reason },
+  });
+};
+
+exports.getDrivers = async (req, res) => {
+  const { page = 1, limit = 20, search, isApproved, isRejected, vehicleType } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const where = {};
+  if (isApproved !== undefined) where.isApproved = isApproved === 'true';
+  if (isRejected !== undefined) where.isRejected = isRejected === 'true';
+  if (vehicleType) where.vehicleType = vehicleType.toUpperCase();
+  if (search) {
+    where.user = {
+      OR: [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName:  { contains: search, mode: 'insensitive' } },
+        { email:     { contains: search, mode: 'insensitive' } },
+        { phone:     { contains: search, mode: 'insensitive' } },
+      ],
+    };
+  }
+
+  const [drivers, total] = await Promise.all([
+    prisma.driverProfile.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true, firstName: true, lastName: true,
+            email: true, phone: true, createdAt: true,
+            isActive: true, isSuspended: true, isVerified: true,
+          },
+        },
+      },
+      skip,
+      take:    parseInt(limit),
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.driverProfile.count({ where }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      drivers: drivers.map(d => ({ ...d, documentStatus: deriveDocumentStatus(d) })),
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+    },
+  });
+};
+
+exports.getDriverById = async (req, res) => {
+  const { id } = req.params;
+ 
+  const driver = await prisma.driverProfile.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: {
+          id: true, firstName: true, lastName: true, email: true, phone: true,
+          profileImage: true, isActive: true, isSuspended: true, createdAt: true,
+          wallet: { select: { balance: true, currency: true } },
+          _count: { select: { driverRides: true } },
+        },
+      },
+    },
+  });
+ 
+  if (!driver) throw new AppError('Driver not found', 404);
+ 
+  // Recent rides
+  const recentRides = await prisma.ride.findMany({
+    where: { driverId: driver.userId },
+    include: { customer: { select: { firstName: true, lastName: true } }, payment: { select: { amount: true, method: true, driverEarnings: true } } },
+    orderBy: { requestedAt: 'desc' },
+    take: 10,
+  });
+ 
+  res.status(200).json({ success: true, data: { driver, recentRides } });
 };
 
 // ─────────────────────────────────────────────
@@ -230,10 +418,6 @@ exports.getPendingPartners = async (req, res) => {
   res.status(200).json({ success: true, data: { partners } });
 };
 
-/**
- * Approve delivery partner — optionally grant a non-withdrawable onboarding bonus.
- * Only SUPER_ADMIN can grant the bonus; regular ADMIN can still approve.
- */
 exports.approvePartner = async (req, res) => {
   const { id } = req.params;
   const { grantBonus = false, bonusAmount = 5000 } = req.body;
@@ -328,11 +512,6 @@ exports.getDeliveries = async (req, res) => {
 // PAYMENT MANAGEMENT
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Get all payments (paginated, filterable)
- * @route   GET /api/admin/payments
- * @access  Private (ADMIN | SUPER_ADMIN)
- */
 exports.getPayments = async (req, res) => {
   const {
     page   = 1,
@@ -406,11 +585,6 @@ exports.getPaymentById = async (req, res) => {
   res.status(200).json({ success: true, data: { payment } });
 };
  
-/**
- * @desc    Payment aggregated stats (for PaymentList stat cards)
- * @route   GET /api/admin/payments/stats
- * @access  Private (ADMIN | SUPER_ADMIN)
- */
 exports.getPaymentStats = async (req, res) => {
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
  
@@ -468,11 +642,7 @@ exports.getPaymentStats = async (req, res) => {
 // ─────────────────────────────────────────────
 // COMMISSION ANALYTICS
 // ─────────────────────────────────────────────
-/**
- * @desc    Commission stats for analytics page
- * @route   GET /api/admin/analytics/commission
- * @access  Private (ADMIN | SUPER_ADMIN)
- */
+
 exports.getCommissionAnalytics = async (req, res) => {
   const { from, to, serviceType, days } = req.query;
  
@@ -711,11 +881,6 @@ exports.adjustWallet = async (req, res) => {
   res.status(200).json({ success: true, message: `Wallet ${type}ed successfully`, data: { wallet: updatedWallet, transaction } });
 };
 
-/**
- * Returns the withdrawable portion of a wallet balance —
- * excludes non-withdrawable onboarding bonus credits.
- * Used by driver.controller.js and partner.controller.js payout checks.
- */
 exports.getWithdrawableBalance = async (wallet) => {
   const bonusCredits = await prisma.walletTransaction.aggregate({
     where: {
@@ -811,77 +976,6 @@ exports.disburseOnboardingBonuses = async (req, res) => {
   await logActivity({ userId: req.user.id, action: 'onboarding_bonus_disbursed', entityType: 'Wallet', entityId: null, details: { driverBonus, partnerBonus, driverCount, partnerCount, totalDisbursed: (driverBonus * driverCount) + (partnerBonus * partnerCount) }, req });
 
   res.status(200).json({ success: true, message: `Onboarding bonus disbursed to ${driverCount} driver(s) and ${partnerCount} delivery partner(s).`, data: { drivers: driverCount, partners: partnerCount, driverBonus, partnerBonus, totalDisbursed: (driverBonus * driverCount) + (partnerBonus * partnerCount), currency: 'NGN' } });
-};
-
-// ─── DRIVER LIST + DETAIL ────────────────────────────────────────────────────
-
-exports.getDrivers = async (req, res) => {
-  const { page = 1, limit = 20, search, isApproved, vehicleType } = req.query;
-  const skip = (parseInt(page) - 1) * parseInt(limit);
- 
-  const where = {};
-  if (isApproved !== undefined) where.isApproved = isApproved === 'true';
-  if (vehicleType) where.vehicleType = vehicleType.toUpperCase();
-  if (search) {
-    where.user = {
-      OR: [
-        { firstName: { contains: search, mode: 'insensitive' } },
-        { lastName:  { contains: search, mode: 'insensitive' } },
-        { email:     { contains: search, mode: 'insensitive' } },
-        { phone:     { contains: search, mode: 'insensitive' } },
-      ],
-    };
-  }
- 
-  const [drivers, total] = await Promise.all([
-    prisma.driverProfile.findMany({
-      where,
-      include: {
-        user: {
-          select: { id: true, firstName: true, lastName: true, email: true, phone: true, createdAt: true, isActive: true, isSuspended: true, isVerified: true },
-        },
-      },
-      skip,
-      take: parseInt(limit),
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.driverProfile.count({ where }),
-  ]);
- 
-  res.status(200).json({
-    success: true,
-    data: { drivers, pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) } },
-  });
-};
-
-exports.getDriverById = async (req, res) => {
-  const { id } = req.params;
- 
-  const driver = await prisma.driverProfile.findUnique({
-    where: { id },
-    include: {
-      user: {
-        select: {
-          id: true, firstName: true, lastName: true, email: true, phone: true,
-          profileImage: true, isActive: true, isSuspended: true, createdAt: true,
-          wallet: { select: { balance: true, currency: true } },
-          _count: { select: { driverRides: true } },
-        },
-      },
-    },
-  });
- 
-  if (!driver) throw new AppError('Driver not found', 404);
- 
-  // Recent rides
-  const recentRides = await prisma.ride.findMany({
-    where: { driverId: driver.userId },
-    include: { customer: { select: { firstName: true, lastName: true } }, payment: { select: { amount: true, method: true, driverEarnings: true } } },
-    orderBy: { requestedAt: 'desc' },
-    take: 10,
-  });
- 
-  res.status(200).json({ success: true, data: { driver, recentRides } });
 };
 
 // ─── PARTNER LIST + DETAIL ───────────────────────────────────────────────────
@@ -1079,13 +1173,6 @@ exports.cancelDelivery = async (req, res) => {
   res.status(200).json({ success: true, message: 'Delivery cancelled', data: { delivery: updated } });
 };
 
-/**
- * @desc    Get all currently active (live) rides with driver GPS locations
- * @route   GET /api/admin/rides/live
- *
- * NOTE: This route must be registered BEFORE /rides/:id in admin.routes.js
- *       so Express doesn't treat "live" as a UUID parameter.
- */
 exports.getLiveRides = async (req, res) => {
   const rides = await prisma.ride.findMany({
     where: { status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } },
@@ -1112,12 +1199,6 @@ exports.getLiveRides = async (req, res) => {
   res.status(200).json({ success: true, data: { rides, total: rides.length } });
 };
 
-/**
- * @desc    Get single ride detail — admin view (no ownership check)
- *          Returns full customer, driver, payment, rating data.
- *          Used for both live tracking and historical audit.
- * @route   GET /api/admin/rides/:id
- */
 exports.getAdminRideById = async (req, res) => {
   const { id } = req.params;
 
@@ -1150,10 +1231,6 @@ exports.getAdminRideById = async (req, res) => {
   res.status(200).json({ success: true, data: { ride } });
 };
 
-/**
- * @desc    Admin force-cancel a ride
- * @route   PUT /api/admin/rides/:id/cancel
- */
 exports.adminCancelRide = async (req, res) => {
   const { id }     = req.params;
   const { reason } = req.body;
@@ -1395,10 +1472,6 @@ exports.updateTicket = async (req, res) => {
 
 // ─── SHIELD MONITORING ───────────────────────────────────────────────────────
  
-/**
- * @desc  SHIELD stats for dashboard — active sessions, total today, alert count
- * @route GET /api/admin/shield/stats
- */
 exports.getShieldStats = async (req, res) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -1429,10 +1502,6 @@ exports.getShieldStats = async (req, res) => {
   });
 };
  
-/**
- * @desc  List all SHIELD sessions (paginated, filterable)
- * @route GET /api/admin/shield/sessions?isActive=true&page=1&limit=20
- */
 exports.getShieldSessions = async (req, res) => {
   const { page = 1, limit = 20, isActive, autoTriggered } = req.query;
   const skip  = (parseInt(page) - 1) * parseInt(limit);
@@ -1481,10 +1550,6 @@ exports.getShieldSessions = async (req, res) => {
   });
 };
  
-/**
- * @desc  Single SHIELD session detail
- * @route GET /api/admin/shield/sessions/:id
- */
 exports.getShieldSessionById = async (req, res) => {
   const { id } = req.params;
  
@@ -1537,10 +1602,6 @@ exports.getShieldSessionById = async (req, res) => {
   res.status(200).json({ success: true, data: { session } });
 };
  
-/**
- * @desc  Admin force-close a SHIELD session (e.g. trip already ended manually)
- * @route PUT /api/admin/shield/sessions/:id/close
- */
 exports.closeShieldSession = async (req, res) => {
   const { id } = req.params;
  
@@ -1564,18 +1625,7 @@ exports.closeShieldSession = async (req, res) => {
   res.status(200).json({ success: true, message: 'SHIELD session closed' });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ADD TO: backend/src/controllers/admin.controller.js
-//
-// Paste these functions before the final  module.exports = exports;
-// ─────────────────────────────────────────────────────────────────────────────
-
 // ─── CORPORATE ADMIN ─────────────────────────────────────────────────────────
-
-/**
- * @desc  List all companies — paginated, searchable, filterable by status
- * @route GET /api/admin/corporate/companies
- */
 exports.getCompanies = async (req, res) => {
   const { page = 1, limit = 15, search, status } = req.query;
   const skip  = (parseInt(page) - 1) * parseInt(limit);
@@ -1614,10 +1664,6 @@ exports.getCompanies = async (req, res) => {
   });
 };
 
-/**
- * @desc  Single company detail with wallet transactions, employees and recent trips
- * @route GET /api/admin/corporate/companies/:id
- */
 exports.getCompanyById = async (req, res) => {
   const { id } = req.params;
 
@@ -1639,10 +1685,6 @@ exports.getCompanyById = async (req, res) => {
   res.status(200).json({ success: true, data: { company } });
 };
 
-/**
- * @desc  List employees for a specific company
- * @route GET /api/admin/corporate/companies/:id/employees
- */
 exports.getCompanyEmployees = async (req, res) => {
   const { id }              = req.params;
   const { page = 1, limit = 20 } = req.query;
@@ -1670,10 +1712,6 @@ exports.getCompanyEmployees = async (req, res) => {
   });
 };
 
-/**
- * @desc  List trips for a specific company
- * @route GET /api/admin/corporate/companies/:id/trips
- */
 exports.getCompanyTrips = async (req, res) => {
   const { id }              = req.params;
   const { page = 1, limit = 20 } = req.query;
@@ -1703,10 +1741,6 @@ exports.getCompanyTrips = async (req, res) => {
   });
 };
 
-/**
- * @desc  Activate a pending company — sets status to ACTIVE
- * @route PUT /api/admin/corporate/companies/:id/activate
- */
 exports.activateCompany = async (req, res) => {
   const { id } = req.params;
 
@@ -1739,10 +1773,6 @@ exports.activateCompany = async (req, res) => {
   res.status(200).json({ success: true, message: 'Company activated', data: { company: updated } });
 };
 
-/**
- * @desc  Suspend an active company
- * @route PUT /api/admin/corporate/companies/:id/suspend
- */
 exports.suspendCompany = async (req, res) => {
   const { id }     = req.params;
   const { reason } = req.body;
@@ -1845,10 +1875,6 @@ exports.getDuoPayAccounts = async (req, res) => {
   });
 };
 
-/**
- * @desc  Waive ALL overdue transactions for an account and reactivate it (bulk write-off)
- * @route POST /api/admin/duopay/accounts/:id/waive
- */
 exports.waiveDuoPayAccount = async (req, res) => {
   const { id } = req.params;
 
@@ -1900,10 +1926,6 @@ exports.waiveDuoPayAccount = async (req, res) => {
   });
 };
 
-/**
- * @desc  Waive a single overdue transaction; reactivate account if none remain
- * @route POST /api/admin/duopay/accounts/:id/transactions/:txId/waive
- */
 exports.waiveDuoPayTransaction = async (req, res) => {
   const { id, txId } = req.params;
 
@@ -1982,10 +2004,6 @@ exports.runDuoPayOverdueCheck = async (req, res) => {
 
 // ─── ONBOARDING BONUS PREVIEW (dry run) ──────────────────────────────────────
 
-/**
- * @desc  Count eligible drivers/partners without crediting anyone
- * @route GET /api/admin/bonuses/onboarding/preview
- */
 exports.previewOnboardingBonuses = async (req, res) => {
   const [eligibleDrivers, eligiblePartners] = await Promise.all([
     prisma.driverProfile.findMany({

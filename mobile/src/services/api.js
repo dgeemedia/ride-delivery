@@ -134,6 +134,7 @@ export const driverAPI = {
   getNearbyRequests: ()       => api.get('/drivers/nearby-requests'),
   requestPayout:     (data)   => api.post('/drivers/payout/request', data),
   getPayoutHistory:  (params) => api.get('/drivers/payout/history', { params }),
+  uploadDocuments:   (data)   => api.post('/drivers/documents', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

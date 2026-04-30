@@ -52,6 +52,17 @@ const pb = StyleSheet.create({
   txt:  { fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
 });
 
+const RejectedBadge = ({ theme }) => (
+  <View style={[rb.wrap, { backgroundColor: '#E0555518', borderColor: '#E05555' }]}>
+    <Ionicons name="close-circle-outline" size={11} color="#E05555" />
+    <Text style={[rb.txt, { color: '#E05555' }]}>APPLICATION REJECTED</Text>
+  </View>
+);
+const rb = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
+  txt:  { fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
+});
+
 const MetricCard = ({ icon, value, label, color, theme }) => (
   <View style={[mc.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <View style={[mc.iconBox, { backgroundColor: (color || theme.accent) + '15' }]}>
@@ -68,7 +79,7 @@ const mc = StyleSheet.create({
   label:   { fontSize: 10, fontWeight: '600', textAlign: 'center' },
 });
 
-const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
+const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, isRejected, theme }) => {
   const pulseA = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     let anim;
@@ -90,10 +101,15 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
             {isOnline && <Animated.View style={[ot.dotRing, { borderColor: theme.accent, transform: [{ scale: pulseA }] }]} />}
             <View style={[ot.dot, { backgroundColor: isOnline ? theme.accent : theme.hint }]} />
           </View>
-          <Text style={[ot.status, { color: theme.foreground }]}>{isOnline ? "You're Online" : "You're Offline"}</Text>
+          <Text style={[ot.status, { color: theme.foreground }]}>
+            {isOnline ? "You're Online" : "You're Offline"}
+          </Text>
         </View>
         <Text style={[ot.sub, { color: theme.hint }]}>
-          {isOnline ? 'GPS active • accepting rides' : isApproved ? 'Tap to start accepting rides' : 'Approval required'}
+          {isOnline       ? 'GPS active • accepting rides'
+          : isRejected    ? 'Application rejected — contact support'
+          : isApproved    ? 'Tap to start accepting rides'
+          :                 'Awaiting admin approval'}
         </Text>
       </View>
       {toggling
@@ -101,7 +117,7 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, theme }) => {
         : <Switch
             value={isOnline}
             onValueChange={onToggle}
-            disabled={!isApproved}
+            disabled={!isApproved || isRejected}
             trackColor={{ false: theme.border, true: theme.accent + '70' }}
             thumbColor={isOnline ? theme.accent : theme.hint}
             ios_backgroundColor={theme.border}
@@ -220,7 +236,7 @@ export default function DriverDashboardScreen({ navigation }) {
       ]);
 
       if (profileRes.status === 'fulfilled') {
-        const p = profileRes.value?.data?.profile ?? profileRes.value?.data;
+        const p = profileRes.value?.profile ?? profileRes.value;
         setProfile(p);
         setIsOnline(p?.isOnline ?? false);
         const floor = p?.preferredFloorPrice ?? 0;
@@ -270,6 +286,15 @@ export default function DriverDashboardScreen({ navigation }) {
   }, [navigation]);
 
   const toggleOnline = async () => {
+    if (isRejected) {
+      Alert.alert(
+        'Application Not Approved',
+        profile?.rejectionReason
+          ? `Your application was rejected: ${profile.rejectionReason}`
+          : 'Your application was not approved. Please contact support.',
+      );
+      return;
+    }
     if (!profile?.isApproved) {
       Alert.alert('Pending Approval', 'Your account is under review. You will be notified when approved.');
       return;
@@ -309,6 +334,7 @@ export default function DriverDashboardScreen({ navigation }) {
   const goToProfile  = () => navigation.getParent()?.navigate('ProfileTab');
 
   const isApproved = profile?.isApproved ?? false;
+  const isRejected = profile?.isRejected ?? false;
 
   const quickActions = [
     { icon: 'wallet-outline',        label: 'Earnings',     onPress: goToEarnings                          },
@@ -347,7 +373,9 @@ export default function DriverDashboardScreen({ navigation }) {
                 {user?.firstName} {user?.lastName}
               </Text>
               <View style={{ marginTop: 8 }}>
-                {isApproved ? <VerifiedBadge theme={theme} /> : <PendingBadge theme={theme} />}
+                {isRejected  ? <RejectedBadge theme={theme} />  :
+                 isApproved  ? <VerifiedBadge theme={theme} />  :
+                               <PendingBadge theme={theme} />}
               </View>
             </View>
 
@@ -380,17 +408,40 @@ export default function DriverDashboardScreen({ navigation }) {
             </View>
           </View>
 
-          {!isApproved && !loading && (
-            <View style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Ionicons name="time-outline" size={18} color={theme.hint} />
+          {isRejected && !loading && (
+            <View style={[s.approvalBanner, { backgroundColor: '#E0555510', borderColor: '#E05555' }]}>
+              <Ionicons name="close-circle-outline" size={18} color="#E05555" />
               <View style={{ flex: 1 }}>
-                <Text style={[s.approvalTitle, { color: theme.foreground }]}>Account Under Review</Text>
-                <Text style={[s.approvalSub, { color: theme.hint }]}>Your documents are being reviewed. Approval takes 24–48 hours.</Text>
+                <Text style={[s.approvalTitle, { color: '#E05555' }]}>Application Not Approved</Text>
+                <Text style={[s.approvalSub, { color: theme.hint }]}>
+                  {profile?.rejectionReason
+                    ? `Reason: ${profile.rejectionReason}`
+                    : 'Your application was not approved. Please contact support to appeal or reapply.'}
+                </Text>
               </View>
             </View>
           )}
 
-          <OnlineToggle isOnline={isOnline} toggling={toggling} onToggle={toggleOnline} isApproved={isApproved} theme={theme} />
+          {!isApproved && !isRejected && !loading && (
+            <View style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <Ionicons name="time-outline" size={18} color={theme.hint} />
+              <View style={{ flex: 1 }}>
+                <Text style={[s.approvalTitle, { color: theme.foreground }]}>Account Under Review</Text>
+                <Text style={[s.approvalSub, { color: theme.hint }]}>
+                  Our team is reviewing your application. Upload your documents to speed up approval.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <OnlineToggle
+            isOnline={isOnline}
+            toggling={toggling}
+            onToggle={toggleOnline}
+            isApproved={isApproved}
+            isRejected={isRejected}
+            theme={theme}
+          />
 
           {activeRide && (
             <ActiveRideBanner

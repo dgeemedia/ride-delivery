@@ -9,6 +9,7 @@ export const driversAPI = {
     limit?: number;
     search?: string;
     isApproved?: string;   // 'true' | 'false'
+    isRejected?: string;   // ← new: 'true' | 'false'
     vehicleType?: string;
   }): Promise<PaginatedResponse<Driver>> => {
     const response = await api.get('/admin/drivers', { params });
@@ -22,7 +23,9 @@ export const driversAPI = {
   },
 
   /** GET /api/admin/drivers/:id — full detail with recent rides */
-  getDriverById: async (id: string): Promise<ApiResponse<{ driver: Driver; recentRides: any[] }>> => {
+  getDriverById: async (
+    id: string
+  ): Promise<ApiResponse<{ driver: Driver; recentRides: any[] }>> => {
     const response = await api.get(`/admin/drivers/${id}`);
     return response.data;
   },
@@ -33,17 +36,20 @@ export const driversAPI = {
    */
   approveDriver: async (
     id: string,
-    options?: { grantBonus?: boolean; bonusAmount?: number }
-  ): Promise<ApiResponse<{ driver: Driver; bonusCredited: number }>> => {
+    options?: { grantBonus?: boolean; bonusAmount?: number; note?: string }
+  ): Promise<ApiResponse<{ driver: Driver; bonusCredited: number; documentStatus: string }>> => {
     const response = await api.put(`/admin/drivers/${id}/approve`, options ?? {});
     return response.data;
   },
 
-  /** PUT /api/admin/drivers/:id/reject */
+  /**
+   * PUT /api/admin/drivers/:id/reject
+   * reason is REQUIRED by the backend.
+   */
   rejectDriver: async (
     id: string,
     reason: string
-  ): Promise<ApiResponse<{ driver: Driver }>> => {
+  ): Promise<ApiResponse<{ driverProfileId: string; reason: string }>> => {
     const response = await api.put(`/admin/drivers/${id}/reject`, { reason });
     return response.data;
   },

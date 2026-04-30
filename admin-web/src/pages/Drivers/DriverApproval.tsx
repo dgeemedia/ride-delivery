@@ -51,20 +51,33 @@ const DocImage: React.FC<{ label: string; url?: string; icon: React.ReactNode }>
 
 // ─── Approval modal ───────────────────────────────────────────────────────────
 interface ApprovalModalProps {
-  driver:      Driver;
+  driver:       Driver;
   isSuperAdmin: boolean;
-  onClose:     () => void;
-  onApproved:  () => void;
+  onClose:      () => void;
+  onApproved:   () => void;
 }
 
 const ApprovalModal: React.FC<ApprovalModalProps> = ({ driver, isSuperAdmin, onClose, onApproved }) => {
-  const [grantBonus,    setGrantBonus]    = useState(false);
-  const [bonusAmount,   setBonusAmount]   = useState('5000');
-  const [rejectReason,  setRejectReason]  = useState('');
-  const [showReject,    setShowReject]    = useState(false);
-  const [loading,       setLoading]       = useState(false);
+  const [grantBonus,   setGrantBonus]   = useState(false);
+  const [bonusAmount,  setBonusAmount]  = useState('5000');
+  const [rejectReason, setRejectReason] = useState('');
+  const [showReject,   setShowReject]   = useState(false);
+  const [loading,      setLoading]      = useState(false);
 
-  const docsUploaded = !!(driver.licenseImageUrl && driver.vehicleRegUrl && driver.insuranceUrl);
+  // ── Use the backend-derived documentStatus when available, fall back to field check
+  const documentStatus = driver.documentStatus ??
+    (driver.licenseImageUrl && driver.vehicleRegUrl && driver.insuranceUrl
+      ? 'COMPLETE' : driver.licenseImageUrl || driver.vehicleRegUrl || driver.insuranceUrl
+      ? 'PARTIAL' : 'NONE');
+
+  const docStatusVariant =
+    documentStatus === 'COMPLETE' ? 'success' :
+    documentStatus === 'PARTIAL'  ? 'warning' : 'error';
+
+  const docStatusLabel =
+    documentStatus === 'COMPLETE' ? 'All 3 documents uploaded' :
+    documentStatus === 'PARTIAL'  ? 'Some documents missing' :
+    'No documents uploaded yet';
 
   const handleApprove = async () => {
     setLoading(true);
@@ -136,11 +149,29 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ driver, isSuperAdmin, onC
         {/* Documents */}
         <div>
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Uploaded Documents</h4>
-          {!docsUploaded && (
+
+          {/* ── Document status alerts ── */}
+          {documentStatus !== 'COMPLETE' && (
             <Alert variant="warning" className="mb-3">
-              Some documents are missing. You may still approve at your discretion.
+              <div className="flex items-center justify-between">
+                <span>
+                  {documentStatus === 'NONE'
+                    ? 'This driver has not uploaded any documents yet.'
+                    : 'Some documents are still missing.'}
+                  {' '}You may still approve at your discretion.
+                </span>
+                <Badge variant={docStatusVariant} className="ml-3 flex-shrink-0">
+                  {docStatusLabel}
+                </Badge>
+              </div>
             </Alert>
           )}
+          {documentStatus === 'COMPLETE' && (
+            <Alert variant="success" className="mb-3">
+              All 3 documents have been uploaded and are ready for review.
+            </Alert>
+          )}
+
           <div className="grid grid-cols-3 gap-4">
             <DocImage label="Driver License"        url={driver.licenseImageUrl} icon={<FileText className="h-3 w-3" />} />
             <DocImage label="Vehicle Registration"  url={driver.vehicleRegUrl}   icon={<Car className="h-3 w-3" />} />
@@ -202,8 +233,8 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ driver, isSuperAdmin, onC
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 const DriverApproval: React.FC = () => {
-  const { user }       = useAuthStore();
-  const isSuperAdmin   = user?.role === 'SUPER_ADMIN';
+  const { user }     = useAuthStore();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
   const [drivers,        setDrivers]        = useState<Driver[]>([]);
   const [loading,        setLoading]        = useState(true);
@@ -222,9 +253,6 @@ const DriverApproval: React.FC = () => {
       setLoading(false);
     }
   };
-
-  const docsCount = (d: Driver) =>
-    [d.licenseImageUrl, d.vehicleRegUrl, d.insuranceUrl].filter(Boolean).length;
 
   return (
     <div className="space-y-6">
@@ -247,54 +275,62 @@ const DriverApproval: React.FC = () => {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {drivers.map(driver => {
-            const docs = docsCount(driver);
-            return (
-              <Card key={driver.id} className="flex flex-col justify-between gap-4">
-                {/* Header */}
-                <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
-                    {driver.user.firstName[0]}{driver.user.lastName[0]}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 truncate">
-                      {driver.user.firstName} {driver.user.lastName}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">{driver.user.email}</p>
-                  </div>
+          {drivers.map(driver => (
+            <Card key={driver.id} className="flex flex-col justify-between gap-4">
+              {/* Header */}
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
+                  {driver.user.firstName[0]}{driver.user.lastName[0]}
                 </div>
-
-                {/* Vehicle */}
-                <div className="text-sm space-y-1">
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Car className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                    <span>{driver.vehicleMake} {driver.vehicleModel} ({driver.vehicleYear})</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Shield className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                    <span>{driver.vehicleType} • {driver.vehiclePlate}</span>
-                  </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-900 truncate">
+                    {driver.user.firstName} {driver.user.lastName}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">{driver.user.email}</p>
                 </div>
+              </div>
 
-                {/* Docs status */}
-                <div className="flex items-center gap-2">
-                  <Badge variant={docs === 3 ? 'success' : docs > 0 ? 'warning' : 'error'}>
-                    {docs}/3 docs uploaded
-                  </Badge>
-                  <span className="text-xs text-gray-400">{formatDate(driver.createdAt)}</span>
+              {/* Vehicle */}
+              <div className="text-sm space-y-1">
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Car className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                  <span>{driver.vehicleMake} {driver.vehicleModel} ({driver.vehicleYear})</span>
                 </div>
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Shield className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                  <span>{driver.vehicleType} • {driver.vehiclePlate}</span>
+                </div>
+              </div>
 
-                {/* Actions */}
-                <Button
-                  size="sm"
-                  onClick={() => setSelectedDriver(driver)}
-                  className="w-full"
-                >
-                  <Eye className="h-4 w-4" />Review Application
-                </Button>
-              </Card>
-            );
-          })}
+              {/* Docs status */}
+              <div className="flex items-center gap-2">
+                <Badge variant={
+                  (driver.documentStatus ?? 'NONE') === 'COMPLETE' ? 'success' :
+                  (driver.documentStatus ?? 'NONE') === 'PARTIAL'  ? 'warning' : 'error'
+                }>
+                  {[driver.licenseImageUrl, driver.vehicleRegUrl, driver.insuranceUrl].filter(Boolean).length}/3 docs
+                </Badge>
+                {driver.documentsUploadedAt && (
+                  <span className="text-xs text-gray-400">
+                    Uploaded {formatDate(driver.documentsUploadedAt)}
+                  </span>
+                )}
+                {!driver.documentsUploadedAt && (
+                  <span className="text-xs text-amber-500">No docs yet</span>
+                )}
+                <span className="text-xs text-gray-400">{formatDate(driver.createdAt)}</span>
+              </div>
+
+              {/* Actions */}
+              <Button
+                size="sm"
+                onClick={() => setSelectedDriver(driver)}
+                className="w-full"
+              >
+                <Eye className="h-4 w-4" />Review Application
+              </Button>
+            </Card>
+          ))}
         </div>
       )}
 
