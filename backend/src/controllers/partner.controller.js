@@ -15,11 +15,7 @@ const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
 
-/**
- * @desc    Create or update delivery partner profile
- * @route   POST /api/partners/profile
- * @access  Private (DELIVERY_PARTNER)
- */
+
 exports.createOrUpdateProfile = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -35,6 +31,21 @@ exports.createOrUpdateProfile = async (req, res) => {
     profile = await prisma.deliveryPartnerProfile.update({
       where: { userId: req.user.id },
       data: {
+        ...(vehicleType    && { vehicleType }),
+        ...(vehiclePlate   && { vehiclePlate }),
+        ...(idImageUrl      && { idImageUrl }),
+        ...(vehicleImageUrl && { vehicleImageUrl }),
+        ...(req.body.preferredFloorPrice !== undefined && {
+          preferredFloorPrice: parseFloat(req.body.preferredFloorPrice) || null,
+        }),
+      },
+    });
+  } else {
+    // ✅ FIX: ID image is NOT required at registration — it's uploaded separately
+    // in PartnerDocumentsScreen. Only vehicle type is needed to create the profile.
+    profile = await prisma.deliveryPartnerProfile.create({
+      data: {
+        userId: req.user.id,
         vehicleType,
         ...(vehiclePlate    && { vehiclePlate }),
         ...(idImageUrl      && { idImageUrl }),
@@ -44,26 +55,11 @@ exports.createOrUpdateProfile = async (req, res) => {
         }),
       },
     });
-  } else {
-    if (!idImageUrl) throw new AppError('ID image is required for new profile', 400);
-
-    profile = await prisma.deliveryPartnerProfile.create({
-      data: {
-        userId: req.user.id,
-        vehicleType,
-        vehiclePlate,
-        idImageUrl,
-        vehicleImageUrl,
-        preferredFloorPrice: req.body.preferredFloorPrice
-          ? parseFloat(req.body.preferredFloorPrice)
-          : null,
-      },
-    });
 
     await notificationService.notify({
       userId:  req.user.id,
       title:   'Profile Submitted for Review 🔍',
-      message: 'Your delivery partner profile has been submitted. Our team will review and notify you within 24–48 hours.',
+      message: 'Your courier profile has been submitted. Upload your ID so our team can complete the review within 24–48 hours.',
       type:    'profile_submitted',
       data:    { profileId: profile.id },
     });
@@ -71,16 +67,11 @@ exports.createOrUpdateProfile = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: existingProfile ? 'Profile updated successfully' : 'Profile created. Awaiting admin approval.',
+    message: existingProfile ? 'Profile updated successfully' : 'Profile created. Please upload your documents.',
     data:    { profile },
   });
 };
 
-/**
- * @desc    Get delivery partner profile
- * @route   GET /api/partners/profile
- * @access  Private (DELIVERY_PARTNER)
- */
 exports.getProfile = async (req, res) => {
   const profile = await prisma.deliveryPartnerProfile.findUnique({
     where:   { userId: req.user.id },
@@ -92,11 +83,6 @@ exports.getProfile = async (req, res) => {
   res.status(200).json({ success: true, data: { profile } });
 };
 
-/**
- * @desc    Update online/offline status
- * @route   PUT /api/partners/status
- * @access  Private (DELIVERY_PARTNER)
- */
 exports.updateStatus = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {

@@ -280,38 +280,11 @@ export default function RegisterScreen({ navigation }) {
     handleFinalRegister();
   };
 
-  const handleFinalRegister = async () => {
-  setLoading(true);
-  try {
-    const res = await register({
-      firstName,
-      lastName,
-      email,
-      phone,
-      password,
-      role: roleId,
-    });
-
-    // ── Validation or server error ──────────────────────────────────────
-    if (!res.success) {
-      setLoading(false);
-      return Alert.alert('Registration Failed', res.message);
-    }
-
-    // ── OTP gated registration (ENABLE_REGISTRATION_OTP=true) ───────────
-    if (res.requiresOtp) {
-      setLoading(false);
-      // Navigate to the same OTP screen used for login 2FA
-      navigation.navigate('OtpVerification', {
-        tempToken: res.tempToken,
-        method: res.method,            // 'SMS' or 'EMAIL'
-        maskedContact: res.maskedContact,
-        purpose: 'REGISTER',           // optional – OTP screen can handle this
-      });
-      return;
-    }
-
-    // ── Registration succeeded – set up role‑specific profile ───────────
+  // ── Save vehicle/courier profile after the user is fully authenticated ──────
+  // Called both in the no-OTP path (immediately after register()) and from
+  // OtpVerificationScreen via navigation params after OTP is confirmed.
+  // Non-fatal: if this fails the user can complete it in the Documents screen.
+  const saveProfileAfterAuth = async () => {
     if (roleId === 'DRIVER') {
       try {
         await driverAPI.updateProfile({
@@ -323,11 +296,9 @@ export default function RegisterScreen({ navigation }) {
           vehicleColor,
           vehiclePlate,
         });
-      } catch {
-        Alert.alert(
-          'Almost Done!',
-          'Account created! Complete your vehicle documents in your profile.'
-        );
+      } catch (err) {
+        // Non-fatal — profile can be completed in DriverDocumentsScreen
+        console.warn('[Register] driver profile save failed:', err?.message);
       }
     }
 
@@ -337,23 +308,68 @@ export default function RegisterScreen({ navigation }) {
           vehicleType: courierVehicleType,
           ...(courierVehiclePlate && { vehiclePlate: courierVehiclePlate }),
         });
-      } catch {
-        Alert.alert(
-          'Almost Done!',
-          'Account created! Upload your ID documents in your profile.'
-        );
+      } catch (err) {
+        // Non-fatal — profile can be completed in PartnerDocumentsScreen
+        console.warn('[Register] partner profile save failed:', err?.message);
       }
     }
+  };
 
-    // Registration + profile setup finished
-    // AuthContext already logged the user in (persisted session)
-    // No need to call anything else – navigation will happen automatically
-  } catch (err) {
-    Alert.alert('Error', err.message || 'Something went wrong.');
-  } finally {
-    setLoading(false);
-  }
-};
+  const handleFinalRegister = async () => {
+    setLoading(true);
+    try {
+      const res = await register({
+        firstName,
+        lastName,
+        email,
+        phone,
+        password,
+        role: roleId,
+      });
+
+      if (!res.success) {
+        return Alert.alert('Registration Failed', res.message);
+      }
+
+      // ── OTP required: navigate there first and pass vehicle data along ──────
+      // Profile is saved after OTP is confirmed (in OtpVerificationScreen or
+      // via the onSuccess callback if your OTP screen supports it).
+      if (res.requiresOtp) {
+        navigation.navigate('OtpVerification', {
+          tempToken:      res.tempToken,
+          method:         res.method,
+          maskedContact:  res.maskedContact,
+          purpose:        'REGISTER',
+          // Pass pending profile data so OtpVerificationScreen can call back
+          pendingProfile: roleId === 'DRIVER' ? {
+            licenseNumber,
+            vehicleType,
+            vehicleMake,
+            vehicleModel,
+            vehicleYear: parseInt(vehicleYear),
+            vehicleColor,
+            vehiclePlate,
+          } : roleId === 'DELIVERY_PARTNER' ? {
+            vehicleType:  courierVehicleType,
+            ...(courierVehiclePlate && { vehiclePlate: courierVehiclePlate }),
+          } : null,
+          pendingRole: roleId,
+        });
+        return;
+      }
+
+      // ── No OTP: save profile immediately while we still have the token ──────
+      await saveProfileAfterAuth();
+
+      // AuthContext will pick up the new session and route the user to their
+      // role-specific navigator automatically.
+
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Something went wrong.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ── Shared CTA button ───────────────────────────────────────────────────────
   const PrimaryBtn = ({ label, onPress, disabled, icon }) => (
@@ -418,7 +434,6 @@ export default function RegisterScreen({ navigation }) {
                     <RoleCard key={r.id} role={r} selected={roleId === r.id} onSelect={setRoleId} theme={theme} mode={mode} />
                   ))}
                 </View>
-                {/* Disabled state: glass outline; enabled: solid gradient */}
                 {roleId ? (
                   <PrimaryBtn label="Continue" onPress={handleStep1} icon="arrow-forward-circle-outline" />
                 ) : (
@@ -447,7 +462,6 @@ export default function RegisterScreen({ navigation }) {
             {/* ── STEP 2 — personal details ── */}
             {step === 2 && (
               <>
-                {/* Role badge — matches LoginScreen logoBadge style */}
                 <View style={[s.roleBadge, { backgroundColor: G.card(mode), borderColor: G.border(mode), overflow:'hidden' }]}>
                   <LinearGradient
                     colors={darkMode ? ['rgba(255,255,255,0.06)','rgba(255,255,255,0.02)'] : ['rgba(255,255,255,0.88)','rgba(255,255,255,0.70)']}
@@ -614,7 +628,7 @@ const s = StyleSheet.create({
   progNum: { fontSize:13, fontWeight:'800' },
   progLine:{ height:2, marginHorizontal:6 },
 
-  // Pill eyebrow (matches LoginScreen pillLabel)
+  // Pill eyebrow
   pillLabel: { flexDirection:'row', alignItems:'center', gap:7, borderRadius:20, borderWidth:1, paddingHorizontal:12, paddingVertical:6, alignSelf:'flex-start', marginBottom:16 },
   pillDot:   { width:5, height:5, borderRadius:3 },
   eyebrow:   { fontSize:10, letterSpacing:4, fontWeight:'800' },
@@ -671,7 +685,7 @@ const s = StyleSheet.create({
   docNote:    { flexDirection:'row', gap:10, alignItems:'flex-start', padding:14, borderRadius:14, borderWidth:1, marginBottom:16, overflow:'hidden' },
   docNoteTxt: { flex:1, fontSize:12, lineHeight:18 },
 
-  // Primary button (matches LoginScreen signBtn)
+  // Primary button
   btn:       { borderRadius:16, height:56, flexDirection:'row', justifyContent:'center', alignItems:'center', gap:10, marginBottom:20, overflow:'hidden' },
   btnShimmer:{ position:'absolute', top:0, left:0, right:0, height:1 },
   btnOff:    { borderWidth:1 },

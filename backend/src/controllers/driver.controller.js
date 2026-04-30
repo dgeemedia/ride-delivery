@@ -34,30 +34,41 @@ exports.createOrUpdateProfile = async (req, res) => {
     profile = await prisma.driverProfile.update({
       where: { userId: req.user.id },
       data: {
-        licenseNumber, vehicleType, vehicleMake, vehicleModel,
-        vehicleYear, vehicleColor, vehiclePlate,
+        ...(licenseNumber  && { licenseNumber }),
+        ...(vehicleType    && { vehicleType }),
+        ...(vehicleMake    && { vehicleMake }),
+        ...(vehicleModel   && { vehicleModel }),
+        ...(vehicleYear    && { vehicleYear }),
+        ...(vehicleColor   && { vehicleColor }),
+        ...(vehiclePlate   && { vehiclePlate }),
         ...(licenseImageUrl && { licenseImageUrl }),
         ...(vehicleRegUrl   && { vehicleRegUrl }),
         ...(insuranceUrl    && { insuranceUrl }),
       },
     });
   } else {
-    if (!licenseImageUrl || !vehicleRegUrl || !insuranceUrl)
-      throw new AppError('Document images are required for new profile', 400);
-
+    // ✅ FIX: Documents are NOT required at registration — they're uploaded
+    // separately in DriverDocumentsScreen. Only vehicle/license info is needed.
     profile = await prisma.driverProfile.create({
       data: {
         userId: req.user.id,
-        licenseNumber, vehicleType, vehicleMake, vehicleModel,
-        vehicleYear, vehicleColor, vehiclePlate,
-        licenseImageUrl, vehicleRegUrl, insuranceUrl,
+        licenseNumber,
+        vehicleType,
+        vehicleMake,
+        vehicleModel,
+        vehicleYear,
+        vehicleColor,
+        vehiclePlate,
+        ...(licenseImageUrl && { licenseImageUrl }),
+        ...(vehicleRegUrl   && { vehicleRegUrl }),
+        ...(insuranceUrl    && { insuranceUrl }),
       },
     });
 
     await notificationService.notify({
       userId:  req.user.id,
       title:   'Profile Submitted for Review 🔍',
-      message: 'Your driver profile has been submitted. Our team will review your documents and notify you within 24–48 hours.',
+      message: 'Your driver profile has been submitted. Upload your documents so our team can complete the review within 24–48 hours.',
       type:    'profile_submitted',
       data:    { profileId: profile.id },
     });
@@ -65,7 +76,7 @@ exports.createOrUpdateProfile = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: existingProfile ? 'Profile updated successfully' : 'Profile created. Awaiting admin approval.',
+    message: existingProfile ? 'Profile updated successfully' : 'Profile created. Please upload your documents.',
     data:    { profile },
   });
 };
