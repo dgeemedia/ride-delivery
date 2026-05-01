@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Switch,
   ScrollView, StatusBar, Dimensions, Animated,
-  ActivityIndicator, Alert, Image,           // ← Image added
+  ActivityIndicator, Alert, Image,
 } from 'react-native';
 import { Ionicons }                            from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets }     from 'react-native-safe-area-context';
@@ -236,7 +236,8 @@ export default function DriverDashboardScreen({ navigation }) {
       ]);
 
       if (profileRes.status === 'fulfilled') {
-        const p = profileRes.value?.profile ?? profileRes.value;
+        // FIXED: Access the profile via .data.profile (the API wrapper)
+        const p = profileRes.value?.data?.profile ?? profileRes.value?.profile ?? null;
         setProfile(p);
         setIsOnline(p?.isOnline ?? false);
         const floor = p?.preferredFloorPrice ?? 0;
