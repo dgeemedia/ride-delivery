@@ -9,6 +9,7 @@ import { Ionicons }       from '@expo/vector-icons';
 import * as ImagePicker   from 'expo-image-picker';
 import { useTheme }       from '../../context/ThemeContext';
 import { driverAPI, uploadAPI } from '../../services/api';
+import { toBase64DataUri } from '../../utils/toBase64DataUri';
 
 // ── Vehicle types accepted by the backend validator ───────────────────────────
 const VEHICLE_TYPES = ['CAR', 'MOTORCYCLE', 'BIKE', 'VAN', 'TRICYCLE'];
@@ -133,72 +134,80 @@ export default function DriverDocumentsScreen({ navigation }) {
   };
 
   // ── Pick image and upload to Cloudinary, then save URL to profile ─────────
-  const pickAndUpload = async (slot) => {
-    console.log('[DriverDocuments] pickAndUpload for slot:', slot.key);
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      console.log('[DriverDocuments] media library permission not granted');
-      Alert.alert('Permission Needed', 'Please allow access to your photo library.');
-      return;
-    }
+const pickAndUpload = async (slot) => {
+  console.log('[DriverDocuments] pickAndUpload for slot:', slot.key);
+  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (status !== 'granted') {
+    Alert.alert('Permission Needed', 'Please allow access to your photo library.');
+    return;
+  }
 
+  try {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality:    0.85,
+      allowsEditing: true,
+    });
+    if (result.canceled) return;
+
+    const asset = result.assets[0];
+    console.log('[DriverDocuments] selected asset uri:', asset.uri);
+    setUploading(prev => ({ ...prev, [slot.key]: true }));
+
+    let url = null;
+
+    // ── Attempt 1: multipart upload (preferred) ──────────────────────────
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality:    0.85,
-        allowsEditing: true,
-      });
-      if (result.canceled) {
-        console.log('[DriverDocuments] image picker cancelled');
-        return;
-      }
-
-      const asset = result.assets[0];
-      console.log('[DriverDocuments] selected asset:', asset.uri);
-      setUploading(prev => ({ ...prev, [slot.key]: true }));
-
-      // Upload via multipart helper
       let uploadRes;
-      try {
-        if (slot.uploadKey === 'license')       uploadRes = await uploadAPI.uploadDriverLicense(asset);
-        else if (slot.uploadKey === 'registration') uploadRes = await uploadAPI.uploadVehicleRegistration(asset);
-        else if (slot.uploadKey === 'insurance')    uploadRes = await uploadAPI.uploadInsurance(asset);
-        else uploadRes = await uploadAPI.uploadBase64(asset.uri, 'duoride/documents');
-        console.log('[DriverDocuments] upload response:', JSON.stringify(uploadRes));
-      } catch {
-        // Fallback: base64 upload
-        console.log('[DriverDocuments] multipart upload failed, trying base64 fallback');
-        uploadRes = await uploadAPI.uploadBase64(asset.uri, 'duoride/documents');
-        console.log('[DriverDocuments] base64 upload response:', JSON.stringify(uploadRes));
-      }
+      if      (slot.uploadKey === 'license')       uploadRes = await uploadAPI.uploadDriverLicense(asset);
+      else if (slot.uploadKey === 'registration')  uploadRes = await uploadAPI.uploadVehicleRegistration(asset);
+      else if (slot.uploadKey === 'insurance')     uploadRes = await uploadAPI.uploadInsurance(asset);
 
-      const url =
-        uploadRes?.data?.url     ??
+      url =
+        uploadRes?.data?.url        ??
         uploadRes?.data?.secure_url ??
-        uploadRes?.url          ??
-        uploadRes?.secure_url   ??
+        uploadRes?.url              ??
+        uploadRes?.secure_url       ??
         null;
 
-      if (!url) {
-        console.log('[DriverDocuments] no URL in upload response – aborting');
-        throw new Error('Upload succeeded but no URL was returned. Check Cloudinary config.');
-      }
-
-      console.log('[DriverDocuments] saving URL to profile:', url);
-      // Save the URL to the driver profile
-      await driverAPI.uploadDocuments({ [slot.key]: url });
-      console.log('[DriverDocuments] documents saved to profile');
-
-      await fetchProfile();
-      Alert.alert('Uploaded ✅', `${slot.label} uploaded successfully.`);
-
-    } catch (err) {
-      console.log('[DriverDocuments] pickAndUpload error:', JSON.stringify(err));
-      Alert.alert('Upload Failed', err?.message || 'Please try again.');
-    } finally {
-      setUploading(prev => ({ ...prev, [slot.key]: false }));
+      console.log('[DriverDocuments] multipart upload url:', url);
+    } catch (multipartErr) {
+      console.warn('[DriverDocuments] multipart failed, trying base64 fallback:', multipartErr?.message);
     }
-  };
+
+    // ── Attempt 2: base64 fallback ───────────────────────────────────────
+    if (!url) {
+      const dataUri   = await toBase64DataUri(asset.uri);
+      const uploadRes = await uploadAPI.uploadBase64(dataUri, 'duoride/documents');
+
+      url =
+        uploadRes?.data?.url        ??
+        uploadRes?.data?.secure_url ??
+        uploadRes?.url              ??
+        uploadRes?.secure_url       ??
+        null;
+
+      console.log('[DriverDocuments] base64 fallback url:', url);
+    }
+
+    if (!url) {
+      throw new Error('Upload succeeded but no URL was returned. Check Cloudinary config.');
+    }
+
+    console.log('[DriverDocuments] saving URL to profile:', url);
+    await driverAPI.uploadDocuments({ [slot.key]: url });
+    console.log('[DriverDocuments] documents saved to profile');
+
+    await fetchProfile();
+    Alert.alert('Uploaded ✅', `${slot.label} uploaded successfully.`);
+
+  } catch (err) {
+    console.log('[DriverDocuments] pickAndUpload error:', err?.message);
+    Alert.alert('Upload Failed', err?.message || 'Please try again.');
+  } finally {
+    setUploading(prev => ({ ...prev, [slot.key]: false }));
+  }
+};
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {

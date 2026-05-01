@@ -3,12 +3,33 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/constants';
 import { emitForceLogout } from './authEvents';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });
+
+const uploadApi = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 30000,
+});
+
+uploadApi.interceptors.request.use(async (config) => {
+  const token = await AsyncStorage.getItem('authToken');
+  const deviceId = await AsyncStorage.getItem('deviceId');
+
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (deviceId) config.headers['X-Device-ID'] = deviceId;
+
+  return config;
+});
+
+uploadApi.interceptors.response.use(
+  (response) => response.data,
+  (error) => Promise.reject(error.response?.data ?? error)
+);
 
 // ── Device ID helper ──────────────────────────────────────────────────────────
 const getOrCreateDeviceId = async () => {
@@ -268,21 +289,36 @@ export const duopayAPI = {
 // ─────────────────────────────────────────────────────────────────────────────
 // FILE UPLOADS
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Helper: wraps a file picker result into a multipart POST */
 const uploadSingle = async (url, fieldName, file) => {
-  const form = new FormData();
-  form.append(fieldName, {
-    uri: file.uri,
-    name: file.name || file.uri.split('/').pop(),
-    type: file.type || 'image/jpeg',
+  const [token, deviceId] = await Promise.all([
+    AsyncStorage.getItem('authToken'),
+    AsyncStorage.getItem('deviceId'),
+  ]);
+
+  // Read the file and upload via FileSystem.uploadAsync — this is the only
+  // method that reliably sends a binary file part from React Native / Expo.
+  const uploadUrl = `${API_BASE_URL}${url}`;
+
+  const result = await FileSystem.uploadAsync(uploadUrl, file.uri, {
+    httpMethod:  'POST',
+    uploadType:  'multipart',
+    fieldName,                                          // must match multer's field name
+    mimeType:    file.mimeType ?? file.type ?? 'image/jpeg',
+    headers: {
+      ...(token    && { Authorization: `Bearer ${token}` }),
+      ...(deviceId && { 'X-Device-ID': deviceId }),
+    },
   });
 
-  // Override Content-Type to multipart/form-data – the interceptor will
-  // still attach the Authorization header and X-Device-ID automatically.
-  return api.post(url, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  if (result.status >= 400) {
+    let body;
+    try { body = JSON.parse(result.body); } catch { body = { message: result.body }; }
+    return Promise.reject(body);
+  }
+
+  let body;
+  try { body = JSON.parse(result.body); } catch { body = result.body; }
+  return body; // { success, data: { url, publicId } }
 };
 
 export const uploadAPI = {

@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../../context/ThemeContext';
 import { partnerAPI, uploadAPI } from '../../services/api';
+import { toBase64DataUri } from '../../utils/toBase64DataUri';
 
 const VEHICLE_TYPES = [
   { value: 'BIKE',       label: 'Bike',       icon: 'bicycle-outline' },
@@ -101,56 +102,70 @@ export default function PartnerDocumentsScreen({ navigation }) {
   };
 
   const pickAndUpload = async (docType) => {
-    if (!profile) {
-      Alert.alert('No Profile', 'Please complete your courier profile first.');
-      return;
-    }
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'We need camera roll access to upload documents.');
-      return;
-    }
+  if (!profile) {
+    Alert.alert('No Profile', 'Please complete your courier profile first.');
+    return;
+  }
+  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (status !== 'granted') {
+    Alert.alert('Permission needed', 'We need camera roll access to upload documents.');
+    return;
+  }
 
+  try {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality:    0.8,
+      allowsEditing: true,
+    });
+    if (result.canceled) return;
+
+    const asset = result.assets[0];
+    setUploading(prev => ({ ...prev, [docType.key]: true }));
+
+    let url = null;
+
+    // ── Attempt 1: multipart upload (preferred) ──────────────────────────
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality:    0.8,
-        allowsEditing: true,
-      });
-      if (result.canceled) return;
+      const uploadRes = await docType.uploadFn(asset);
 
-      const asset = result.assets[0];
-      setUploading(prev => ({ ...prev, [docType.key]: true }));
-
-      // 1. Upload the file to cloud storage
-      let uploadRes;
-      try {
-        uploadRes = await docType.uploadFn(asset);
-      } catch {
-        uploadRes = await uploadAPI.uploadBase64(asset.uri, 'duoride/partner-documents');
-      }
-
-      const url =
+      url =
         uploadRes?.data?.url        ??
         uploadRes?.data?.secure_url ??
         uploadRes?.url              ??
         uploadRes?.secure_url       ??
         null;
-
-      if (!url) throw new Error('Upload succeeded but no URL was returned.');
-
-      // 2. Save URL via the dedicated documents endpoint (triggers admin notification)
-      await partnerAPI.uploadDocuments({ [docType.key]: url });
-
-      await fetchProfile();
-      Alert.alert('Uploaded ✅', `${docType.label} uploaded successfully.`);
-
-    } catch (err) {
-      Alert.alert('Upload Failed', err?.response?.data?.message || err?.message || 'Please try again.');
-    } finally {
-      setUploading(prev => ({ ...prev, [docType.key]: false }));
+    } catch (multipartErr) {
+      console.warn('[PartnerDocuments] multipart failed, trying base64 fallback:', multipartErr?.message);
     }
-  };
+
+    // ── Attempt 2: base64 fallback ───────────────────────────────────────
+    if (!url) {
+      const dataUri   = await toBase64DataUri(asset.uri);
+      const uploadRes = await uploadAPI.uploadBase64(dataUri, 'duoride/partner-documents');
+
+      url =
+        uploadRes?.data?.url        ??
+        uploadRes?.data?.secure_url ??
+        uploadRes?.url              ??
+        uploadRes?.secure_url       ??
+        null;
+    }
+
+    if (!url) throw new Error('Upload succeeded but no URL was returned.');
+
+    // Save via dedicated documents endpoint (triggers admin notification)
+    await partnerAPI.uploadDocuments({ [docType.key]: url });
+
+    await fetchProfile();
+    Alert.alert('Uploaded ✅', `${docType.label} uploaded successfully.`);
+
+  } catch (err) {
+    Alert.alert('Upload Failed', err?.response?.data?.message || err?.message || 'Please try again.');
+  } finally {
+    setUploading(prev => ({ ...prev, [docType.key]: false }));
+  }
+};
 
   if (loading) {
     return <View style={[styles.centered, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.accent} /></View>;
