@@ -43,6 +43,14 @@ export interface Driver {
   rating: number;
   createdAt: string;
   updatedAt: string;
+  // ── Approval / rejection ─────────────────────────────
+  isRejected?: boolean;
+  rejectionReason?: string;
+  rejectedAt?: string;
+  approvedAt?: string;
+  // ── Document status ──────────────────────────────────
+  documentStatus?: 'COMPLETE' | 'PARTIAL' | 'NONE';
+  documentsUploadedAt?: string;
 }
 
 export interface DeliveryPartner {
