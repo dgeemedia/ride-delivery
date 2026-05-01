@@ -40,6 +40,18 @@ const { maintenanceMiddleware } = require('./middleware/maintenance.middleware')
 
 const app = express();
 
+// backend/src/app.js
+// ... after express.json() ...
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    const redacted = { ...req.body };
+    if (redacted.password) redacted.password = '***';
+    if (redacted.confirmPassword) redacted.confirmPassword = '***';
+    console.log(`[REQ] ${req.method} ${req.path}`, JSON.stringify(redacted));
+  }
+  next();
+});
+
 // ─── Security headers ─────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   if (ENABLE_SHIELD && req.path.startsWith('/shield/')) {

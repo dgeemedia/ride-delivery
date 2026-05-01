@@ -6,10 +6,18 @@ const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
 
+console.log('[DRIVER‑CTRL] Raw‑SQL driver controller loaded');
+
+// ── Helper: read a full DriverProfile row using raw SQL (bypasses Prisma mapping) ──
+async function rawFindProfileByUserId(userId) {
+  const rows = await prisma.$queryRaw`
+    SELECT * FROM "DriverProfile" WHERE "userId" = ${userId}::text LIMIT 1
+  `;
+  return rows[0] || null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/drivers/profile  — create or update vehicle / license info
-// Documents are NOT required here. They are submitted separately via
-// POST /api/drivers/documents and admin can approve at any time regardless.
+// POST /api/drivers/profile — create or update vehicle / license info
 // ─────────────────────────────────────────────────────────────────────────────
 exports.createOrUpdateProfile = async (req, res) => {
   const errors = validationResult(req);
@@ -22,29 +30,41 @@ exports.createOrUpdateProfile = async (req, res) => {
     licenseImageUrl, vehicleRegUrl, insuranceUrl,
   } = req.body;
 
-  const existingProfile = await prisma.driverProfile.findUnique({
-    where: { userId: req.user.id },
-  });
-
+  const existingProfile = await rawFindProfileByUserId(req.user.id);
   let profile;
 
   if (existingProfile) {
-    // ── Update: only patch supplied fields ───────────────────────────────────
-    profile = await prisma.driverProfile.update({
-      where: { userId: req.user.id },
-      data: {
-        ...(licenseNumber   && { licenseNumber }),
-        ...(vehicleType     && { vehicleType }),
-        ...(vehicleMake     && { vehicleMake }),
-        ...(vehicleModel    && { vehicleModel }),
-        ...(vehicleYear     && { vehicleYear }),
-        ...(vehicleColor    && { vehicleColor }),
-        ...(vehiclePlate    && { vehiclePlate }),
-        ...(licenseImageUrl && { licenseImageUrl }),
-        ...(vehicleRegUrl   && { vehicleRegUrl }),
-        ...(insuranceUrl    && { insuranceUrl }),
-      },
-    });
+    // Update existing profile (raw SQL)
+    const sql = `
+      UPDATE "DriverProfile"
+      SET "licenseNumber" = COALESCE($1, "licenseNumber"),
+          "vehicleType"   = COALESCE($2::"VehicleType", "vehicleType"),
+          "vehicleMake"   = COALESCE($3, "vehicleMake"),
+          "vehicleModel"  = COALESCE($4, "vehicleModel"),
+          "vehicleYear"   = COALESCE($5::int, "vehicleYear"),
+          "vehicleColor"  = COALESCE($6, "vehicleColor"),
+          "vehiclePlate"  = COALESCE($7, "vehiclePlate"),
+          "licenseImageUrl"   = COALESCE($8, "licenseImageUrl"),
+          "vehicleRegUrl"     = COALESCE($9, "vehicleRegUrl"),
+          "insuranceUrl"      = COALESCE($10, "insuranceUrl")
+      WHERE "userId" = $11::text
+      RETURNING *
+    `;
+    const params = [
+      licenseNumber || null,
+      vehicleType || null,
+      vehicleMake || null,
+      vehicleModel || null,
+      vehicleYear ? parseInt(vehicleYear) : null,
+      vehicleColor || null,
+      vehiclePlate || null,
+      licenseImageUrl || null,
+      vehicleRegUrl || null,
+      insuranceUrl || null,
+      req.user.id,
+    ];
+    const rows = await prisma.$queryRawUnsafe(sql, ...params);
+    profile = rows[0];
 
     return res.status(200).json({
       success: true,
@@ -53,33 +73,46 @@ exports.createOrUpdateProfile = async (req, res) => {
     });
   }
 
-  // ── Create: register the profile and immediately notify all admins ─────────
-  profile = await prisma.driverProfile.create({
-    data: {
-      userId: req.user.id,
-      licenseNumber,
-      vehicleType,
-      vehicleMake,
-      vehicleModel,
-      vehicleYear,
-      vehicleColor,
-      vehiclePlate,
-      ...(licenseImageUrl && { licenseImageUrl }),
-      ...(vehicleRegUrl   && { vehicleRegUrl }),
-      ...(insuranceUrl    && { insuranceUrl }),
-    },
-  });
+  // Create new profile (raw SQL)
+  const createSql = `
+    INSERT INTO "DriverProfile" (
+      "userId", "licenseNumber", "vehicleType", "vehicleMake", "vehicleModel",
+      "vehicleYear", "vehicleColor", "vehiclePlate",
+      "licenseImageUrl", "vehicleRegUrl", "insuranceUrl"
+    )
+    VALUES (
+      $1::text, $2, $3::"VehicleType", $4, $5,
+      $6::int, $7, $8,
+      $9, $10, $11
+    )
+    RETURNING *
+  `;
+  const createParams = [
+    req.user.id,
+    licenseNumber,
+    vehicleType,
+    vehicleMake,
+    vehicleModel,
+    parseInt(vehicleYear),
+    vehicleColor,
+    vehiclePlate,
+    licenseImageUrl || null,
+    vehicleRegUrl || null,
+    insuranceUrl || null,
+  ];
+  const rows = await prisma.$queryRawUnsafe(createSql, ...createParams);
+  profile = rows[0];
 
-  // Notify the driver
+  // Notify driver
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Application Submitted 🔍',
-    message: 'Your driver application is under review. You can upload your documents to speed up approval — but our team can approve you without them too.',
+    message: 'Your driver application is under review. You can upload your documents to speed up approval.',
     type:    'profile_submitted',
     data:    { profileId: profile.id },
   });
 
-  // Notify every active admin/super-admin so the pending list is actionable
+  // Notify admins
   const admins = await prisma.user.findMany({
     where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
     select: { id: true },
@@ -108,24 +141,26 @@ exports.createOrUpdateProfile = async (req, res) => {
   });
 };
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/drivers/profile
 // ─────────────────────────────────────────────────────────────────────────────
 exports.getProfile = async (req, res) => {
-  const profile = await prisma.driverProfile.findUnique({
-    where:   { userId: req.user.id },
-    include: {
-      user: { select: { firstName: true, lastName: true, email: true, phone: true, profileImage: true } },
-    },
-  });
+  const profile = await rawFindProfileByUserId(req.user.id);
   if (!profile) throw new AppError('Driver profile not found', 404);
-  res.status(200).json({ success: true, data: { profile } });
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { firstName: true, lastName: true, email: true, phone: true, profileImage: true },
+  });
+
+  res.status(200).json({
+    success: true,
+    data: { profile: { ...profile, user } },
+  });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/drivers/status  — go online / offline
-// Only approved, non-rejected drivers may go online.
+// PUT /api/drivers/status — go online / offline
 // ─────────────────────────────────────────────────────────────────────────────
 exports.updateStatus = async (req, res) => {
   const errors = validationResult(req);
@@ -134,9 +169,7 @@ exports.updateStatus = async (req, res) => {
 
   const { isOnline, currentLat, currentLng } = req.body;
 
-  const profile = await prisma.driverProfile.findUnique({
-    where: { userId: req.user.id },
-  });
+  const profile = await rawFindProfileByUserId(req.user.id);
   if (!profile)             throw new AppError('Driver profile not found.', 404);
   if (profile.isRejected)   throw new AppError('Your application was not approved. Please contact support.', 403);
   if (!profile.isApproved)  throw new AppError('Your profile is still under review. You will be notified once approved.', 403);
@@ -148,14 +181,16 @@ exports.updateStatus = async (req, res) => {
     if (activeRide) throw new AppError('Cannot go offline with an active ride in progress.', 400);
   }
 
-  const updatedProfile = await prisma.driverProfile.update({
-    where: { userId: req.user.id },
-    data: {
-      isOnline,
-      ...(currentLat !== undefined && { currentLat }),
-      ...(currentLng !== undefined && { currentLng }),
-    },
-  });
+  const sql = `
+    UPDATE "DriverProfile"
+    SET "isOnline"   = $1,
+        "currentLat" = $2,
+        "currentLng" = $3
+    WHERE "userId" = $4
+    RETURNING *
+  `;
+  const rows = await prisma.$queryRawUnsafe(sql, isOnline, currentLat ?? null, currentLng ?? null, req.user.id);
+  const updatedProfile = rows[0];
 
   res.status(200).json({
     success: true,
@@ -166,9 +201,6 @@ exports.updateStatus = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/drivers/earnings
-//
-// Sums payment.driverEarnings directly — the value stored correctly at ride
-// completion by the fare engine — instead of re-deriving from actualFare * 0.80.
 // ─────────────────────────────────────────────────────────────────────────────
 exports.getEarnings = async (req, res) => {
   const { startDate, endDate, period = 'all' } = req.query;
@@ -243,7 +275,7 @@ exports.getEarnings = async (req, res) => {
 // GET /api/drivers/stats
 // ─────────────────────────────────────────────────────────────────────────────
 exports.getStats = async (req, res) => {
-  const profile = await prisma.driverProfile.findUnique({ where: { userId: req.user.id } });
+  const profile = await rawFindProfileByUserId(req.user.id);
   if (!profile) throw new AppError('Driver profile not found', 404);
 
   const [completedRides, cancelledRides, totalRides] = await Promise.all([
@@ -282,7 +314,7 @@ exports.getStats = async (req, res) => {
 // GET /api/drivers/nearby-requests
 // ─────────────────────────────────────────────────────────────────────────────
 exports.getNearbyRequests = async (req, res) => {
-  const profile = await prisma.driverProfile.findUnique({ where: { userId: req.user.id } });
+  const profile = await rawFindProfileByUserId(req.user.id);
   if (!profile)                              throw new AppError('Driver profile not found', 404);
   if (!profile.isOnline)                     throw new AppError('You must be online to see requests', 400);
   if (!profile.currentLat || !profile.currentLng) throw new AppError('Current location not set', 400);
@@ -306,8 +338,7 @@ exports.getNearbyRequests = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/drivers/documents  — upload / refresh document URLs
-// Admin is notified so they can revisit the pending application.
+// POST /api/drivers/documents — upload / refresh document URLs
 // ─────────────────────────────────────────────────────────────────────────────
 exports.uploadDocuments = async (req, res) => {
   const { licenseImageUrl, vehicleRegUrl, insuranceUrl } = req.body;
@@ -315,20 +346,26 @@ exports.uploadDocuments = async (req, res) => {
   if (!licenseImageUrl && !vehicleRegUrl && !insuranceUrl)
     throw new AppError('At least one document URL is required.', 400);
 
-  const profile = await prisma.driverProfile.findUnique({
-    where: { userId: req.user.id },
-  });
+  const profile = await rawFindProfileByUserId(req.user.id);
   if (!profile) throw new AppError('Driver profile not found.', 404);
 
-  const updatedProfile = await prisma.driverProfile.update({
-    where: { userId: req.user.id },
-    data: {
-      ...(licenseImageUrl && { licenseImageUrl }),
-      ...(vehicleRegUrl   && { vehicleRegUrl }),
-      ...(insuranceUrl    && { insuranceUrl }),
-      documentsUploadedAt: new Date(),  // mark the timestamp
-    },
-  });
+  const sql = `
+    UPDATE "DriverProfile"
+    SET "licenseImageUrl"      = COALESCE($1, "licenseImageUrl"),
+        "vehicleRegUrl"        = COALESCE($2, "vehicleRegUrl"),
+        "insuranceUrl"         = COALESCE($3, "insuranceUrl"),
+        "documentsUploadedAt"   = NOW()
+    WHERE "userId" = $4
+    RETURNING *
+  `;
+  const rows = await prisma.$queryRawUnsafe(
+    sql,
+    licenseImageUrl ?? null,
+    vehicleRegUrl ?? null,
+    insuranceUrl ?? null,
+    req.user.id
+  );
+  const updatedProfile = rows[0];
 
   // Notify driver
   await notificationService.notify({
@@ -339,7 +376,7 @@ exports.uploadDocuments = async (req, res) => {
     data:    { profileId: profile.id },
   });
 
-  // Notify admins — they can now approve with full confidence
+  // Notify admins
   const admins = await prisma.user.findMany({
     where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
     select: { id: true },
@@ -369,20 +406,9 @@ exports.uploadDocuments = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/drivers/payout/request
-//
-// FIX: The original immediately called paystackCreateTransferRecipient and
-// paystackInitiateTransfer, bypassing admin approval entirely.
-//
-// New flow:
-//   1. Validate amount (min ₦1,000) and wallet balance.
-//   2. Verify bank account via Paystack (read-only — no money movement).
-//   3. Deduct balance atomically and create PENDING WalletTransaction + Payout.
-//   4. Notify driver + all admins.
-//
-// The actual Paystack bank transfer fires when an admin approves via
-// PUT /api/wallet/admin/payouts/:id/approve.
 // ─────────────────────────────────────────────────────────────────────────────
 exports.requestPayout = async (req, res) => {
+  // ... keep exactly as before (no DriverProfile references)
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
@@ -394,14 +420,12 @@ exports.requestPayout = async (req, res) => {
   if (!wallet)               throw new AppError('Wallet not found', 404);
   if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
 
-  // Verify account (read-only — identifies the account name before we proceed)
   const accountVerify = await paymentService.paystackVerifyAccount(accountNumber, bankCode).catch(() => null);
   if (!accountVerify) throw new AppError('Unable to verify bank account. Please check details.', 400);
 
   const resolvedAccountName = accountName || accountVerify.account_name;
   const reference           = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
-  // Atomic: hold funds + create PENDING records
   await prisma.$transaction([
     prisma.wallet.update({
       where: { userId: req.user.id },
@@ -430,7 +454,6 @@ exports.requestPayout = async (req, res) => {
     }),
   ]);
 
-  // Notify driver
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Withdrawal Requested 🏦',
@@ -439,7 +462,6 @@ exports.requestPayout = async (req, res) => {
     data:    { amount, accountNumber: `****${accountNumber.slice(-4)}`, bankCode, reference },
   });
 
-  // Notify all admins
   const admins = await prisma.user.findMany({
     where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
     select: { id: true },
