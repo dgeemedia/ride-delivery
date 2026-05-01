@@ -59,6 +59,17 @@ const pb = StyleSheet.create({
   txt:  { fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
 });
 
+const RejectedBadge = ({ theme }) => (
+  <View style={[rb.wrap, { backgroundColor: '#E0555518', borderColor: '#E05555' }]}>
+    <Ionicons name="close-circle-outline" size={11} color="#E05555" />
+    <Text style={[rb.txt, { color: '#E05555' }]}>APPLICATION REJECTED</Text>
+  </View>
+);
+const rb = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
+  txt:  { fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
+});
+
 const MetricCard = ({ icon, value, label, color, theme }) => (
   <View style={[mc.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <View style={[mc.iconBox, { backgroundColor: (color || CA) + '15' }]}>
@@ -75,7 +86,7 @@ const mc = StyleSheet.create({
   label:   { fontSize: 10, fontWeight: '600', textAlign: 'center' },
 });
 
-const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, maintenanceOn, theme }) => {
+const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, isRejected, maintenanceOn, theme }) => {
   const pulseA = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -90,7 +101,7 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, maintenanceOn,
     return () => anim?.stop();
   }, [isOnline]);
 
-  const disabled = !isApproved || maintenanceOn;
+  const disabled = !isApproved || isRejected || maintenanceOn;
 
   return (
     <View style={[ot.card, { backgroundColor: theme.backgroundAlt, borderColor: isOnline ? CA + '50' : theme.border }]}>
@@ -107,11 +118,13 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, maintenanceOn,
         <Text style={[ot.sub, { color: theme.hint }]}>
           {maintenanceOn
             ? 'Unavailable during maintenance'
-            : isOnline
-              ? 'GPS active • accepting deliveries'
-              : isApproved
-                ? 'Tap to start accepting deliveries'
-                : 'Approval required'}
+            : isRejected
+              ? 'Application rejected — contact support'
+              : isOnline
+                ? 'GPS active • accepting deliveries'
+                : isApproved
+                  ? 'Tap to start accepting deliveries'
+                  : 'Awaiting admin approval'}
         </Text>
       </View>
       {toggling
@@ -304,6 +317,15 @@ export default function PartnerDashboardScreen({ navigation }) {
   }, [navigation, isOnline]);
 
   const toggleOnline = async () => {
+    if (isRejected) {
+      Alert.alert(
+        'Application Not Approved',
+        profile?.rejectionReason
+          ? `Your application was rejected: ${profile.rejectionReason}`
+          : 'Your application was not approved. Please contact support.',
+      );
+      return;
+    }
     if (maintenance.isOn && !isOnline) {
       const endsStr = maintenance.endsAt
         ? `\nMaintenance ends: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}`
@@ -354,7 +376,8 @@ export default function PartnerDashboardScreen({ navigation }) {
   const goToDocuments = () => navigation.getParent()?.navigate('PartnerDocuments'); // kept for potential inline use
 
   const isApproved = profile?.isApproved ?? false;
-
+  const isRejected = profile?.isRejected ?? false;
+  
   // Quick actions – Documents and Support wired correctly
   const quickActions = [
     { icon: 'wallet-outline',        label: 'Earnings',         color: CA,          onPress: goToEarnings },
@@ -394,7 +417,9 @@ export default function PartnerDashboardScreen({ navigation }) {
                 {user?.firstName} {user?.lastName}
               </Text>
               <View style={{ marginTop: 8 }}>
-                {isApproved ? <VerifiedBadge theme={theme} /> : <PendingBadge theme={theme} />}
+                {isRejected  ? <RejectedBadge theme={theme} />  :
+                 isApproved  ? <VerifiedBadge theme={theme} />  :
+                               <PendingBadge  theme={theme} />}
               </View>
             </View>
 
@@ -427,8 +452,23 @@ export default function PartnerDashboardScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Pending approval banner */}
-          {!isApproved && !loading && (
+          {/* Rejected banner */}
+          {isRejected && !loading && (
+            <View style={[s.approvalBanner, { backgroundColor: '#E0555510', borderColor: '#E05555' }]}>
+              <Ionicons name="close-circle-outline" size={18} color="#E05555" />
+              <View style={{ flex: 1 }}>
+                <Text style={[s.approvalTitle, { color: '#E05555' }]}>Application Not Approved</Text>
+                <Text style={[s.approvalSub, { color: theme.hint }]}>
+                  {profile?.rejectionReason
+                    ? `Reason: ${profile.rejectionReason}`
+                    : 'Your application was not approved. Please contact support to appeal or reapply.'}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Pending approval banner (only when not rejected) */}
+          {!isApproved && !isRejected && !loading && (
             <TouchableOpacity
               style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
               onPress={() => navigation.getParent()?.navigate('ProfileTab')}
@@ -451,6 +491,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             toggling={toggling}
             onToggle={toggleOnline}
             isApproved={isApproved}
+            isRejected={isRejected}
             maintenanceOn={maintenance.isOn}
             theme={theme}
           />

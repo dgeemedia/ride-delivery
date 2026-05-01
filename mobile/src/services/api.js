@@ -148,6 +148,7 @@ export const partnerAPI = {
   getStats:          ()        => api.get('/partners/stats'),
   getNearbyRequests: ()        => api.get('/partners/nearby-requests'),
   updateFloorPrice:  (price)   => api.post('/partners/profile', { preferredFloorPrice: price }),
+  uploadDocuments:   (data)    => api.post('/partners/documents', data),   // ← NEW
   requestPayout:     (data)    => api.post('/partners/payout/request', data),
   getPayoutHistory:  (params)  => api.get('/partners/payout/history', { params }),
 };

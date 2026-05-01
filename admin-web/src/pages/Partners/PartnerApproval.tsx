@@ -5,7 +5,7 @@ import { DeliveryPartner } from '@/types';
 import { Card, Button, Badge, Modal, Alert, Spinner } from '@/components/common';
 import {
   FileText, Truck, CheckCircle, XCircle, Eye,
-  Gift, AlertTriangle, Phone, Mail, Calendar
+  Gift, AlertTriangle, Phone, Mail, Calendar,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { formatDate } from '@/utils/helpers';
@@ -26,11 +26,15 @@ const DocImage: React.FC<{ label: string; url?: string; icon: React.ReactNode }>
               <span className="text-xs font-medium">View PDF</span>
             </div>
           ) : (
-            <img src={url} alt={label} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <img src={url} alt={label}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
           )}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-            <span className="opacity-0 group-hover:opacity-100 bg-white text-xs font-medium px-2 py-1 rounded shadow transition-opacity">Open full size ↗</span>
+            <span className="opacity-0 group-hover:opacity-100 bg-white text-xs font-medium px-2 py-1 rounded shadow transition-opacity">
+              Open full size ↗
+            </span>
           </div>
         </div>
       </a>
@@ -45,29 +49,44 @@ const DocImage: React.FC<{ label: string; url?: string; icon: React.ReactNode }>
 
 // ─── Approval modal ───────────────────────────────────────────────────────────
 interface ApprovalModalProps {
-  partner: DeliveryPartner;
+  partner:      DeliveryPartner;
   isSuperAdmin: boolean;
-  onClose: () => void;
-  onApproved: () => void;
+  onClose:      () => void;
+  onApproved:   () => void;
 }
 
 const ApprovalModal: React.FC<ApprovalModalProps> = ({ partner, isSuperAdmin, onClose, onApproved }) => {
-  const [grantBonus, setGrantBonus]       = useState(false);
-  const [bonusAmount, setBonusAmount]     = useState('5000');
-  const [rejectReason, setRejectReason]   = useState('');
-  const [showReject, setShowReject]       = useState(false);
-  const [loading, setLoading]             = useState(false);
+  const [grantBonus,   setGrantBonus]   = useState(false);
+  const [bonusAmount,  setBonusAmount]  = useState('5000');
+  const [rejectReason, setRejectReason] = useState('');
+  const [showReject,   setShowReject]   = useState(false);
+  const [loading,      setLoading]      = useState(false);
 
-  const docsUploaded = !!(partner.idImageUrl);
+  // Use backend-derived documentStatus when available, fall back to field check
+  const documentStatus = partner.documentStatus ??
+    (partner.idImageUrl && partner.vehicleImageUrl ? 'COMPLETE'
+     : partner.idImageUrl || partner.vehicleImageUrl ? 'PARTIAL'
+     : 'NONE');
+
+  const docStatusVariant: 'success' | 'warning' | 'error' =
+    documentStatus === 'COMPLETE' ? 'success' :
+    documentStatus === 'PARTIAL'  ? 'warning' : 'error';
+
+  const docStatusLabel =
+    documentStatus === 'COMPLETE' ? 'Both documents uploaded' :
+    documentStatus === 'PARTIAL'  ? 'Some documents missing' :
+    'No documents uploaded yet';
 
   const handleApprove = async () => {
     setLoading(true);
     try {
       await partnersAPI.approvePartner(partner.id, {
-        grantBonus: isSuperAdmin && grantBonus,
+        grantBonus:  isSuperAdmin && grantBonus,
         bonusAmount: isSuperAdmin && grantBonus ? parseFloat(bonusAmount) : undefined,
       });
-      toast.success(`${partner.user.firstName} approved${grantBonus ? ` + ₦${parseInt(bonusAmount).toLocaleString('en-NG')} bonus sent` : ''}`);
+      toast.success(
+        `${partner.user.firstName} approved${grantBonus ? ` + ₦${parseInt(bonusAmount).toLocaleString('en-NG')} bonus sent` : ''}`
+      );
       onApproved();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to approve partner');
@@ -117,25 +136,47 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ partner, isSuperAdmin, on
       }
     >
       <div className="space-y-6">
-        {/* Info */}
+        {/* Info summary */}
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="flex items-center gap-2 text-gray-600"><Mail className="h-4 w-4 text-gray-400" />{partner.user.email}</div>
           <div className="flex items-center gap-2 text-gray-600"><Phone className="h-4 w-4 text-gray-400" />{partner.user.phone}</div>
-          <div className="flex items-center gap-2 text-gray-600"><Truck className="h-4 w-4 text-gray-400" />{partner.vehicleType}{partner.vehiclePlate ? ` · ${partner.vehiclePlate}` : ''}</div>
-          <div className="flex items-center gap-2 text-gray-600"><Calendar className="h-4 w-4 text-gray-400" />Applied {formatDate(partner.createdAt)}</div>
+          <div className="flex items-center gap-2 text-gray-600">
+            <Truck className="h-4 w-4 text-gray-400" />
+            {partner.vehicleType}{partner.vehiclePlate ? ` • ${partner.vehiclePlate}` : ''}
+          </div>
+          <div className="flex items-center gap-2 text-gray-600">
+            <Calendar className="h-4 w-4 text-gray-400" />Applied {formatDate(partner.createdAt)}
+          </div>
         </div>
 
         {/* Documents */}
         <div>
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Uploaded Documents</h4>
-          {!docsUploaded && (
+
+          {documentStatus !== 'COMPLETE' && (
             <Alert variant="warning" className="mb-3">
-              Some documents are missing. You may still approve at your discretion.
+              <div className="flex items-center justify-between">
+                <span>
+                  {documentStatus === 'NONE'
+                    ? 'This partner has not uploaded any documents yet.'
+                    : 'Some documents are still missing.'}
+                  {' '}You may still approve at your discretion.
+                </span>
+                <Badge variant={docStatusVariant} className="ml-3 flex-shrink-0">
+                  {docStatusLabel}
+                </Badge>
+              </div>
             </Alert>
           )}
+          {documentStatus === 'COMPLETE' && (
+            <Alert variant="success" className="mb-3">
+              Both documents have been uploaded and are ready for review.
+            </Alert>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
-            <DocImage label="Government ID" url={partner.idImageUrl}      icon={<FileText className="h-3 w-3" />} />
-            <DocImage label="Vehicle Image" url={partner.vehicleImageUrl} icon={<Truck className="h-3 w-3" />} />
+            <DocImage label="Government ID"  url={partner.idImageUrl}      icon={<FileText className="h-3 w-3" />} />
+            <DocImage label="Vehicle Photo"  url={partner.vehicleImageUrl} icon={<Truck className="h-3 w-3" />} />
           </div>
         </div>
 
@@ -143,8 +184,12 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ partner, isSuperAdmin, on
         {isSuperAdmin && !showReject && (
           <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 space-y-3">
             <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" checked={grantBonus} onChange={e => setGrantBonus(e.target.checked)}
-                className="h-4 w-4 rounded text-primary-600" />
+              <input
+                type="checkbox"
+                checked={grantBonus}
+                onChange={e => setGrantBonus(e.target.checked)}
+                className="h-4 w-4 rounded text-primary-600"
+              />
               <div>
                 <p className="text-sm font-semibold text-amber-800 flex items-center gap-1.5">
                   <Gift className="h-4 w-4" />Grant Onboarding Bonus
@@ -157,19 +202,31 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ partner, isSuperAdmin, on
             {grantBonus && (
               <div className="relative ml-7">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">₦</span>
-                <input type="number" value={bonusAmount} onChange={e => setBonusAmount(e.target.value)} min="0"
-                  className="w-40 pl-8 pr-3 py-2 rounded-lg border border-amber-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+                <input
+                  type="number"
+                  value={bonusAmount}
+                  onChange={e => setBonusAmount(e.target.value)}
+                  min="0"
+                  className="w-40 pl-8 pr-3 py-2 rounded-lg border border-amber-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                />
               </div>
             )}
           </div>
         )}
 
+        {/* Rejection reason */}
         {showReject && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Rejection Reason <span className="text-red-500">*</span></label>
-            <textarea rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Rejection Reason <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              rows={3}
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
               placeholder="Explain why this application is being rejected..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none" />
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+            />
           </div>
         )}
       </div>
@@ -179,11 +236,11 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ partner, isSuperAdmin, on
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 const PartnerApproval: React.FC = () => {
-  const { user } = useAuthStore();
+  const { user }     = useAuthStore();
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
-  const [partners, setPartners]             = useState<DeliveryPartner[]>([]);
-  const [loading, setLoading]               = useState(true);
+  const [partners,        setPartners]        = useState<DeliveryPartner[]>([]);
+  const [loading,         setLoading]         = useState(true);
   const [selectedPartner, setSelectedPartner] = useState<DeliveryPartner | null>(null);
 
   useEffect(() => { loadPendingPartners(); }, []);
@@ -202,9 +259,13 @@ const PartnerApproval: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Pending Partner Approvals</h1>
-        <p className="text-gray-500 text-sm mt-1">{partners.length} application{partners.length !== 1 ? 's' : ''} awaiting review</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Pending Partner Approvals</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            {partners.length} application{partners.length !== 1 ? 's' : ''} awaiting review
+          </p>
+        </div>
       </div>
 
       {loading ? (
@@ -221,30 +282,46 @@ const PartnerApproval: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {partners.map(partner => (
             <Card key={partner.id} className="flex flex-col justify-between gap-4">
+              {/* Header */}
               <div className="flex items-start gap-3">
                 <div className="w-11 h-11 rounded-full bg-warning-100 text-warning-700 flex items-center justify-center font-semibold text-sm flex-shrink-0">
                   {partner.user.firstName[0]}{partner.user.lastName[0]}
                 </div>
                 <div className="min-w-0">
-                  <p className="font-semibold text-gray-900 truncate">{partner.user.firstName} {partner.user.lastName}</p>
+                  <p className="font-semibold text-gray-900 truncate">
+                    {partner.user.firstName} {partner.user.lastName}
+                  </p>
                   <p className="text-xs text-gray-500 truncate">{partner.user.email}</p>
                 </div>
               </div>
 
-              <div className="text-sm space-y-1">
+              {/* Vehicle */}
+              <div className="text-sm">
                 <div className="flex items-center gap-2 text-gray-600">
                   <Truck className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                  <span>{partner.vehicleType}{partner.vehiclePlate ? ` · ${partner.vehiclePlate}` : ''}</span>
+                  <span>{partner.vehicleType}{partner.vehiclePlate ? ` • ${partner.vehiclePlate}` : ''}</span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <Badge variant={partner.idImageUrl ? 'success' : 'warning'}>
-                  {partner.idImageUrl ? 'ID uploaded' : 'ID missing'}
+              {/* Doc status */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant={
+                  (partner.documentStatus ?? 'NONE') === 'COMPLETE' ? 'success' :
+                  (partner.documentStatus ?? 'NONE') === 'PARTIAL'  ? 'warning' : 'error'
+                }>
+                  {[partner.idImageUrl, partner.vehicleImageUrl].filter(Boolean).length}/2 docs
                 </Badge>
+                {partner.documentsUploadedAt ? (
+                  <span className="text-xs text-gray-400">
+                    Uploaded {formatDate(partner.documentsUploadedAt)}
+                  </span>
+                ) : (
+                  <span className="text-xs text-amber-500">No docs yet</span>
+                )}
                 <span className="text-xs text-gray-400">{formatDate(partner.createdAt)}</span>
               </div>
 
+              {/* CTA */}
               <Button size="sm" onClick={() => setSelectedPartner(partner)} className="w-full">
                 <Eye className="h-4 w-4" />Review Application
               </Button>

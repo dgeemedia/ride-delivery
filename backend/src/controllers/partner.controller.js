@@ -1,10 +1,17 @@
 // backend/src/controllers/partner.controller.js
+'use strict';
+
 const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
 
+console.log('[PARTNER-CTRL] Prisma partner controller loaded');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/partners/profile — create or update vehicle info
+// ─────────────────────────────────────────────────────────────────────────────
 exports.createOrUpdateProfile = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -13,65 +20,107 @@ exports.createOrUpdateProfile = async (req, res) => {
 
   const { vehicleType, vehiclePlate, idImageUrl, vehicleImageUrl } = req.body;
 
-  const existingProfile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
+  const existingProfile = await prisma.deliveryPartnerProfile.findUnique({
+    where: { userId: req.user.id },
+  });
+
   let profile;
 
   if (existingProfile) {
     profile = await prisma.deliveryPartnerProfile.update({
       where: { userId: req.user.id },
       data: {
-        ...(vehicleType    && { vehicleType }),
-        ...(vehiclePlate   && { vehiclePlate }),
-        ...(idImageUrl      && { idImageUrl }),
-        ...(vehicleImageUrl && { vehicleImageUrl }),
-        ...(req.body.preferredFloorPrice !== undefined && {
-          preferredFloorPrice: parseFloat(req.body.preferredFloorPrice) || null,
-        }),
-      },
-    });
-  } else {
-    // ✅ FIX: ID image is NOT required at registration — it's uploaded separately
-    // in PartnerDocumentsScreen. Only vehicle type is needed to create the profile.
-    profile = await prisma.deliveryPartnerProfile.create({
-      data: {
-        userId: req.user.id,
-        vehicleType,
-        ...(vehiclePlate    && { vehiclePlate }),
-        ...(idImageUrl      && { idImageUrl }),
-        ...(vehicleImageUrl && { vehicleImageUrl }),
+        ...(vehicleType    !== undefined && { vehicleType }),
+        ...(vehiclePlate   !== undefined && { vehiclePlate }),
+        ...(idImageUrl     !== undefined && { idImageUrl }),
+        ...(vehicleImageUrl !== undefined && { vehicleImageUrl }),
         ...(req.body.preferredFloorPrice !== undefined && {
           preferredFloorPrice: parseFloat(req.body.preferredFloorPrice) || null,
         }),
       },
     });
 
-    await notificationService.notify({
-      userId:  req.user.id,
-      title:   'Profile Submitted for Review 🔍',
-      message: 'Your courier profile has been submitted. Upload your ID so our team can complete the review within 24–48 hours.',
-      type:    'profile_submitted',
-      data:    { profileId: profile.id },
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully.',
+      data: { profile },
     });
   }
 
-  res.status(200).json({
+  // New profile — only vehicleType is required at registration
+  profile = await prisma.deliveryPartnerProfile.create({
+    data: {
+      userId: req.user.id,
+      vehicleType,
+      ...(vehiclePlate    && { vehiclePlate }),
+      ...(idImageUrl      && { idImageUrl }),
+      ...(vehicleImageUrl && { vehicleImageUrl }),
+      ...(req.body.preferredFloorPrice !== undefined && {
+        preferredFloorPrice: parseFloat(req.body.preferredFloorPrice) || null,
+      }),
+    },
+  });
+
+  // Notify the partner
+  await notificationService.notify({
+    userId:  req.user.id,
+    title:   'Application Submitted 🔍',
+    message: 'Your courier application is under review. Upload your ID to speed up approval.',
+    type:    'profile_submitted',
+    data:    { profileId: profile.id },
+  });
+
+  // Notify all admins
+  const admins = await prisma.user.findMany({
+    where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
+    select: { id: true },
+  });
+
+  await Promise.allSettled(
+    admins.map(a =>
+      notificationService.notify({
+        userId:  a.id,
+        title:   'New Courier Application 🛵',
+        message: `${req.user.firstName} ${req.user.lastName} has submitted a courier application and is awaiting approval.`,
+        type:    'partner_pending_review',
+        data:    {
+          partnerUserId:    req.user.id,
+          partnerProfileId: profile.id,
+          hasDocuments:     !!(idImageUrl || vehicleImageUrl),
+        },
+      })
+    )
+  );
+
+  res.status(201).json({
     success: true,
-    message: existingProfile ? 'Profile updated successfully' : 'Profile created. Please upload your documents.',
+    message: 'Application submitted. Upload your documents to help speed up review.',
     data:    { profile },
   });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/partners/profile
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getProfile = async (req, res) => {
   const profile = await prisma.deliveryPartnerProfile.findUnique({
     where:   { userId: req.user.id },
     include: {
-      user: { select: { firstName: true, lastName: true, email: true, phone: true, profileImage: true } },
+      user: {
+        select: {
+          firstName: true, lastName: true, email: true,
+          phone: true, profileImage: true,
+        },
+      },
     },
   });
   if (!profile) throw new AppError('Delivery partner profile not found', 404);
   res.status(200).json({ success: true, data: { profile } });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/partners/status — go online / offline
+// ─────────────────────────────────────────────────────────────────────────────
 exports.updateStatus = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -80,33 +129,51 @@ exports.updateStatus = async (req, res) => {
 
   const { isOnline, currentLat, currentLng } = req.body;
 
-  const profile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
-  if (!profile)            throw new AppError('Delivery partner profile not found', 404);
-  if (!profile.isApproved) throw new AppError('Partner profile not approved yet', 403);
+  const profile = await prisma.deliveryPartnerProfile.findUnique({
+    where: { userId: req.user.id },
+  });
+
+  if (!profile)           throw new AppError('Delivery partner profile not found.', 404);
+  if (profile.isRejected) throw new AppError(
+    'Your application was not approved. Please contact support.',
+    403
+  );
+  if (!profile.isApproved) throw new AppError(
+    'Your profile is still under review. You will be notified once approved.',
+    403
+  );
 
   if (!isOnline) {
     const activeDelivery = await prisma.delivery.findFirst({
-      where: { partnerId: req.user.id, status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } },
+      where: {
+        partnerId: req.user.id,
+        status:    { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] },
+      },
     });
-    if (activeDelivery) throw new AppError('Cannot go offline with an active delivery', 400);
+    if (activeDelivery) {
+      throw new AppError('Cannot go offline with an active delivery in progress.', 400);
+    }
   }
 
   const updatedProfile = await prisma.deliveryPartnerProfile.update({
     where: { userId: req.user.id },
     data: {
-      isOnline,
-      ...(currentLat !== undefined && { currentLat }),
-      ...(currentLng !== undefined && { currentLng }),
+      isOnline:   Boolean(isOnline),
+      currentLat: currentLat ?? null,
+      currentLng: currentLng ?? null,
     },
   });
 
   res.status(200).json({
     success: true,
-    message: `Partner is now ${isOnline ? 'online' : 'offline'}`,
+    message: `You are now ${isOnline ? 'online' : 'offline'}.`,
     data:    { profile: updatedProfile },
   });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/partners/earnings
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getEarnings = async (req, res) => {
   const { startDate, endDate, period = 'all' } = req.query;
 
@@ -136,7 +203,6 @@ exports.getEarnings = async (req, res) => {
     orderBy: { deliveredAt: 'desc' },
   });
 
-  // ── FIX: use stored driverEarnings / platformFee instead of re-deriving ──
   let totalGross       = 0;
   let totalNetEarnings = 0;
   let totalPlatformFee = 0;
@@ -180,13 +246,13 @@ exports.getEarnings = async (req, res) => {
   });
 };
 
-/**
- * @desc    Get partner statistics
- * @route   GET /api/partners/stats
- * @access  Private (DELIVERY_PARTNER)
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/partners/stats
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getStats = async (req, res) => {
-  const profile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
+  const profile = await prisma.deliveryPartnerProfile.findUnique({
+    where: { userId: req.user.id },
+  });
   if (!profile) throw new AppError('Partner profile not found', 404);
 
   const [completedDeliveries, cancelledDeliveries, totalDeliveries] = await Promise.all([
@@ -195,7 +261,9 @@ exports.getStats = async (req, res) => {
     prisma.delivery.count({ where: { partnerId: req.user.id } }),
   ]);
 
-  const ratings = await prisma.rating.findMany({ where: { delivery: { partnerId: req.user.id } } });
+  const ratings = await prisma.rating.findMany({
+    where: { delivery: { partnerId: req.user.id } },
+  });
 
   res.status(200).json({
     success: true,
@@ -205,22 +273,25 @@ exports.getStats = async (req, res) => {
       cancelledDeliveries,
       rating:              profile.rating.toFixed(2),
       totalRatings:        ratings.length,
-      completionRate:      totalDeliveries > 0 ? ((completedDeliveries / totalDeliveries) * 100).toFixed(2) : '0.00',
-      cancellationRate:    totalDeliveries > 0 ? ((cancelledDeliveries / totalDeliveries) * 100).toFixed(2) : '0.00',
-      isOnline:            profile.isOnline,
-      isApproved:          profile.isApproved,
-      vehicleInfo:         { type: profile.vehicleType, plate: profile.vehiclePlate },
+      completionRate:      totalDeliveries > 0
+        ? ((completedDeliveries / totalDeliveries) * 100).toFixed(2) : '0.00',
+      cancellationRate:    totalDeliveries > 0
+        ? ((cancelledDeliveries / totalDeliveries) * 100).toFixed(2) : '0.00',
+      isOnline:    profile.isOnline,
+      isApproved:  profile.isApproved,
+      isRejected:  profile.isRejected,
+      vehicleInfo: { type: profile.vehicleType, plate: profile.vehiclePlate },
     },
   });
 };
 
-/**
- * @desc    Get nearby delivery requests
- * @route   GET /api/partners/nearby-requests
- * @access  Private (DELIVERY_PARTNER)
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/partners/nearby-requests
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getNearbyRequests = async (req, res) => {
-  const profile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
+  const profile = await prisma.deliveryPartnerProfile.findUnique({
+    where: { userId: req.user.id },
+  });
   if (!profile)               throw new AppError('Partner profile not found', 404);
   if (!profile.isOnline)      throw new AppError('You must be online to see requests', 400);
   if (!profile.currentLat || !profile.currentLng)
@@ -228,7 +299,9 @@ exports.getNearbyRequests = async (req, res) => {
 
   const pendingDeliveries = await prisma.delivery.findMany({
     where:   { status: 'PENDING' },
-    include: { customer: { select: { firstName: true, lastName: true, profileImage: true } } },
+    include: {
+      customer: { select: { firstName: true, lastName: true, profileImage: true } },
+    },
     take:    10,
     orderBy: { requestedAt: 'desc' },
   });
@@ -242,44 +315,75 @@ exports.getNearbyRequests = async (req, res) => {
   });
 };
 
-/**
- * @desc    Upload partner documents
- * @route   POST /api/partners/documents
- * @access  Private (DELIVERY_PARTNER)
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/partners/documents — upload / refresh document URLs
+// ─────────────────────────────────────────────────────────────────────────────
 exports.uploadDocuments = async (req, res) => {
   const { idImageUrl, vehicleImageUrl } = req.body;
-  if (!idImageUrl && !vehicleImageUrl) throw new AppError('At least one document is required', 400);
 
-  const profile = await prisma.deliveryPartnerProfile.findUnique({ where: { userId: req.user.id } });
-  if (!profile) throw new AppError('Partner profile not found', 404);
+  const hasAnyDocument = [idImageUrl, vehicleImageUrl].some(
+    v => v !== undefined && v !== null && String(v).trim() !== ''
+  );
+  if (!hasAnyDocument) {
+    throw new AppError('At least one document URL is required.', 400);
+  }
+
+  const profile = await prisma.deliveryPartnerProfile.findUnique({
+    where: { userId: req.user.id },
+  });
+  if (!profile) throw new AppError('Partner profile not found.', 404);
+
+  const updateData = { documentsUploadedAt: new Date() };
+
+  if (idImageUrl      && String(idImageUrl).trim())
+    updateData.idImageUrl      = String(idImageUrl).trim();
+  if (vehicleImageUrl && String(vehicleImageUrl).trim())
+    updateData.vehicleImageUrl = String(vehicleImageUrl).trim();
 
   const updatedProfile = await prisma.deliveryPartnerProfile.update({
     where: { userId: req.user.id },
-    data: {
-      ...(idImageUrl      && { idImageUrl }),
-      ...(vehicleImageUrl && { vehicleImageUrl }),
-    },
+    data:  updateData,
   });
 
-  res.status(200).json({ success: true, message: 'Documents uploaded successfully', data: { profile: updatedProfile } });
+  // Notify the partner
+  await notificationService.notify({
+    userId:  req.user.id,
+    title:   'Documents Uploaded ✅',
+    message: 'Your documents have been received. Our team will review them shortly.',
+    type:    'documents_uploaded',
+    data:    { profileId: profile.id },
+  });
+
+  // Notify all admins
+  const admins = await prisma.user.findMany({
+    where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
+    select: { id: true },
+  });
+
+  await Promise.allSettled(
+    admins.map(a =>
+      notificationService.notify({
+        userId:  a.id,
+        title:   'Courier Documents Uploaded 📄',
+        message: `${req.user.firstName} ${req.user.lastName} has uploaded their documents. You can now review and approve their application.`,
+        type:    'partner_documents_uploaded',
+        data:    {
+          partnerUserId:    req.user.id,
+          partnerProfileId: profile.id,
+        },
+      })
+    )
+  );
+
+  res.status(200).json({
+    success: true,
+    message: 'Documents uploaded. An admin will review your application.',
+    data:    { profile: updatedProfile },
+  });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/partners/payout/request
-//
-// FIX: The original immediately created a Paystack transfer recipient and
-// initiated a live bank transfer, bypassing admin approval entirely.
-//
-// The new flow mirrors wallet.controller.js exports.withdraw():
-//   1. Validate amount and balance.
-//   2. Verify bank account via Paystack (read-only, no money movement).
-//   3. Deduct balance atomically.
-//   4. Create PENDING WalletTransaction + PENDING Payout record.
-//   5. Notify user and all admins.
-//
-// Admin then approves via PUT /api/wallet/admin/payouts/:id/approve which
-// triggers the actual Paystack transfer.
 // ─────────────────────────────────────────────────────────────────────────────
 exports.requestPayout = async (req, res) => {
   const errors = validationResult(req);
@@ -295,14 +399,15 @@ exports.requestPayout = async (req, res) => {
   if (!wallet)               throw new AppError('Wallet not found', 404);
   if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
 
-  // Verify account details (read-only Paystack call — no transfer initiated)
-  const accountVerify = await paymentService.paystackVerifyAccount(accountNumber, bankCode).catch(() => null);
-  if (!accountVerify) throw new AppError('Unable to verify bank account. Please check details.', 400);
+  const accountVerify = await paymentService
+    .paystackVerifyAccount(accountNumber, bankCode)
+    .catch(() => null);
+  if (!accountVerify)
+    throw new AppError('Unable to verify bank account. Please check details.', 400);
 
   const resolvedAccountName = accountName || accountVerify.account_name;
   const reference           = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
-  // Atomic: deduct balance + create PENDING records
   await prisma.$transaction([
     prisma.wallet.update({
       where: { userId: req.user.id },
@@ -331,7 +436,6 @@ exports.requestPayout = async (req, res) => {
     }),
   ]);
 
-  // Notify partner
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Withdrawal Requested 🏦',
@@ -340,11 +444,11 @@ exports.requestPayout = async (req, res) => {
     data:    { amount, accountNumber: `****${accountNumber.slice(-4)}`, bankCode, reference },
   });
 
-  // Notify all admins
   const admins = await prisma.user.findMany({
     where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
     select: { id: true },
   });
+
   await Promise.allSettled(
     admins.map(a =>
       notificationService.notify({
@@ -364,24 +468,30 @@ exports.requestPayout = async (req, res) => {
   });
 };
 
-/**
- * @desc    Get payout history
- * @route   GET /api/partners/payout/history
- * @access  Private (DELIVERY_PARTNER)
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/partners/payout/history
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getPayoutHistory = async (req, res) => {
   const { page = 1, limit = 10, status } = req.query;
   const skip  = (page - 1) * limit;
   const where = { userId: req.user.id, ...(status && { status }) };
 
   const [payouts, total] = await Promise.all([
-    prisma.payout.findMany({ where, orderBy: { createdAt: 'desc' }, skip: parseInt(skip), take: parseInt(limit) }),
+    prisma.payout.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip:    parseInt(skip, 10),
+      take:    parseInt(limit, 10),
+    }),
     prisma.payout.count({ where }),
   ]);
 
   res.status(200).json({
     success: true,
-    data: { payouts, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } },
+    data: {
+      payouts,
+      pagination: { total, page: parseInt(page, 10), pages: Math.ceil(total / limit) },
+    },
   });
 };
 

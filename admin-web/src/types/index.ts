@@ -57,17 +57,32 @@ export interface DeliveryPartner {
   id: string;
   userId: string;
   user: User;
-  vehicleType: 'BIKE' | 'CAR' | 'MOTORCYCLE' | 'VAN';
+  vehicleType: 'BIKE' | 'CAR' | 'MOTORCYCLE' | 'VAN' | 'TRICYCLE';
   vehiclePlate?: string;
-  idImageUrl: string;
+  idImageUrl?: string;
   vehicleImageUrl?: string;
+  documentsUploadedAt?: string;       // ← NEW
+
+  /** Derived by backend — 'COMPLETE' | 'PARTIAL' | 'NONE' */
+  documentStatus?: 'COMPLETE' | 'PARTIAL' | 'NONE';  // ← NEW
+
+  // ── Approval state ──────────────────────────────────────
   isApproved: boolean;
+  approvedAt?: string;               // ← NEW
+  approvedBy?: string;               // ← NEW
+  isRejected: boolean;               // ← NEW (was missing entirely)
+  rejectedAt?: string;               // ← NEW
+  rejectedBy?: string;               // ← NEW
+  rejectionReason?: string;          // ← NEW
+
+  // ── Runtime ─────────────────────────────────────────────
   isOnline: boolean;
   currentLat?: number;
   currentLng?: number;
   totalDeliveries: number;
   rating: number;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface Ride {

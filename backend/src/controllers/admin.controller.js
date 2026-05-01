@@ -405,42 +405,87 @@ exports.getDriverById = async (req, res) => {
   res.status(200).json({ success: true, data: { driver, recentRides } });
 };
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // PARTNER MANAGEMENT
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Helper — purely informational for the admin UI, does NOT block approval.
+function derivePartnerDocumentStatus(profile) {
+  const uploaded = [profile.idImageUrl, profile.vehicleImageUrl]
+    .filter(Boolean).length;
+  if (uploaded === 2) return 'COMPLETE';
+  if (uploaded === 1) return 'PARTIAL';
+  return 'NONE';
+}
 
 exports.getPendingPartners = async (req, res) => {
   const partners = await prisma.deliveryPartnerProfile.findMany({
-    where: { isApproved: false },
-    include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, createdAt: true } } },
+    where: {
+      isApproved: false,
+      isRejected: false,           // ← only truly pending, not rejected
+    },
+    include: {
+      user: {
+        select: {
+          id: true, firstName: true, lastName: true,
+          email: true, phone: true,
+          profileImage: true, createdAt: true,
+        },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   });
-  res.status(200).json({ success: true, data: { partners } });
+
+  const enriched = partners.map(p => ({
+    ...p,
+    documentStatus: derivePartnerDocumentStatus(p),
+  }));
+
+  res.status(200).json({ success: true, data: { partners: enriched } });
 };
 
 exports.approvePartner = async (req, res) => {
   const { id } = req.params;
-  const { grantBonus = false, bonusAmount = 5000 } = req.body;
-  const canGrantBonus = req.user.role === 'SUPER_ADMIN' && grantBonus && bonusAmount > 0;
+  const { grantBonus = false, bonusAmount = 5000, note = '' } = req.body;
 
-  const partner = await prisma.deliveryPartnerProfile.update({
+  const partner = await prisma.deliveryPartnerProfile.findUnique({
+    where:   { id },
+    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+  });
+  if (!partner)           throw new AppError('Partner profile not found.', 404);
+  if (partner.isApproved) throw new AppError('Partner is already approved.', 400);
+
+  const updatedPartner = await prisma.deliveryPartnerProfile.update({
     where: { id },
-    data:  { isApproved: true },
+    data: {
+      isApproved:      true,
+      isRejected:      false,     // clear any prior rejection
+      approvedAt:      new Date(),
+      approvedBy:      req.user.id,
+      rejectedAt:      null,
+      rejectedBy:      null,
+      rejectionReason: null,
+    },
     include: { user: { select: { id: true, firstName: true, lastName: true } } },
   });
 
+  // Optional onboarding bonus (SUPER_ADMIN only)
   let bonusCredited = 0;
+  const canGrantBonus = req.user.role === 'SUPER_ADMIN' && grantBonus && bonusAmount > 0;
   if (canGrantBonus) {
     const wallet = await prisma.wallet.findUnique({ where: { userId: partner.userId } });
     if (wallet) {
       await prisma.$transaction([
-        prisma.wallet.update({ where: { id: wallet.id }, data: { balance: { increment: bonusAmount } } }),
+        prisma.wallet.update({
+          where: { id: wallet.id },
+          data:  { balance: { increment: bonusAmount } },
+        }),
         prisma.walletTransaction.create({
           data: {
             walletId:    wallet.id,
             type:        'CREDIT',
             amount:      bonusAmount,
-            description: 'Onboarding bonus — non-withdrawable, for accepting deliveries only',
+            description: 'Onboarding bonus — for accepting deliveries only, non-withdrawable.',
             status:      'COMPLETED',
             reference:   `ONBOARDING-PTR-${partner.userId}-${Date.now()}`,
           },
@@ -450,25 +495,180 @@ exports.approvePartner = async (req, res) => {
     }
   }
 
-  const bonusNote = bonusCredited > 0
-    ? ` We've also credited ₦${bonusCredited.toLocaleString('en-NG')} to your wallet so you can start accepting deliveries immediately.`
+  const docStatus     = derivePartnerDocumentStatus(partner);
+  const docStatusNote = docStatus === 'NONE'
+    ? ' Note: this partner has not yet uploaded their documents — please follow up if required.'
+    : docStatus === 'PARTIAL'
+    ? ' Note: this partner has uploaded some but not all documents.'
     : '';
 
-  await notificationService.notify({ userId: partner.userId, title: 'Delivery Partner Approved! 🎉', message: `Your delivery partner application has been approved. You can now go online and start accepting deliveries.${bonusNote}`, type: notificationService.TYPES.PARTNER_APPROVED, data: { partnerProfileId: id, bonusCredited } });
-  await logActivity({ userId: req.user.id, action: 'partner_approved', entityType: 'DeliveryPartnerProfile', entityId: id, details: { partnerUserId: partner.userId, bonusCredited }, req });
-  res.status(200).json({ success: true, message: `Partner approved successfully${bonusCredited ? ` with ₦${bonusCredited.toLocaleString('en-NG')} onboarding bonus` : ''}`, data: { partner, bonusCredited } });
+  const bonusNote = bonusCredited > 0
+    ? ` We've credited ₦${bonusCredited.toLocaleString('en-NG')} to your wallet to get you started.`
+    : '';
+
+  await notificationService.notify({
+    userId:  partner.userId,
+    title:   'Application Approved! 🎉',
+    message: `Welcome to the team, ${partner.user.firstName}! Your courier account is now active. Go online to start accepting deliveries.${bonusNote}${note ? ` Admin note: ${note}` : ''}`,
+    type:    notificationService.TYPES.PARTNER_APPROVED,
+    data:    { partnerProfileId: id, bonusCredited, approvedBy: req.user.id },
+  });
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'partner_approved',
+    entityType: 'DeliveryPartnerProfile',
+    entityId:   id,
+    details:    {
+      partnerUserId: partner.userId,
+      bonusCredited,
+      documentStatus: docStatus,
+      approvedWithoutDocs: docStatus === 'NONE',
+      note,
+    },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Partner approved.${bonusCredited ? ` ₦${bonusCredited.toLocaleString('en-NG')} onboarding bonus credited.` : ''}${docStatusNote}`,
+    data:    { partner: updatedPartner, bonusCredited, documentStatus: docStatus },
+  });
 };
 
 exports.rejectPartner = async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
-  const partner = await prisma.deliveryPartnerProfile.findUnique({ where: { id }, include: { user: { select: { id: true } } } });
-  if (!partner) throw new AppError('Partner profile not found', 404);
-  const partnerUserId = partner.userId;
-  await prisma.deliveryPartnerProfile.delete({ where: { id } });
-  await notificationService.notify({ userId: partnerUserId, title: 'Delivery Partner Application Not Approved', message: `Your application was not approved. Reason: ${reason || 'Does not meet requirements'}. You may reapply after resolving the issue.`, type: notificationService.TYPES.PARTNER_REJECTED, data: { reason } });
-  await logActivity({ userId: req.user.id, action: 'partner_rejected', entityType: 'DeliveryPartnerProfile', entityId: id, details: { reason, partnerUserId }, req });
-  res.status(200).json({ success: true, message: 'Partner rejected' });
+
+  if (!reason || !reason.trim())
+    throw new AppError('A rejection reason is required.', 400);
+
+  const partner = await prisma.deliveryPartnerProfile.findUnique({
+    where:   { id },
+    include: { user: { select: { id: true, firstName: true } } },
+  });
+  if (!partner) throw new AppError('Partner profile not found.', 404);
+
+  // ← UPDATE instead of DELETE — partner can see rejection reason and reapply
+  await prisma.deliveryPartnerProfile.update({
+    where: { id },
+    data: {
+      isApproved:      false,
+      isRejected:      true,
+      rejectedAt:      new Date(),
+      rejectedBy:      req.user.id,
+      rejectionReason: reason.trim(),
+    },
+  });
+
+  await notificationService.notify({
+    userId:  partner.userId,
+    title:   'Application Not Approved',
+    message: `Unfortunately your courier application was not approved at this time. Reason: ${reason}. Please contact support if you have questions or wish to reapply.`,
+    type:    notificationService.TYPES.PARTNER_REJECTED,
+    data:    { reason, rejectedBy: req.user.id },
+  });
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'partner_rejected',
+    entityType: 'DeliveryPartnerProfile',
+    entityId:   id,
+    details:    { reason, partnerUserId: partner.userId },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Partner application rejected. The partner has been notified.',
+    data:    { partnerProfileId: id, reason },
+  });
+};
+
+exports.getPartners = async (req, res) => {
+  const { page = 1, limit = 20, search, isApproved, isRejected, vehicleType } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const where = {};
+  if (isApproved !== undefined) where.isApproved = isApproved === 'true';
+  if (isRejected !== undefined) where.isRejected = isRejected === 'true';  // ← NEW filter
+  if (vehicleType) where.vehicleType = vehicleType.toUpperCase();
+  if (search) {
+    where.user = {
+      OR: [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName:  { contains: search, mode: 'insensitive' } },
+        { email:     { contains: search, mode: 'insensitive' } },
+        { phone:     { contains: search, mode: 'insensitive' } },
+      ],
+    };
+  }
+
+  const [partners, total] = await Promise.all([
+    prisma.deliveryPartnerProfile.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true, firstName: true, lastName: true,
+            email: true, phone: true, createdAt: true,
+            isActive: true, isSuspended: true, isVerified: true,
+          },
+        },
+      },
+      skip,
+      take:    parseInt(limit),
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.deliveryPartnerProfile.count({ where }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      partners: partners.map(p => ({ ...p, documentStatus: derivePartnerDocumentStatus(p) })),
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+    },
+  });
+};
+
+exports.getPartnerById = async (req, res) => {
+  const { id } = req.params;
+
+  const partner = await prisma.deliveryPartnerProfile.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: {
+          id: true, firstName: true, lastName: true, email: true, phone: true,
+          profileImage: true, isActive: true, isSuspended: true, isVerified: true,
+          suspensionReason: true, createdAt: true,
+          wallet: { select: { balance: true, currency: true } },
+          _count: { select: { partnerDeliveries: true } },
+        },
+      },
+    },
+  });
+
+  if (!partner) throw new AppError('Delivery partner not found', 404);
+
+  const recentDeliveries = await prisma.delivery.findMany({
+    where:   { partnerId: partner.userId },
+    include: {
+      customer: { select: { firstName: true, lastName: true } },
+      payment:  { select: { amount: true, method: true, driverEarnings: true } },
+    },
+    orderBy: { requestedAt: 'desc' },
+    take:    10,
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      partner: { ...partner, documentStatus: derivePartnerDocumentStatus(partner) },
+      recentDeliveries,
+    },
+  });
 };
 
 // ─────────────────────────────────────────────
@@ -976,77 +1176,6 @@ exports.disburseOnboardingBonuses = async (req, res) => {
   await logActivity({ userId: req.user.id, action: 'onboarding_bonus_disbursed', entityType: 'Wallet', entityId: null, details: { driverBonus, partnerBonus, driverCount, partnerCount, totalDisbursed: (driverBonus * driverCount) + (partnerBonus * partnerCount) }, req });
 
   res.status(200).json({ success: true, message: `Onboarding bonus disbursed to ${driverCount} driver(s) and ${partnerCount} delivery partner(s).`, data: { drivers: driverCount, partners: partnerCount, driverBonus, partnerBonus, totalDisbursed: (driverBonus * driverCount) + (partnerBonus * partnerCount), currency: 'NGN' } });
-};
-
-// ─── PARTNER LIST + DETAIL ───────────────────────────────────────────────────
-
-exports.getPartners = async (req, res) => {
-  const { page = 1, limit = 20, search, isApproved, vehicleType } = req.query;
-  const skip = (parseInt(page) - 1) * parseInt(limit);
- 
-  const where = {};
-  if (isApproved !== undefined) where.isApproved = isApproved === 'true';
-  if (vehicleType) where.vehicleType = vehicleType.toUpperCase();
-  if (search) {
-    where.user = {
-      OR: [
-        { firstName: { contains: search, mode: 'insensitive' } },
-        { lastName:  { contains: search, mode: 'insensitive' } },
-        { email:     { contains: search, mode: 'insensitive' } },
-        { phone:     { contains: search, mode: 'insensitive' } },
-      ],
-    };
-  }
- 
-  const [partners, total] = await Promise.all([
-    prisma.deliveryPartnerProfile.findMany({
-      where,
-      include: {
-        user: {
-          select: { id: true, firstName: true, lastName: true, email: true, phone: true, createdAt: true, isActive: true, isSuspended: true, isVerified: true },
-        },
-      },
-      skip,
-      take: parseInt(limit),
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.deliveryPartnerProfile.count({ where }),
-  ]);
- 
-  res.status(200).json({
-    success: true,
-    data: { partners, pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) } },
-  });
-};
-
-exports.getPartnerById = async (req, res) => {
-  const { id } = req.params;
- 
-  const partner = await prisma.deliveryPartnerProfile.findUnique({
-    where: { id },
-    include: {
-      user: {
-        select: {
-          id: true, firstName: true, lastName: true, email: true, phone: true,
-          profileImage: true, isActive: true, isSuspended: true, isVerified: true,
-          suspensionReason: true, createdAt: true,
-          wallet: { select: { balance: true, currency: true } },
-          _count: { select: { partnerDeliveries: true } },
-        },
-      },
-    },
-  });
- 
-  if (!partner) throw new AppError('Delivery partner not found', 404);
- 
-  const recentDeliveries = await prisma.delivery.findMany({
-    where: { partnerId: partner.userId },
-    include: { customer: { select: { firstName: true, lastName: true } }, payment: { select: { amount: true, method: true, driverEarnings: true } } },
-    orderBy: { requestedAt: 'desc' },
-    take: 10,
-  });
- 
-  res.status(200).json({ success: true, data: { partner, recentDeliveries } });
 };
 
 // ─── RIDE DETAIL ─────────────────────────────────────────────────────────────

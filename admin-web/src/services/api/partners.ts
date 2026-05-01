@@ -8,7 +8,8 @@ export const partnersAPI = {
     page?: number;
     limit?: number;
     search?: string;
-    isApproved?: string;  // 'true' | 'false'
+    isApproved?: string;   // 'true' | 'false'
+    isRejected?: string;   // ← NEW: 'true' | 'false'
     vehicleType?: string;
   }): Promise<PaginatedResponse<DeliveryPartner>> => {
     const response = await api.get('/admin/partners', { params });
@@ -35,8 +36,8 @@ export const partnersAPI = {
    */
   approvePartner: async (
     id: string,
-    options?: { grantBonus?: boolean; bonusAmount?: number }
-  ): Promise<ApiResponse<{ partner: DeliveryPartner; bonusCredited: number }>> => {
+    options?: { grantBonus?: boolean; bonusAmount?: number; note?: string }
+  ): Promise<ApiResponse<{ partner: DeliveryPartner; bonusCredited: number; documentStatus: string }>> => {
     const response = await api.put(`/admin/partners/${id}/approve`, options ?? {});
     return response.data;
   },
@@ -45,7 +46,7 @@ export const partnersAPI = {
   rejectPartner: async (
     id: string,
     reason: string
-  ): Promise<ApiResponse<{ partner: DeliveryPartner }>> => {
+  ): Promise<ApiResponse<{ partnerProfileId: string; reason: string }>> => {
     const response = await api.put(`/admin/partners/${id}/reject`, { reason });
     return response.data;
   },

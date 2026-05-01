@@ -12,7 +12,6 @@ import { Card, Button, Badge, Spinner, Alert } from '@/components/common';
 import { formatDate, formatDateTime } from '@/utils/helpers';
 import toast from 'react-hot-toast';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 const InfoRow: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode }> = ({ icon, label, value }) => (
   <div className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0">
     <span className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</span>
@@ -31,13 +30,10 @@ const DocImage: React.FC<{ label: string; url?: string }> = ({ label, url }) => 
         <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-50 aspect-video hover:border-primary-400 transition-colors">
           {url.toLowerCase().endsWith('.pdf') ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-500 group-hover:text-primary-600">
-              <FileText className="h-8 w-8" />
-              <span className="text-xs font-medium">View PDF</span>
+              <FileText className="h-8 w-8" /><span className="text-xs">View PDF</span>
             </div>
           ) : (
-            <img
-              src={url}
-              alt={label}
+            <img src={url} alt={label}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
               onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
             />
@@ -58,27 +54,23 @@ const DocImage: React.FC<{ label: string; url?: string }> = ({ label, url }) => 
   </div>
 );
 
-// ─── Delivery status badge ────────────────────────────────────────────────────
-const deliveryBadgeVariant = (status: string): 'success' | 'warning' | 'error' | 'info' | 'default' => ({
-  DELIVERED: 'success', CANCELLED: 'error',
-  IN_TRANSIT: 'info', PICKED_UP: 'info', ASSIGNED: 'info', PENDING: 'warning',
-} as any)[status] ?? 'default';
+const deliveryBadgeVariant = (status: string): 'success' | 'warning' | 'error' | 'info' | 'default' =>
+  ({ DELIVERED: 'success', CANCELLED: 'error', IN_TRANSIT: 'info', PICKED_UP: 'info', ASSIGNED: 'info', PENDING: 'warning' } as any)[status] ?? 'default';
 
-// ─── Main page ────────────────────────────────────────────────────────────────
 const PartnerDetails: React.FC = () => {
   const { id }   = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [partner, setPartner]               = useState<DeliveryPartner | null>(null);
-  const [recentDeliveries, setRecentDeliveries] = useState<any[]>([]);
-  const [loading, setLoading]               = useState(true);
+  const [partner,           setPartner]           = useState<DeliveryPartner | null>(null);
+  const [recentDeliveries,  setRecentDeliveries]  = useState<any[]>([]);
+  const [loading,           setLoading]           = useState(true);
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
       const res = await partnersAPI.getPartnerById(id);
       setPartner(res.data.partner);
-      setRecentDeliveries((res.data as any).recentDeliveries ?? []);
+      setRecentDeliveries(res.data.recentDeliveries ?? []);
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Failed to load partner');
     } finally {
@@ -100,8 +92,6 @@ const PartnerDetails: React.FC = () => {
   const user   = partner.user;
   const wallet = (user as any)?.wallet;
 
-  const docsPresent = !!(partner.idImageUrl);
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -115,15 +105,18 @@ const PartnerDetails: React.FC = () => {
               {user.firstName[0]}{user.lastName[0]}
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">
-                {user.firstName} {user.lastName}
-              </h1>
+              <h1 className="text-xl font-bold text-gray-900">{user.firstName} {user.lastName}</h1>
+              {/* ── Updated badge block — includes Rejected state ── */}
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <Badge variant={partner.isApproved ? 'success' : 'warning'}>
-                  {partner.isApproved ? 'Approved' : 'Pending'}
-                </Badge>
-                {partner.isOnline && <Badge variant="success">Online</Badge>}
-                {user.isSuspended && <Badge variant="error">Suspended</Badge>}
+                {partner.isRejected ? (
+                  <Badge variant="error">Rejected</Badge>
+                ) : partner.isApproved ? (
+                  <Badge variant="success">Approved</Badge>
+                ) : (
+                  <Badge variant="warning">Pending Review</Badge>
+                )}
+                {partner.isOnline  && <Badge variant="success">Online</Badge>}
+                {user.isSuspended  && <Badge variant="error">Suspended</Badge>}
               </div>
             </div>
           </div>
@@ -139,9 +132,9 @@ const PartnerDetails: React.FC = () => {
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
               <User className="h-4 w-4 text-primary-500" />Contact Information
             </h3>
-            <InfoRow icon={<Mail className="h-4 w-4" />}  label="Email"  value={user.email} />
-            <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone"  value={(user as any).phone ?? '—'} />
-            <InfoRow icon={<Clock className="h-4 w-4" />} label="Joined" value={formatDate(partner.createdAt)} />
+            <InfoRow icon={<Mail className="h-4 w-4" />}  label="Email"   value={user.email} />
+            <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone"   value={(user as any).phone ?? '—'} />
+            <InfoRow icon={<Clock className="h-4 w-4" />} label="Joined"  value={formatDate(partner.createdAt)} />
             <InfoRow icon={<User className="h-4 w-4" />}  label="User ID" value={<span className="font-mono text-xs">{(user as any).id}</span>} />
           </Card>
 
@@ -150,12 +143,16 @@ const PartnerDetails: React.FC = () => {
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
               <Truck className="h-4 w-4 text-warning-500" />Vehicle
             </h3>
-            <InfoRow icon={<Truck className="h-4 w-4" />}   label="Type"   value={partner.vehicleType} />
+            <InfoRow icon={<Truck className="h-4 w-4" />}   label="Type"  value={partner.vehicleType} />
             {partner.vehiclePlate && (
-              <InfoRow icon={<Truck className="h-4 w-4" />} label="Plate"  value={partner.vehiclePlate} />
+              <InfoRow icon={<Truck className="h-4 w-4" />} label="Plate" value={partner.vehiclePlate} />
             )}
             {(partner as any).currentLat && (
-              <InfoRow icon={<MapPin className="h-4 w-4" />} label="Last location" value={`${(partner as any).currentLat?.toFixed(4)}, ${(partner as any).currentLng?.toFixed(4)}`} />
+              <InfoRow
+                icon={<MapPin className="h-4 w-4" />}
+                label="Last location"
+                value={`${(partner as any).currentLat?.toFixed(4)}, ${(partner as any).currentLng?.toFixed(4)}`}
+              />
             )}
           </Card>
 
@@ -164,19 +161,34 @@ const PartnerDetails: React.FC = () => {
             <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
               <FileText className="h-4 w-4 text-indigo-500" />Documents
             </h3>
-            {!docsPresent && (
-              <Alert variant="warning" className="mb-4">
-                Government ID has not been uploaded yet.
-              </Alert>
+            {!(partner.idImageUrl && partner.vehicleImageUrl) && (
+              <Alert variant="warning" className="mb-4">Some documents are missing.</Alert>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <DocImage label="Government ID"  url={partner.idImageUrl} />
-              <DocImage label="Vehicle Image"  url={partner.vehicleImageUrl} />
+              <DocImage label="Government ID" url={partner.idImageUrl}      />
+              <DocImage label="Vehicle Photo" url={partner.vehicleImageUrl} />
             </div>
           </Card>
 
+          {/* ── Rejection notice ── */}
+          {partner.isRejected && (
+            <Alert variant="error">
+              <div className="space-y-1">
+                <p className="font-semibold">Application Rejected</p>
+                {partner.rejectionReason && (
+                  <p className="text-sm">Reason: {partner.rejectionReason}</p>
+                )}
+                {partner.rejectedAt && (
+                  <p className="text-xs text-gray-500">
+                    Rejected on {formatDateTime(partner.rejectedAt)}
+                  </p>
+                )}
+              </div>
+            </Alert>
+          )}
+
           {/* Recent deliveries */}
-          {recentDeliveries.length > 0 && (
+          {recentDeliveries.length > 0 ? (
             <Card padding={false}>
               <div className="px-5 py-3 border-b border-gray-100">
                 <h3 className="text-sm font-semibold text-gray-700">Recent Deliveries</h3>
@@ -195,14 +207,8 @@ const PartnerDetails: React.FC = () => {
                       <span className="text-xs text-gray-400">{formatDateTime(delivery.requestedAt)}</span>
                     </div>
                     <div className="text-xs text-gray-600 space-y-0.5">
-                      <div className="flex gap-1">
-                        <span className="text-green-500 font-bold">↑</span>
-                        <span className="truncate">{delivery.pickupAddress}</span>
-                      </div>
-                      <div className="flex gap-1">
-                        <span className="text-red-500 font-bold">↓</span>
-                        <span className="truncate">{delivery.dropoffAddress}</span>
-                      </div>
+                      <div className="flex gap-1"><span className="text-green-500 font-bold">↑</span><span className="truncate">{delivery.pickupAddress}</span></div>
+                      <div className="flex gap-1"><span className="text-red-500 font-bold">↓</span><span className="truncate">{delivery.dropoffAddress}</span></div>
                     </div>
                     {delivery.packageDescription && (
                       <div className="mt-1 flex items-center gap-1 text-xs text-gray-500">
@@ -222,9 +228,7 @@ const PartnerDetails: React.FC = () => {
                 ))}
               </div>
             </Card>
-          )}
-
-          {recentDeliveries.length === 0 && !loading && (
+          ) : (
             <Card>
               <div className="py-8 text-center text-gray-400">
                 <Package className="h-8 w-8 mx-auto mb-2" />
@@ -236,29 +240,40 @@ const PartnerDetails: React.FC = () => {
 
         {/* ── Right column ── */}
         <div className="space-y-5">
-          {/* Stats */}
+
+          {/* Statistics */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Statistics</h3>
-            <InfoRow
-              icon={<Package className="h-4 w-4" />}
-              label="Total deliveries"
-              value={partner.totalDeliveries}
-            />
-            <InfoRow
-              icon={<Star className="h-4 w-4" />}
-              label="Rating"
-              value={`${(partner.rating ?? 0).toFixed(2)} ★`}
-            />
-            <InfoRow
-              icon={<CheckCircle className="h-4 w-4" />}
-              label="Approved"
-              value={partner.isApproved ? 'Yes' : 'No'}
-            />
-            <InfoRow
-              icon={<Truck className="h-4 w-4" />}
-              label="Currently"
-              value={partner.isOnline ? 'Online' : 'Offline'}
-            />
+            <InfoRow icon={<Package className="h-4 w-4" />}       label="Total deliveries" value={partner.totalDeliveries} />
+            <InfoRow icon={<Star className="h-4 w-4" />}          label="Rating"           value={`${(partner.rating ?? 0).toFixed(2)} ★`} />
+            <InfoRow icon={<CheckCircle className="h-4 w-4" />}   label="Status"           value={
+              partner.isRejected  ? <Badge variant="error">Rejected</Badge>   :
+              partner.isApproved  ? <Badge variant="success">Approved</Badge> :
+                                    <Badge variant="warning">Pending</Badge>
+            } />
+            {partner.isApproved && partner.approvedAt && (
+              <InfoRow icon={<CheckCircle className="h-4 w-4" />} label="Approved on"
+                value={formatDate(partner.approvedAt)} />
+            )}
+            {partner.isRejected && partner.rejectedAt && (
+              <InfoRow icon={<XCircle className="h-4 w-4" />} label="Rejected on"
+                value={formatDate(partner.rejectedAt)} />
+            )}
+            {partner.isRejected && partner.rejectionReason && (
+              <InfoRow icon={<AlertTriangle className="h-4 w-4 text-red-400" />} label="Rejection reason"
+                value={partner.rejectionReason} />
+            )}
+            <InfoRow icon={<Truck className="h-4 w-4" />} label="Currently"
+              value={partner.isOnline ? 'Online' : 'Offline'} />
+            <InfoRow icon={<FileText className="h-4 w-4" />} label="Documents" value={
+              partner.documentStatus === 'COMPLETE' ? <Badge variant="success">Both uploaded</Badge> :
+              partner.documentStatus === 'PARTIAL'  ? <Badge variant="warning">Partial</Badge>      :
+                                                      <Badge variant="error">None uploaded</Badge>
+            } />
+            {partner.documentsUploadedAt && (
+              <InfoRow icon={<Clock className="h-4 w-4" />} label="Docs uploaded"
+                value={formatDate(partner.documentsUploadedAt)} />
+            )}
           </Card>
 
           {/* Wallet */}
@@ -276,7 +291,7 @@ const PartnerDetails: React.FC = () => {
             </Card>
           )}
 
-          {/* Account status */}
+          {/* Account */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Account</h3>
             <InfoRow
@@ -285,10 +300,23 @@ const PartnerDetails: React.FC = () => {
               value={<Badge variant={user.isActive ? 'success' : 'error'}>{user.isActive ? 'Active' : 'Inactive'}</Badge>}
             />
             <InfoRow
-              icon={<CheckCircle className="h-4 w-4" />}
-              label="Verified"
+              icon={<Mail className="h-4 w-4" />}
+              label="Email Verified"
               value={<Badge variant={user.isVerified ? 'success' : 'warning'}>{user.isVerified ? 'Verified' : 'Unverified'}</Badge>}
             />
+            <InfoRow
+              icon={<Truck className="h-4 w-4" />}
+              label="Partner Status"
+              value={
+                partner.isRejected  ? <Badge variant="error">Rejected</Badge>              :
+                partner.isApproved  ? <Badge variant="success">Approved & Verified</Badge> :
+                                      <Badge variant="warning">Pending Approval</Badge>
+              }
+            />
+            {partner.isApproved && partner.approvedAt && (
+              <InfoRow icon={<Clock className="h-4 w-4" />} label="Approved on"
+                value={formatDate(partner.approvedAt)} />
+            )}
             <InfoRow
               icon={<XCircle className="h-4 w-4" />}
               label="Suspended"

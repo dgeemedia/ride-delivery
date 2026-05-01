@@ -14,11 +14,7 @@ import { VEHICLE_TYPES } from '@/utils/constants';
 import { exportToExcel, exportToCSV, PARTNER_EXPORT_COLUMNS } from '@/utils/exportToExcel';
 import toast from 'react-hot-toast';
 
-const ExportDropdown: React.FC<{
-  onExcel: () => void;
-  onCSV: () => void;
-  loading: boolean;
-}> = ({ onExcel, onCSV, loading }) => {
+const ExportDropdown: React.FC<{ onExcel: () => void; onCSV: () => void; loading: boolean }> = ({ onExcel, onCSV, loading }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -33,22 +29,17 @@ const ExportDropdown: React.FC<{
   return (
     <div ref={ref} className="relative">
       <Button variant="outline" loading={loading} onClick={() => setOpen(o => !o)}>
-        <Download className="h-4 w-4" />
-        Export
+        <Download className="h-4 w-4" />Export
         <ChevronDown className={`h-3.5 w-3.5 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
       </Button>
       {open && (
         <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
-          <button
-            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            onClick={() => { setOpen(false); onExcel(); }}
-          >
+          <button className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            onClick={() => { setOpen(false); onExcel(); }}>
             <FileSpreadsheet className="h-4 w-4 text-green-600" />Excel (.xlsx)
           </button>
-          <button
-            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100"
-            onClick={() => { setOpen(false); onCSV(); }}
-          >
+          <button className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100"
+            onClick={() => { setOpen(false); onCSV(); }}>
             <FileText className="h-4 w-4 text-blue-500" />CSV (.csv)
           </button>
         </div>
@@ -59,27 +50,36 @@ const ExportDropdown: React.FC<{
 
 const PartnerList: React.FC = () => {
   const navigate = useNavigate();
-  const [partners, setPartners]           = useState<DeliveryPartner[]>([]);
-  const [loading, setLoading]             = useState(true);
-  const [exporting, setExporting]         = useState(false);
-  const [search, setSearch]               = useState('');
-  const [statusFilter, setStatusFilter]   = useState('');
-  const [vehicleFilter, setVehicleFilter] = useState('');
-  const [currentPage, setCurrentPage]     = useState(1);
-  const [totalPages, setTotalPages]       = useState(1);
-  const [totalCount, setTotalCount]       = useState(0);
+  const [partners,       setPartners]       = useState<DeliveryPartner[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [exporting,      setExporting]      = useState(false);
+  const [search,         setSearch]         = useState('');
+  const [statusFilter,   setStatusFilter]   = useState('');
+  const [vehicleFilter,  setVehicleFilter]  = useState('');
+  const [currentPage,    setCurrentPage]    = useState(1);
+  const [totalPages,     setTotalPages]     = useState(1);
+  const [totalCount,     setTotalCount]     = useState(0);
 
   useEffect(() => { loadPartners(); }, [currentPage, statusFilter, vehicleFilter]);
+
+  // ── Mirrors the driver list filter logic exactly ──
+  const buildFilterParams = () => {
+    const base: Record<string, any> = {
+      page:        currentPage,
+      limit:       20,
+      search:      search        || undefined,
+      vehicleType: vehicleFilter || undefined,
+    };
+    if (statusFilter === 'approved:true')  { base.isApproved = 'true';  base.isRejected = 'false'; }
+    if (statusFilter === 'pending')        { base.isApproved = 'false'; base.isRejected = 'false'; }
+    if (statusFilter === 'rejected:true')  { base.isRejected = 'true'; }
+    return base;
+  };
 
   const loadPartners = async () => {
     setLoading(true);
     try {
-      const res = await partnersAPI.getPartners({
-        page: currentPage, limit: 20,
-        search: search || undefined,
-        isApproved: statusFilter || undefined,
-        vehicleType: vehicleFilter || undefined,
-      });
+      const res = await partnersAPI.getPartners(buildFilterParams());
       setPartners(res.data.partners || []);
       setTotalPages(res.data.pagination.pages);
       setTotalCount(res.data.pagination.total);
@@ -93,8 +93,7 @@ const PartnerList: React.FC = () => {
   const fetchAll = async () => {
     const res = await partnersAPI.getPartners({
       page: 1, limit: 5000,
-      search: search || undefined,
-      isApproved: statusFilter || undefined,
+      search:      search        || undefined,
       vehicleType: vehicleFilter || undefined,
     });
     return res.data.partners ?? [];
@@ -102,8 +101,9 @@ const PartnerList: React.FC = () => {
 
   const buildFilename = () => {
     const date   = new Date().toISOString().split('T')[0];
-    const suffix = statusFilter === 'true' ? 'approved'
-                 : statusFilter === 'false' ? 'pending' : 'all';
+    const suffix = statusFilter === 'approved:true'  ? 'approved'
+                 : statusFilter === 'pending'         ? 'pending'
+                 : statusFilter === 'rejected:true'   ? 'rejected' : 'all';
     return `diakite-partners-${suffix}-${date}`;
   };
 
@@ -158,9 +158,10 @@ const PartnerList: React.FC = () => {
             value={statusFilter}
             onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
             options={[
-              { value: '', label: 'All Status' },
-              { value: 'true', label: 'Approved' },
-              { value: 'false', label: 'Pending' },
+              { value: '',               label: 'All Status' },
+              { value: 'approved:true',  label: 'Approved'   },
+              { value: 'pending',        label: 'Pending'     },
+              { value: 'rejected:true',  label: 'Rejected'    },  // ← NEW
             ]}
           />
           <Select
@@ -197,7 +198,6 @@ const PartnerList: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {/* FIX: use native <tr><td> for colSpan */}
                 {partners.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="text-center text-gray-400 py-12 text-sm">
@@ -219,7 +219,9 @@ const PartnerList: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <div className="font-medium">{partner.vehicleType}</div>
-                      {partner.vehiclePlate && <div className="text-sm text-gray-500">{partner.vehiclePlate}</div>}
+                      {partner.vehiclePlate && (
+                        <div className="text-sm text-gray-500">{partner.vehiclePlate}</div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -230,10 +232,25 @@ const PartnerList: React.FC = () => {
                     <TableCell>{partner.totalDeliveries}</TableCell>
                     <TableCell>
                       <div className="space-y-1">
-                        <Badge variant={partner.isApproved ? 'success' : 'warning'}>
-                          {partner.isApproved ? 'Approved' : 'Pending'}
-                        </Badge>
+                        {/* ── Approval / rejection status — matches driver list ── */}
+                        {partner.isRejected ? (
+                          <Badge variant="error">Rejected</Badge>
+                        ) : partner.isApproved ? (
+                          <Badge variant="success">Approved</Badge>
+                        ) : (
+                          <Badge variant="warning">Pending</Badge>
+                        )}
                         {partner.isOnline && <Badge variant="success">Online</Badge>}
+                        {/* ── Document status chip — pending-only, matches driver list ── */}
+                        {!partner.isApproved && !partner.isRejected && (
+                          <Badge variant={
+                            partner.documentStatus === 'COMPLETE' ? 'success' :
+                            partner.documentStatus === 'PARTIAL'  ? 'warning' : 'error'
+                          }>
+                            {partner.documentStatus === 'COMPLETE' ? '2/2 docs' :
+                             partner.documentStatus === 'PARTIAL'  ? 'Partial docs' : 'No docs'}
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">{formatDate(partner.createdAt)}</TableCell>
