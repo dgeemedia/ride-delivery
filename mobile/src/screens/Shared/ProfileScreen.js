@@ -20,7 +20,6 @@ const ROLE_META = {
 };
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
-// Shows profile photo when available; falls back to name initials.
 const Avatar = ({ user, theme }) => {
   const hasPhoto = !!user?.profileImage;
   return (
@@ -202,7 +201,7 @@ const mm = StyleSheet.create({
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
   const { user, logout, updateUser }                         = useAuth();
-  const { theme, mode, changeMode }                          = useTheme(); // accentId & changeAccent removed
+  const { theme, mode, changeMode }                          = useTheme();
   const { isAvailable, isEnabled, biometricType, enable, disable } = useBiometric();
 
   const [stats,   setStats]   = useState(null);
@@ -219,6 +218,14 @@ export default function ProfileScreen({ navigation }) {
 
   const role = user?.role ?? 'CUSTOMER';
   const meta = ROLE_META[role] ?? ROLE_META.CUSTOMER;
+
+  // ── Derive platform-level approval for drivers and partners ───────────────
+  // fetchData stores the raw API response; the actual profile object may be
+  // nested under .profile (driver) or .deliveryProfile (partner) or flat.
+  const _profileData       = profile?.profile ?? profile?.deliveryProfile ?? profile;
+  const isApproved         = _profileData?.isApproved ?? false;
+  const isRejected         = _profileData?.isRejected ?? false;
+  const showApprovalBadge  = role === 'DRIVER' || role === 'DELIVERY_PARTNER';
 
   useEffect(() => {
     fetchData();
@@ -363,14 +370,21 @@ export default function ProfileScreen({ navigation }) {
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: fadeA }}>
 
-          {/* Hero */}
+          {/* ── Hero ── */}
           <View style={s.hero}>
             <Avatar user={user} theme={theme} />
-            <Text style={[s.name, { color: theme.foreground }]}>{user?.firstName} {user?.lastName}</Text>
+
+            <Text style={[s.name, { color: theme.foreground }]}>
+              {user?.firstName} {user?.lastName}
+            </Text>
+
+            {/* Role pill */}
             <View style={[s.rolePill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '30' }]}>
               <Ionicons name={meta.icon} size={13} color={theme.accent} />
               <Text style={[s.roleLabel, { color: theme.accent }]}>{meta.label}</Text>
             </View>
+
+            {/* Email / account verification */}
             <View style={s.verifiedRow}>
               <Ionicons
                 name={user?.isVerified ? 'shield-checkmark-outline' : 'shield-outline'}
@@ -378,9 +392,56 @@ export default function ProfileScreen({ navigation }) {
                 color={user?.isVerified ? theme.accent : theme.hint}
               />
               <Text style={[s.verifiedTxt, { color: user?.isVerified ? theme.accent : theme.hint }]}>
-                {user?.isVerified ? 'Verified Account' : 'Not verified'}
+                {user?.isVerified ? 'Verified Account' : 'Pending Email Verification'}
               </Text>
             </View>
+
+            {/* ── Driver / Partner platform approval badge ── */}
+            {showApprovalBadge && !loading && (
+              <View style={[
+                s.approvalBadge,
+                {
+                  backgroundColor: isRejected
+                    ? '#E0555518'
+                    : isApproved
+                      ? theme.accent + '18'
+                      : theme.backgroundAlt,
+                  borderColor: isRejected
+                    ? '#E05555'
+                    : isApproved
+                      ? theme.accent
+                      : theme.border,
+                },
+              ]}>
+                <Ionicons
+                  name={
+                    isRejected ? 'close-circle-outline'     :
+                    isApproved ? 'shield-checkmark-outline' :
+                                 'time-outline'
+                  }
+                  size={13}
+                  color={
+                    isRejected ? '#E05555'    :
+                    isApproved ? theme.accent :
+                                 theme.hint
+                  }
+                />
+                <Text style={[
+                  s.approvalBadgeTxt,
+                  {
+                    color: isRejected ? '#E05555'    :
+                           isApproved ? theme.accent :
+                                        theme.hint,
+                  },
+                ]}>
+                  {isRejected
+                    ? 'Application Not Approved'
+                    : isApproved
+                      ? `Verified ${role === 'DRIVER' ? 'Driver' : 'Courier'}`
+                      : 'Pending Approval'}
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Stats strip */}
@@ -449,10 +510,18 @@ export default function ProfileScreen({ navigation }) {
                 <DocBadge label="Registration" uploaded={!!dp.vehicleRegUrl}   theme={theme} />
                 <DocBadge label="Insurance"    uploaded={!!dp.insuranceUrl}    theme={theme} />
               </View>
-              {!dp.isApproved && (
+              {!dp.isApproved && !dp.isRejected && (
                 <View style={[s.pendingNote, { borderColor: theme.border }]}>
                   <Ionicons name="time-outline" size={14} color={theme.muted} />
                   <Text style={[s.pendingTxt, { color: theme.muted }]}>Account under review — approval takes 24–48 hours.</Text>
+                </View>
+              )}
+              {dp.isRejected && (
+                <View style={[s.pendingNote, { borderColor: '#E05555' }]}>
+                  <Ionicons name="close-circle-outline" size={14} color="#E05555" />
+                  <Text style={[s.pendingTxt, { color: '#E05555' }]}>
+                    {dp.rejectionReason || 'Your application was not approved. Please contact support.'}
+                  </Text>
                 </View>
               )}
             </Section>
@@ -467,10 +536,18 @@ export default function ProfileScreen({ navigation }) {
                 <DocBadge label="ID Document"   uploaded={!!pp.idImageUrl}      theme={theme} />
                 <DocBadge label="Vehicle Photo" uploaded={!!pp.vehicleImageUrl} theme={theme} />
               </View>
-              {!pp.isApproved && (
+              {!pp.isApproved && !pp.isRejected && (
                 <View style={[s.pendingNote, { borderColor: theme.border }]}>
                   <Ionicons name="time-outline" size={14} color={theme.muted} />
                   <Text style={[s.pendingTxt, { color: theme.muted }]}>Awaiting approval. Upload your ID to speed up the process.</Text>
+                </View>
+              )}
+              {pp.isRejected && (
+                <View style={[s.pendingNote, { borderColor: '#E05555' }]}>
+                  <Ionicons name="close-circle-outline" size={14} color="#E05555" />
+                  <Text style={[s.pendingTxt, { color: '#E05555' }]}>
+                    {pp.rejectionReason || 'Your application was not approved. Please contact support.'}
+                  </Text>
                 </View>
               )}
             </Section>
@@ -483,7 +560,7 @@ export default function ProfileScreen({ navigation }) {
               label="Two-Factor Authentication"
               sublabel={
                 twoFaEnabled
-                  ? `Active · ${twoFaMethod === 'EMAIL' ? 'Email' : 'SMS'} verification`
+                  ? `Active • ${twoFaMethod === 'EMAIL' ? 'Email' : 'SMS'} verification`
                   : 'Adds an extra login step via SMS or Email'
               }
               value={twoFaEnabled}
@@ -516,7 +593,7 @@ export default function ProfileScreen({ navigation }) {
             )}
           </Section>
 
-          {/* Appearance – only dark/light toggle, no accent swatches */}
+          {/* Appearance */}
           <Section title="APPEARANCE" theme={theme}>
             <View style={[s.modeToggle, { backgroundColor: theme.background, borderColor: theme.border }]}>
               {['dark', 'light'].map(m => {
@@ -581,6 +658,24 @@ const s = StyleSheet.create({
   roleLabel:   { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   verifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   verifiedTxt: { fontSize: 12, fontWeight: '500' },
+
+  // ── Approval badge (driver / partner only) ────────────────────────────────
+  approvalBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginTop: 8,
+  },
+  approvalBadgeTxt: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+
   statsStrip:  { flexDirection: 'row', borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 20, alignItems: 'center' },
   stripItem:   { flex: 1, alignItems: 'center', gap: 4 },
   stripVal:    { fontSize: 17, fontWeight: '800' },
