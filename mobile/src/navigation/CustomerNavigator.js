@@ -4,41 +4,43 @@
 import React from 'react';
 import { Platform, View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator }     from '@react-navigation/stack';
-import { Ionicons }                 from '@expo/vector-icons';
-import { BlurView }                 from 'expo-blur';
-import { useSafeAreaInsets }        from 'react-native-safe-area-context';
-import { useTheme }                 from '../context/ThemeContext';
+import { createStackNavigator } from '@react-navigation/stack';
+import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../context/ThemeContext';
+import { ScrollProvider } from '../context/ScrollContext';
+import AnimatedTabBar from '../components/AnimatedTabBar';
 
-import HomeScreen                from '../screens/Customer/HomeScreen';
-import RequestRideScreen         from '../screens/Customer/RequestRideScreen';
-import RequestDeliveryScreen     from '../screens/Customer/RequestDeliveryScreen';
-import NearbyDriversScreen       from '../screens/Customer/NearbyDriversScreen';
-import RideTrackingScreen        from '../screens/Customer/RideTrackingScreen';
-import DeliveryTrackingScreen    from '../screens/Customer/DeliveryTrackingScreen';
-import HistoryScreen             from '../screens/Customer/HistoryScreen';
-import WalletScreen              from '../screens/Customer/WalletScreen';
+import HomeScreen from '../screens/Customer/HomeScreen';
+import RequestRideScreen from '../screens/Customer/RequestRideScreen';
+import RequestDeliveryScreen from '../screens/Customer/RequestDeliveryScreen';
+import NearbyDriversScreen from '../screens/Customer/NearbyDriversScreen';
+import RideTrackingScreen from '../screens/Customer/RideTrackingScreen';
+import DeliveryTrackingScreen from '../screens/Customer/DeliveryTrackingScreen';
+import HistoryScreen from '../screens/Customer/HistoryScreen';
+import WalletScreen from '../screens/Customer/WalletScreen';
 // ── Uncomment below when Shield, Corporate & DuoPay are ready to launch ───────
-// import ShieldScreen              from '../screens/Customer/ShieldScreen';
+// import ShieldScreen from '../screens/Customer/ShieldScreen';
 // import ShieldBeneficiariesScreen from '../screens/Customer/ShieldBeneficiariesScreen';
-// import CorporateScreen           from '../screens/Customer/CorporateScreen';
-// import DuoPayScreen              from '../screens/Customer/DuoPayScreen';
+// import CorporateScreen from '../screens/Customer/CorporateScreen';
+// import DuoPayScreen from '../screens/Customer/DuoPayScreen';
 // ─────────────────────────────────────────────────────────────────────────────
-import RateRideScreen            from '../screens/Customer/RateRideScreen';
-import RateDeliveryScreen        from '../screens/Customer/RateDeliveryScreen';
-import ProfileScreen             from '../screens/Shared/ProfileScreen';
-import EditProfileScreen         from '../screens/Shared/EditProfileScreen';
-import NotificationsScreen       from '../screens/Shared/NotificationsScreen';
-import ChangePasswordScreen      from '../screens/Shared/ChangePasswordScreen';
-import SupportScreen             from '../screens/Shared/SupportScreen';
-import SubmitTicketScreen        from '../screens/Shared/SubmitTicketScreen';
-import MyTicketsScreen           from '../screens/Shared/MyTicketsScreen';
-import TicketDetailScreen        from '../screens/Shared/TicketDetailScreen';
-import TransferScreen            from '../screens/Shared/TransferScreen';
-import WalletTopUpScreen         from '../screens/Shared/WalletTopUpScreen';
-import WithdrawalScreen          from '../screens/Shared/WithdrawalScreen';
-import AppFeedbackScreen         from '../screens/Shared/AppFeedbackScreen';
-import LegalScreen               from '../screens/Shared/LegalScreen';
+import RateRideScreen from '../screens/Customer/RateRideScreen';
+import RateDeliveryScreen from '../screens/Customer/RateDeliveryScreen';
+import ProfileScreen from '../screens/Shared/ProfileScreen';
+import EditProfileScreen from '../screens/Shared/EditProfileScreen';
+import NotificationsScreen from '../screens/Shared/NotificationsScreen';
+import ChangePasswordScreen from '../screens/Shared/ChangePasswordScreen';
+import SupportScreen from '../screens/Shared/SupportScreen';
+import SubmitTicketScreen from '../screens/Shared/SubmitTicketScreen';
+import MyTicketsScreen from '../screens/Shared/MyTicketsScreen';
+import TicketDetailScreen from '../screens/Shared/TicketDetailScreen';
+import TransferScreen from '../screens/Shared/TransferScreen';
+import WalletTopUpScreen from '../screens/Shared/WalletTopUpScreen';
+import WithdrawalScreen from '../screens/Shared/WithdrawalScreen';
+import AppFeedbackScreen from '../screens/Shared/AppFeedbackScreen';
+import LegalScreen from '../screens/Shared/LegalScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -143,79 +145,60 @@ const CustomerNavigator = () => {
   const insets   = useSafeAreaInsets();
   const darkMode = mode === 'dark';
 
-  // ✅ FIX: With NavigationBar no longer set to 'absolute' in App.js,
-  //    insets.bottom will be 0 on Android (the system nav bar pushes content
-  //    up automatically). On iOS it will be the home-indicator height (~34px).
-  //    This single paddingBottom value is all that's needed — no duplication.
   const TAB_CONTENT_H = 54;
   const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
   const tabBarHeight = TAB_CONTENT_H + insets.bottom + EXTRA_BOTTOM;
 
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-
-        tabBarIcon: ({ focused, color }) => {
-          const icons = {
-            HomeTab:    focused ? 'home'   : 'home-outline',
-            HistoryTab: focused ? 'time'   : 'time-outline',
-            WalletTab:  focused ? 'wallet' : 'wallet-outline',
-            ProfileTab: focused ? 'person' : 'person-outline',
-          };
-          return (
-            <View style={focused
-              ? [tb.iconActive, {
-                  backgroundColor: darkMode
-                    ? 'rgba(255,255,255,0.10)'
-                    : 'rgba(0,0,0,0.07)',
-                }]
-              : tb.icon
-            }>
-              <Ionicons
-                name={icons[route.name]}
-                size={focused ? 20 : 22}
-                color={color}
-              />
-            </View>
-          );
-        },
-
-        tabBarActiveTintColor:   theme.foreground,
-        tabBarInactiveTintColor: darkMode
-          ? 'rgba(255,255,255,0.35)'
-          : 'rgba(0,0,0,0.35)',
-
-        tabBarLabelStyle: {
-          fontSize:      10,
-          fontWeight:    '700',
-          letterSpacing: 0.3,
-          marginTop:     2,
-        },
-
-        tabBarStyle: {
-          backgroundColor:  'transparent',
-          borderTopColor:   darkMode
-            ? 'rgba(255,255,255,0.08)'
-            : 'rgba(0,0,0,0.06)',
-          borderTopWidth:   StyleSheet.hairlineWidth,
-          height:           tabBarHeight,
-          // ✅ FIX: single paddingBottom — the duplicate was silently
-          //    overwriting itself and creating unpredictable heights.
-          paddingBottom: EXTRA_BOTTOM + 4,
-          paddingTop:       8,
-          paddingHorizontal: 10,
-          elevation:        0,
-        },
-
-        tabBarBackground: () => <GlassTabBar mode={mode} />,
-      })}
-    >
-      <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Home'    }} />
-      <Tab.Screen name="HistoryTab" component={HistoryStack} options={{ title: 'History' }} />
-      <Tab.Screen name="WalletTab"  component={WalletStack}  options={{ title: 'Wallet'  }} />
-      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
-    </Tab.Navigator>
+    <ScrollProvider>
+      <Tab.Navigator
+        tabBar={props => <AnimatedTabBar {...props} />}
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarIcon: ({ focused, color }) => {
+            const icons = {
+              HomeTab:    focused ? 'home'   : 'home-outline',
+              HistoryTab: focused ? 'time'   : 'time-outline',
+              WalletTab:  focused ? 'wallet' : 'wallet-outline',
+              ProfileTab: focused ? 'person' : 'person-outline',
+            };
+            return (
+              <View style={focused
+                ? [tb.iconActive, { backgroundColor: darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.07)' }]
+                : tb.icon
+              }>
+                <Ionicons name={icons[route.name]} size={focused ? 20 : 22} color={color} />
+              </View>
+            );
+          },
+          tabBarActiveTintColor:   theme.foreground,
+          tabBarInactiveTintColor: darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
+          tabBarLabelStyle: {
+            fontSize: 10,
+            fontWeight: '700',
+            letterSpacing: 0.3,
+            marginTop: 2,
+          },
+          tabBarStyle: {
+            position: 'absolute',          // ← required for animation
+            backgroundColor: 'transparent',
+            borderTopColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            borderTopWidth: StyleSheet.hairlineWidth,
+            height: tabBarHeight,
+            paddingBottom: EXTRA_BOTTOM + 4,
+            paddingTop: 8,
+            paddingHorizontal: 10,
+            elevation: 0,
+          },
+          tabBarBackground: () => <GlassTabBar mode={mode} />,
+        })}
+      >
+        <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Home'    }} />
+        <Tab.Screen name="HistoryTab" component={HistoryStack} options={{ title: 'History' }} />
+        <Tab.Screen name="WalletTab"  component={WalletStack}  options={{ title: 'Wallet'  }} />
+        <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
+      </Tab.Navigator>
+    </ScrollProvider>
   );
 };
 

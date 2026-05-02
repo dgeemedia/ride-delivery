@@ -2,14 +2,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Switch,
-  ScrollView, StatusBar, Dimensions, Animated,
+  StatusBar, Dimensions, Animated,
   ActivityIndicator, Alert, Image,
 } from 'react-native';
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated'; 
 import { Ionicons }                            from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets }     from 'react-native-safe-area-context';
 import * as Location                           from '../../shims/Location';
 import { useAuth }                             from '../../context/AuthContext';
 import { useTheme }                            from '../../context/ThemeContext';
+import { useScrollY }                          from '../../context/ScrollContext'; 
 import { driverAPI, userAPI, walletAPI, rideAPI } from '../../services/api';
 import socketService                           from '../../services/socket';
 import ActiveRideBanner                        from '../../components/ActiveRideBanner';
@@ -18,6 +20,10 @@ import { checkMaintenance }                    from '../../utils/maintenanceChec
 
 const { width } = Dimensions.get('window');
 const PURPLE = '#A78BFA';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
 
 const getRealLocation = async () => {
   const { status } = await Location.requestForegroundPermissionsAsync();
@@ -28,7 +34,7 @@ const getRealLocation = async () => {
   return { lat: loc.coords.latitude, lng: loc.coords.longitude };
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Sub-components (unchanged) ──────────────────────────────────────────────
 
 const VerifiedBadge = ({ theme }) => (
   <View style={[vb.wrap, { backgroundColor: theme.accent, borderColor: theme.border }]}>
@@ -198,6 +204,7 @@ const wb = StyleSheet.create({
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DriverDashboardScreen({ navigation }) {
+  const scrollY         = useScrollY();           // ← added
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
@@ -225,6 +232,13 @@ export default function DriverDashboardScreen({ navigation }) {
   const TAB_CONTENT_H = 54;
   const paddingBottom = insets.bottom + TAB_CONTENT_H + 36;
 
+  // ── Scroll handler for animated tab bar ──────────────────────────────────
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
+
   const fetchData = useCallback(async () => {
     try {
       const [profileRes, statsRes, walletRes, earningsRes, activeRideRes] = await Promise.allSettled([
@@ -236,7 +250,6 @@ export default function DriverDashboardScreen({ navigation }) {
       ]);
 
       if (profileRes.status === 'fulfilled') {
-        // FIXED: Access the profile via .data.profile (the API wrapper)
         const p = profileRes.value?.data?.profile ?? profileRes.value?.profile ?? null;
         setProfile(p);
         setIsOnline(p?.isOnline ?? false);
@@ -360,10 +373,13 @@ export default function DriverDashboardScreen({ navigation }) {
         </View>
       )}
 
-      <ScrollView
+      {/* ── Animated ScrollView that feeds scroll offset to the tab bar ─── */}
+      <AnimatedRN.ScrollView
         contentContainerStyle={[s.scroll, { paddingTop, paddingBottom }]}
         showsVerticalScrollIndicator={false}
         overScrollMode="never"
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
       >
         <Animated.View style={{ opacity: fadeA, transform: [{ translateY: headerY }] }}>
 
@@ -388,7 +404,6 @@ export default function DriverDashboardScreen({ navigation }) {
                 <Ionicons name="notifications-outline" size={19} color={theme.foreground} />
               </TouchableOpacity>
 
-              {/* ── Avatar: photo if available, initials fallback ── */}
               <TouchableOpacity
                 style={[
                   s.avatarBtn,
@@ -544,7 +559,7 @@ export default function DriverDashboardScreen({ navigation }) {
           </View>
 
         </Animated.View>
-      </ScrollView>
+      </AnimatedRN.ScrollView>
     </SafeAreaView>
   );
 }
@@ -560,7 +575,6 @@ const s = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 },
   notifBtn:    { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
 
-  // Avatar button — photo fills it, initials centered inside it
   avatarBtn:   { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   avatarImg:   { width: 44, height: 44, borderRadius: 22 },
   avatarTxt:   { fontSize: 14, fontWeight: '800' },

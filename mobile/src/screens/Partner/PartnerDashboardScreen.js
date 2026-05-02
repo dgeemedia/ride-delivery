@@ -2,14 +2,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Switch,
-  ScrollView, StatusBar, Dimensions, Animated,
+  StatusBar, Dimensions, Animated,
   ActivityIndicator, Alert, Image,
 } from 'react-native';
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }                        from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location                       from '../../shims/Location';
 import { useAuth }                         from '../../context/AuthContext';
 import { useTheme }                        from '../../context/ThemeContext';
+import { useScrollY }                      from '../../context/ScrollContext';
 import ActiveDeliveryBanner                from '../../components/ActiveDeliveryBanner';
 import MaintenanceBanner                   from '../../components/MaintenanceBanner';
 import { partnerAPI, userAPI, walletAPI, deliveryAPI } from '../../services/api';
@@ -34,7 +36,7 @@ const getRealLocation = async () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENTS
+// SUB-COMPONENTS (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const VerifiedBadge = ({ theme }) => (
@@ -217,6 +219,7 @@ const wb = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function PartnerDashboardScreen({ navigation }) {
+  const scrollY         = useScrollY();
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
@@ -243,6 +246,13 @@ export default function PartnerDashboardScreen({ navigation }) {
 
   const TAB_CONTENT_H = 54;
   const paddingBottom = insets.bottom + TAB_CONTENT_H + 36;
+
+  // ── Scroll handler for animated tab bar ──────────────────────────────────
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
 
   const fetchData = useCallback(async () => {
     try {
@@ -373,12 +383,11 @@ export default function PartnerDashboardScreen({ navigation }) {
   const goToWithdraw = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal',     initial: false });
   const goToProfile  = () => navigation.getParent()?.navigate('ProfileTab');
   const goToHistory  = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'PartnerHistory', initial: false });
-  const goToDocuments = () => navigation.getParent()?.navigate('PartnerDocuments'); // kept for potential inline use
+  const goToDocuments = () => navigation.getParent()?.navigate('PartnerDocuments');
 
   const isApproved = profile?.isApproved ?? false;
   const isRejected = profile?.isRejected ?? false;
   
-  // Quick actions – Documents and Support wired correctly
   const quickActions = [
     { icon: 'wallet-outline',        label: 'Earnings',         color: CA,          onPress: goToEarnings },
     { icon: 'list-outline',          label: 'Delivery History', color: '#5DAA72',   onPress: goToHistory  },
@@ -402,10 +411,13 @@ export default function PartnerDashboardScreen({ navigation }) {
         </View>
       )}
 
-      <ScrollView
+      {/* ── Animated ScrollView that feeds scroll offset to the tab bar ─── */}
+      <AnimatedRN.ScrollView
         contentContainerStyle={[s.scroll, { paddingTop, paddingBottom }]}
         showsVerticalScrollIndicator={false}
         overScrollMode="never"
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
       >
         <Animated.View style={{ opacity: fadeA, transform: [{ translateY: headerY }] }}>
 
@@ -431,7 +443,6 @@ export default function PartnerDashboardScreen({ navigation }) {
                 <Ionicons name="notifications-outline" size={19} color={theme.foreground} />
               </TouchableOpacity>
 
-              {/* ── Avatar: photo if available, initials fallback ── */}
               <TouchableOpacity
                 style={[
                   s.avatarBtn,
@@ -467,7 +478,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             </View>
           )}
 
-          {/* Pending approval banner (only when not rejected) */}
+          {/* Pending approval banner */}
           {!isApproved && !isRejected && !loading && (
             <TouchableOpacity
               style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
@@ -618,7 +629,7 @@ export default function PartnerDashboardScreen({ navigation }) {
           </View>
 
         </Animated.View>
-      </ScrollView>
+      </AnimatedRN.ScrollView>
     </SafeAreaView>
   );
 }
@@ -634,7 +645,6 @@ const s = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 },
   notifBtn:    { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
 
-  // Avatar button — photo fills it, initials centered inside it
   avatarBtn:   { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   avatarImg:   { width: 44, height: 44, borderRadius: 22 },
   avatarTxt:   { fontSize: 14, fontWeight: '800' },
