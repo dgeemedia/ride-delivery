@@ -2,10 +2,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, StatusBar, ActivityIndicator, Image, Animated,
+  Alert, StatusBar, ActivityIndicator, Image, Animated, Modal, PermissionsAndroid, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../../context/ThemeContext';
 import { partnerAPI, uploadAPI } from '../../services/api';
 import { toBase64DataUri } from '../../utils/toBase64DataUri';
@@ -23,7 +25,7 @@ const DOC_TYPES = [
   { key: 'vehicleImageUrl', label: 'Vehicle Photo',    icon: 'car-outline',  required: false, uploadFn: uploadAPI.uploadPartnerVehicle },
 ];
 
-// Simple FloatInput component (same as earlier)
+// FloatInput component (unchanged)
 const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, autoCapitalize }) => {
   const { theme } = useTheme();
   const [focused, setFocused] = useState(false);
@@ -53,8 +55,8 @@ export default function PartnerDocumentsScreen({ navigation }) {
   const [uploading, setUploading] = useState({});
   const [profileMissing, setProfileMissing] = useState(false);
   const [creatingProfile, setCreatingProfile] = useState(false);
+  const [viewImage, setViewImage] = useState(null);   // { url } for modal
 
-  // Form fields
   const [vehicleType, setVehicleType]   = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
 
@@ -64,11 +66,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
       setProfile(res?.data?.profile ?? res?.data);
       setProfileMissing(false);
     } catch (err) {
-      console.error('[PartnerDocuments] fetchProfile error:', err);
-      if (
-        err?.message === 'Delivery partner profile not found' ||
-        (typeof err?.message === 'string' && err.message.includes('not found'))
-      ) {
+      if (err?.message === 'Delivery partner profile not found' || (typeof err?.message === 'string' && err.message.includes('not found'))) {
         setProfileMissing(true);
         setProfile(null);
       } else {
@@ -88,10 +86,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
     }
     setCreatingProfile(true);
     try {
-      await partnerAPI.updateProfile({
-        vehicleType,
-        vehiclePlate: vehiclePlate.trim() || undefined,
-      });
+      await partnerAPI.updateProfile({ vehicleType, vehiclePlate: vehiclePlate.trim() || undefined });
       await fetchProfile();
     } catch (err) {
       const msg = err?.message || err?.response?.data?.message || 'Failed to create profile.';
@@ -102,70 +97,80 @@ export default function PartnerDocumentsScreen({ navigation }) {
   };
 
   const pickAndUpload = async (docType) => {
-  if (!profile) {
-    Alert.alert('No Profile', 'Please complete your courier profile first.');
-    return;
-  }
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (status !== 'granted') {
-    Alert.alert('Permission needed', 'We need camera roll access to upload documents.');
-    return;
-  }
+    if (!profile) {
+      Alert.alert('No Profile', 'Please complete your courier profile first.');
+      return;
+    }
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'We need camera roll access to upload documents.');
+      return;
+    }
 
-  try {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality:    0.8,
-      allowsEditing: true,
-    });
-    if (result.canceled) return;
-
-    const asset = result.assets[0];
-    setUploading(prev => ({ ...prev, [docType.key]: true }));
-
-    let url = null;
-
-    // ── Attempt 1: multipart upload (preferred) ──────────────────────────
     try {
-      const uploadRes = await docType.uploadFn(asset);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+        allowsEditing: true,
+      });
+      if (result.canceled) return;
 
-      url =
-        uploadRes?.data?.url        ??
-        uploadRes?.data?.secure_url ??
-        uploadRes?.url              ??
-        uploadRes?.secure_url       ??
-        null;
-    } catch (multipartErr) {
-      console.warn('[PartnerDocuments] multipart failed, trying base64 fallback:', multipartErr?.message);
+      const asset = result.assets[0];
+      setUploading(prev => ({ ...prev, [docType.key]: true }));
+
+      let url = null;
+
+      try {
+        const uploadRes = await docType.uploadFn(asset);
+        url = uploadRes?.data?.url ?? uploadRes?.data?.secure_url ?? uploadRes?.url ?? uploadRes?.secure_url ?? null;
+      } catch (multipartErr) {
+        console.warn('[PartnerDocuments] multipart failed, trying base64 fallback:', multipartErr?.message);
+      }
+
+      if (!url) {
+        const dataUri = await toBase64DataUri(asset.uri);
+        const uploadRes = await uploadAPI.uploadBase64(dataUri, 'duoride/partner-documents');
+        url = uploadRes?.data?.url ?? uploadRes?.data?.secure_url ?? uploadRes?.url ?? uploadRes?.secure_url ?? null;
+      }
+
+      if (!url) throw new Error('Upload succeeded but no URL was returned.');
+
+      await partnerAPI.uploadDocuments({ [docType.key]: url });
+      await fetchProfile();
+      Alert.alert('Uploaded ✅', `${docType.label} uploaded successfully.`);
+    } catch (err) {
+      Alert.alert('Upload Failed', err?.response?.data?.message || err?.message || 'Please try again.');
+    } finally {
+      setUploading(prev => ({ ...prev, [docType.key]: false }));
+    }
+  };
+
+  // ── Cross-platform download ──────────────────────────────────────────────
+  const handleDownload = async (url) => {
+    if (Platform.OS === 'web') {
+      try {
+        window.open(url, '_blank');
+      } catch (err) {
+        Alert.alert('Download failed', 'Could not open image on web.');
+      }
+      return;
     }
 
-    // ── Attempt 2: base64 fallback ───────────────────────────────────────
-    if (!url) {
-      const dataUri   = await toBase64DataUri(asset.uri);
-      const uploadRes = await uploadAPI.uploadBase64(dataUri, 'duoride/partner-documents');
-
-      url =
-        uploadRes?.data?.url        ??
-        uploadRes?.data?.secure_url ??
-        uploadRes?.url              ??
-        uploadRes?.secure_url       ??
-        null;
+    try {
+      const perm = await MediaLibrary.requestPermissionsAsync(false);
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'We need access to your media library to save the image.');
+        return;
+      }
+      const localUri = FileSystem.documentDirectory + `doc_${Date.now()}.jpg`;
+      const downloadRes = await FileSystem.downloadAsync(url, localUri);
+      if (downloadRes.status !== 200) throw new Error('Download failed');
+      await MediaLibrary.saveToLibraryAsync(localUri);
+      Alert.alert('Saved ✅', 'Document saved to your photos.');
+    } catch (err) {
+      Alert.alert('Download Failed', err?.message || 'Could not save document.');
     }
-
-    if (!url) throw new Error('Upload succeeded but no URL was returned.');
-
-    // Save via dedicated documents endpoint (triggers admin notification)
-    await partnerAPI.uploadDocuments({ [docType.key]: url });
-
-    await fetchProfile();
-    Alert.alert('Uploaded ✅', `${docType.label} uploaded successfully.`);
-
-  } catch (err) {
-    Alert.alert('Upload Failed', err?.response?.data?.message || err?.message || 'Please try again.');
-  } finally {
-    setUploading(prev => ({ ...prev, [docType.key]: false }));
-  }
-};
+  };
 
   if (loading) {
     return <View style={[styles.centered, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={theme.accent} /></View>;
@@ -206,7 +211,9 @@ export default function PartnerDocumentsScreen({ navigation }) {
         <Text style={[styles.title, { color: theme.foreground }]}>Required Documents</Text>
         <Text style={[styles.subtitle, { color: theme.hint }]}>Upload your ID and vehicle photo for verification.</Text>
         {DOC_TYPES.map((doc) => {
-          const currentUrl = profile?.[doc.key]; const isUploaded = !!currentUrl; const isUploading = uploading[doc.key];
+          const currentUrl = profile?.[doc.key];
+          const isUploaded = !!currentUrl;
+          const isUploading = uploading[doc.key];
           return (
             <View key={doc.key} style={[styles.card, { backgroundColor:theme.backgroundAlt, borderColor:theme.border }]}>
               <View style={styles.cardHeader}>
@@ -214,7 +221,26 @@ export default function PartnerDocumentsScreen({ navigation }) {
                 <Text style={[styles.cardTitle, { color: theme.foreground }]}>{doc.label}</Text>
                 <View style={[styles.statusDot, { backgroundColor: isUploaded?'#5DAA72': theme.hint }]} />
               </View>
-              {isUploaded ? <Image source={{ uri: currentUrl }} style={styles.preview} resizeMode="cover" /> : <View style={[styles.placeholder, { borderColor: theme.border }]}><Ionicons name="cloud-upload-outline" size={32} color={theme.hint} /><Text style={[styles.placeholderText, { color: theme.hint }]}>No file uploaded</Text></View>}
+              {isUploaded ? (
+                <>
+                  <Image source={{ uri: currentUrl }} style={styles.preview} resizeMode="cover" />
+                  <View style={styles.actionsRow}>
+                    <TouchableOpacity style={[styles.iconBtn, { backgroundColor: theme.accent + '15' }]} onPress={() => setViewImage({ url: currentUrl })}>
+                      <Ionicons name="eye-outline" size={16} color={theme.accent} />
+                      <Text style={[styles.iconBtnText, { color: theme.accent }]}>View</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.iconBtn, { backgroundColor: theme.accent + '15' }]} onPress={() => handleDownload(currentUrl)}>
+                      <Ionicons name="download-outline" size={16} color={theme.accent} />
+                      <Text style={[styles.iconBtnText, { color: theme.accent }]}>Download</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <View style={[styles.placeholder, { borderColor: theme.border }]}>
+                  <Ionicons name="cloud-upload-outline" size={32} color={theme.hint} />
+                  <Text style={[styles.placeholderText, { color: theme.hint }]}>No file uploaded</Text>
+                </View>
+              )}
               <TouchableOpacity style={[styles.uploadBtn, { backgroundColor: theme.accent, opacity: isUploading?0.7:1 }]} onPress={()=>pickAndUpload(doc)} disabled={isUploading} activeOpacity={0.8}>
                 {isUploading ? <ActivityIndicator color={theme.accentFg} /> : <Text style={[styles.uploadBtnText, { color: theme.accentFg }]}>{isUploaded?'Replace':'Upload'}</Text>}
               </TouchableOpacity>
@@ -223,6 +249,16 @@ export default function PartnerDocumentsScreen({ navigation }) {
         })}
         <Text style={[styles.note, { color: theme.hint }]}>An admin will review your documents. You can start accepting deliveries once approved.</Text>
       </ScrollView>
+
+      {/* Full‑screen image viewer modal */}
+      <Modal visible={!!viewImage} transparent={true} animationType="fade" onRequestClose={() => setViewImage(null)}>
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity style={styles.modalClose} onPress={() => setViewImage(null)}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+          <Image source={{ uri: viewImage?.url }} style={styles.modalImage} resizeMode="contain" />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -234,7 +270,10 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection:'row', alignItems:'center', gap:10, marginBottom:12 },
   cardTitle: { fontSize:16, fontWeight:'700', flex:1 },
   statusDot: { width:10, height:10, borderRadius:5 },
-  preview: { width:'100%', aspectRatio:16/9, borderRadius:10, marginBottom:12 },
+  preview: { width:'100%', aspectRatio:16/9, borderRadius:10, marginBottom:8 },
+  actionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginBottom: 12 },
+  iconBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
+  iconBtnText: { fontSize: 13, fontWeight: '700' },
   placeholder: { aspectRatio:16/9, borderRadius:10, borderWidth:1, borderStyle:'dashed', justifyContent:'center', alignItems:'center', marginBottom:12 },
   placeholderText: { fontSize:12, marginTop:8 },
   uploadBtn: { borderRadius:10, paddingVertical:10, alignItems:'center' },
@@ -255,4 +294,9 @@ const styles = StyleSheet.create({
   inputIcon: { marginRight:10 },
   floatLabel: { position:'absolute', left:0 },
   inputText: { fontSize:15, paddingTop:18, paddingBottom:4, fontWeight:'400' },
+
+  // Modal styles
+  modalBackdrop: { flex:1, backgroundColor:'rgba(0,0,0,0.9)', justifyContent:'center', alignItems:'center' },
+  modalClose: { position:'absolute', top:50, right:20, zIndex:10, padding:8 },
+  modalImage: { width:'95%', height:'75%' },
 });
