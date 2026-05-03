@@ -100,9 +100,6 @@ export default function ActiveRideScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
 
-  // NOTE: we no longer use useRide() here to avoid the context crash.
-  // We load the ride directly from the API using the rideId param.
-  // RideContext is still used by completeRide/startRide via rideAPI directly.
   const rideId = route?.params?.rideId;
 
   const [ride,    setRide]    = useState(null);
@@ -116,10 +113,9 @@ export default function ActiveRideScreen({ route, navigation }) {
   // ── Load ride from API ──────────────────────────────────────────────────────
   const loadRide = useCallback(async () => {
     try {
-      // Try specific ride first, fall back to active ride endpoint
       let res;
       if (rideId) {
-        res = await rideAPI.getActiveRide(); // returns the driver's current active ride
+        res = await rideAPI.getActiveRide();
       }
       const loadedRide = res?.data?.ride ?? res?.ride ?? null;
       setRide(loadedRide);
@@ -136,22 +132,16 @@ export default function ActiveRideScreen({ route, navigation }) {
 
     Animated.spring(sheetA, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }).start();
 
-    // Driver's real GPS — get once on mount, then watch continuously
-    // The watchPositionAsync broadcasts location to the server so the customer
-    // can see the driver moving in real-time on their tracking screen.
     let locationWatcher = null;
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
-          // Seed initial position immediately
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
           const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
           setMyLoc(coords);
-          // Broadcast to server so customer tracking screen updates
           socketService.updateLocation({ latitude: coords.latitude, longitude: coords.longitude });
 
-          // Watch for continuous movement
           locationWatcher = await Location.watchPositionAsync(
             { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 10 },
             (position) => {
@@ -164,7 +154,6 @@ export default function ActiveRideScreen({ route, navigation }) {
       } catch {}
     })();
 
-    // Socket — ride cancellation from customer
     const handleCancelled = (data) => {
       if (data.rideId === rideId) {
         Alert.alert('Ride Cancelled', 'The customer has cancelled this ride.', [
@@ -185,7 +174,6 @@ export default function ActiveRideScreen({ route, navigation }) {
     return () => {
       socketService.off('ride:status:update', handleStatus);
       socketService.off('ride:cancelled',     handleCancelled);
-      // Stop GPS watcher on unmount
       locationWatcher?.remove?.();
     };
   }, [rideId]);
@@ -226,12 +214,13 @@ export default function ActiveRideScreen({ route, navigation }) {
   };
 
   // ── Complete ─────────────────────────────────────────────────────────────────
+  // FIX: removed `actualFare` from the body — the backend ignores it and
+  // computes its own final fare; sending it can trigger route validators.
   const handleComplete = () => {
     const doComplete = async () => {
       setActing(true);
       try {
-        await rideAPI.completeRide(ride.id, { actualFare: ride.estimatedFare, paymentMethod: 'CASH' });
-        // Reset navigation stack back to Dashboard — ride is done
+        await rideAPI.completeRide(ride.id, { paymentMethod: 'CASH' });
         navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] });
       } catch (err) {
         Alert.alert('Error', err?.response?.data?.message ?? 'Could not complete ride.');
@@ -336,7 +325,6 @@ export default function ActiveRideScreen({ route, navigation }) {
 
       <View style={s.topGradient} pointerEvents="none" />
 
-      {/* Back → Dashboard (not back stack, to prevent going to IncomingRide) */}
       <TouchableOpacity
         style={[s.backNav, { top: backBtnTop, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
         onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] })}
@@ -355,10 +343,12 @@ export default function ActiveRideScreen({ route, navigation }) {
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
-        paddingBottom:   sheetPadBottom,
         transform:       [{ translateY: sheetTranslate }],
       }]}>
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: sheetPadBottom }}
+        >
 
           {/* Fare strip */}
           <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
@@ -448,7 +438,8 @@ const s = StyleSheet.create({
   driverPin:   { width: 32, height: 32, borderRadius: 16, backgroundColor: DA, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
   statusPill:  { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
   statusPillTxt:{ fontSize: 12, fontWeight: '700' },
-  sheet:       { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, paddingHorizontal: 20, paddingTop: 20, maxHeight: height * 0.52 },
+  // Removed paddingHorizontal/paddingTop/paddingBottom — now in ScrollView contentContainerStyle
+  sheet:       { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, maxHeight: height * 0.58 },
   fareStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
   fareItem:    { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
   fareLabel:   { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },

@@ -8,7 +8,7 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
 } from 'react-native-reanimated';
-import { useScrollY } from '../context/ScrollContext';  // adjust if folder is 'context'
+import { useScrollY } from '../context/ScrollContext'; 
 
 const AnimatedTabBar = (props) => {
   const scrollY = useScrollY();

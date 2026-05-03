@@ -25,11 +25,7 @@ const Avatar = ({ user, theme }) => {
   return (
     <View style={[av.ring, { borderColor: theme.accent + '40' }]}>
       {hasPhoto ? (
-        <Image
-          source={{ uri: user.profileImage }}
-          style={av.photo}
-          resizeMode="cover"
-        />
+        <Image source={{ uri: user.profileImage }} style={av.photo} resizeMode="cover" />
       ) : (
         <View style={[av.circle, { backgroundColor: theme.accent + '18' }]}>
           <Text style={[av.initials, { color: theme.accent }]}>
@@ -198,6 +194,149 @@ const mm = StyleSheet.create({
   cancelTxt:{ fontSize: 14, fontWeight: '600' },
 });
 
+// ─── RatingBreakdown ──────────────────────────────────────────────────────────
+// Shows the weighted-average score, total ratings count, a 5→1 bar chart,
+// and the 5 most-recent customer comments.
+const RatingBreakdown = ({ stats, theme }) => {
+  const breakdown    = stats?.ratingBreakdown ?? {};
+  const totalRatings = stats?.totalRatings    ?? 0;
+  const average      = Number(stats?.rating   ?? 0);
+  const recentRatings = stats?.recentRatings  ?? [];
+
+  if (totalRatings === 0) {
+    return (
+      <Section title="YOUR RATINGS" theme={theme}>
+        <View style={rb.empty}>
+          <Ionicons name="star-outline" size={28} color={theme.hint} />
+          <Text style={[rb.emptyTxt, { color: theme.hint }]}>No ratings yet</Text>
+          <Text style={[rb.emptySub, { color: theme.hint }]}>Ratings from customers will appear here</Text>
+        </View>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="YOUR RATINGS" theme={theme}>
+
+      {/* ── Header: big score + star row + total count ── */}
+      <View style={rb.header}>
+        <View style={rb.scoreBlock}>
+          <Text style={[rb.bigScore, { color: theme.foreground }]}>{average.toFixed(1)}</Text>
+          <View style={rb.starRow}>
+            {[1, 2, 3, 4, 5].map(s => (
+              <Ionicons
+                key={s}
+                name={s <= Math.round(average) ? 'star' : 'star-outline'}
+                size={14}
+                color="#FFB800"
+              />
+            ))}
+          </View>
+          <Text style={[rb.totalLbl, { color: theme.hint }]}>
+            {totalRatings} {totalRatings === 1 ? 'rating' : 'ratings'}
+          </Text>
+        </View>
+
+        {/* ── Bar chart: 5 → 1 ── */}
+        <View style={rb.bars}>
+          {[5, 4, 3, 2, 1].map(star => {
+            const count = breakdown[star] ?? 0;
+            const pct   = totalRatings > 0 ? count / totalRatings : 0;
+            return (
+              <View key={star} style={rb.barRow}>
+                <Text style={[rb.barLbl, { color: theme.hint }]}>{star}</Text>
+                <Ionicons name="star" size={9} color="#FFB800" style={{ marginRight: 4 }} />
+                <View style={[rb.track, { backgroundColor: theme.border }]}>
+                  <View
+                    style={[
+                      rb.fill,
+                      {
+                        width:           `${Math.round(pct * 100)}%`,
+                        backgroundColor: pct > 0.5 ? theme.accent : pct > 0.2 ? '#FFB800' : theme.hint,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[rb.barCount, { color: theme.hint }]}>{count}</Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* ── Recent customer comments ── */}
+      {recentRatings.length > 0 && (
+        <View style={[rb.reviewsWrap, { borderTopColor: theme.border }]}>
+          <Text style={[rb.reviewsTitle, { color: theme.hint }]}>RECENT REVIEWS</Text>
+          {recentRatings.filter(r => r.comment).slice(0, 5).map((r, i) => (
+            <View
+              key={i}
+              style={[
+                rb.reviewCard,
+                { backgroundColor: theme.background, borderColor: theme.border },
+                i === 0 && { marginTop: 0 },
+              ]}
+            >
+              {/* Star dots */}
+              <View style={rb.reviewStars}>
+                {[1, 2, 3, 4, 5].map(s => (
+                  <Ionicons
+                    key={s}
+                    name={s <= Math.round(r.stars) ? 'star' : 'star-outline'}
+                    size={11}
+                    color="#FFB800"
+                  />
+                ))}
+                <Text style={[rb.reviewDate, { color: theme.hint }]}>
+                  {new Date(r.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                </Text>
+              </View>
+              <Text style={[rb.reviewComment, { color: theme.foreground }]}>{r.comment}</Text>
+              {r.pickupAddress && (
+                <Text style={[rb.reviewRoute, { color: theme.hint }]} numberOfLines={1}>
+                  📍 {r.pickupAddress.split(',')[0]}
+                </Text>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+
+    </Section>
+  );
+};
+
+const rb = StyleSheet.create({
+  // empty state
+  empty:        { alignItems: 'center', paddingVertical: 20, gap: 6 },
+  emptyTxt:     { fontSize: 14, fontWeight: '700' },
+  emptySub:     { fontSize: 12, textAlign: 'center' },
+
+  // header layout
+  header:       { flexDirection: 'row', gap: 16, paddingBottom: 14 },
+  scoreBlock:   { alignItems: 'center', gap: 4, width: 68 },
+  bigScore:     { fontSize: 36, fontWeight: '900', letterSpacing: -1 },
+  starRow:      { flexDirection: 'row', gap: 2 },
+  totalLbl:     { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
+
+  // bars
+  bars:         { flex: 1, gap: 5, justifyContent: 'center' },
+  barRow:       { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  barLbl:       { fontSize: 11, fontWeight: '700', width: 10, textAlign: 'right' },
+  track:        { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
+  fill:         { height: 6, borderRadius: 3, minWidth: 2 },
+  barCount:     { fontSize: 10, fontWeight: '600', width: 22, textAlign: 'right' },
+
+  // recent reviews
+  reviewsWrap:  { borderTopWidth: 1, paddingTop: 12, marginTop: 2, paddingBottom: 6, gap: 8 },
+  reviewsTitle: { fontSize: 9, fontWeight: '700', letterSpacing: 2, marginBottom: 4 },
+  reviewCard:   { borderRadius: 10, borderWidth: 1, padding: 10, gap: 4 },
+  reviewStars:  { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  reviewDate:   { fontSize: 10, marginLeft: 6 },
+  reviewComment:{ fontSize: 13, fontWeight: '500', lineHeight: 18 },
+  reviewRoute:  { fontSize: 11 },
+});
+
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
   const { user, logout, updateUser }                         = useAuth();
@@ -219,13 +358,10 @@ export default function ProfileScreen({ navigation }) {
   const role = user?.role ?? 'CUSTOMER';
   const meta = ROLE_META[role] ?? ROLE_META.CUSTOMER;
 
-  // ── Derive platform-level approval for drivers and partners ───────────────
-  // fetchData stores the raw API response; the actual profile object may be
-  // nested under .profile (driver) or .deliveryProfile (partner) or flat.
-  const _profileData       = profile?.profile ?? profile?.deliveryProfile ?? profile;
-  const isApproved         = _profileData?.isApproved ?? false;
-  const isRejected         = _profileData?.isRejected ?? false;
-  const showApprovalBadge  = role === 'DRIVER' || role === 'DELIVERY_PARTNER';
+  const _profileData      = profile?.profile ?? profile?.deliveryProfile ?? profile;
+  const isApproved        = _profileData?.isApproved ?? false;
+  const isRejected        = _profileData?.isRejected ?? false;
+  const showApprovalBadge = role === 'DRIVER' || role === 'DELIVERY_PARTNER';
 
   useEffect(() => {
     fetchData();
@@ -355,6 +491,8 @@ export default function ProfileScreen({ navigation }) {
   const dp = profile?.driverProfile;
   const pp = profile?.deliveryProfile;
 
+  const isProviderRole = role === 'DRIVER' || role === 'DELIVERY_PARTNER';
+
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
@@ -378,13 +516,11 @@ export default function ProfileScreen({ navigation }) {
               {user?.firstName} {user?.lastName}
             </Text>
 
-            {/* Role pill */}
             <View style={[s.rolePill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '30' }]}>
               <Ionicons name={meta.icon} size={13} color={theme.accent} />
               <Text style={[s.roleLabel, { color: theme.accent }]}>{meta.label}</Text>
             </View>
 
-            {/* Email / account verification */}
             <View style={s.verifiedRow}>
               <Ionicons
                 name={user?.isVerified ? 'shield-checkmark-outline' : 'shield-outline'}
@@ -396,44 +532,20 @@ export default function ProfileScreen({ navigation }) {
               </Text>
             </View>
 
-            {/* ── Driver / Partner platform approval badge ── */}
             {showApprovalBadge && !loading && (
               <View style={[
                 s.approvalBadge,
                 {
-                  backgroundColor: isRejected
-                    ? '#E0555518'
-                    : isApproved
-                      ? theme.accent + '18'
-                      : theme.backgroundAlt,
-                  borderColor: isRejected
-                    ? '#E05555'
-                    : isApproved
-                      ? theme.accent
-                      : theme.border,
+                  backgroundColor: isRejected ? '#E0555518' : isApproved ? theme.accent + '18' : theme.backgroundAlt,
+                  borderColor:     isRejected ? '#E05555'   : isApproved ? theme.accent         : theme.border,
                 },
               ]}>
                 <Ionicons
-                  name={
-                    isRejected ? 'close-circle-outline'     :
-                    isApproved ? 'shield-checkmark-outline' :
-                                 'time-outline'
-                  }
+                  name={isRejected ? 'close-circle-outline' : isApproved ? 'shield-checkmark-outline' : 'time-outline'}
                   size={13}
-                  color={
-                    isRejected ? '#E05555'    :
-                    isApproved ? theme.accent :
-                                 theme.hint
-                  }
+                  color={isRejected ? '#E05555' : isApproved ? theme.accent : theme.hint}
                 />
-                <Text style={[
-                  s.approvalBadgeTxt,
-                  {
-                    color: isRejected ? '#E05555'    :
-                           isApproved ? theme.accent :
-                                        theme.hint,
-                  },
-                ]}>
+                <Text style={[s.approvalBadgeTxt, { color: isRejected ? '#E05555' : isApproved ? theme.accent : theme.hint }]}>
                   {isRejected
                     ? 'Application Not Approved'
                     : isApproved
@@ -467,7 +579,7 @@ export default function ProfileScreen({ navigation }) {
                   </View>
                 </>
               )}
-              {(role === 'DRIVER' || role === 'DELIVERY_PARTNER') && (
+              {isProviderRole && (
                 <>
                   <View style={s.stripItem}>
                     <Text style={[s.stripVal, { color: theme.foreground }]}>
@@ -477,7 +589,10 @@ export default function ProfileScreen({ navigation }) {
                   </View>
                   <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
                   <View style={s.stripItem}>
-                    <Text style={[s.stripVal, { color: theme.foreground }]}>{(stats?.rating ?? 0).toFixed(1)} ⭐</Text>
+                    {/* Show live-computed weighted average from breakdown */}
+                    <Text style={[s.stripVal, { color: theme.foreground }]}>
+                      {Number(stats?.rating ?? 0).toFixed(1)} ⭐
+                    </Text>
                     <Text style={[s.stripLbl, { color: theme.hint }]}>Rating</Text>
                   </View>
                   <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
@@ -488,6 +603,11 @@ export default function ProfileScreen({ navigation }) {
                 </>
               )}
             </View>
+          )}
+
+          {/* ── Rating breakdown (driver / partner only) ── */}
+          {isProviderRole && !loading && (
+            <RatingBreakdown stats={stats} theme={theme} />
           )}
 
           {/* Personal info */}
@@ -621,7 +741,7 @@ export default function ProfileScreen({ navigation }) {
                 value={stats ? `₦${(stats.walletBalance ?? 0).toLocaleString()}` : null}
                 onPress={() => navigation.navigate('Wallet')} />
             )}
-            {(role === 'DRIVER' || role === 'DELIVERY_PARTNER') && (
+            {isProviderRole && (
               <MenuItem icon="cash-outline"         label="Earnings & Payouts" theme={theme}
                 onPress={() => navigation.navigate(role === 'DRIVER' ? 'DriverEarnings' : 'PartnerEarnings')} />
             )}
@@ -658,24 +778,8 @@ const s = StyleSheet.create({
   roleLabel:   { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   verifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   verifiedTxt: { fontSize: 12, fontWeight: '500' },
-
-  // ── Approval badge (driver / partner only) ────────────────────────────────
-  approvalBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    marginTop: 8,
-  },
-  approvalBadgeTxt: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-
+  approvalBadge:    { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 5, marginTop: 8 },
+  approvalBadgeTxt: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   statsStrip:  { flexDirection: 'row', borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 20, alignItems: 'center' },
   stripItem:   { flex: 1, alignItems: 'center', gap: 4 },
   stripVal:    { fontSize: 17, fontWeight: '800' },

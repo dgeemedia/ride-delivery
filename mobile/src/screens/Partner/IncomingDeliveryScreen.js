@@ -2,11 +2,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar,
-  Dimensions, Animated, ActivityIndicator, Alert, Vibration, ScrollView,
+  Dimensions, Animated, ActivityIndicator, Alert, Vibration,
 } from 'react-native';
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useScrollY }        from '../../context/ScrollContext';
 import { deliveryAPI, walletAPI } from '../../services/api';
 
 const { height }     = Dimensions.get('window');
@@ -131,6 +133,13 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
   const insets     = useSafeAreaInsets();
   const request    = route?.params?.request ?? {};
 
+  // ── Auto-hide footer nav ──────────────────────────────────────────────────
+  const scrollY      = useScrollY();
+  const scrollHandler = useAnimatedScrollHandler((event) => {
+    'worklet';
+    scrollY.value = event.contentOffset.y;
+  });
+
   const [accepting,      setAccepting]      = useState(false);
   const [countdown,      setCountdown]      = useState(TIMEOUT_SECS);
   const [walletBalance,  setWalletBalance]  = useState(null);
@@ -225,9 +234,6 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
   const distStr = request.distance != null ? Number(request.distance).toFixed(1) : '—';
   const etaStr  = request.etaMinutes ?? (request.distance ? Math.ceil(request.distance / 0.4) : '—');
 
-  // ── FIX: use !! so that packageWeight=0 does not render a bare "0"
-  //         in the View, which crashes with "Text strings must be rendered
-  //         within a <Text> component".
   const hasWeight = !!request.packageWeight && Number(request.packageWeight) > 0;
 
   return (
@@ -237,59 +243,67 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
 
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
-        paddingBottom: insets.bottom + 20,
+        maxHeight: height * 0.88,
         transform: [{ translateY: slideA }],
       }]}>
-        <View style={[s.handle, { backgroundColor: theme.border }]} />
+        {/* ── Full scrollable content ── */}
+        <AnimatedRN.ScrollView
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 20 }]}
+          bounces={false}
+        >
+          <View style={[s.handle, { backgroundColor: theme.border }]} />
 
-        {/* Top row */}
-        <View style={s.topRow}>
-          <Animated.View style={[s.badge, { backgroundColor: COURIER_ACCENT, transform: [{ scale: pulseA }] }]}>
-            <Ionicons name="flash" size={12} color="#080C18" />
-            <Text style={s.badgeTxt}>NEW DELIVERY</Text>
-          </Animated.View>
-          <CountdownRing seconds={countdown} total={TIMEOUT_SECS} />
-        </View>
-
-        {/* Fee */}
-        <Text style={[s.fee, { color: COURIER_ACCENT }]}>{`₦${feeStr}`}</Text>
-        <Text style={[s.feeSub, { color: theme.hint }]}>Estimated delivery fee</Text>
-
-        {/* Stats */}
-        <View style={s.statsRow}>
-          <StatPill icon="navigate-outline" value={`${distStr} km`}  theme={theme} />
-          <StatPill icon="time-outline"     value={`~${etaStr} min`} theme={theme} />
-          {/* ── FIX: guard with hasWeight (boolean) so 0 never renders bare ── */}
-          {hasWeight && (
-            <StatPill icon="scale-outline" value={`${request.packageWeight} kg`} theme={theme} />
-          )}
-        </View>
-
-        {/* Wallet balance strip */}
-        {loadingWallet ? (
-          <View style={[s.walletLoading, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <ActivityIndicator color={COURIER_ACCENT} size="small" />
-            <Text style={[s.walletLoadingTxt, { color: theme.hint }]}>Checking wallet...</Text>
+          {/* Top row */}
+          <View style={s.topRow}>
+            <Animated.View style={[s.badge, { backgroundColor: COURIER_ACCENT, transform: [{ scale: pulseA }] }]}>
+              <Ionicons name="flash" size={12} color="#080C18" />
+              <Text style={s.badgeTxt}>NEW DELIVERY</Text>
+            </Animated.View>
+            <CountdownRing seconds={countdown} total={TIMEOUT_SECS} />
           </View>
-        ) : (
-          <WalletStrip
-            balance={walletBalance}
-            required={estimatedFee}
-            theme={theme}
-            onTopUp={() => slideOut(() => navigation.navigate('EarningsHome'))}
-          />
-        )}
 
-        <View style={[s.divider, { backgroundColor: theme.border }]} />
+          {/* Fee */}
+          <Text style={[s.fee, { color: COURIER_ACCENT }]}>{`₦${feeStr}`}</Text>
+          <Text style={[s.feeSub, { color: theme.hint }]}>Estimated delivery fee</Text>
 
-        {/* Package info + route */}
-        <ScrollView style={{ maxHeight: height * 0.22 }} showsVerticalScrollIndicator={false}>
+          {/* Stats */}
+          <View style={s.statsRow}>
+            <StatPill icon="navigate-outline" value={`${distStr} km`}  theme={theme} />
+            <StatPill icon="time-outline"     value={`~${etaStr} min`} theme={theme} />
+            {hasWeight && (
+              <StatPill icon="scale-outline" value={`${request.packageWeight} kg`} theme={theme} />
+            )}
+          </View>
+
+          {/* Wallet balance strip */}
+          {loadingWallet ? (
+            <View style={[s.walletLoading, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <ActivityIndicator color={COURIER_ACCENT} size="small" />
+              <Text style={[s.walletLoadingTxt, { color: theme.hint }]}>Checking wallet...</Text>
+            </View>
+          ) : (
+            <WalletStrip
+              balance={walletBalance}
+              required={estimatedFee}
+              theme={theme}
+              onTopUp={() => slideOut(() => navigation.navigate('EarningsHome'))}
+            />
+          )}
+
+          <View style={[s.divider, { backgroundColor: theme.border }]} />
+
+          {/* Package info */}
           {!!request.packageDescription && (
             <View style={[s.pkgCard, { backgroundColor: COURIER_ACCENT + '10', borderColor: COURIER_ACCENT + '30' }]}>
               <Ionicons name="cube-outline" size={15} color={COURIER_ACCENT} />
               <Text style={[s.pkgTxt, { color: theme.foreground }]}>{request.packageDescription}</Text>
             </View>
           )}
+
+          {/* Route */}
           <RouteRow
             icon="radio-button-on" iconColor={COURIER_ACCENT}
             label="PICKUP" address={request.pickupAddress ?? '—'}
@@ -300,48 +314,48 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
             label="DROP-OFF" address={request.dropoffAddress ?? '—'}
             contact={request.dropoffContact} theme={theme}
           />
-        </ScrollView>
 
-        <View style={[s.divider, { backgroundColor: theme.border }]} />
+          <View style={[s.divider, { backgroundColor: theme.border }]} />
 
-        {/* Actions */}
-        <View style={s.actions}>
-          <TouchableOpacity
-            style={[s.declineBtn, { borderColor: theme.border }]}
-            onPress={doDecline}
-            disabled={accepting}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="close-circle-outline" size={19} color={theme.hint} />
-            <Text style={[s.declineTxt, { color: theme.hint }]}>Decline</Text>
-          </TouchableOpacity>
-
-          <Animated.View style={[s.acceptWrap, { transform: [{ scale: pulseA }] }]}>
+          {/* Actions */}
+          <View style={s.actions}>
             <TouchableOpacity
-              style={[s.acceptBtn, {
-                backgroundColor: hasSufficient ? COURIER_ACCENT : theme.border,
-                opacity: accepting ? 0.7 : 1,
-              }]}
-              onPress={doAccept}
-              disabled={accepting || loadingWallet}
-              activeOpacity={0.88}
+              style={[s.declineBtn, { borderColor: theme.border }]}
+              onPress={doDecline}
+              disabled={accepting}
+              activeOpacity={0.75}
             >
-              {accepting ? (
-                <ActivityIndicator color="#080C18" size="small" />
-              ) : (!hasSufficient && !loadingWallet) ? (
-                <>
-                  <Ionicons name="wallet-outline" size={18} color={theme.hint} />
-                  <Text style={[s.acceptTxt, { color: theme.hint }]}>Top Up First</Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={20} color="#080C18" />
-                  <Text style={s.acceptTxt}>Accept</Text>
-                </>
-              )}
+              <Ionicons name="close-circle-outline" size={19} color={theme.hint} />
+              <Text style={[s.declineTxt, { color: theme.hint }]}>Decline</Text>
             </TouchableOpacity>
-          </Animated.View>
-        </View>
+
+            <Animated.View style={[s.acceptWrap, { transform: [{ scale: pulseA }] }]}>
+              <TouchableOpacity
+                style={[s.acceptBtn, {
+                  backgroundColor: hasSufficient ? COURIER_ACCENT : theme.border,
+                  opacity: accepting ? 0.7 : 1,
+                }]}
+                onPress={doAccept}
+                disabled={accepting || loadingWallet}
+                activeOpacity={0.88}
+              >
+                {accepting ? (
+                  <ActivityIndicator color="#080C18" size="small" />
+                ) : (!hasSufficient && !loadingWallet) ? (
+                  <>
+                    <Ionicons name="wallet-outline" size={18} color={theme.hint} />
+                    <Text style={[s.acceptTxt, { color: theme.hint }]}>Top Up First</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={20} color="#080C18" />
+                    <Text style={s.acceptTxt}>Accept</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </AnimatedRN.ScrollView>
       </Animated.View>
     </View>
   );
@@ -350,7 +364,8 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
 const s = StyleSheet.create({
   root:            { flex: 1, justifyContent: 'flex-end' },
   backdrop:        { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet:           { borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 24, paddingTop: 14, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 20 },
+  sheet:           { borderTopLeftRadius: 32, borderTopRightRadius: 32, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 20 },
+  scrollContent:   { paddingHorizontal: 24, paddingTop: 14 },
   handle:          { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   topRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   badge:           { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },

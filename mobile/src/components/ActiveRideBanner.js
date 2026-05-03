@@ -1,12 +1,4 @@
 // mobile/src/components/ActiveRideBanner.js
-//
-// Shows a persistent amber banner when the user has an active ride in progress.
-// Used on both the Customer HomeScreen and Driver Dashboard so neither user
-// gets stuck after an app restart.
-//
-// Customer: taps → goes to RideTracking (or cancels if REQUESTED)
-// Driver:   taps → goes to ActiveRide
-
 import React, { useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions,

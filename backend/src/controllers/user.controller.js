@@ -121,6 +121,24 @@ exports.deleteAccount = async (req, res) => {
   res.status(200).json({ success: true, message: 'Account deactivated successfully' });
 };
 
+// ─── helper: build per-star breakdown + weighted average from a ratings array ──
+function buildRatingBreakdown(ratings) {
+  // ratings: array of { rating: number }
+  const breakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let weightedSum = 0;
+
+  for (const r of ratings) {
+    const star = Math.min(5, Math.max(1, Math.round(r.rating)));
+    breakdown[star] = (breakdown[star] || 0) + 1;
+    weightedSum += r.rating;
+  }
+
+  const total   = ratings.length;
+  const average = total > 0 ? weightedSum / total : 0;
+
+  return { breakdown, total, average };
+}
+
 /**
  * @desc    Get user statistics
  * @route   GET /api/users/stats
@@ -147,35 +165,69 @@ exports.getUserStats = async (req, res) => {
   }
 
   if (req.user.role === 'DRIVER') {
-    const [completedRides, totalEarnings, rating] = await Promise.all([
+    const [completedRides, totalEarnings, driverProfile, rawRatings] = await Promise.all([
       prisma.ride.count({ where: { driverId: userId, status: 'COMPLETED' } }),
       prisma.ride.aggregate({ where: { driverId: userId, status: 'COMPLETED' }, _sum: { actualFare: true } }),
       prisma.driverProfile.findUnique({ where: { userId }, select: { rating: true, totalRides: true } }),
+      // Fetch every rating this driver has received with the comment + ride info
+      prisma.rating.findMany({
+        where:   { ride: { driverId: userId } },
+        select:  { rating: true, comment: true, createdAt: true, ride: { select: { pickupAddress: true, dropoffAddress: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
     ]);
+
+    const { breakdown, total, average } = buildRatingBreakdown(rawRatings);
+
     return res.status(200).json({
       success: true,
       data: {
         completedRides,
-        totalEarnings: totalEarnings._sum.actualFare || 0,
-        rating:        rating?.rating    || 0,
-        totalRides:    rating?.totalRides || 0,
+        totalEarnings:   totalEarnings._sum.actualFare || 0,
+        rating:          average,                  // live-computed weighted average
+        totalRides:      driverProfile?.totalRides || 0,
+        totalRatings:    total,
+        ratingBreakdown: breakdown,                // { 1: N, 2: N, 3: N, 4: N, 5: N }
+        // Most-recent ratings so the screen can show what customers said
+        recentRatings: rawRatings.slice(0, 20).map(r => ({
+          stars:         r.rating,
+          comment:       r.comment ?? null,
+          createdAt:     r.createdAt,
+          pickupAddress: r.ride?.pickupAddress ?? null,
+        })),
       },
     });
   }
 
   if (req.user.role === 'DELIVERY_PARTNER') {
-    const [completedDeliveries, totalEarnings, profile] = await Promise.all([
+    const [completedDeliveries, totalEarnings, partnerProfile, rawRatings] = await Promise.all([
       prisma.delivery.count({ where: { partnerId: userId, status: 'DELIVERED' } }),
       prisma.delivery.aggregate({ where: { partnerId: userId, status: 'DELIVERED' }, _sum: { actualFee: true } }),
       prisma.deliveryPartnerProfile.findUnique({ where: { userId }, select: { rating: true, totalDeliveries: true } }),
+      prisma.rating.findMany({
+        where:   { delivery: { partnerId: userId } },
+        select:  { rating: true, comment: true, createdAt: true, delivery: { select: { pickupAddress: true, dropoffAddress: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
     ]);
+
+    const { breakdown, total, average } = buildRatingBreakdown(rawRatings);
+
     return res.status(200).json({
       success: true,
       data: {
         completedDeliveries,
         totalEarnings:    totalEarnings._sum.actualFee || 0,
-        rating:           profile?.rating         || 0,
-        totalDeliveries:  profile?.totalDeliveries || 0,
+        rating:           average,
+        totalDeliveries:  partnerProfile?.totalDeliveries || 0,
+        totalRatings:     total,
+        ratingBreakdown:  breakdown,
+        recentRatings: rawRatings.slice(0, 20).map(r => ({
+          stars:         r.rating,
+          comment:       r.comment ?? null,
+          createdAt:     r.createdAt,
+          pickupAddress: r.delivery?.pickupAddress ?? null,
+        })),
       },
     });
   }
@@ -202,7 +254,6 @@ exports.submitSupportTicket = async (req, res) => {
     data: { userId: req.user.id, ticketNumber, subject, description, category, priority },
   });
 
-  // Notify all support / admin users so they see it immediately
   const adminUsers = await prisma.user.findMany({
     where:  { role: { in: ['ADMIN', 'SUPER_ADMIN', 'SUPPORT'] }, isActive: true },
     select: { id: true },
@@ -213,7 +264,7 @@ exports.submitSupportTicket = async (req, res) => {
       notificationService.notify({
         userId:  admin.id,
         title:   `New Ticket #${ticketNumber}`,
-        message: `${subject} — ${category} · ${priority} priority`,
+        message: `${subject} — ${category} • ${priority} priority`,
         type:    'new_support_ticket',
         data:    { ticketId: ticket.id, ticketNumber, category, priority },
       })
@@ -278,10 +329,7 @@ exports.getSupportTicketById = async (req, res) => {
   });
 
   if (!ticket) throw new AppError('Ticket not found', 404);
-
-  // Customers can only see their own tickets
-  if (ticket.userId !== req.user.id)
-    throw new AppError('Unauthorized', 403);
+  if (ticket.userId !== req.user.id) throw new AppError('Unauthorized', 403);
 
   res.status(200).json({ success: true, data: { ticket } });
 };
@@ -311,14 +359,13 @@ exports.addTicketReply = async (req, res) => {
       ticketId: id,
       authorId: req.user.id,
       message:  message.trim(),
-      isAdmin:  false,  // customer reply
+      isAdmin:  false,
     },
     include: {
       author: { select: { id: true, firstName: true, lastName: true, role: true } },
     },
   });
 
-  // Notify the assigned support agent (if any) so they see the follow-up
   if (ticket.assignedTo) {
     await notificationService.notify({
       userId:  ticket.assignedTo,
@@ -326,7 +373,7 @@ exports.addTicketReply = async (req, res) => {
       message: message.trim().slice(0, 120),
       type:    'ticket_customer_reply',
       data:    { ticketId: id, ticketNumber: ticket.ticketNumber },
-    }).catch(() => {/* non-critical */});
+    }).catch(() => {});
   }
 
   res.status(201).json({ success: true, message: 'Reply sent', data: { reply } });
