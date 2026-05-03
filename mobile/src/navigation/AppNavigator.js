@@ -10,7 +10,7 @@ import AuthNavigator     from './AuthNavigator';
 import CustomerNavigator from './CustomerNavigator';
 import DriverNavigator   from './DriverNavigator';
 import PartnerNavigator  from './PartnerNavigator';
-import BiometricLockScreen from '../screens/Auth/BiometricLockScreen';
+import BiometricLockScreen      from '../screens/Auth/BiometricLockScreen';
 import LocationPermissionScreen from '../screens/Auth/LocationPermissionScreen';
 
 const Stack = createStackNavigator();
@@ -37,9 +37,16 @@ const RootScreen = () => {
 
   const checkLocationPermission = async () => {
     try {
+      // First check if the device's location services are switched on at all
+      const servicesOn = await Location.hasServicesEnabledAsync();
+      if (!servicesOn) {
+        setLocationGranted(false);
+        return;
+      }
+      // Then check if the app has been granted permission
       const { status } = await Location.getForegroundPermissionsAsync();
       setLocationGranted(status === 'granted');
-    } catch (e) {
+    } catch {
       setLocationGranted(false);
     }
   };
@@ -60,7 +67,7 @@ const RootScreen = () => {
   if (!locationGranted) {
     return (
       <LocationPermissionScreen
-        onRequest={(granted) => setLocationGranted(true)}
+        onRequest={(granted) => setLocationGranted(granted)}
         onSkip={() => setLocationGranted(true)}
       />
     );

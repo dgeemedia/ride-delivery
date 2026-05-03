@@ -4,10 +4,6 @@ import { Platform } from 'react-native';
 
 const PRODUCTION_URL = 'https://diakite.onrender.com/api';
 
-// Priority:
-// 1. EXPO_PUBLIC_API_BASE_URL from .env.local (local dev → LAN IP)
-// 2. apiUrl from app.config.js extra (EAS build → Render URL)
-// 3. Hardcoded Render URL (final fallback)
 const NATIVE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL     // set in .env.local for local dev
   ?? Constants.expoConfig?.extra?.apiUrl   // set from app.config.js → .env

@@ -8,7 +8,7 @@ import {
 import { Ionicons }       from '@expo/vector-icons';
 import * as ImagePicker   from 'expo-image-picker';
 import * as MediaLibrary  from 'expo-media-library';
-import * as FileSystem    from 'expo-file-system';
+import * as FileSystem    from 'expo-file-system/legacy';
 import { useTheme }       from '../../context/ThemeContext';
 import { driverAPI, uploadAPI } from '../../services/api';
 import { toBase64DataUri } from '../../utils/toBase64DataUri';

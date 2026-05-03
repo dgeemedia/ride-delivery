@@ -132,6 +132,15 @@ router.post('/bonuses/onboarding', authorize('SUPER_ADMIN'), [
   body('partnerBonus').optional().isFloat({ min: 0 }),
 ], adminController.disburseOnboardingBonuses);
 
+// ── CUSTOM BONUS DISBURSEMENT  ─────────────────────────────────
+router.post('/bonuses/disburse', authorize('SUPER_ADMIN'), [
+  body('userIds').isArray({ min: 1 }).withMessage('Select at least one recipient.'),
+  body('userIds.*').isUUID(),
+  body('amount').isFloat({ min: 1 }).withMessage('Bonus must be at least ₦1'),
+  body('description').optional().isString().isLength({ max: 300 }),
+  body('nonWithdrawable').optional().isBoolean(),
+], adminController.disburseCustomBonuses);
+
 // SHIELD MONITORING — all admin roles can read; SUPER_ADMIN can close sessions
 router.get('/shield/stats',            adminController.getShieldStats);
 router.get('/shield/sessions',         adminController.getShieldSessions);

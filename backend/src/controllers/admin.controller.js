@@ -1178,6 +1178,93 @@ exports.disburseOnboardingBonuses = async (req, res) => {
   res.status(200).json({ success: true, message: `Onboarding bonus disbursed to ${driverCount} driver(s) and ${partnerCount} delivery partner(s).`, data: { drivers: driverCount, partners: partnerCount, driverBonus, partnerBonus, totalDisbursed: (driverBonus * driverCount) + (partnerBonus * partnerCount), currency: 'NGN' } });
 };
 
+exports.disburseCustomBonuses = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+
+  const { userIds, amount, description = '', nonWithdrawable = false } = req.body;
+
+  // Fetch wallets for all specified users (only those that exist and belong to driver/partner)
+  const wallets = await prisma.wallet.findMany({
+    where: {
+      userId: { in: userIds },
+      user:   { role: { in: ['DRIVER', 'DELIVERY_PARTNER'] } },  // restrict to earners
+    },
+    include: { user: { select: { id: true, firstName: true, lastName: true, role: true } } },
+  });
+
+  const foundIds    = wallets.map(w => w.userId);
+  const missing     = userIds.filter(id => !foundIds.includes(id));
+  if (missing.length) {
+    return res.status(400).json({
+      success: false,
+      message: `Some users not found or are not drivers/partners: ${missing.join(', ')}`,
+    });
+  }
+
+  const BONUS_REF_PREFIX = nonWithdrawable ? 'BONUS-NW-' : 'BONUS-';
+  const refBase          = `${BONUS_REF_PREFIX}${Date.now()}`;
+  const transactions     = [];
+
+  // Perform all wallet updates in parallel for speed but inside a safe loop
+  await Promise.all(wallets.map(async (wallet, index) => {
+    const ref = `${refBase}-${index}`;
+    await prisma.$transaction([
+      prisma.wallet.update({
+        where: { id: wallet.id },
+        data:  { balance: { increment: amount } },
+      }),
+      prisma.walletTransaction.create({
+        data: {
+          walletId:    wallet.id,
+          type:        'BONUS',
+          amount,
+          description: `${description || 'Admin bonus'}${nonWithdrawable ? ' (non‑withdrawable)' : ''}`,
+          status:      'COMPLETED',
+          reference:   ref,
+        },
+      }),
+    ]);
+
+    // Notify each recipient
+    await notificationService.notify({
+      userId:  wallet.user.id,
+      title:   '🎁 Bonus Received!',
+      message: `₦${amount.toLocaleString('en-NG')} has been credited to your wallet.${nonWithdrawable ? ' This is non‑withdrawable and can only be used for rides/deliveries.' : ''}`,
+      type:    notificationService.TYPES?.PAYMENT_RECEIVED ?? 'payment_received',
+      data:    { amount, nonWithdrawable, creditedBy: req.user.id },
+    });
+  }));
+
+  // Log the action
+  await logActivity({
+    userId:     req.user.id,
+    action:     'custom_bonus_disbursed',
+    entityType: 'Wallet',
+    entityId:   null,
+    details:    {
+      userIds: foundIds,
+      amount,
+      description,
+      nonWithdrawable,
+      totalDisbursed: amount * wallets.length,
+      recipientsCount: wallets.length,
+    },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Bonus of ₦${amount.toLocaleString('en-NG')} credited to ${wallets.length} user(s).`,
+    data:    {
+      credited: wallets.length,
+      amount,
+      totalDisbursed: amount * wallets.length,
+      currency: 'NGN',
+    },
+  });
+};
+
 // ─── RIDE DETAIL ─────────────────────────────────────────────────────────────
 
 exports.getRideById = async (req, res) => {
