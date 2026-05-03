@@ -1,7 +1,8 @@
 // mobile/src/navigation/AppNavigator.js
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { createStackNavigator } from '@react-navigation/stack';
+import * as Location from 'expo-location';
 import { useAuth }  from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -10,6 +11,7 @@ import CustomerNavigator from './CustomerNavigator';
 import DriverNavigator   from './DriverNavigator';
 import PartnerNavigator  from './PartnerNavigator';
 import BiometricLockScreen from '../screens/Auth/BiometricLockScreen';
+import LocationPermissionScreen from '../screens/Auth/LocationPermissionScreen';
 
 const Stack = createStackNavigator();
 
@@ -23,43 +25,59 @@ const LoadingScreen = () => {
   );
 };
 
-const AppNavigator = () => {
+// ─── Root screen that handles everything ─────────────────────────────────────
+const RootScreen = () => {
   const { user, loading, biometricLocked } = useAuth();
   const { loaded: themeLoaded }            = useTheme();
+  const [locationGranted, setLocationGranted] = useState(null); // null = loading
 
+  useEffect(() => {
+    checkLocationPermission();
+  }, []);
+
+  const checkLocationPermission = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      setLocationGranted(status === 'granted');
+    } catch (e) {
+      setLocationGranted(false);
+    }
+  };
+
+  // 1. Wait for auth + theme to load
   if (loading || !themeLoaded) return <LoadingScreen />;
 
-  // ── Biometric lock gate ────────────────────────────────────────────────────
-  // User session is still valid but the app was backgrounded. Show the
-  // lock screen instead of the main navigator until biometric passes.
+  // 2. Biometric lock gate (only while logged in)
   if (user && biometricLocked) return <BiometricLockScreen />;
 
-  // ── Normal routing ─────────────────────────────────────────────────────────
-  const initialRoute = !user
-    ? 'Auth'
-    : user.role === 'CUSTOMER'
-      ? 'Customer'
-      : user.role === 'DRIVER'
-        ? 'Driver'
-        : 'Partner';
+  // 3. Not logged in → auth flow
+  if (!user) return <AuthNavigator />;
 
-  return (
-    <Stack.Navigator
-      screenOptions={{ headerShown: false }}
-      initialRouteName={initialRoute}
-    >
-      {!user ? (
-        <Stack.Screen name="Auth"     component={AuthNavigator}     />
-      ) : user.role === 'CUSTOMER' ? (
-        <Stack.Screen name="Customer" component={CustomerNavigator} />
-      ) : user.role === 'DRIVER' ? (
-        <Stack.Screen name="Driver"   component={DriverNavigator}   />
-      ) : (
-        <Stack.Screen name="Partner"  component={PartnerNavigator}  />
-      )}
-    </Stack.Navigator>
-  );
+  // 4. Still checking location permission
+  if (locationGranted === null) return <LoadingScreen />;
+
+  // 5. Location not granted → show custom gate (explain + enable)
+  if (!locationGranted) {
+    return (
+      <LocationPermissionScreen
+        onRequest={(granted) => setLocationGranted(true)}
+        onSkip={() => setLocationGranted(true)}
+      />
+    );
+  }
+
+  // 6. Everything good → role navigator
+  if (user.role === 'CUSTOMER') return <CustomerNavigator />;
+  if (user.role === 'DRIVER')   return <DriverNavigator />;
+  return <PartnerNavigator />;
 };
+
+// ── Minimal Stack ─────────────────────────────────────────────────────────────
+const AppNavigator = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="Root" component={RootScreen} />
+  </Stack.Navigator>
+);
 
 const styles = StyleSheet.create({
   loading:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
