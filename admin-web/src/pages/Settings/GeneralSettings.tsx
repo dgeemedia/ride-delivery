@@ -989,7 +989,6 @@ const OnboardingBonusSection: React.FC = () => {
       icon={<Gift className="h-4 w-4" />}
       title="Onboarding Bonus"
       subtitle="Credits every approved driver and partner whose wallet is ₦0 — safe to re-run"
-      locked
     >
       <Alert variant="info" className="mb-5">
         Only approved drivers/partners with a <strong>₦0 balance</strong> receive the bonus.
@@ -1199,7 +1198,6 @@ const CustomBonusSection: React.FC = () => {
       icon={<Gift className="h-4 w-4" />}
       title="Custom Bonus Disbursement"
       subtitle="Select specific drivers or partners and credit them a custom amount"
-      locked
     >
       <button
         onClick={handleOpen}
