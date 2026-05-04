@@ -758,6 +758,17 @@ const PricingSection: React.FC = () => {
 // ─────────────────────────────────────────────────────────────────────────────
 type SurgeWindow = { label: string; days: number[]; hourStart: number; hourEnd: number; multiplier: number };
 
+type RecipientRole = 'DRIVER' | 'DELIVERY_PARTNER';
+type RoleFilter    = 'both' | RecipientRole;
+
+interface Recipient {
+  walletUserId: string;
+  name:         string;
+  email:        string;
+  role:         RecipientRole;
+  isOnline:     boolean;
+}
+
 const SurgeSection: React.FC = () => {
   const [windows,  setWindows]  = useState<SurgeWindow[]>(DEFAULT_SURGE_WINDOWS);
   const [loading,  setLoading]  = useState(false);
@@ -923,82 +934,153 @@ const NotificationsSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ONBOARDING BONUS — unchanged
+// ONBOARDING BONUS
 // ─────────────────────────────────────────────────────────────────────────────
 const OnboardingBonusSection: React.FC = () => {
   const [driverBonus,  setDriverBonus]  = useState('5000');
   const [partnerBonus, setPartnerBonus] = useState('5000');
   const [loading,      setLoading]      = useState(false);
   const [previewing,   setPreviewing]   = useState(false);
-  const [preview,      setPreview]      = useState<{ eligibleDrivers: number; eligiblePartners: number } | null>(null);
-  const [result,       setResult]       = useState<{ drivers: number; partners: number } | null>(null);
-  const [logs,         setLogs]         = useState<any[]>([]);
-  const [logsOpen,     setLogsOpen]     = useState(false);
-  const [logsLoading,  setLogsLoading]  = useState(false);
+  const [preview,      setPreview]      = useState<{
+    drivers:  { eligible: number; total: number };
+    partners: { eligible: number; total: number };
+  } | null>(null);
+  const [result,      setResult]      = useState<{ drivers: number; partners: number } | null>(null);
+  const [logs,        setLogs]        = useState<any[]>([]);
+  const [logsOpen,    setLogsOpen]    = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   const handlePreview = async () => {
     setPreviewing(true); setPreview(null);
-    try { const res = await api.get('/admin/bonuses/onboarding/preview'); setPreview(res.data.data); }
-    catch { toast.error('Preview failed'); } finally { setPreviewing(false); }
+    try {
+      const res = await api.get('/admin/bonuses/onboarding/preview');
+      setPreview(res.data.data);
+    } catch { toast.error('Preview failed'); }
+    finally  { setPreviewing(false); }
   };
 
   const handleDisbursement = async () => {
-    const dAmt = parseFloat(driverBonus); const pAmt = parseFloat(partnerBonus);
-    if (isNaN(dAmt) || isNaN(pAmt) || dAmt < 0 || pAmt < 0) { toast.error('Enter valid bonus amounts'); return; }
+    const dAmt = parseFloat(driverBonus);
+    const pAmt = parseFloat(partnerBonus);
+    if (isNaN(dAmt) || isNaN(pAmt) || dAmt < 0 || pAmt < 0) {
+      toast.error('Enter valid bonus amounts'); return;
+    }
     setLoading(true); setResult(null);
     try {
       const res = await api.post('/admin/bonuses/onboarding', { driverBonus: dAmt, partnerBonus: pAmt });
       setResult(res.data.data); setPreview(null);
       toast.success(`Bonuses sent to ${res.data.data.drivers + res.data.data.partners} recipients`);
-    } catch (err: any) { toast.error(err?.response?.data?.message || 'Failed to disburse bonuses'); }
-    finally { setLoading(false); }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to disburse bonuses');
+    } finally { setLoading(false); }
   };
 
   const loadLogs = async () => {
     setLogsLoading(true);
-    try { const res = await api.get('/admin/logs?action=onboarding_bonus_disbursed&limit=10'); setLogs(res.data.data?.logs ?? []); }
-    catch { toast.error('Could not load history'); } finally { setLogsLoading(false); }
+    try {
+      const res = await api.get('/admin/logs?action=onboarding_bonus_disbursed&limit=10');
+      setLogs(res.data.data?.logs ?? []);
+    } catch { toast.error('Could not load history'); }
+    finally  { setLogsLoading(false); }
   };
 
   return (
-    <Section icon={<Gift className="h-4 w-4" />} title="Onboarding Bonus" subtitle="Credits approved drivers and partners with ₦0 balance">
+    <Section
+      icon={<Gift className="h-4 w-4" />}
+      title="Onboarding Bonus"
+      subtitle="Credits every approved driver and partner whose wallet is ₦0 — safe to re-run"
+      locked
+    >
       <Alert variant="info" className="mb-5">
-        Credits every <strong>approved driver</strong> and <strong>delivery partner</strong> whose wallet is <strong>₦0</strong>.
-        The bonus is <strong>non-withdrawable</strong> — used only as a security deposit. Safe to re-run.
+        Only approved drivers/partners with a <strong>₦0 balance</strong> receive the bonus.
+        It is <strong>non-withdrawable</strong> — intended as a starter for rides or deliveries.
       </Alert>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-sm mb-5">
-        {([{ label: 'Driver Bonus', value: driverBonus, setter: setDriverBonus }, { label: 'Partner Bonus', value: partnerBonus, setter: setPartnerBonus }] as const).map(({ label, value, setter }) => (
+        {([
+          { label: 'Driver Bonus',  value: driverBonus,  setter: setDriverBonus  },
+          { label: 'Partner Bonus', value: partnerBonus, setter: setPartnerBonus },
+        ] as const).map(({ label, value, setter }) => (
           <div key={label}>
             <label className="block text-xs font-medium text-gray-500 mb-1">{label} (₦)</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₦</span>
-              <input type="number" value={value} onChange={e => setter(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              <input
+                type="number" value={value}
+                onChange={e => setter(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm
+                  focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
             </div>
           </div>
         ))}
       </div>
-      {preview && <Alert variant="warning" className="mb-4"><strong>Preview:</strong> {preview.eligibleDrivers} driver(s) and {preview.eligiblePartners} partner(s) eligible. Click "Disburse" to proceed.</Alert>}
-      {result  && <Alert variant="success" className="mb-4">✅ <strong>{result.drivers}</strong> driver(s) and <strong>{result.partners}</strong> partner(s) credited.</Alert>}
+
+      {/* Preview result */}
+      {preview && (
+        <div className="mb-4 grid grid-cols-2 divide-x divide-gray-200 border border-gray-200 rounded-lg overflow-hidden">
+          <div className="p-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Drivers</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{preview.drivers.eligible}</p>
+            <p className="text-xs text-gray-500">of {preview.drivers.total} approved eligible</p>
+            <p className="text-xs font-medium text-green-600 mt-1">
+              Total: ₦{(preview.drivers.eligible * +driverBonus).toLocaleString('en-NG')}
+            </p>
+          </div>
+          <div className="p-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Partners</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{preview.partners.eligible}</p>
+            <p className="text-xs text-gray-500">of {preview.partners.total} approved eligible</p>
+            <p className="text-xs font-medium text-green-600 mt-1">
+              Total: ₦{(preview.partners.eligible * +partnerBonus).toLocaleString('en-NG')}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {result && (
+        <Alert variant="success" className="mb-4">
+          ✅ <strong>{result.drivers}</strong> driver(s) and <strong>{result.partners}</strong> partner(s) credited.
+        </Alert>
+      )}
+
       <div className="flex items-center gap-3 flex-wrap">
-        <Button variant="secondary" loading={previewing} onClick={handlePreview}><Search className="h-4 w-4" />Preview Eligible</Button>
-        <Button variant="success"   loading={loading}    onClick={handleDisbursement}><Gift className="h-4 w-4" />Disburse Bonuses</Button>
+        <Button variant="secondary" loading={previewing} onClick={handlePreview}>
+          <Search className="h-4 w-4" />Preview Eligible
+        </Button>
+        <Button
+          loading={loading}
+          onClick={handleDisbursement}
+          disabled={!preview || (preview.drivers.eligible + preview.partners.eligible === 0)}
+        >
+          <Gift className="h-4 w-4" />Disburse Bonuses
+        </Button>
       </div>
+
+      {/* History */}
       <div className="mt-6 border-t border-gray-100 pt-4">
-        <button onClick={() => { if (!logsOpen && logs.length === 0) loadLogs(); setLogsOpen(o => !o); }}
-          className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900">
+        <button
+          onClick={() => { if (!logsOpen && logs.length === 0) loadLogs(); setLogsOpen(o => !o); }}
+          className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+        >
           <ClipboardList className="h-4 w-4" />Disbursement History
           {logsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
         {logsOpen && (
           <div className="mt-3">
             {logsLoading && <p className="text-xs text-gray-400 animate-pulse">Loading…</p>}
-            {!logsLoading && logs.length === 0 && <p className="text-xs text-gray-400">No disbursements found.</p>}
+            {!logsLoading && logs.length === 0 && <p className="text-xs text-gray-400">No disbursements yet.</p>}
             {!logsLoading && logs.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left">
                   <thead className="text-gray-400 uppercase tracking-wider">
-                    <tr><th className="pb-2 font-medium">Date</th><th className="pb-2 font-medium">Drivers</th><th className="pb-2 font-medium">Partners</th><th className="pb-2 font-medium">Total</th><th className="pb-2 font-medium">By</th></tr>
+                    <tr>
+                      <th className="pb-2 font-medium">Date</th>
+                      <th className="pb-2 font-medium">Drivers</th>
+                      <th className="pb-2 font-medium">Partners</th>
+                      <th className="pb-2 font-medium">Total</th>
+                      <th className="pb-2 font-medium">By</th>
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {logs.map((log, i) => (
@@ -1017,6 +1099,272 @@ const OnboardingBonusSection: React.FC = () => {
           </div>
         )}
       </div>
+    </Section>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CUSTOM BONUS
+// ─────────────────────────────────────────────────────────────────────────────
+const CustomBonusSection: React.FC = () => {
+  const [recipients,  setRecipients]  = useState<Recipient[]>([]);
+  const [loadingList, setLoadingList] = useState(false);
+  const [roleFilter,  setRoleFilter]  = useState<RoleFilter>('both');
+  const [searchTerm,  setSearchTerm]  = useState('');
+  const [selected,    setSelected]    = useState<Set<string>>(new Set());
+  const [amount,      setAmount]      = useState('');
+  const [description, setDescription] = useState('');
+  const [nonWithdraw, setNonWithdraw] = useState(true);
+  const [sending,     setSending]     = useState(false);
+  const [open,        setOpen]        = useState(false);
+  const [loaded,      setLoaded]      = useState(false);
+
+  const loadRecipients = useCallback(async () => {
+    setLoadingList(true);
+    try {
+      const params = { isApproved: 'true', limit: 500, page: 1 };
+      const [driversRes, partnersRes] = await Promise.all([
+        roleFilter !== 'DELIVERY_PARTNER' ? api.get('/admin/drivers',  { params }) : null,
+        roleFilter !== 'DRIVER'           ? api.get('/admin/partners', { params }) : null,
+      ]);
+      const mapped: Recipient[] = [
+        ...(driversRes?.data?.data?.drivers ?? []).map((d: any) => ({
+          walletUserId: d.user.id,
+          name:         `${d.user.firstName} ${d.user.lastName}`,
+          email:        d.user.email,
+          role:         'DRIVER' as const,
+          isOnline:     d.isOnline,
+        })),
+        ...(partnersRes?.data?.data?.partners ?? []).map((p: any) => ({
+          walletUserId: p.user.id,
+          name:         `${p.user.firstName} ${p.user.lastName}`,
+          email:        p.user.email,
+          role:         'DELIVERY_PARTNER' as const,
+          isOnline:     p.isOnline,
+        })),
+      ];
+      setRecipients(mapped);
+      setSelected(new Set());
+    } catch {
+      toast.error('Failed to load recipients');
+    } finally {
+      setLoadingList(false);
+    }
+  }, [roleFilter]);
+
+  const handleOpen = () => {
+    setOpen(o => !o);
+    if (!loaded) { setLoaded(true); loadRecipients(); }
+  };
+
+  useEffect(() => {
+    if (loaded) loadRecipients();
+  }, [roleFilter]);
+
+  const filtered = recipients.filter(r =>
+    r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    r.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const toggleOne = (id: string) =>
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const toggleAll = () =>
+    setSelected(selected.size === filtered.length ? new Set() : new Set(filtered.map(r => r.walletUserId)));
+
+  const handleDisburse = async () => {
+    if (selected.size === 0)     { toast.error('Select at least one recipient'); return; }
+    if (!+amount || +amount < 1) { toast.error('Enter a valid amount (min ₦1)'); return; }
+    setSending(true);
+    try {
+      const res = await api.post('/admin/bonuses/disburse', {
+        userIds:         Array.from(selected),
+        amount:          +amount,
+        description:     description.trim() || undefined,
+        nonWithdrawable: nonWithdraw,
+      });
+      toast.success(`₦${(+amount).toLocaleString('en-NG')} credited to ${res.data.data.credited} recipient(s)`);
+      setSelected(new Set());
+      setAmount('');
+      setDescription('');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Disbursement failed');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Section
+      icon={<Gift className="h-4 w-4" />}
+      title="Custom Bonus Disbursement"
+      subtitle="Select specific drivers or partners and credit them a custom amount"
+      locked
+    >
+      <button
+        onClick={handleOpen}
+        className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900 mb-4"
+      >
+        {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        {open ? 'Hide' : 'Show'} Recipient Selection
+      </button>
+
+      {open && (
+        <>
+          {/* Filters */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className="sm:col-span-2">
+              <Input
+                placeholder="Search by name or email…"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <select
+              value={roleFilter}
+              onChange={e => setRoleFilter(e.target.value as RoleFilter)}
+              className="px-3 py-2 rounded-lg border border-gray-300 text-sm
+                focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="both">Drivers &amp; Partners</option>
+              <option value="DRIVER">Drivers only</option>
+              <option value="DELIVERY_PARTNER">Partners only</option>
+            </select>
+          </div>
+
+          {/* Recipient list */}
+          <div className="border border-gray-200 rounded-lg overflow-hidden mb-5">
+            <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+              <label className="flex items-center gap-2.5 text-xs font-medium text-gray-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={filtered.length > 0 && selected.size === filtered.length}
+                  onChange={toggleAll}
+                  className="rounded border-gray-300 text-primary-600"
+                />
+                Select all ({filtered.length})
+              </label>
+              {selected.size > 0 && (
+                <span className="text-xs font-semibold text-primary-600">{selected.size} selected</span>
+              )}
+            </div>
+
+            <div className="divide-y divide-gray-50 max-h-64 overflow-y-auto">
+              {loadingList ? (
+                <p className="text-xs text-gray-400 text-center py-8 animate-pulse">Loading recipients…</p>
+              ) : filtered.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-8">No approved drivers or partners found.</p>
+              ) : filtered.map(r => (
+                <label
+                  key={r.walletUserId}
+                  className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
+                    selected.has(r.walletUserId) ? 'bg-primary-50' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(r.walletUserId)}
+                    onChange={() => toggleOne(r.walletUserId)}
+                    className="rounded border-gray-300 text-primary-600 flex-shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{r.name}</p>
+                    <p className="text-xs text-gray-400 truncate">{r.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      r.role === 'DRIVER'
+                        ? 'bg-blue-50 text-blue-600'
+                        : 'bg-yellow-50 text-yellow-700'
+                    }`}>
+                      {r.role === 'DRIVER' ? 'Driver' : 'Partner'}
+                    </span>
+                    {r.isOnline && (
+                      <span className="flex items-center gap-1 text-xs text-green-600">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                        Online
+                      </span>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Config — only shown when someone is selected */}
+          {selected.size > 0 && (
+            <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+              <p className="text-sm font-semibold text-gray-700">
+                Configure bonus for {selected.size} recipient{selected.size !== 1 ? 's' : ''}
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    Amount per recipient (₦)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₦</span>
+                    <input
+                      type="number" min={1} value={amount}
+                      onChange={e => setAmount(e.target.value)}
+                      placeholder="e.g. 3000"
+                      className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm
+                        focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+                  {amount && +amount > 0 && (
+                    <p className="text-xs text-green-600 mt-1 font-medium">
+                      Total payout: ₦{(+amount * selected.size).toLocaleString('en-NG')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    Description (optional)
+                  </label>
+                  <input
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    placeholder="e.g. Weekend performance bonus"
+                    maxLength={300}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <input
+                  id="nw-toggle" type="checkbox"
+                  checked={nonWithdraw}
+                  onChange={e => setNonWithdraw(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-300 text-amber-600"
+                />
+                <label htmlFor="nw-toggle" className="text-xs cursor-pointer">
+                  <span className="font-semibold text-amber-800 block">Non-withdrawable</span>
+                  <span className="text-amber-700">
+                    Recipients can only spend this on rides or deliveries — not withdraw as cash.
+                  </span>
+                </label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setSelected(new Set())}
+                  className="text-sm text-gray-500 hover:text-gray-700 font-medium"
+                >
+                  Clear selection
+                </button>
+                <Button loading={sending} onClick={handleDisburse}>
+                  <Gift className="h-4 w-4" />
+                  Disburse to {selected.size} Recipient{selected.size !== 1 ? 's' : ''}
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </Section>
   );
 };
@@ -1123,6 +1471,7 @@ const GeneralSettings: React.FC = () => {
       <AuditLogSection />
 
       {isSuperAdmin && <OnboardingBonusSection />}
+      {isSuperAdmin && <CustomBonusSection />}
       {isSuperAdmin && <DangerZoneSection />}
     </div>
   );

@@ -9,6 +9,7 @@ const { invalidateFareCache } = require('../utils/fareEngine');
 const bcrypt = require('bcryptjs');
 const { invalidateMaintenanceCache } = require('../middleware/maintenance.middleware');
 const commissionService = require('../services/commission.service');
+const { validationResult } = require('express-validator');
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -1217,7 +1218,7 @@ exports.disburseCustomBonuses = async (req, res) => {
       prisma.walletTransaction.create({
         data: {
           walletId:    wallet.id,
-          type:        'BONUS',
+          type:        'CREDIT',
           amount,
           description: `${description || 'Admin bonus'}${nonWithdrawable ? ' (non‑withdrawable)' : ''}`,
           status:      'COMPLETED',
@@ -1261,6 +1262,33 @@ exports.disburseCustomBonuses = async (req, res) => {
       amount,
       totalDisbursed: amount * wallets.length,
       currency: 'NGN',
+    },
+  });
+};
+
+exports.previewOnboardingBonuses = async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN')
+    throw new AppError('Only Super Admins can preview onboarding bonuses', 403);
+
+  const [eligibleDrivers, eligiblePartners] = await Promise.all([
+    prisma.driverProfile.findMany({
+      where:   { isApproved: true },
+      include: { user: { include: { wallet: { select: { balance: true } } } } },
+    }),
+    prisma.deliveryPartnerProfile.findMany({
+      where:   { isApproved: true },
+      include: { user: { include: { wallet: { select: { balance: true } } } } },
+    }),
+  ]);
+
+  const driversEligible  = eligibleDrivers.filter(d  => (d.user.wallet?.balance ?? 0) === 0);
+  const partnersEligible = eligiblePartners.filter(p => (p.user.wallet?.balance ?? 0) === 0);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      drivers:  { total: eligibleDrivers.length,  eligible: driversEligible.length  },
+      partners: { total: eligiblePartners.length, eligible: partnersEligible.length },
     },
   });
 };
