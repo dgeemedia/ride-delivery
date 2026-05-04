@@ -934,6 +934,135 @@ const NotificationsSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// WALLET DEPOSIT LIMITS
+// ─────────────────────────────────────────────────────────────────────────────
+const WalletLimitsSection: React.FC = () => {
+  const [minDeposit, setMinDeposit] = useState('100');
+  const [maxDeposit, setMaxDeposit] = useState('1000000');
+  const [loading,    setLoading]    = useState(false);
+  const [fetching,   setFetching]   = useState(true);
+
+  useEffect(() => {
+    settingsAPI.getSettings('wallet')
+      .then(res => {
+        const s = res.data?.settings ?? {};
+        setMinDeposit(String(s['wallet_topup_min']?.value ?? '100'));
+        setMaxDeposit(String(s['wallet_topup_max']?.value ?? '1000000'));
+      })
+      .catch(() => {})
+      .finally(() => setFetching(false));
+  }, []);
+
+  const handleSave = async () => {
+    const min = parseFloat(minDeposit);
+    const max = parseFloat(maxDeposit);
+
+    if (isNaN(min) || min < 100) {
+      toast.error('Minimum deposit cannot be less than ₦100'); return;
+    }
+    if (isNaN(max) || max < min) {
+      toast.error('Maximum must be greater than minimum'); return;
+    }
+    if (max > 10_000_000) {
+      toast.error('Maximum deposit cannot exceed ₦10,000,000'); return;
+    }
+
+    setLoading(true);
+    try {
+      await Promise.all([
+        settingsAPI.updateSetting('wallet_topup_min', String(min)),
+        settingsAPI.updateSetting('wallet_topup_max', String(max)),
+      ]);
+      toast.success('Deposit limits saved — live immediately');
+    } catch { toast.error('Failed to save deposit limits'); }
+    finally  { setLoading(false); }
+  };
+
+  const min = parseFloat(minDeposit) || 0;
+  const max = parseFloat(maxDeposit) || 0;
+
+  return (
+    <Section
+      icon={<DollarSign className="h-4 w-4" />}
+      title="Wallet Deposit Limits"
+      subtitle="Control how much customers can top up per transaction"
+    >
+      {fetching && <p className="text-xs text-gray-400 mb-4 animate-pulse">Loading current limits…</p>}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-md mb-5">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">
+            Minimum deposit (₦)
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">₦</span>
+            <input
+              type="number" min={100} value={minDeposit}
+              onChange={e => setMinDeposit(e.target.value)}
+              disabled={fetching}
+              className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm
+                focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+            />
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Hard floor is ₦100 (Paystack minimum)</p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">
+            Maximum deposit (₦)
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">₦</span>
+            <input
+              type="number" min={minDeposit} value={maxDeposit}
+              onChange={e => setMaxDeposit(e.target.value)}
+              disabled={fetching}
+              className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm
+                focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+            />
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Ceiling is ₦10,000,000</p>
+        </div>
+      </div>
+
+      {/* Live preview */}
+      {min > 0 && max > 0 && (
+        <div className="mb-5 inline-flex items-center gap-2 text-sm bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 rounded-lg">
+          <DollarSign className="h-4 w-4 flex-shrink-0" />
+          Customers can deposit between{' '}
+          <strong>₦{min.toLocaleString('en-NG')}</strong> and{' '}
+          <strong>₦{max.toLocaleString('en-NG')}</strong> per transaction
+        </div>
+      )}
+
+      {/* Quick presets */}
+      <div className="mb-5">
+        <p className="text-xs font-medium text-gray-500 mb-2">Quick presets for max limit</p>
+        <div className="flex flex-wrap gap-2">
+          {[50000, 100000, 500000, 1000000].map(preset => (
+            <button
+              key={preset}
+              onClick={() => setMaxDeposit(String(preset))}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                parseFloat(maxDeposit) === preset
+                  ? 'bg-primary-50 border-primary-400 text-primary-600'
+                  : 'border-gray-200 text-gray-500 hover:border-gray-400'
+              }`}
+            >
+              ₦{preset.toLocaleString('en-NG')}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Button loading={loading || fetching} onClick={handleSave}>
+        <Save className="h-4 w-4" />Save Deposit Limits
+      </Button>
+    </Section>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ONBOARDING BONUS
 // ─────────────────────────────────────────────────────────────────────────────
 const OnboardingBonusSection: React.FC = () => {
@@ -1465,6 +1594,7 @@ const GeneralSettings: React.FC = () => {
       <PricingSection />
       <SurgeSection />
       <NotificationsSection />
+      <WalletLimitsSection />
       <PasswordSection />
       <AuditLogSection />
 

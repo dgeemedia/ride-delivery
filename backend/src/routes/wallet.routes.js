@@ -17,6 +17,9 @@ const router = express.Router();
  */
 router.post('/topup/verify', walletController.verifyTopUp);
 
+// ── PUBLIC — deposit limits (no auth required, used by mobile top-up screen) ──
+router.get('/deposit-limits', walletController.getDepositLimits);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // All routes below require authentication
 // ─────────────────────────────────────────────────────────────────────────────

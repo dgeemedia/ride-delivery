@@ -1,38 +1,4 @@
 // backend/src/controllers/wallet.controller.js
-//
-// FIX applied:
-//   adminApproveTransfer / adminRejectTransfer — the original located the
-//   recipient by regex-parsing the transaction description field:
-//     const phoneMatch = senderTx.description.match(/\((\d{10,11})\)/)
-//   This is fragile: any description change silently breaks payouts.
-//
-//   New approach: a dedicated `Transfer` table stores sender/recipient IDs and
-//   the reference, making lookups reliable and queryable.
-//
-//   SCHEMA MIGRATION REQUIRED (add to prisma/schema.prisma):
-//   ─────────────────────────────────────────────────────────
-//   model Transfer {
-//     id          String   @id @default(uuid())
-//     reference   String   @unique
-//     senderId    String
-//     recipientId String
-//     amount      Float
-//     note        String?
-//     status      String   @default("PENDING")  // PENDING | COMPLETED | FAILED
-//     createdAt   DateTime @default(now())
-//     updatedAt   DateTime @updatedAt
-//
-//     sender    User @relation("SentTransfers",     fields: [senderId],    references: [id])
-//     recipient User @relation("ReceivedTransfers", fields: [recipientId], references: [id])
-//   }
-//
-//   On User model add:
-//     sentTransfers     Transfer[] @relation("SentTransfers")
-//     receivedTransfers Transfer[] @relation("ReceivedTransfers")
-//   ─────────────────────────────────────────────────────────
-//   Run: npx prisma migrate dev --name add_transfer_table
-//
-//   All other functions are unchanged from the previous patch.
 
 const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
@@ -182,8 +148,21 @@ exports.verifyPaystackTopup = async (req, res) => {
 
 exports.initializeTopUp = async (req, res) => {
   const { amount } = req.body;
-  if (!amount || amount < 100)    throw new AppError('Minimum top-up is ₦100', 400);
-  if (amount > 1_000_000)         throw new AppError('Maximum top-up is ₦1,000,000', 400);
+  if (!amount || amount < 100) throw new AppError('Minimum top-up is ₦100', 400);
+
+  // ── Fetch admin-configured limits from SystemSettings ──
+  const [minSetting, maxSetting] = await Promise.all([
+    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_min' } }),
+    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_max' } }),
+  ]);
+
+  const minDeposit = minSetting?.value ? parseFloat(minSetting.value) : 100;
+  const maxDeposit = maxSetting?.value ? parseFloat(maxSetting.value) : 1_000_000;
+
+  if (amount < minDeposit)
+    throw new AppError(`Minimum top-up is ₦${minDeposit.toLocaleString('en-NG')}`, 400);
+  if (amount > maxDeposit)
+    throw new AppError(`Maximum top-up is ₦${maxDeposit.toLocaleString('en-NG')}`, 400);
 
   const reference = `TOPUP-${req.user.id.slice(0, 8)}-${Date.now()}`;
 
@@ -215,6 +194,7 @@ exports.initializeTopUp = async (req, res) => {
       authorizationUrl: paystackRes.data.authorization_url,
       reference,
       accessCode:       paystackRes.data.access_code,
+      limits: { min: minDeposit, max: maxDeposit },
     },
   });
 };
@@ -820,6 +800,22 @@ exports.adminGetWalletStats = async (req, res) => {
       pendingTransfers,
       todayCredits:     todayCredits._sum.amount  ?? 0,
       todayDebits:      todayDebits._sum.amount   ?? 0,
+    },
+  });
+};
+
+exports.getDepositLimits = async (req, res) => {
+  const [minSetting, maxSetting] = await Promise.all([
+    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_min' } }),
+    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_max' } }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      min: minSetting?.value ? parseFloat(minSetting.value) : 100,
+      max: maxSetting?.value ? parseFloat(maxSetting.value) : 1_000_000,
+      currency: 'NGN',
     },
   });
 };
