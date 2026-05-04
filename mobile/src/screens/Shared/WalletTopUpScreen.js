@@ -1,5 +1,5 @@
 // mobile/src/screens/Shared/WalletTopUpScreen.js
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, StatusBar, Animated, ActivityIndicator,
@@ -20,16 +20,27 @@ export default function WalletTopUpScreen({ navigation }) {
 
   const accent = theme.accent;
 
-  const [amount, setAmount] = useState('');
+  const [amount,  setAmount]  = useState('');
   const [loading, setLoading] = useState(false);
+  const [limits,  setLimits]  = useState({ min: 100, max: 1000000 });
   const shakeA = useRef(new Animated.Value(0)).current;
+
+  // Fetch admin-configured deposit limits on mount
+  useEffect(() => {
+    walletAPI.getDepositLimits?.()
+      .then(res => {
+        const { min, max } = res?.data ?? {};
+        if (min && max) setLimits({ min, max });
+      })
+      .catch(() => {}); // silently fall back to defaults
+  }, []);
 
   const shake = () => {
     Animated.sequence([
-      Animated.timing(shakeA, { toValue: 8, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeA, { toValue: 8,  duration: 55, useNativeDriver: true }),
       Animated.timing(shakeA, { toValue: -8, duration: 55, useNativeDriver: true }),
-      Animated.timing(shakeA, { toValue: 5, duration: 55, useNativeDriver: true }),
-      Animated.timing(shakeA, { toValue: 0, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeA, { toValue: 5,  duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeA, { toValue: 0,  duration: 55, useNativeDriver: true }),
     ]).start();
   };
 
@@ -37,15 +48,15 @@ export default function WalletTopUpScreen({ navigation }) {
     Keyboard.dismiss();
     const num = parseFloat(amount);
 
-    if (!num || num < 100) {
+    if (!num || num < limits.min) {
       shake();
-      Alert.alert('Minimum amount', 'Please enter at least ₦100.');
+      Alert.alert('Minimum amount', `Please enter at least ₦${formatNGN(limits.min)}.`);
       return;
     }
 
-    if (num > 1000000) {
+    if (num > limits.max) {
       shake();
-      Alert.alert('Maximum exceeded', 'Maximum top-up is ₦1,000,000 per transaction.');
+      Alert.alert('Maximum exceeded', `Maximum top-up is ₦${formatNGN(limits.max)} per transaction.`);
       return;
     }
 
@@ -114,6 +125,14 @@ export default function WalletTopUpScreen({ navigation }) {
           </View>
         </View>
 
+        {/* Limit hint */}
+        <View style={[s.limitHint, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+          <Ionicons name="information-circle-outline" size={14} color={theme.hint} />
+          <Text style={[s.limitHintTxt, { color: theme.hint }]}>
+            Min: ₦{formatNGN(limits.min)} · Max: ₦{formatNGN(limits.max)} per transaction
+          </Text>
+        </View>
+
         {/* Amount input */}
         <Text style={[s.sectionLabel, { color: theme.hint }]}>ENTER AMOUNT</Text>
 
@@ -136,7 +155,7 @@ export default function WalletTopUpScreen({ navigation }) {
               placeholderTextColor={theme.hint}
               returnKeyType="done"
               onSubmitEditing={Keyboard.dismiss}
-              maxLength={7}
+              maxLength={8}
             />
 
             {amtNum > 0 && (
@@ -153,6 +172,7 @@ export default function WalletTopUpScreen({ navigation }) {
         <View style={s.quickGrid}>
           {QUICK_AMOUNTS.map(q => {
             const selected = parseFloat(amount) === q;
+            const withinLimits = q >= limits.min && q <= limits.max;
 
             return (
               <TouchableOpacity
@@ -162,9 +182,11 @@ export default function WalletTopUpScreen({ navigation }) {
                   {
                     backgroundColor: selected ? accent : theme.backgroundAlt,
                     borderColor: selected ? accent : theme.border,
+                    opacity: withinLimits ? 1 : 0.35,
                   }
                 ]}
-                onPress={() => setAmount(String(q))}
+                onPress={() => withinLimits && setAmount(String(q))}
+                disabled={!withinLimits}
               >
                 <Text style={[
                   s.quickTxt,
@@ -178,7 +200,7 @@ export default function WalletTopUpScreen({ navigation }) {
         </View>
 
         {/* Breakdown */}
-        {amtNum >= 100 && (
+        {amtNum >= limits.min && (
           <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <View style={s.breakdownRow}>
               <Text style={[s.breakdownLbl, { color: theme.hint }]}>Amount</Text>
@@ -209,7 +231,7 @@ export default function WalletTopUpScreen({ navigation }) {
         <View style={[s.securityRow, { borderColor: theme.border }]}>
           <Ionicons name="shield-checkmark-outline" size={14} color={theme.accent} />
           <Text style={[s.securityTxt, { color: theme.hint }]}>
-            256-bit SSL encryption · Powered by Paystack · PCI-DSS compliant
+            256-bit SSL encryption • Powered by Paystack • PCI-DSS compliant
           </Text>
         </View>
 
@@ -219,11 +241,11 @@ export default function WalletTopUpScreen({ navigation }) {
             s.payBtn,
             {
               backgroundColor: theme.accent,
-              opacity: loading || amtNum < 100 ? 0.75 : 1,
+              opacity: loading || amtNum < limits.min ? 0.75 : 1,
             }
           ]}
           onPress={handleTopUp}
-          disabled={loading || amtNum < 100}
+          disabled={loading || amtNum < limits.min}
         >
           {loading ? (
             <ActivityIndicator color={theme.accentFg} />
@@ -231,7 +253,7 @@ export default function WalletTopUpScreen({ navigation }) {
             <>
               <Ionicons name="lock-closed" size={18} color={theme.accentFg} />
               <Text style={[s.payBtnTxt, { color: theme.accentFg }]}>
-                {amtNum >= 100 ? `Pay ₦${formatNGN(amtNum)}` : 'Enter an amount'}
+                {amtNum >= limits.min ? `Pay ₦${formatNGN(amtNum)}` : `Min ₦${formatNGN(limits.min)}`}
               </Text>
             </>
           )}
@@ -244,29 +266,38 @@ export default function WalletTopUpScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '900' },
-  headerSub: { fontSize: 11, marginTop: 1 },
-  scroll: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 },
-  infoCard: { flexDirection: 'row', gap: 10, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 24 },
-  infoTitle: { fontSize: 13, fontWeight: '800', marginBottom: 4 },
-  infoBody: { fontSize: 12, lineHeight: 18 },
+  root:       { flex: 1 },
+  header:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
+  backBtn:    { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  headerTitle:{ fontSize: 17, fontWeight: '900' },
+  headerSub:  { fontSize: 11, marginTop: 1 },
+  scroll:     { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 },
+
+  limitHint:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 20 },
+  limitHintTxt: { fontSize: 11, fontWeight: '600' },
+
+  infoCard:   { flexDirection: 'row', gap: 10, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 24 },
+  infoTitle:  { fontSize: 13, fontWeight: '800', marginBottom: 4 },
+  infoBody:   { fontSize: 12, lineHeight: 18 },
+
   sectionLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 2.5, marginBottom: 12 },
-  inputCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderWidth: 1.5, paddingHorizontal: 18, paddingVertical: 4, marginBottom: 24 },
-  currency: { fontSize: 28, fontWeight: '900', marginRight: 6 },
-  input: { flex: 1, fontSize: 40, fontWeight: '900', paddingVertical: 14 },
-  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
-  quickBtn: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 18, paddingVertical: 11 },
-  quickTxt: { fontSize: 14, fontWeight: '700' },
-  breakdownCard: { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 16, gap: 10 },
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  breakdownLbl: { fontSize: 13 },
-  breakdownVal: { fontSize: 14, fontWeight: '700' },
+  inputCard:    { flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderWidth: 1.5, paddingHorizontal: 18, paddingVertical: 4, marginBottom: 24 },
+  currency:     { fontSize: 28, fontWeight: '900', marginRight: 6 },
+  input:        { flex: 1, fontSize: 40, fontWeight: '900', paddingVertical: 14 },
+
+  quickGrid:  { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
+  quickBtn:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 18, paddingVertical: 11 },
+  quickTxt:   { fontSize: 14, fontWeight: '700' },
+
+  breakdownCard:    { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 16, gap: 10 },
+  breakdownRow:     { flexDirection: 'row', justifyContent: 'space-between' },
+  breakdownLbl:     { fontSize: 13 },
+  breakdownVal:     { fontSize: 14, fontWeight: '700' },
   breakdownDivider: { height: 1, marginVertical: 4 },
+
   securityRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: 1, paddingTop: 14, marginBottom: 20 },
   securityTxt: { flex: 1, fontSize: 11, lineHeight: 17 },
-  payBtn: { borderRadius: 18, height: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+
+  payBtn:    { borderRadius: 18, height: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   payBtnTxt: { fontSize: 17, fontWeight: '900' },
 });

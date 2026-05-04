@@ -201,6 +201,7 @@ export const walletAPI = {
   verifyBankAccount:      (params) => api.get('/wallet/verify-account', { params }),
   transfer:               (data)   => api.post('/wallet/transfer', data),
   withdraw:               (data)   => api.post('/wallet/withdraw', data),
+  getDepositLimits:           ()   => api.get('/wallet/deposit-limits'),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
