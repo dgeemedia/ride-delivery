@@ -32,7 +32,6 @@ import LegalScreen from '../screens/Shared/LegalScreen';
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// ── Stack definitions ─────────────────────────────────────────────────────────
 const DashboardStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="DriverDashboard"  component={DriverDashboardScreen} />
@@ -54,6 +53,7 @@ const DashboardStack = () => (
     <Stack.Screen name="SubmitTicket"    component={SubmitTicketScreen}    />
     <Stack.Screen name="MyTickets"       component={MyTicketsScreen}       />
     <Stack.Screen name="TicketDetail"    component={TicketDetailScreen}    />
+    <Stack.Screen name="Legal"           component={LegalScreen}           />
   </Stack.Navigator>
 );
 
@@ -67,6 +67,7 @@ const EarningsStack = () => (
     <Stack.Screen name="SubmitTicket"  component={SubmitTicketScreen}    />
     <Stack.Screen name="MyTickets"     component={MyTicketsScreen}       />
     <Stack.Screen name="TicketDetail"  component={TicketDetailScreen}    />
+    <Stack.Screen name="Legal"         component={LegalScreen}           />
   </Stack.Navigator>
 );
 
@@ -86,7 +87,6 @@ const ProfileStack = () => (
   </Stack.Navigator>
 );
 
-// ── DriverNavigator ───────────────────────────────────────────────────────────
 const DriverNavigator = () => {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -112,7 +112,7 @@ const DriverNavigator = () => {
           tabBarActiveTintColor:   theme.accent,
           tabBarInactiveTintColor: theme.hint,
           tabBarStyle: {
-            position: 'absolute',       // ← required for animation
+            position: 'absolute',
             backgroundColor: theme.background,
             borderTopColor: theme.border,
             borderTopWidth: 1,

@@ -3,12 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar,
   Dimensions, Animated, ActivityIndicator, Alert, Vibration,
+  ScrollView,                          // ← standard RN ScrollView (scroll fix)
 } from 'react-native';
-import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
-import { useScrollY }        from '../../context/ScrollContext';
 import { rideAPI, walletAPI } from '../../services/api';
 
 const { height } = Dimensions.get('window');
@@ -18,18 +17,23 @@ const RED        = '#E05555';
 const TIMEOUT_SECS = 30;
 
 // ── Countdown ring ─────────────────────────────────────────────────────────────
-const CountdownRing = ({ seconds, total, color }) => {
+const CountdownRing = ({ seconds, total, color, expired }) => {
   const SIZE = 80, STROKE = 5;
+  const displayColor = expired ? RED : color;
   return (
     <View style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={[cr.track, { width: SIZE, height: SIZE, borderRadius: SIZE / 2, borderColor: color + '25', borderWidth: STROKE }]} />
+      <View style={[cr.track, { width: SIZE, height: SIZE, borderRadius: SIZE / 2, borderColor: displayColor + '25', borderWidth: STROKE }]} />
       <View style={[cr.arc, {
         width: SIZE, height: SIZE, borderRadius: SIZE / 2,
-        borderColor: color, borderWidth: STROKE,
+        borderColor: displayColor, borderWidth: STROKE,
         borderRightColor: 'transparent',
-        transform: [{ rotate: `${(1 - seconds / total) * 360}deg` }],
+        transform: [{ rotate: expired ? '360deg' : `${(1 - seconds / total) * 360}deg` }],
       }]} />
-      <Text style={[cr.txt, { color }]}>{seconds}</Text>
+      {expired ? (
+        <Ionicons name="time-outline" size={22} color={RED} />
+      ) : (
+        <Text style={[cr.txt, { color: displayColor }]}>{seconds}</Text>
+      )}
     </View>
   );
 };
@@ -121,6 +125,20 @@ const ws = StyleSheet.create({
   topupTxt: { fontSize: 12, fontWeight: '800', color: '#080C18' },
 });
 
+// ── Expired banner ─────────────────────────────────────────────────────────────
+const ExpiredBanner = ({ theme }) => (
+  <View style={[eb.wrap, { backgroundColor: RED + '12', borderColor: RED + '35' }]}>
+    <Ionicons name="time-outline" size={15} color={RED} />
+    <Text style={[eb.txt, { color: RED }]}>
+      Timer expired — ride may still be available. Try accepting!
+    </Text>
+  </View>
+);
+const eb = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, padding: 10, marginBottom: 14 },
+  txt:  { flex: 1, fontSize: 12, fontWeight: '700', lineHeight: 17 },
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,15 +147,9 @@ export default function IncomingRideScreen({ route, navigation }) {
   const insets    = useSafeAreaInsets();
   const request   = route?.params?.request ?? {};
 
-  // ── Auto-hide footer nav ──────────────────────────────────────────────────
-  const scrollY      = useScrollY();
-  const scrollHandler = useAnimatedScrollHandler((event) => {
-    'worklet';
-    scrollY.value = event.contentOffset.y;
-  });
-
   const [accepting,      setAccepting]      = useState(false);
   const [countdown,      setCountdown]      = useState(TIMEOUT_SECS);
+  const [timedOut,       setTimedOut]       = useState(false);   // ← NEW: expired state
   const [walletBalance,  setWalletBalance]  = useState(null);
   const [loadingWallet,  setLoadingWallet]  = useState(true);
   const isActingRef = useRef(false);
@@ -160,7 +172,12 @@ export default function IncomingRideScreen({ route, navigation }) {
 
     const timer = setInterval(() => {
       setCountdown(prev => {
-        if (prev <= 1) { clearInterval(timer); doDecline(); return 0; }
+        if (prev <= 1) {
+          clearInterval(timer);
+          // ── FIX: don't auto-decline; just show expired state ──────────────
+          setTimedOut(true);
+          return 0;
+        }
         return prev - 1;
       });
     }, 1000);
@@ -189,10 +206,8 @@ export default function IncomingRideScreen({ route, navigation }) {
         `You need ₦${estimatedFare.toLocaleString('en-NG')} in your wallet to accept this ride. ` +
         `Please top up your wallet first.`,
         [
-          { text: 'Decline Ride', style: 'cancel', onPress: doDecline },
-          { text: 'Top Up Wallet', onPress: () => {
-            slideOut(() => navigation.navigate('Earnings'));
-          }},
+          { text: 'Decline Ride',  style: 'cancel', onPress: doDecline },
+          { text: 'Top Up Wallet', onPress: () => slideOut(() => navigation.navigate('Earnings')) },
         ]
       );
       return;
@@ -209,8 +224,8 @@ export default function IncomingRideScreen({ route, navigation }) {
       isActingRef.current = false;
       setAccepting(false);
 
-      const status  = err?.response?.status;
-      const message = err?.response?.data?.message ?? 'Ride may have been cancelled.';
+      const status  = err?.status;
+      const message = err?.message ?? 'Ride may have been cancelled.';
 
       if (status === 402) {
         Alert.alert(
@@ -243,10 +258,8 @@ export default function IncomingRideScreen({ route, navigation }) {
         maxHeight: height * 0.88,
         transform: [{ translateY: slideA }],
       }]}>
-        {/* ── Scrollable content ── */}
-        <AnimatedRN.ScrollView
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
+        {/* ── FIX: standard ScrollView — no reanimated conflict ── */}
+        <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 20 }]}
           bounces={false}
@@ -259,8 +272,11 @@ export default function IncomingRideScreen({ route, navigation }) {
               <Ionicons name="flash" size={12} color="#080C18" />
               <Text style={s.badgeTxt}>NEW RIDE REQUEST</Text>
             </Animated.View>
-            <CountdownRing seconds={countdown} total={TIMEOUT_SECS} color={DA} />
+            <CountdownRing seconds={countdown} total={TIMEOUT_SECS} color={DA} expired={timedOut} />
           </View>
+
+          {/* Expired notice */}
+          {timedOut && <ExpiredBanner theme={theme} />}
 
           {/* Fare */}
           <Text style={[s.fare, { color: DA }]}>₦{fareStr}</Text>
@@ -311,8 +327,8 @@ export default function IncomingRideScreen({ route, navigation }) {
           )}
 
           {/* Route */}
-          <RouteRow icon="radio-button-on" iconColor={DA}    label="PICKUP"   address={request.pickupAddress  ?? '—'} theme={theme} />
-          <RouteRow icon="location"        iconColor={RED}   label="DROP-OFF" address={request.dropoffAddress ?? '—'} theme={theme} />
+          <RouteRow icon="radio-button-on" iconColor={DA}  label="PICKUP"   address={request.pickupAddress  ?? '—'} theme={theme} />
+          <RouteRow icon="location"        iconColor={RED} label="DROP-OFF" address={request.dropoffAddress ?? '—'} theme={theme} />
 
           <View style={[s.divider, { backgroundColor: theme.border }]} />
 
@@ -348,13 +364,13 @@ export default function IncomingRideScreen({ route, navigation }) {
                 ) : (
                   <>
                     <Ionicons name="checkmark-circle" size={22} color="#080C18" />
-                    <Text style={s.acceptTxt}>Accept Ride</Text>
+                    <Text style={s.acceptTxt}>{timedOut ? 'Try Accept' : 'Accept Ride'}</Text>
                   </>
                 )}
               </TouchableOpacity>
             </Animated.View>
           </View>
-        </AnimatedRN.ScrollView>
+        </ScrollView>
       </Animated.View>
     </View>
   );

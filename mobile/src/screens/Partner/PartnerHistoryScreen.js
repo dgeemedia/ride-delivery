@@ -1,13 +1,15 @@
 // mobile/src/screens/Partner/PartnerHistoryScreen.js
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList,
+  View, Text, StyleSheet, TouchableOpacity,
   StatusBar, Animated, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { Ionicons }        from '@expo/vector-icons';
-import { SafeAreaView }    from 'react-native-safe-area-context';
-import { useTheme }        from '../../context/ThemeContext';
-import { deliveryAPI }     from '../../services/api';
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
+import { Ionicons }    from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme }    from '../../context/ThemeContext';
+import { useScrollY }  from '../../context/ScrollContext';
+import { deliveryAPI } from '../../services/api';
 
 const TEAL  = '#34D399';
 const GREEN = '#5DAA72';
@@ -168,6 +170,7 @@ const dc = StyleSheet.create({
 
 export default function PartnerHistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const scrollY         = useScrollY();
 
   const [deliveries, setDeliveries] = useState([]);
   const [page,       setPage]       = useState(1);
@@ -247,12 +250,18 @@ export default function PartnerHistoryScreen({ navigation }) {
         <View style={s.center}><ActivityIndicator color={TEAL} size="large" /></View>
       ) : (
         <Animated.View style={[{ flex: 1 }, { opacity: fadeA }]}>
-          <FlatList
+          <AnimatedRN.FlatList
             data={deliveries}
             keyExtractor={item => item.id}
             renderItem={({ item }) => <DeliveryCard item={item} theme={theme} />}
             contentContainerStyle={s.list}
             showsVerticalScrollIndicator={false}
+            onScroll={useAnimatedScrollHandler({
+              onScroll: (event) => {
+                scrollY.value = event.contentOffset.y;
+              },
+            })}
+            scrollEventThrottle={16}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor={TEAL} />}
             onEndReached={() => { if (!loadingMore && page <= totalPages) { setLoadingMore(true); load().finally(() => setLoadingMore(false)); } }}
             onEndReachedThreshold={0.4}

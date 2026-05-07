@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, StatusBar, ActivityIndicator, Image, TextInput,
-  KeyboardAvoidingView, Platform, Modal, Pressable, PermissionsAndroid,
+  KeyboardAvoidingView, Platform, Modal, PermissionsAndroid,
 } from 'react-native';
 import { Ionicons }       from '@expo/vector-icons';
 import * as ImagePicker   from 'expo-image-picker';
@@ -13,19 +13,14 @@ import { useTheme }       from '../../context/ThemeContext';
 import { driverAPI, uploadAPI } from '../../services/api';
 import { toBase64DataUri } from '../../utils/toBase64DataUri';
 
-// ── Vehicle types accepted by the backend validator ───────────────────────────
 const VEHICLE_TYPES = ['CAR', 'MOTORCYCLE', 'BIKE', 'VAN', 'TRICYCLE'];
 
-// ── Document slots ────────────────────────────────────────────────────────────
 const DOC_SLOTS = [
   { key: 'licenseImageUrl',  label: 'Driver License',          icon: 'card-outline',          uploadKey: 'license'      },
   { key: 'vehicleRegUrl',    label: 'Vehicle Registration',     icon: 'document-text-outline', uploadKey: 'registration' },
   { key: 'insuranceUrl',     label: 'Insurance Certificate',    icon: 'shield-outline',        uploadKey: 'insurance'    },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
 export default function DriverDocumentsScreen({ navigation }) {
   const { theme, mode } = useTheme();
 
@@ -33,9 +28,8 @@ export default function DriverDocumentsScreen({ navigation }) {
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
   const [uploading, setUploading] = useState({});
-  const [viewImage, setViewImage] = useState(null);   // { url } for modal
+  const [viewImage, setViewImage] = useState(null);
 
-  // ── Profile creation form fields ──────────────────────────────────────────
   const [licenseNumber, setLicenseNumber] = useState('');
   const [vehicleType,   setVehicleType]   = useState('CAR');
   const [vehicleMake,   setVehicleMake]   = useState('');
@@ -44,7 +38,6 @@ export default function DriverDocumentsScreen({ navigation }) {
   const [vehicleColor,  setVehicleColor]  = useState('');
   const [vehiclePlate,  setVehiclePlate]  = useState('');
 
-  // ── Load profile on mount ─────────────────────────────────────────────────
   const fetchProfile = async () => {
     try {
       const res  = await driverAPI.getProfile();
@@ -66,7 +59,6 @@ export default function DriverDocumentsScreen({ navigation }) {
 
   useEffect(() => { fetchProfile(); }, []);
 
-  // ── Create profile with real user-entered data ────────────────────────────
   const handleCreateProfile = async () => {
     if (!licenseNumber.trim()) return Alert.alert('Missing Field', 'Please enter your driver license number.');
     if (!vehicleMake.trim() || !vehicleModel.trim()) return Alert.alert('Missing Field', 'Please enter your vehicle make and model.');
@@ -99,7 +91,6 @@ export default function DriverDocumentsScreen({ navigation }) {
     }
   };
 
-  // ── Pick image and upload to Cloudinary, then save URL to profile ─────────
   const pickAndUpload = async (slot) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -120,7 +111,6 @@ export default function DriverDocumentsScreen({ navigation }) {
 
       let url = null;
 
-      // multipart upload
       try {
         let uploadRes;
         if      (slot.uploadKey === 'license')       uploadRes = await uploadAPI.uploadDriverLicense(asset);
@@ -161,9 +151,7 @@ export default function DriverDocumentsScreen({ navigation }) {
     }
   };
 
-  // ── Download document (cross-platform) ────────────────────────────────────
   const handleDownload = async (url) => {
-    // Web: just open the image in a new tab
     if (Platform.OS === 'web') {
       try {
         window.open(url, '_blank');
@@ -173,7 +161,6 @@ export default function DriverDocumentsScreen({ navigation }) {
       return;
     }
 
-    // Native: save to camera roll
     try {
       const perm = await MediaLibrary.requestPermissionsAsync(false);
       if (!perm.granted) {
@@ -193,7 +180,6 @@ export default function DriverDocumentsScreen({ navigation }) {
     }
   };
 
-  // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={[sx.centered, { backgroundColor: theme.background }]}>
@@ -202,17 +188,18 @@ export default function DriverDocumentsScreen({ navigation }) {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // VIEW A — No profile yet
+  // ── VIEW A: No profile yet (create profile form) ─────────────────────────
   if (!profile) {
     return (
       <View style={[sx.root, { backgroundColor: theme.background }]}>
         <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={sx.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {/* Back button */}
             <TouchableOpacity style={sx.back} onPress={() => navigation.goBack()}>
               <Ionicons name="arrow-back" size={22} color={theme.foreground} />
             </TouchableOpacity>
+
             <View style={[sx.infoBanner, { backgroundColor: theme.backgroundAlt ?? '#F8FAFC', borderColor: theme.border ?? '#E2E8F0' }]}>
               <Ionicons name="information-circle-outline" size={20} color={theme.accent} />
               <View style={{ flex: 1 }}>
@@ -220,8 +207,10 @@ export default function DriverDocumentsScreen({ navigation }) {
                 <Text style={[sx.infoSub, { color: theme.hint }]}>Enter your vehicle details to submit your driver application. Documents can be added after.</Text>
               </View>
             </View>
+
             <Text style={[sx.sectionLabel, { color: theme.hint }]}>LICENSE INFO</Text>
             <InputField placeholder="License Number (e.g. ABC123456)" value={licenseNumber} onChangeText={setLicenseNumber} autoCapitalize="characters" theme={theme} />
+
             <Text style={[sx.sectionLabel, { color: theme.hint }]}>VEHICLE TYPE</Text>
             <View style={sx.chipRow}>
               {VEHICLE_TYPES.map(vt => {
@@ -233,6 +222,7 @@ export default function DriverDocumentsScreen({ navigation }) {
                 );
               })}
             </View>
+
             <Text style={[sx.sectionLabel, { color: theme.hint }]}>VEHICLE DETAILS</Text>
             <View style={sx.row}>
               <View style={{ flex: 1 }}><InputField placeholder="Make (Toyota)" value={vehicleMake} onChangeText={setVehicleMake} autoCapitalize="words" theme={theme} /></View>
@@ -243,6 +233,7 @@ export default function DriverDocumentsScreen({ navigation }) {
               <View style={{ flex: 1 }}><InputField placeholder="Colour (Black)" value={vehicleColor} onChangeText={setVehicleColor} autoCapitalize="words" theme={theme} /></View>
             </View>
             <InputField placeholder="Plate Number (e.g. ABC123XY)" value={vehiclePlate} onChangeText={setVehiclePlate} autoCapitalize="characters" theme={theme} />
+
             <TouchableOpacity style={[sx.primaryBtn, saving && sx.btnDim, { backgroundColor: theme.accent ?? '#10B981' }]} onPress={handleCreateProfile} disabled={saving} activeOpacity={0.85}>
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={sx.primaryBtnTxt}>Submit Application →</Text>}
             </TouchableOpacity>
@@ -252,9 +243,7 @@ export default function DriverDocumentsScreen({ navigation }) {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // VIEW B — Profile exists: document upload + view / download
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── VIEW B: Profile exists, document upload / view / download ────────────
   const isApproved = profile?.isApproved ?? false;
   const isRejected = profile?.isRejected ?? false;
 
@@ -262,6 +251,7 @@ export default function DriverDocumentsScreen({ navigation }) {
     <View style={[sx.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} />
       <ScrollView contentContainerStyle={sx.scroll} showsVerticalScrollIndicator={false}>
+        {/* Back button */}
         <TouchableOpacity style={sx.back} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={22} color={theme.foreground} />
         </TouchableOpacity>
@@ -296,7 +286,7 @@ export default function DriverDocumentsScreen({ navigation }) {
           </View>
         )}
 
-        {/* Vehicle summary */}
+        {/* Vehicle summary card */}
         <View style={[sx.vehicleCard, { backgroundColor: theme.backgroundAlt ?? '#F8FAFC', borderColor: theme.border ?? '#E2E8F0' }]}>
           <Ionicons name="car-outline" size={20} color={theme.accent} style={{ marginBottom: 8 }} />
           <Text style={[sx.vehicleTitle, { color: theme.foreground }]}>{profile.vehicleColor} {profile.vehicleMake} {profile.vehicleModel} ({profile.vehicleYear})</Text>
@@ -320,11 +310,9 @@ export default function DriverDocumentsScreen({ navigation }) {
                 {currentUrl ? <Ionicons name="checkmark-circle" size={20} color="#10B981" /> : <Ionicons name="ellipse-outline" size={20} color={theme.hint} />}
               </View>
 
-              {/* Preview or placeholder */}
               {currentUrl ? (
                 <>
                   <Image source={{ uri: currentUrl }} style={sx.preview} resizeMode="cover" />
-                  {/* View & Download buttons */}
                   <View style={sx.actionsRow}>
                     <TouchableOpacity style={[sx.iconBtn, { backgroundColor: theme.accent + '15' }]} onPress={() => setViewImage({ url: currentUrl })}>
                       <Ionicons name="eye-outline" size={18} color={theme.accent} />
@@ -343,7 +331,6 @@ export default function DriverDocumentsScreen({ navigation }) {
                 </View>
               )}
 
-              {/* Upload button */}
               <TouchableOpacity
                 style={[sx.uploadBtn, { backgroundColor: theme.accent ?? '#10B981' }, isUploading && sx.btnDim]}
                 onPress={() => pickAndUpload(slot)}
@@ -368,7 +355,7 @@ export default function DriverDocumentsScreen({ navigation }) {
         </Text>
       </ScrollView>
 
-      {/* Full‑screen image viewer modal */}
+      {/* Full screen image viewer modal */}
       <Modal visible={!!viewImage} transparent={true} animationType="fade" onRequestClose={() => setViewImage(null)}>
         <View style={sx.modalBackdrop}>
           <TouchableOpacity style={sx.modalClose} onPress={() => setViewImage(null)}>

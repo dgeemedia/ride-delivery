@@ -110,6 +110,7 @@ export default function WalletTopUpScreen({ navigation }) {
       </View>
 
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -259,7 +260,7 @@ export default function WalletTopUpScreen({ navigation }) {
           )}
         </TouchableOpacity>
 
-        <View style={{ height: 32 }} />
+        <View style={{ height: 60 }} />
       </ScrollView>
     </SafeAreaView>
   );

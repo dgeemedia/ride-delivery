@@ -45,8 +45,6 @@ import LegalScreen from '../screens/Shared/LegalScreen';
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// ── Stack definitions ────────────────────────────────────────────────────────
-
 const HomeStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="Home"                component={HomeScreen}                />
@@ -68,6 +66,7 @@ const HomeStack = () => (
     <Stack.Screen name="SubmitTicket"        component={SubmitTicketScreen}        />
     <Stack.Screen name="MyTickets"           component={MyTicketsScreen}           />
     <Stack.Screen name="TicketDetail"        component={TicketDetailScreen}        />
+    <Stack.Screen name="Legal"               component={LegalScreen}               />
   </Stack.Navigator>
 );
 
@@ -80,6 +79,7 @@ const HistoryStack = () => (
     <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen} />
     <Stack.Screen name="MyTickets"    component={MyTicketsScreen}    />
     <Stack.Screen name="TicketDetail" component={TicketDetailScreen} />
+    <Stack.Screen name="Legal"        component={LegalScreen}        />
   </Stack.Navigator>
 );
 
@@ -96,6 +96,7 @@ const WalletStack = () => (
     <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen}/>
     <Stack.Screen name="MyTickets"    component={MyTicketsScreen}   />
     <Stack.Screen name="TicketDetail" component={TicketDetailScreen}/>
+    <Stack.Screen name="Legal"        component={LegalScreen}       />
   </Stack.Navigator>
 );
 
@@ -118,7 +119,6 @@ const ProfileStack = () => (
   </Stack.Navigator>
 );
 
-// ── Glass Tab Bar Background ─────────────────────────────────────────────────
 const GlassTabBar = ({ mode }) => {
   const darkMode = mode === 'dark';
   const style = {
@@ -139,7 +139,6 @@ const GlassTabBar = ({ mode }) => {
   return <View style={style} />;
 };
 
-// ── CUSTOMER NAVIGATOR ───────────────────────────────────────────────────────
 const CustomerNavigator = () => {
   const { theme, mode } = useTheme();
   const insets   = useSafeAreaInsets();
@@ -180,7 +179,7 @@ const CustomerNavigator = () => {
             marginTop: 2,
           },
           tabBarStyle: {
-            position: 'absolute',          // ← required for animation
+            position: 'absolute',
             backgroundColor: 'transparent',
             borderTopColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
             borderTopWidth: StyleSheet.hairlineWidth,

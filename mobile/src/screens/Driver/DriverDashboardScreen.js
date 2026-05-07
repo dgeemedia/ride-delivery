@@ -5,18 +5,19 @@ import {
   StatusBar, Dimensions, Animated,
   ActivityIndicator, Alert, Image,
 } from 'react-native';
-import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated'; 
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }                            from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets }     from 'react-native-safe-area-context';
 import * as Location                           from '../../shims/Location';
 import { useAuth }                             from '../../context/AuthContext';
 import { useTheme }                            from '../../context/ThemeContext';
-import { useScrollY }                          from '../../context/ScrollContext'; 
+import { useScrollY }                          from '../../context/ScrollContext';
 import { driverAPI, userAPI, walletAPI, rideAPI } from '../../services/api';
 import socketService                           from '../../services/socket';
 import ActiveRideBanner                        from '../../components/ActiveRideBanner';
 import MaintenanceBanner                       from '../../components/MaintenanceBanner';
 import { checkMaintenance }                    from '../../utils/maintenanceCheck';
+import AsyncStorage                            from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 const PURPLE = '#A78BFA';
@@ -204,7 +205,7 @@ const wb = StyleSheet.create({
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DriverDashboardScreen({ navigation }) {
-  const scrollY         = useScrollY();           // ← added
+  const scrollY         = useScrollY();
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
@@ -285,6 +286,33 @@ export default function DriverDashboardScreen({ navigation }) {
     return unsub;
   }, [navigation, fetchData]);
 
+  // ── Post‑registration doc upload pop-up (once) ──────────────────────────
+  useEffect(() => {
+    const showDocPrompt = async () => {
+      try {
+        const seen = await AsyncStorage.getItem('@driver_docs_prompt_seen');
+        if (seen === 'true') return;
+        if (!profile || profile.isApproved || profile.isRejected) return;
+        setTimeout(() => {
+          Alert.alert(
+            'Complete Your Profile',
+            'Upload your driver license, vehicle registration, and insurance documents to start accepting rides.',
+            [
+              { text: 'Later', style: 'cancel', onPress: () => AsyncStorage.setItem('@driver_docs_prompt_seen', 'true') },
+              { text: 'Upload Now', onPress: () => {
+                  AsyncStorage.setItem('@driver_docs_prompt_seen', 'true');
+                  navigation.navigate('DriverDocuments');
+                }
+              },
+            ],
+            { cancelable: false }
+          );
+        }, 600);
+      } catch {}
+    };
+    if (!loading && profile) showDocPrompt();
+  }, [loading, profile]);
+
   useEffect(() => {
     const handleReq  = (data) => navigation.navigate('IncomingRide', { request: data });
     const handleCanc = () => { try { navigation.goBack(); } catch {} };
@@ -309,14 +337,21 @@ export default function DriverDashboardScreen({ navigation }) {
       );
       return;
     }
-    if (!profile?.isApproved) {
-      Alert.alert('Pending Approval', 'Your account is under review. You will be notified when approved.');
-      return;
-    }
-    if (maintenance.isOn) {
+    if (maintenance.isOn && !isOnline) {
       const endsMsg = maintenance.endsAt
         ? `\n\nExpected back: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}` : '';
       Alert.alert('Platform Under Maintenance', 'You cannot go online until maintenance ends.' + endsMsg);
+      return;
+    }
+    if (!profile?.isApproved) {
+      Alert.alert(
+        'Pending Approval',
+        'Your account is under review. You will be notified when approved.',
+        [
+          { text: 'Later', style: 'cancel' },
+          { text: 'Upload Documents', onPress: () => navigation.navigate('DriverDocuments') },
+        ]
+      );
       return;
     }
 
@@ -346,16 +381,17 @@ export default function DriverDashboardScreen({ navigation }) {
   const goToTopUp    = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'WalletTopUp' });
   const goToWithdraw = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal' });
   const goToProfile  = () => navigation.getParent()?.navigate('ProfileTab');
+  const goToDocuments = () => navigation.navigate('DriverDocuments');
 
   const isApproved = profile?.isApproved ?? false;
   const isRejected = profile?.isRejected ?? false;
 
   const quickActions = [
-    { icon: 'wallet-outline',        label: 'Earnings',     onPress: goToEarnings                          },
-    { icon: 'time-outline',          label: 'Ride History', screen: 'DriverHistory'                        },
-    { icon: 'trending-up-outline',   label: 'Floor Price',  screen: 'FloorPrice', color: PURPLE           },
-    { icon: 'document-text-outline', label: 'Documents',    screen: 'DriverDocuments'                      },
-    { icon: 'help-circle-outline',   label: 'Support',      screen: 'Support'                              },
+    { icon: 'wallet-outline',        label: 'Earnings',     onPress: goToEarnings },
+    { icon: 'time-outline',          label: 'Ride History', onPress: () => navigation.getParent()?.navigate('EarningsTab', { screen: 'DriverHistory' }) },
+    { icon: 'trending-up-outline',   label: 'Floor Price',  color: PURPLE, onPress: () => navigation.navigate('FloorPrice') },
+    { icon: 'document-text-outline', label: 'Documents',    color: '#4E8DBD', onPress: goToDocuments },
+    { icon: 'help-circle-outline',   label: 'Support',      onPress: () => navigation.navigate('Support') },
   ];
 
   return (
@@ -373,7 +409,6 @@ export default function DriverDashboardScreen({ navigation }) {
         </View>
       )}
 
-      {/* ── Animated ScrollView that feeds scroll offset to the tab bar ─── */}
       <AnimatedRN.ScrollView
         contentContainerStyle={[s.scroll, { paddingTop, paddingBottom }]}
         showsVerticalScrollIndicator={false}
@@ -424,30 +459,42 @@ export default function DriverDashboardScreen({ navigation }) {
             </View>
           </View>
 
+          {/* Rejected banner (now clickable → documents) */}
           {isRejected && !loading && (
-            <View style={[s.approvalBanner, { backgroundColor: '#E0555510', borderColor: '#E05555' }]}>
-              <Ionicons name="close-circle-outline" size={18} color="#E05555" />
+            <TouchableOpacity
+              style={[s.approvalBanner, { backgroundColor: '#E0555510', borderColor: '#E05555' }]}
+              onPress={goToDocuments}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="cloud-upload-outline" size={18} color="#E05555" />
               <View style={{ flex: 1 }}>
-                <Text style={[s.approvalTitle, { color: '#E05555' }]}>Application Not Approved</Text>
+                <Text style={[s.approvalTitle, { color: '#E05555' }]}>Application Rejected</Text>
                 <Text style={[s.approvalSub, { color: theme.hint }]}>
                   {profile?.rejectionReason
                     ? `Reason: ${profile.rejectionReason}`
-                    : 'Your application was not approved. Please contact support to appeal or reapply.'}
+                    : 'Your application was not approved. Upload updated documents to re-submit.'}
                 </Text>
               </View>
-            </View>
+              <Ionicons name="chevron-forward" size={15} color="#E05555" />
+            </TouchableOpacity>
           )}
 
+          {/* Pending approval / Upload Documents banner (now clickable → documents) */}
           {!isApproved && !isRejected && !loading && (
-            <View style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Ionicons name="time-outline" size={18} color={theme.hint} />
+            <TouchableOpacity
+              style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+              onPress={goToDocuments}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="cloud-upload-outline" size={18} color={theme.hint} />
               <View style={{ flex: 1 }}>
-                <Text style={[s.approvalTitle, { color: theme.foreground }]}>Account Under Review</Text>
+                <Text style={[s.approvalTitle, { color: theme.foreground }]}>Upload Documents</Text>
                 <Text style={[s.approvalSub, { color: theme.hint }]}>
-                  Our team is reviewing your application. Upload your documents to speed up approval.
+                  Your account is under review. Upload your license, registration & insurance to get started.
                 </Text>
               </View>
-            </View>
+              <Ionicons name="chevron-forward" size={15} color={theme.hint} />
+            </TouchableOpacity>
           )}
 
           <OnlineToggle
@@ -466,7 +513,7 @@ export default function DriverDashboardScreen({ navigation }) {
             />
           )}
 
-          {isOnline && !activeRide && <WaitingBanner theme={theme} />}
+          {isOnline && !activeRide && !maintenance.isOn && <WaitingBanner theme={theme} />}
 
           {!loading && (
             <WalletStrip balance={walletBalance} todayEarnings={todayEarnings} onTopUp={goToTopUp} onWithdraw={goToWithdraw} theme={theme} />
@@ -482,10 +529,11 @@ export default function DriverDashboardScreen({ navigation }) {
             </View>
           )}
 
+          {/* Vehicle card (clickable → documents) */}
           {profile?.vehicleMake && (
             <TouchableOpacity
               style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-              onPress={() => navigation.navigate('DriverDocuments')}
+              onPress={goToDocuments}
               activeOpacity={0.8}
             >
               <View style={[s.vehicleIconWrap, { backgroundColor: theme.accent + '18' }]}>
@@ -501,6 +549,7 @@ export default function DriverDashboardScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
+          {/* Floor price card */}
           {floorPriceActive && !loading && (
             <TouchableOpacity
               style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border, marginBottom: 14 }]}
@@ -528,7 +577,7 @@ export default function DriverDashboardScreen({ navigation }) {
                 <TouchableOpacity
                   key={item.label}
                   style={[s.actionCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-                  onPress={item.onPress ?? (() => navigation.navigate(item.screen))}
+                  onPress={item.onPress}
                   activeOpacity={0.75}
                 >
                   <View style={[s.actionIcon, { backgroundColor: color + '18' }]}>
@@ -579,7 +628,7 @@ const s = StyleSheet.create({
   avatarImg:   { width: 44, height: 44, borderRadius: 22 },
   avatarTxt:   { fontSize: 14, fontWeight: '800' },
 
-  approvalBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 14 },
+  approvalBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 14 },
   approvalTitle:  { fontSize: 13, fontWeight: '800', marginBottom: 3 },
   approvalSub:    { fontSize: 11, lineHeight: 17 },
 

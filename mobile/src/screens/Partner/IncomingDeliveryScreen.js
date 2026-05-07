@@ -3,12 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar,
   Dimensions, Animated, ActivityIndicator, Alert, Vibration,
+  ScrollView,                          // ← standard RN ScrollView (scroll fix)
 } from 'react-native';
-import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
-import { useScrollY }        from '../../context/ScrollContext';
 import { deliveryAPI, walletAPI } from '../../services/api';
 
 const { height }     = Dimensions.get('window');
@@ -18,18 +17,23 @@ const GREEN          = '#5DAA72';
 const TIMEOUT_SECS   = 35;
 
 // ── Countdown ring ─────────────────────────────────────────────────────────────
-const CountdownRing = ({ seconds, total }) => {
+const CountdownRing = ({ seconds, total, expired }) => {
   const SIZE = 76, STROKE = 5;
+  const color = expired ? RED : COURIER_ACCENT;
   return (
     <View style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={[cr.track, { width: SIZE, height: SIZE, borderRadius: SIZE / 2, borderColor: COURIER_ACCENT + '25', borderWidth: STROKE }]} />
+      <View style={[cr.track, { width: SIZE, height: SIZE, borderRadius: SIZE / 2, borderColor: color + '25', borderWidth: STROKE }]} />
       <View style={[cr.arc, {
         width: SIZE, height: SIZE, borderRadius: SIZE / 2,
-        borderColor: COURIER_ACCENT, borderWidth: STROKE,
+        borderColor: color, borderWidth: STROKE,
         borderRightColor: 'transparent',
-        transform: [{ rotate: `${(1 - seconds / total) * 360}deg` }],
+        transform: [{ rotate: expired ? '360deg' : `${(1 - seconds / total) * 360}deg` }],
       }]} />
-      <Text style={[cr.txt, { color: COURIER_ACCENT }]}>{seconds}</Text>
+      {expired ? (
+        <Ionicons name="time-outline" size={20} color={RED} />
+      ) : (
+        <Text style={[cr.txt, { color }]}>{seconds}</Text>
+      )}
     </View>
   );
 };
@@ -125,6 +129,20 @@ const ws = StyleSheet.create({
   topupTxt: { fontSize: 12, fontWeight: '800', color: '#080C18' },
 });
 
+// ── Expired banner ─────────────────────────────────────────────────────────────
+const ExpiredBanner = () => (
+  <View style={[eb.wrap, { backgroundColor: RED + '12', borderColor: RED + '35' }]}>
+    <Ionicons name="time-outline" size={15} color={RED} />
+    <Text style={[eb.txt, { color: RED }]}>
+      Timer expired — delivery may still be available. Try accepting!
+    </Text>
+  </View>
+);
+const eb = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, padding: 10, marginBottom: 14 },
+  txt:  { flex: 1, fontSize: 12, fontWeight: '700', lineHeight: 17 },
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,15 +151,9 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
   const insets     = useSafeAreaInsets();
   const request    = route?.params?.request ?? {};
 
-  // ── Auto-hide footer nav ──────────────────────────────────────────────────
-  const scrollY      = useScrollY();
-  const scrollHandler = useAnimatedScrollHandler((event) => {
-    'worklet';
-    scrollY.value = event.contentOffset.y;
-  });
-
   const [accepting,      setAccepting]      = useState(false);
   const [countdown,      setCountdown]      = useState(TIMEOUT_SECS);
+  const [timedOut,       setTimedOut]       = useState(false);   // ← NEW: expired state
   const [walletBalance,  setWalletBalance]  = useState(null);
   const [loadingWallet,  setLoadingWallet]  = useState(true);
   const isActingRef = useRef(false);
@@ -164,7 +176,12 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
 
     const timer = setInterval(() => {
       setCountdown(prev => {
-        if (prev <= 1) { clearInterval(timer); doDecline(); return 0; }
+        if (prev <= 1) {
+          clearInterval(timer);
+          // ── FIX: don't auto-decline; just show expired state ──────────────
+          setTimedOut(true);
+          return 0;
+        }
         return prev - 1;
       });
     }, 1000);
@@ -210,8 +227,8 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
       isActingRef.current = false;
       setAccepting(false);
 
-      const status  = err?.response?.status;
-      const message = String(err?.response?.data?.message ?? 'This delivery may have been cancelled.');
+      const status  = err?.status;
+      const message = String(err?.message ?? 'This delivery may have been cancelled.');
 
       if (status === 402) {
         Alert.alert(
@@ -233,7 +250,6 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
   const feeStr  = estimatedFee.toLocaleString('en-NG', { maximumFractionDigits: 0 });
   const distStr = request.distance != null ? Number(request.distance).toFixed(1) : '—';
   const etaStr  = request.etaMinutes ?? (request.distance ? Math.ceil(request.distance / 0.4) : '—');
-
   const hasWeight = !!request.packageWeight && Number(request.packageWeight) > 0;
 
   return (
@@ -246,10 +262,8 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
         maxHeight: height * 0.88,
         transform: [{ translateY: slideA }],
       }]}>
-        {/* ── Full scrollable content ── */}
-        <AnimatedRN.ScrollView
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
+        {/* ── FIX: standard ScrollView — no reanimated conflict ── */}
+        <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 20 }]}
           bounces={false}
@@ -262,8 +276,11 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
               <Ionicons name="flash" size={12} color="#080C18" />
               <Text style={s.badgeTxt}>NEW DELIVERY</Text>
             </Animated.View>
-            <CountdownRing seconds={countdown} total={TIMEOUT_SECS} />
+            <CountdownRing seconds={countdown} total={TIMEOUT_SECS} expired={timedOut} />
           </View>
+
+          {/* Expired notice */}
+          {timedOut && <ExpiredBanner />}
 
           {/* Fee */}
           <Text style={[s.fee, { color: COURIER_ACCENT }]}>{`₦${feeStr}`}</Text>
@@ -349,13 +366,13 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
                 ) : (
                   <>
                     <Ionicons name="checkmark-circle" size={20} color="#080C18" />
-                    <Text style={s.acceptTxt}>Accept</Text>
+                    <Text style={s.acceptTxt}>{timedOut ? 'Try Accept' : 'Accept'}</Text>
                   </>
                 )}
               </TouchableOpacity>
             </Animated.View>
           </View>
-        </AnimatedRN.ScrollView>
+        </ScrollView>
       </Animated.View>
     </View>
   );

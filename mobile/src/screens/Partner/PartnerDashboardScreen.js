@@ -17,6 +17,7 @@ import MaintenanceBanner                   from '../../components/MaintenanceBan
 import { partnerAPI, userAPI, walletAPI, deliveryAPI } from '../../services/api';
 import socketService                       from '../../services/socket';
 import { checkMaintenance }                from '../../utils/maintenanceCheck';
+import AsyncStorage                        from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 const CA     = '#34D399';
@@ -300,6 +301,34 @@ export default function PartnerDashboardScreen({ navigation }) {
     return unsub;
   }, [navigation, fetchData]);
 
+  // ── Post‑registration doc upload pop-up (once) ──────────────────────────
+  useEffect(() => {
+    const showDocPrompt = async () => {
+      try {
+        const seen = await AsyncStorage.getItem('@partner_docs_prompt_seen');
+        if (seen === 'true') return;
+        if (!profile || profile.isApproved || profile.isRejected) return;
+        // Wait a moment so the UI is visible
+        setTimeout(() => {
+          Alert.alert(
+            'Complete Your Profile',
+            'Upload your ID and vehicle documents to start receiving deliveries. Approval is fast!',
+            [
+              { text: 'Later', style: 'cancel', onPress: () => AsyncStorage.setItem('@partner_docs_prompt_seen', 'true') },
+              { text: 'Upload Now', onPress: () => {
+                  AsyncStorage.setItem('@partner_docs_prompt_seen', 'true');
+                  navigation.navigate('PartnerDocuments');
+                }
+              },
+            ],
+            { cancelable: false }
+          );
+        }, 600);
+      } catch {}
+    };
+    if (!loading && profile) showDocPrompt();
+  }, [loading, profile]);
+
   useEffect(() => {
     const handleIncomingDelivery = (data) => navigation.navigate('IncomingDelivery', { request: data });
     const handleCancelled        = () => { try { navigation.goBack(); } catch {} };
@@ -350,7 +379,7 @@ export default function PartnerDashboardScreen({ navigation }) {
         'Your account is under review. You will be notified when approved.',
         [
           { text: 'Later', style: 'cancel' },
-          { text: 'Go to Profile', onPress: () => navigation.getParent()?.navigate('ProfileTab') },
+          { text: 'Upload Documents', onPress: () => navigation.navigate('PartnerDocuments') },
         ]
       );
       return;
@@ -383,7 +412,7 @@ export default function PartnerDashboardScreen({ navigation }) {
   const goToWithdraw = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal',     initial: false });
   const goToProfile  = () => navigation.getParent()?.navigate('ProfileTab');
   const goToHistory  = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'PartnerHistory', initial: false });
-  const goToDocuments = () => navigation.getParent()?.navigate('PartnerDocuments');
+  const goToDocuments = () => navigation.navigate('PartnerDocuments');
 
   const isApproved = profile?.isApproved ?? false;
   const isRejected = profile?.isRejected ?? false;
@@ -392,7 +421,7 @@ export default function PartnerDashboardScreen({ navigation }) {
     { icon: 'wallet-outline',        label: 'Earnings',         color: CA,          onPress: goToEarnings },
     { icon: 'list-outline',          label: 'Delivery History', color: '#5DAA72',   onPress: goToHistory  },
     { icon: 'trending-up-outline',   label: 'Floor Price',      color: PURPLE,      onPress: () => navigation.navigate('FloorPrice') },
-    { icon: 'document-text-outline', label: 'Documents',        color: '#4E8DBD',   onPress: () => navigation.navigate('PartnerDocuments') },
+    { icon: 'document-text-outline', label: 'Documents',        color: '#4E8DBD',   onPress: goToDocuments },
     { icon: 'help-circle-outline',   label: 'Support',          color: theme.hint,  onPress: () => navigation.navigate('Support') },
   ];
 
@@ -465,31 +494,36 @@ export default function PartnerDashboardScreen({ navigation }) {
 
           {/* Rejected banner */}
           {isRejected && !loading && (
-            <View style={[s.approvalBanner, { backgroundColor: '#E0555510', borderColor: '#E05555' }]}>
-              <Ionicons name="close-circle-outline" size={18} color="#E05555" />
+            <TouchableOpacity
+              style={[s.approvalBanner, { backgroundColor: '#E0555510', borderColor: '#E05555' }]}
+              onPress={goToDocuments}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="cloud-upload-outline" size={18} color="#E05555" />
               <View style={{ flex: 1 }}>
-                <Text style={[s.approvalTitle, { color: '#E05555' }]}>Application Not Approved</Text>
+                <Text style={[s.approvalTitle, { color: '#E05555' }]}>Application Rejected</Text>
                 <Text style={[s.approvalSub, { color: theme.hint }]}>
                   {profile?.rejectionReason
                     ? `Reason: ${profile.rejectionReason}`
-                    : 'Your application was not approved. Please contact support to appeal or reapply.'}
+                    : 'Your application was not approved. Upload updated documents to re-submit for review.'}
                 </Text>
               </View>
-            </View>
+              <Ionicons name="chevron-forward" size={15} color="#E05555" />
+            </TouchableOpacity>
           )}
 
-          {/* Pending approval banner */}
+          {/* Pending approval banner (now navigates directly to documents) */}
           {!isApproved && !isRejected && !loading && (
             <TouchableOpacity
               style={[s.approvalBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-              onPress={() => navigation.getParent()?.navigate('ProfileTab')}
+              onPress={goToDocuments}
               activeOpacity={0.85}
             >
-              <Ionicons name="time-outline" size={18} color={theme.hint} />
+              <Ionicons name="cloud-upload-outline" size={18} color={theme.hint} />
               <View style={{ flex: 1 }}>
-                <Text style={[s.approvalTitle, { color: theme.foreground }]}>Account Under Review</Text>
+                <Text style={[s.approvalTitle, { color: theme.foreground }]}>Upload Documents</Text>
                 <Text style={[s.approvalSub, { color: theme.hint }]}>
-                  Your documents are being reviewed. Approval takes 24–48 hours.
+                  Your account is under review. Upload your ID & vehicle photos to speed up approval.
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={15} color={theme.hint} />
@@ -543,7 +577,7 @@ export default function PartnerDashboardScreen({ navigation }) {
           {profile?.vehicleType && (
             <TouchableOpacity
               style={[s.vehicleCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-              onPress={() => navigation.getParent()?.navigate('ProfileTab')}
+              onPress={goToDocuments}
               activeOpacity={0.8}
             >
               <View style={[s.vehicleIconWrap, { backgroundColor: CA + '18' }]}>
@@ -649,7 +683,7 @@ const s = StyleSheet.create({
   avatarImg:   { width: 44, height: 44, borderRadius: 22 },
   avatarTxt:   { fontSize: 14, fontWeight: '800' },
 
-  approvalBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 14 },
+  approvalBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 14 },
   approvalTitle:  { fontSize: 13, fontWeight: '800', marginBottom: 3 },
   approvalSub:    { fontSize: 11, lineHeight: 17 },
 

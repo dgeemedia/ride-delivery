@@ -1,16 +1,16 @@
 // mobile/src/screens/Driver/EarningsScreen.js
-// FIXES applied:
-//   1. Removed WithdrawModal (which called driverAPI.requestPayout bypassing admin).
-//   2. All "Withdraw" buttons now navigate to the shared WithdrawalScreen which
-//      routes through walletAPI.withdraw() → admin approval queue.
+// FIX: Moved useAnimatedScrollHandler to the top level to avoid conditional hook call.
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity,
   ActivityIndicator, Animated, Dimensions, StatusBar,
 } from 'react-native';
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }    from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme }    from '../../context/ThemeContext';
+import { useScrollY }  from '../../context/ScrollContext';
 import { driverAPI, walletAPI } from '../../services/api';
 
 const { width } = Dimensions.get('window');
@@ -141,6 +141,7 @@ const tr = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function EarningsScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const scrollY         = useScrollY();
 
   const [period,        setPeriod]        = useState('week');
   const [earnings,      setEarnings]      = useState(null);
@@ -151,6 +152,13 @@ export default function EarningsScreen({ navigation }) {
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(18)).current;
+
+  // 🟢 Scroll handler defined unconditionally at top level
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
 
   const fetchAll = useCallback(async (p = period) => {
     setLoading(true);
@@ -197,7 +205,6 @@ export default function EarningsScreen({ navigation }) {
             <Text style={[s.eyebrow, { color: DA + '80' }]}>DRIVER EARNINGS</Text>
             <Text style={[s.title,   { color: theme.foreground }]}>My Wallet</Text>
           </View>
-          {/* FIX: both actions navigate to shared WithdrawalScreen (admin-gated) */}
           <View style={s.headerBtns}>
             <TouchableOpacity
               style={[s.headerActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
@@ -224,138 +231,141 @@ export default function EarningsScreen({ navigation }) {
           <ActivityIndicator color={DA} size="large" />
         </View>
       ) : (
-        <Animated.ScrollView
+        <AnimatedRN.ScrollView
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
-          style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}
+          onScroll={scrollHandler}   // ← using the pre-defined handler
+          scrollEventThrottle={16}
+          overScrollMode="never"
         >
-          {/* ── Stats ── */}
-          <StatStrip earnings={earnings} walletBalance={walletBalance} theme={theme} />
+          <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
+            {/* ── Stats ── */}
+            <StatStrip earnings={earnings} walletBalance={walletBalance} theme={theme} />
 
-          {/* ── Wallet actions row ── */}
-          <View style={s.walletActions}>
-            <TouchableOpacity
-              style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
-              onPress={() => navigation.navigate('WalletTopUp')}
-              activeOpacity={0.85}
-            >
-              <View style={[s.walletActionIcon, { backgroundColor: GREEN + '20' }]}>
-                <Ionicons name="add-circle-outline" size={20} color={GREEN} />
-              </View>
-              <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Top Up</Text>
-              <Text style={[s.walletActionSub, { color: theme.hint }]}>Add money</Text>
-            </TouchableOpacity>
+            {/* ── Wallet actions row ── */}
+            <View style={s.walletActions}>
+              <TouchableOpacity
+                style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
+                onPress={() => navigation.navigate('WalletTopUp')}
+                activeOpacity={0.85}
+              >
+                <View style={[s.walletActionIcon, { backgroundColor: GREEN + '20' }]}>
+                  <Ionicons name="add-circle-outline" size={20} color={GREEN} />
+                </View>
+                <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Top Up</Text>
+                <Text style={[s.walletActionSub, { color: theme.hint }]}>Add money</Text>
+              </TouchableOpacity>
 
-            {/* FIX: navigates to WithdrawalScreen instead of opening inline modal */}
-            <TouchableOpacity
-              style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
-              onPress={() => navigation.navigate('Withdrawal')}
-              activeOpacity={0.85}
-            >
-              <View style={[s.walletActionIcon, { backgroundColor: DA + '20' }]}>
-                <Ionicons name="arrow-up-circle-outline" size={20} color={DA} />
-              </View>
-              <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Withdraw</Text>
-              <Text style={[s.walletActionSub, { color: theme.hint }]}>To bank</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
+                onPress={() => navigation.navigate('Withdrawal')}
+                activeOpacity={0.85}
+              >
+                <View style={[s.walletActionIcon, { backgroundColor: DA + '20' }]}>
+                  <Ionicons name="arrow-up-circle-outline" size={20} color={DA} />
+                </View>
+                <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Withdraw</Text>
+                <Text style={[s.walletActionSub, { color: theme.hint }]}>To bank</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
-              onPress={() => navigation.navigate('DriverHistory')}
-              activeOpacity={0.85}
-            >
-              <View style={[s.walletActionIcon, { backgroundColor: PURPLE + '20' }]}>
-                <Ionicons name="time-outline" size={20} color={PURPLE} />
-              </View>
-              <Text style={[s.walletActionLbl, { color: theme.foreground }]}>History</Text>
-              <Text style={[s.walletActionSub, { color: theme.hint }]}>All rides</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
+                onPress={() => navigation.navigate('DriverHistory')}
+                activeOpacity={0.85}
+              >
+                <View style={[s.walletActionIcon, { backgroundColor: PURPLE + '20' }]}>
+                  <Ionicons name="time-outline" size={20} color={PURPLE} />
+                </View>
+                <Text style={[s.walletActionLbl, { color: theme.foreground }]}>History</Text>
+                <Text style={[s.walletActionSub, { color: theme.hint }]}>All rides</Text>
+              </TouchableOpacity>
+            </View>
 
-          {/* ── Breakdown card ── */}
-          <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <Text style={[s.sectionEyebrow, { color: theme.hint }]}>EARNINGS BREAKDOWN</Text>
-            {[
-              ['Gross Earnings',     earnings?.totalEarnings,  DA],
-              ['Platform Fee (20%)', earnings?.platformFee,    RED],
-              ['Net Earnings',       earnings?.netEarnings,    GREEN],
-              ['Avg per Ride',       earnings?.averagePerRide, theme.foreground],
-            ].map(([lbl, val, col]) => (
-              <View key={lbl} style={[s.breakRow, { borderBottomColor: theme.border }]}>
-                <Text style={[s.breakLbl, { color: theme.hint }]}>{lbl}</Text>
-                <Text style={[s.breakVal, { color: col }]}>
-                  ₦{Number(val ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
-                </Text>
-              </View>
-            ))}
-          </View>
+            {/* ── Breakdown card ── */}
+            <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <Text style={[s.sectionEyebrow, { color: theme.hint }]}>EARNINGS BREAKDOWN</Text>
+              {[
+                ['Gross Earnings',     earnings?.totalEarnings,  DA],
+                ['Platform Fee (20%)', earnings?.platformFee,    RED],
+                ['Net Earnings',       earnings?.netEarnings,    GREEN],
+                ['Avg per Ride',       earnings?.averagePerRide, theme.foreground],
+              ].map(([lbl, val, col]) => (
+                <View key={lbl} style={[s.breakRow, { borderBottomColor: theme.border }]}>
+                  <Text style={[s.breakLbl, { color: theme.hint }]}>{lbl}</Text>
+                  <Text style={[s.breakVal, { color: col }]}>
+                    ₦{Number(val ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                  </Text>
+                </View>
+              ))}
+            </View>
 
-          {/* ── Period filter ── */}
-          <View style={s.periodRow}>
-            {PERIODS.map(p => {
-              const active = period === p.key;
-              return (
+            {/* ── Period filter ── */}
+            <View style={s.periodRow}>
+              {PERIODS.map(p => {
+                const active = period === p.key;
+                return (
+                  <TouchableOpacity
+                    key={p.key}
+                    style={[
+                      s.periodBtn,
+                      active
+                        ? { backgroundColor: DA }
+                        : { backgroundColor: theme.backgroundAlt, borderColor: theme.border },
+                    ]}
+                    onPress={() => setPeriod(p.key)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[s.periodTxt, { color: active ? '#080C18' : theme.hint }]}>{p.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* ── Tab switcher ── */}
+            <View style={[s.tabRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              {[['rides', 'Ride History'], ['transactions', 'Wallet Txns']].map(([key, lbl]) => (
                 <TouchableOpacity
-                  key={p.key}
+                  key={key}
                   style={[
-                    s.periodBtn,
-                    active
-                      ? { backgroundColor: DA }
-                      : { backgroundColor: theme.backgroundAlt, borderColor: theme.border },
+                    s.tabBtn,
+                    activeTab === key && { backgroundColor: DA + '20', borderBottomColor: DA, borderBottomWidth: 2 },
                   ]}
-                  onPress={() => setPeriod(p.key)}
+                  onPress={() => setActiveTab(key)}
                   activeOpacity={0.8}
                 >
-                  <Text style={[s.periodTxt, { color: active ? '#080C18' : theme.hint }]}>{p.label}</Text>
+                  <Text style={[s.tabTxt, { color: activeTab === key ? DA : theme.hint }]}>{lbl}</Text>
                 </TouchableOpacity>
-              );
-            })}
-          </View>
+              ))}
+            </View>
 
-          {/* ── Tab switcher ── */}
-          <View style={[s.tabRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            {[['rides', 'Ride History'], ['transactions', 'Wallet Txns']].map(([key, lbl]) => (
-              <TouchableOpacity
-                key={key}
-                style={[
-                  s.tabBtn,
-                  activeTab === key && { backgroundColor: DA + '20', borderBottomColor: DA, borderBottomWidth: 2 },
-                ]}
-                onPress={() => setActiveTab(key)}
-                activeOpacity={0.8}
-              >
-                <Text style={[s.tabTxt, { color: activeTab === key ? DA : theme.hint }]}>{lbl}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ── Content list ── */}
-          <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            {activeTab === 'rides' ? (
-              rides.length === 0 ? (
-                <View style={s.empty}>
-                  <Ionicons name="car-outline" size={32} color={theme.hint} />
-                  <Text style={[s.emptyTxt, { color: theme.hint }]}>No rides for this period</Text>
-                </View>
+            {/* ── Content list ── */}
+            <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              {activeTab === 'rides' ? (
+                rides.length === 0 ? (
+                  <View style={s.empty}>
+                    <Ionicons name="car-outline" size={32} color={theme.hint} />
+                    <Text style={[s.emptyTxt, { color: theme.hint }]}>No rides for this period</Text>
+                  </View>
+                ) : (
+                  rides.map((item, i) => (
+                    <EarningRow key={item.id ?? i} item={item} theme={theme} last={i === rides.length - 1} />
+                  ))
+                )
               ) : (
-                rides.map((item, i) => (
-                  <EarningRow key={item.id ?? i} item={item} theme={theme} last={i === rides.length - 1} />
-                ))
-              )
-            ) : (
-              transactions.length === 0 ? (
-                <View style={s.empty}>
-                  <Ionicons name="wallet-outline" size={32} color={theme.hint} />
-                  <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
-                </View>
-              ) : (
-                transactions.map((item, i) => (
-                  <TxRow key={item.id ?? i} item={item} theme={theme} last={i === transactions.length - 1} />
-                ))
-              )
-            )}
-          </View>
-        </Animated.ScrollView>
+                transactions.length === 0 ? (
+                  <View style={s.empty}>
+                    <Ionicons name="wallet-outline" size={32} color={theme.hint} />
+                    <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
+                  </View>
+                ) : (
+                  transactions.map((item, i) => (
+                    <TxRow key={item.id ?? i} item={item} theme={theme} last={i === transactions.length - 1} />
+                  ))
+                )
+              )}
+            </View>
+          </Animated.View>
+        </AnimatedRN.ScrollView>
       )}
     </View>
   );

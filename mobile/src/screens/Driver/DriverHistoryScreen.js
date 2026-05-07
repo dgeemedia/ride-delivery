@@ -1,18 +1,20 @@
 // mobile/src/screens/Driver/DriverHistoryScreen.js
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList,
+  View, Text, StyleSheet, TouchableOpacity,
   StatusBar, Animated, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { Ionicons }        from '@expo/vector-icons';
-import { SafeAreaView }    from 'react-native-safe-area-context';
-import { useTheme }        from '../../context/ThemeContext';
-import { rideAPI }         from '../../services/api';
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
+import { Ionicons }    from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme }    from '../../context/ThemeContext';
+import { useScrollY }  from '../../context/ScrollContext';
+import { rideAPI }     from '../../services/api';
 
-const DA    = '#FFB800';
-const GREEN = '#5DAA72';
-const RED   = '#E05555';
-const PURPLE= '#A78BFA';
+const DA     = '#FFB800';
+const GREEN  = '#5DAA72';
+const RED    = '#E05555';
+const PURPLE = '#A78BFA';
 
 const STATUS_CFG = {
   COMPLETED: { color: GREEN,  icon: 'checkmark-circle-outline', label: 'Completed' },
@@ -141,6 +143,7 @@ const rc = StyleSheet.create({
 
 export default function DriverHistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const scrollY         = useScrollY();
 
   const [rides,      setRides]      = useState([]);
   const [page,       setPage]       = useState(1);
@@ -194,7 +197,6 @@ export default function DriverHistoryScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Summary strip */}
         {!loading && (
           <View style={[s.summaryStrip, { backgroundColor: theme.backgroundAlt, borderBottomColor: theme.border }]}>
             <View style={s.sumItem}>
@@ -221,12 +223,18 @@ export default function DriverHistoryScreen({ navigation }) {
         <View style={s.center}><ActivityIndicator color={DA} size="large" /></View>
       ) : (
         <Animated.View style={[{ flex: 1 }, { opacity: fadeA }]}>
-          <FlatList
+          <AnimatedRN.FlatList
             data={rides}
             keyExtractor={item => item.id}
             renderItem={({ item }) => <RideCard item={item} theme={theme} />}
             contentContainerStyle={s.list}
             showsVerticalScrollIndicator={false}
+            onScroll={useAnimatedScrollHandler({
+              onScroll: (event) => {
+                scrollY.value = event.contentOffset.y;
+              },
+            })}
+            scrollEventThrottle={16}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor={DA} />}
             onEndReached={() => { if (!loadingMore && page <= totalPages) { setLoadingMore(true); load().finally(() => setLoadingMore(false)); } }}
             onEndReachedThreshold={0.4}

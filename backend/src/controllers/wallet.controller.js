@@ -166,9 +166,9 @@ exports.initializeTopUp = async (req, res) => {
 
   const reference = `TOPUP-${req.user.id.slice(0, 8)}-${Date.now()}`;
 
-  const paystackRes = await paymentService.paystackInitializePayment({
+  const paystackRes = await paymentService.paystackInitialize({
     email:       req.user.email,
-    amount:      amount * 100,
+    amount:      amount * 100,     // kobo
     reference,
     metadata:    { userId: req.user.id, type: 'wallet_topup', amount },
     callbackUrl: `${process.env.API_BASE_URL}/api/wallet/topup/verify`,
@@ -191,9 +191,9 @@ exports.initializeTopUp = async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      authorizationUrl: paystackRes.data.authorization_url,
+      authorizationUrl: paystackRes.authorization_url,
       reference,
-      accessCode:       paystackRes.data.access_code,
+      accessCode:       paystackRes.access_code,
       limits: { min: minDeposit, max: maxDeposit },
     },
   });

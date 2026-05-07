@@ -1,30 +1,16 @@
 // mobile/src/screens/Partner/PartnerEarningsScreen.js
-//
-// FIX applied:
-//   DeliveryRow was reading  d.payment?.driverEarnings  for the partner's net
-//   earnings. The fixed partner.controller.js now returns the field as
-//   `partnerEarnings` (mapped from payment.driverEarnings at the API layer)
-//   and `grossFee` instead of `actualFee` / `estimatedFee`.
-//
-//   Updated DeliveryRow to read:
-//     gross  = delivery.grossFee   ?? delivery.actualFee ?? delivery.estimatedFee ?? 0
-//     net    = delivery.partnerEarnings ?? delivery.payment?.driverEarnings ?? 0
-//
-//   The double-fallback keeps backward compatibility if the old backend is
-//   still running during a rolling deploy.
-//
-//   Everything else (formatNGN, wallet calls, period filter, pagination) is
-//   unchanged — those were already correct.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity,
   StatusBar, Dimensions, Animated, ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }                    from '@expo/vector-icons';
 import { SafeAreaView }                from 'react-native-safe-area-context';
 import { useTheme }                    from '../../context/ThemeContext';
+import { useScrollY }                  from '../../context/ScrollContext';
 import { partnerAPI, walletAPI, deliveryAPI } from '../../services/api';
 
 const { width } = Dimensions.get('window');
@@ -138,17 +124,6 @@ const tr = StyleSheet.create({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DeliveryRow
-//
-// FIX: field names updated to match the fixed partner.controller.js response:
-//   gross = delivery.grossFee        (new field name from fixed controller)
-//           ?? delivery.actualFee    (old field name — backward compat)
-//           ?? delivery.estimatedFee (fallback)
-//   net   = delivery.partnerEarnings (new field name from fixed controller)
-//           ?? delivery.payment?.driverEarnings  (backward compat)
-//
-// The old code read delivery.payment?.driverEarnings directly on the delivery
-// object returned from /deliveries/history, which doesn't include the payment
-// relation. The fixed controller embeds partnerEarnings at the top level.
 // ─────────────────────────────────────────────────────────────────────────────
 const DeliveryRow = ({ delivery, theme }) => {
   const gross = Number(
@@ -208,6 +183,7 @@ const dr = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function PartnerEarningsScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const scrollY         = useScrollY();
 
   const [period,       setPeriod]       = useState('week');
   const [earnings,     setEarnings]     = useState(null);
@@ -224,6 +200,13 @@ export default function PartnerEarningsScreen({ navigation }) {
   const fadeA    = useRef(new Animated.Value(0)).current;
   const balanceA = useRef(new Animated.Value(0)).current;
 
+  // 🟢 Scroll handler defined unconditionally at top level
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
+
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -231,8 +214,6 @@ export default function PartnerEarningsScreen({ navigation }) {
         partnerAPI.getEarnings({ period }),
         walletAPI.getWallet(),
         walletAPI.getTransactions({ page: 1, limit: 20 }),
-        // Fetch from /deliveries/history — same source PartnerHistoryScreen uses.
-        // The earnings endpoint either omits deliveries or returns an empty array.
         deliveryAPI.getDeliveryHistory({ period, limit: 50 }),
       ]);
 
@@ -254,7 +235,6 @@ export default function PartnerEarningsScreen({ navigation }) {
         const all = deliveriesRes.value?.data?.deliveries ?? [];
         setDeliveries(filterByPeriod(all, period));
       } else {
-        // Fall back to whatever the earnings endpoint embedded (likely empty)
         const fallback = earningsRes.value?.data?.deliveries ?? [];
         setDeliveries(filterByPeriod(fallback, period));
       }
@@ -327,204 +307,208 @@ export default function PartnerEarningsScreen({ navigation }) {
           <ActivityIndicator color={COURIER_ACCENT} size="large" />
         </View>
       ) : (
-        <Animated.ScrollView
-          style={{ opacity: fadeA }}
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={COURIER_ACCENT}
-            />
-          }
-        >
-          {/* ── Wallet balance card ── */}
-          <View style={[s.balanceCard, { backgroundColor: COURIER_ACCENT }]}>
-            <View style={s.balanceCardInner}>
-              <Text style={s.balanceLabel}>WALLET BALANCE</Text>
-              <Text style={s.balanceAmount}>
-                ₦{walletBalance.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </Text>
-              <Text style={s.balanceSub}>Available for withdrawal</Text>
-            </View>
-            <View style={s.balanceActions}>
-              <TouchableOpacity
-                style={[s.balanceAction, { backgroundColor: 'rgba(0,0,0,0.15)' }]}
-                onPress={() => navigation.navigate('Withdrawal')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="arrow-up-outline" size={18} color="#fff" />
-                <Text style={s.balanceActionTxt}>Withdraw</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.balanceAction, { backgroundColor: 'rgba(0,0,0,0.15)' }]}
-                onPress={() => setActiveTab('transactions')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="list-outline" size={18} color="#fff" />
-                <Text style={s.balanceActionTxt}>History</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* ── Period filter ── */}
-          <View style={[s.periodRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            {PERIODS.map(p => (
-              <TouchableOpacity
-                key={p.key}
-                style={[s.periodBtn, period === p.key && { backgroundColor: COURIER_ACCENT }]}
-                onPress={() => setPeriod(p.key)}
-                activeOpacity={0.8}
-              >
-                <Text style={[s.periodTxt, { color: period === p.key ? '#080C18' : theme.hint }]}>
-                  {p.label}
+        // 🔧 FIX: Wrap scroll view in standard Animated.View to avoid native driver conflict
+        <Animated.View style={{ flex: 1, opacity: fadeA }}>
+          <AnimatedRN.ScrollView
+            contentContainerStyle={s.scroll}
+            showsVerticalScrollIndicator={false}
+            onScroll={scrollHandler}
+            scrollEventThrottle={16}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={COURIER_ACCENT}
+              />
+            }
+          >
+            {/* ── Wallet balance card ── */}
+            <View style={[s.balanceCard, { backgroundColor: COURIER_ACCENT }]}>
+              <View style={s.balanceCardInner}>
+                <Text style={s.balanceLabel}>WALLET BALANCE</Text>
+                <Text style={s.balanceAmount}>
+                  ₦{walletBalance.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                <Text style={s.balanceSub}>Available for withdrawal</Text>
+              </View>
+              <View style={s.balanceActions}>
+                <TouchableOpacity
+                  style={[s.balanceAction, { backgroundColor: 'rgba(0,0,0,0.15)' }]}
+                  onPress={() => navigation.navigate('Withdrawal')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="arrow-up-outline" size={18} color="#fff" />
+                  <Text style={s.balanceActionTxt}>Withdraw</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.balanceAction, { backgroundColor: 'rgba(0,0,0,0.15)' }]}
+                  onPress={() => setActiveTab('transactions')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="list-outline" size={18} color="#fff" />
+                  <Text style={s.balanceActionTxt}>History</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
-          {/* ── Summary tiles ── */}
-          <View style={s.tilesRow}>
-            <SummaryTile
-              label="Gross Earnings"
-              value={`₦${totalEarnings.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
-              icon="trending-up-outline"
-              color={COURIER_ACCENT}
-              theme={theme}
-            />
-            <SummaryTile
-              label="Net Earnings"
-              value={`₦${netEarnings.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
-              icon="wallet-outline"
-              color={GREEN}
-              theme={theme}
-            />
-          </View>
-          <View style={[s.tilesRow, { marginTop: 10 }]}>
-            <SummaryTile
-              label="Platform Fee"
-              value={`₦${platformFee.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
-              icon="pie-chart-outline"
-              color={PURPLE}
-              theme={theme}
-            />
-            <SummaryTile
-              label="Deliveries"
-              value={totalDeliveries}
-              icon="cube-outline"
-              color={GOLD}
-              theme={theme}
-            />
-          </View>
+            {/* ── Period filter ── */}
+            <View style={[s.periodRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              {PERIODS.map(p => (
+                <TouchableOpacity
+                  key={p.key}
+                  style={[s.periodBtn, period === p.key && { backgroundColor: COURIER_ACCENT }]}
+                  onPress={() => setPeriod(p.key)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.periodTxt, { color: period === p.key ? '#080C18' : theme.hint }]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-          {/* ── Avg per delivery ── */}
-          {totalDeliveries > 0 && (
-            <View style={[s.avgCard, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '30' }]}>
-              <Ionicons name="analytics-outline" size={16} color={COURIER_ACCENT} />
-              <Text style={[s.avgTxt, { color: theme.hint }]}>
-                Average per delivery:{' '}
-                <Text style={{ color: COURIER_ACCENT, fontWeight: '800' }}>
-                  ₦{avgPerDelivery.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+            {/* ── Summary tiles ── */}
+            <View style={s.tilesRow}>
+              <SummaryTile
+                label="Gross Earnings"
+                value={`₦${totalEarnings.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
+                icon="trending-up-outline"
+                color={COURIER_ACCENT}
+                theme={theme}
+              />
+              <SummaryTile
+                label="Net Earnings"
+                value={`₦${netEarnings.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
+                icon="wallet-outline"
+                color={GREEN}
+                theme={theme}
+              />
+            </View>
+            <View style={[s.tilesRow, { marginTop: 10 }]}>
+              <SummaryTile
+                label="Platform Fee"
+                value={`₦${platformFee.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
+                icon="pie-chart-outline"
+                color={PURPLE}
+                theme={theme}
+              />
+              <SummaryTile
+                label="Deliveries"
+                value={totalDeliveries}
+                icon="cube-outline"
+                color={GOLD}
+                theme={theme}
+              />
+            </View>
+
+            {/* ── Avg per delivery ── */}
+            {totalDeliveries > 0 && (
+              <View style={[s.avgCard, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '30' }]}>
+                <Ionicons name="analytics-outline" size={16} color={COURIER_ACCENT} />
+                <Text style={[s.avgTxt, { color: theme.hint }]}>
+                  Average per delivery:{' '}
+                  <Text style={{ color: COURIER_ACCENT, fontWeight: '800' }}>
+                    ₦{avgPerDelivery.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                  </Text>
                 </Text>
-              </Text>
-            </View>
-          )}
+              </View>
+            )}
 
-          {/* ── Platform breakdown note ── */}
-          <View style={[s.noteCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <View style={s.noteRow}>
-              <View style={[s.noteDot, { backgroundColor: COURIER_ACCENT }]} />
-              <Text style={[s.noteTxt, { color: theme.hint }]}>
-                Platform takes{' '}
-                <Text style={{ color: COURIER_ACCENT, fontWeight: '700' }}>15% commission</Text>{' '}
-                + booking fee per delivery
-              </Text>
-            </View>
-            <View style={s.noteRow}>
-              <View style={[s.noteDot, { backgroundColor: GREEN }]} />
-              <Text style={[s.noteTxt, { color: theme.hint }]}>
-                Net earnings = gross − 15% commission − booking fee
-              </Text>
-            </View>
-            <View style={s.noteRow}>
-              <View style={[s.noteDot, { backgroundColor: GOLD }]} />
-              <Text style={[s.noteTxt, { color: theme.hint }]}>
-                Minimum withdrawal:{' '}
-                <Text style={{ color: GOLD, fontWeight: '700' }}>₦500</Text>
-              </Text>
-            </View>
-          </View>
-
-          {/* ── Tab switcher ── */}
-          <View style={[s.tabRow, { borderBottomColor: theme.border }]}>
-            {[
-              { key: 'deliveries',   label: `Deliveries (${deliveries.length})`    },
-              { key: 'transactions', label: `Transactions (${transactions.length})` },
-            ].map(t => (
-              <TouchableOpacity
-                key={t.key}
-                style={[
-                  s.tabBtn,
-                  activeTab === t.key && { borderBottomColor: COURIER_ACCENT, borderBottomWidth: 2 },
-                ]}
-                onPress={() => setActiveTab(t.key)}
-              >
-                <Text style={[s.tabTxt, { color: activeTab === t.key ? COURIER_ACCENT : theme.hint }]}>
-                  {t.label}
+            {/* ── Platform breakdown note ── */}
+            <View style={[s.noteCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={s.noteRow}>
+                <View style={[s.noteDot, { backgroundColor: COURIER_ACCENT }]} />
+                <Text style={[s.noteTxt, { color: theme.hint }]}>
+                  Platform takes{' '}
+                  <Text style={{ color: COURIER_ACCENT, fontWeight: '700' }}>15% commission</Text>{' '}
+                  + booking fee per delivery
                 </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ── Deliveries list ── */}
-          {activeTab === 'deliveries' && (
-            <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              {deliveries.length > 0 ? (
-                deliveries.map((d, i) => (
-                  <DeliveryRow key={d.id ?? i} delivery={d} theme={theme} />
-                ))
-              ) : (
-                <View style={s.empty}>
-                  <Ionicons name="cube-outline" size={36} color={theme.hint} />
-                  <Text style={[s.emptyTxt, { color: theme.hint }]}>No deliveries for this period</Text>
-                </View>
-              )}
+              </View>
+              <View style={s.noteRow}>
+                <View style={[s.noteDot, { backgroundColor: GREEN }]} />
+                <Text style={[s.noteTxt, { color: theme.hint }]}>
+                  Net earnings = gross − 15% commission − booking fee
+                </Text>
+              </View>
+              <View style={s.noteRow}>
+                <View style={[s.noteDot, { backgroundColor: GOLD }]} />
+                <Text style={[s.noteTxt, { color: theme.hint }]}>
+                  Minimum withdrawal:{' '}
+                  <Text style={{ color: GOLD, fontWeight: '700' }}>₦500</Text>
+                </Text>
+              </View>
             </View>
-          )}
 
-          {/* ── Transactions list ── */}
-          {activeTab === 'transactions' && (
-            <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              {transactions.length > 0 ? (
-                <>
-                  {transactions.map((tx, i) => (
-                    <TxRow key={tx.id ?? i} tx={tx} theme={theme} />
-                  ))}
-                  {transactions.length < txTotal && (
-                    <TouchableOpacity
-                      style={[s.loadMore, { borderColor: COURIER_ACCENT + '40' }]}
-                      onPress={loadMoreTx}
-                      disabled={txLoading}
-                    >
-                      {txLoading
-                        ? <ActivityIndicator color={COURIER_ACCENT} size="small" />
-                        : <Text style={[s.loadMoreTxt, { color: COURIER_ACCENT }]}>Load more</Text>
-                      }
-                    </TouchableOpacity>
-                  )}
-                </>
-              ) : (
-                <View style={s.empty}>
-                  <Ionicons name="receipt-outline" size={36} color={theme.hint} />
-                  <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
-                </View>
-              )}
+            {/* ── Tab switcher ── */}
+            <View style={[s.tabRow, { borderBottomColor: theme.border }]}>
+              {[
+                { key: 'deliveries',   label: `Deliveries (${deliveries.length})`    },
+                { key: 'transactions', label: `Transactions (${transactions.length})` },
+              ].map(t => (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[
+                    s.tabBtn,
+                    activeTab === t.key && { borderBottomColor: COURIER_ACCENT, borderBottomWidth: 2 },
+                  ]}
+                  onPress={() => setActiveTab(t.key)}
+                >
+                  <Text style={[s.tabTxt, { color: activeTab === t.key ? COURIER_ACCENT : theme.hint }]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          )}
 
-          <View style={{ height: 40 }} />
-        </Animated.ScrollView>
+            {/* ── Deliveries list ── */}
+            {activeTab === 'deliveries' && (
+              <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                {deliveries.length > 0 ? (
+                  deliveries.map((d, i) => (
+                    <DeliveryRow key={d.id ?? i} delivery={d} theme={theme} />
+                  ))
+                ) : (
+                  <View style={s.empty}>
+                    <Ionicons name="cube-outline" size={36} color={theme.hint} />
+                    <Text style={[s.emptyTxt, { color: theme.hint }]}>No deliveries for this period</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* ── Transactions list ── */}
+            {activeTab === 'transactions' && (
+              <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                {transactions.length > 0 ? (
+                  <>
+                    {transactions.map((tx, i) => (
+                      <TxRow key={tx.id ?? i} tx={tx} theme={theme} />
+                    ))}
+                    {transactions.length < txTotal && (
+                      <TouchableOpacity
+                        style={[s.loadMore, { borderColor: COURIER_ACCENT + '40' }]}
+                        onPress={loadMoreTx}
+                        disabled={txLoading}
+                      >
+                        {txLoading
+                          ? <ActivityIndicator color={COURIER_ACCENT} size="small" />
+                          : <Text style={[s.loadMoreTxt, { color: COURIER_ACCENT }]}>Load more</Text>
+                        }
+                      </TouchableOpacity>
+                    )}
+                  </>
+                ) : (
+                  <View style={s.empty}>
+                    <Ionicons name="receipt-outline" size={36} color={theme.hint} />
+                    <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            <View style={{ height: 40 }} />
+          </AnimatedRN.ScrollView>
+        </Animated.View>
       )}
     </View>
   );
