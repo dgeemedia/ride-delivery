@@ -173,12 +173,50 @@ exports.getUserById = async (req, res) => {
 exports.suspendUser = async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
+ 
+  // Guard 1: cannot suspend yourself
+  if (id === req.user.id)
+    throw new AppError('You cannot suspend your own account.', 400);
+ 
+  const target = await prisma.user.findUnique({ where: { id } });
+  if (!target) throw new AppError('User not found.', 404);
+ 
+  // Guard 2: nobody can suspend a SUPER_ADMIN
+  if (target.role === 'SUPER_ADMIN')
+    throw new AppError('Super admin accounts cannot be suspended.', 403);
+ 
+  // Guard 3: only SUPER_ADMIN can suspend another ADMIN
+  if (target.role === 'ADMIN' && req.user.role !== 'SUPER_ADMIN')
+    throw new AppError('Only a Super Admin can suspend an Admin account.', 403);
+ 
   const user = await prisma.user.update({
     where: { id },
-    data: { isActive: false, isSuspended: true, suspendedAt: new Date(), suspendedBy: req.user.id, suspensionReason: reason || 'Suspended by admin' },
+    data: {
+      isActive:         false,
+      isSuspended:      true,
+      suspendedAt:      new Date(),
+      suspendedBy:      req.user.id,
+      suspensionReason: reason || 'Suspended by admin',
+    },
   });
-  await notificationService.notify({ userId: id, title: 'Account Suspended', message: `Your account has been suspended. Reason: ${reason || 'Policy violation'}. Contact support to appeal.`, type: notificationService.TYPES.ACCOUNT_SUSPENDED, data: { reason, suspendedBy: req.user.id } });
-  await logActivity({ userId: req.user.id, action: 'user_suspended', entityType: 'User', entityId: id, details: { reason }, req });
+ 
+  await notificationService.notify({
+    userId:  id,
+    title:   'Account Suspended',
+    message: `Your account has been suspended. Reason: ${reason || 'Policy violation'}. Contact support to appeal.`,
+    type:    notificationService.TYPES.ACCOUNT_SUSPENDED,
+    data:    { reason, suspendedBy: req.user.id },
+  });
+ 
+  await logActivity({
+    userId:     req.user.id,
+    action:     'user_suspended',
+    entityType: 'User',
+    entityId:   id,
+    details:    { reason },
+    req,
+  });
+ 
   res.status(200).json({ success: true, message: 'User suspended', data: { user } });
 };
 

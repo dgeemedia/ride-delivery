@@ -88,7 +88,7 @@ const Header: React.FC = () => {
               </div>
 
               <button
-                onClick={() => { navigate('/profile'); setShowDropdown(false); }}
+                onClick={() => { navigate(`/users/${user?.id}`); setShowDropdown(false); }}
                 className="flex items-center w-full gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 <User className="h-4 w-4 text-gray-400" />Profile
