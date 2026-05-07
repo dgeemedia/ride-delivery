@@ -78,6 +78,7 @@ router.get('/analytics/commission', authorize('ADMIN','SUPER_ADMIN'), adminContr
 
 // ANALYTICS
 router.get('/analytics/revenue',     authorize('ADMIN','SUPER_ADMIN'), adminController.getRevenueAnalytics);
+router.get('/analytics/performance',  authorize('ADMIN','SUPER_ADMIN'), adminController.getPerformanceAnalytics);
 router.get('/analytics/user-growth', authorize('ADMIN','SUPER_ADMIN'), adminController.getUserGrowth);
 
 // SETTINGS

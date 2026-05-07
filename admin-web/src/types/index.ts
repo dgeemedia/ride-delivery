@@ -188,13 +188,41 @@ export interface Rating {
 }
 
 export interface DashboardStats {
-  users:      { total: number; drivers: number; partners: number };
-  rides:      { total: number; active: number };
-  deliveries: { total: number; active: number };
-  revenue:    { today: number; month: number; currency: string };
-  wallet:     { totalBalance: number };
-  pending:    { drivers: number; partners: number };
-  support:    { openTickets: number };
+  users: {
+    total:    number;
+    drivers:  number;
+    partners: number;
+    newToday?: number;
+  };
+  rides: {
+    total:  number;
+    active: number;
+  };
+  deliveries: {
+    total:  number;
+    active: number;
+  };
+  revenue: {
+    today:         number;
+    yesterday?:    number;
+    month:         number;
+    currency:      string;
+    revenueDelta?: number | null;
+  };
+  wallet: {
+    totalBalance: number;
+  };
+  pending: {
+    drivers:  number;
+    partners: number;
+  };
+  support: {
+    openTickets: number;
+  };
+  deltas?: {
+    revenue: number | null;
+    users:   number | null;
+  };
 }
 
 export interface RevenueAnalytics {

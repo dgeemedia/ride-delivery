@@ -10,8 +10,23 @@ import { DashboardStats, RevenueAnalytics } from '@/types';
 import { formatCurrency } from '@/utils/helpers';
 import toast from 'react-hot-toast';
 
-// ─── Feature flags ─────────────────────────────────────────────────────────────
+// ─── Feature flags ──────────────────────────────────────────────────────────
 const ENABLE_SHIELD = import.meta.env.VITE_ENABLE_SHIELD === 'true';
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Formats a numeric delta as "+12.5%" / "-3.2%" / null → undefined (no badge shown).
+ * Returns both the formatted string and a CSS colour class.
+ */
+function formatDelta(delta: number | null | undefined): { label: string; positive: boolean } | null {
+  if (delta === null || delta === undefined) return null;
+  const positive = delta >= 0;
+  return {
+    label:    `${positive ? '+' : ''}${delta}% vs yesterday`,
+    positive,
+  };
+}
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -48,46 +63,63 @@ const Dashboard: React.FC = () => {
     </div>
   );
 
+  // ── Real sub-labels derived from live data ──────────────────────────────────
+  const revenueDelta = formatDelta(stats.revenue?.revenueDelta ?? stats.deltas?.revenue);
+  const userDelta    = formatDelta(stats.deltas?.users);
+
   const statCards = [
     {
-      title:   'Total Users',
-      value:   stats.users.total.toLocaleString(),
-      icon:    Users,
-      color:   'bg-primary-500',
-      change:  '+12%',
-      onClick: () => navigate('/users'),
+      title:    'Total Users',
+      value:    stats.users.total.toLocaleString(),
+      icon:     Users,
+      color:    'bg-primary-500',
+      // Show today's new signups if available; delta if we have a baseline
+      subLabel: stats.users.newToday !== undefined
+        ? userDelta
+          ? { label: userDelta.label, positive: userDelta.positive }
+          : { label: `+${stats.users.newToday} today`, positive: true }
+        : null,
+      onClick:  () => navigate('/users'),
     },
     {
-      title:   'Active Rides',
-      value:   stats.rides.active.toLocaleString(),
-      icon:    Car,
-      color:   'bg-success-500',
-      change:  '+5%',
-      onClick: () => navigate('/rides/live'),
+      title:    'Active Rides',
+      value:    stats.rides.active.toLocaleString(),
+      icon:     Car,
+      color:    'bg-success-500',
+      // "X total completed" is factual, not a guess
+      subLabel: stats.rides.total > 0
+        ? { label: `${stats.rides.total.toLocaleString()} completed total`, positive: true }
+        : null,
+      onClick:  () => navigate('/rides/live'),
     },
     {
-      title:   'Active Deliveries',
-      value:   stats.deliveries.active.toLocaleString(),
-      icon:    Package,
-      color:   'bg-warning-500',
-      change:  '+8%',
-      onClick: () => navigate('/deliveries'),
+      title:    'Active Deliveries',
+      value:    stats.deliveries.active.toLocaleString(),
+      icon:     Package,
+      color:    'bg-warning-500',
+      subLabel: stats.deliveries.total > 0
+        ? { label: `${stats.deliveries.total.toLocaleString()} delivered total`, positive: true }
+        : null,
+      onClick:  () => navigate('/deliveries'),
     },
     {
-      title:   "Today's Revenue",
-      value:   formatCurrency(stats.revenue.today),
-      icon:    DollarSign,
-      color:   'bg-error-500',
-      change:  '+15%',
-      onClick: undefined as (() => void) | undefined,
+      title:    "Today's Revenue",
+      value:    formatCurrency(stats.revenue.today),
+      icon:     DollarSign,
+      color:    'bg-error-500',
+      // Real delta vs yesterday, or nothing if no yesterday data
+      subLabel: revenueDelta,
+      onClick:  undefined as (() => void) | undefined,
     },
     ...(ENABLE_SHIELD ? [{
-      title:   'SHIELD Active',
-      value:   shieldActive,
-      icon:    Shield,
-      color:   'bg-green-500',
-      change:  'Live safety sessions',
-      onClick: () => navigate('/shield') as void,
+      title:    'SHIELD Active',
+      value:    shieldActive,
+      icon:     Shield,
+      color:    'bg-green-500',
+      subLabel: shieldActive > 0
+        ? { label: '🛡️ Sessions live now', positive: true }
+        : { label: 'No active sessions', positive: false },
+      onClick:  () => navigate('/shield') as void,
     }] : []),
   ];
 
@@ -114,15 +146,13 @@ const Dashboard: React.FC = () => {
               <div>
                 <p className="text-sm text-gray-600">{stat.title}</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
-                <p className={`text-sm mt-1 ${
-                  stat.title === 'SHIELD Active' && shieldActive > 0
-                    ? 'text-green-600 font-semibold'
-                    : 'text-success-600'
-                }`}>
-                  {stat.title === 'SHIELD Active' && shieldActive > 0
-                    ? '🛡️ Sessions live now'
-                    : stat.change}
-                </p>
+                {stat.subLabel && (
+                  <p className={`text-sm mt-1 ${
+                    stat.subLabel.positive ? 'text-success-600' : 'text-gray-400'
+                  }`}>
+                    {stat.subLabel.label}
+                  </p>
+                )}
               </div>
               <div className={`${stat.color} w-12 h-12 rounded-lg flex items-center justify-center`}>
                 <stat.icon className="h-6 w-6 text-white" />
@@ -136,7 +166,7 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <h3 className="text-lg font-semibold mb-4">Revenue Trend (Last 7 Days)</h3>
-          {revenue && (
+          {revenue && revenue.dailyRevenue.length > 0 ? (
             <LineChart
               data={revenue.dailyRevenue}
               xKey="date"
@@ -146,12 +176,16 @@ const Dashboard: React.FC = () => {
                 { key: 'deliveries', name: 'Deliveries',    color: '#FF9500' },
               ]}
             />
+          ) : (
+            <div className="flex items-center justify-center h-48 text-sm text-gray-400">
+              No revenue data for the last 7 days
+            </div>
           )}
         </Card>
 
         <Card>
           <h3 className="text-lg font-semibold mb-4">Service Comparison</h3>
-          {revenue && (
+          {revenue && revenue.dailyRevenue.length > 0 ? (
             <BarChart
               data={revenue.dailyRevenue.slice(-7)}
               xKey="date"
@@ -160,6 +194,10 @@ const Dashboard: React.FC = () => {
                 { key: 'deliveries', name: 'Deliveries', color: '#FF9500' },
               ]}
             />
+          ) : (
+            <div className="flex items-center justify-center h-48 text-sm text-gray-400">
+              No service data yet
+            </div>
           )}
         </Card>
       </div>

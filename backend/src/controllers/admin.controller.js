@@ -34,11 +34,16 @@ const logActivity = async ({ userId, action, entityType, entityId, details, req 
 // ─────────────────────────────────────────────
 
 exports.getDashboardStats = async (req, res) => {
+  const todayStart     = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+  const monthStart     = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+ 
   const [
     totalUsers, totalDrivers, totalPartners,
     totalRides, totalDeliveries, activeRides, activeDeliveries,
-    todayRevenue, monthRevenue, totalWalletBalance,
+    todayRevenue, yesterdayRevenue, monthRevenue, totalWalletBalance,
     pendingDrivers, pendingPartners, openTickets,
+    newUsersToday, newUsersYesterday,
   ] = await Promise.all([
     prisma.user.count({ where: { role: 'CUSTOMER' } }),
     prisma.user.count({ where: { role: 'DRIVER' } }),
@@ -47,30 +52,70 @@ exports.getDashboardStats = async (req, res) => {
     prisma.delivery.count({ where: { status: 'DELIVERED' } }),
     prisma.ride.count({ where: { status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } } }),
     prisma.delivery.count({ where: { status: { in: ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } } }),
+ 
+    // Today's revenue
     prisma.payment.aggregate({
-      where: { status: 'COMPLETED', createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
+      where: { status: 'COMPLETED', createdAt: { gte: todayStart } },
       _sum: { amount: true },
     }),
+    // Yesterday's revenue (for delta)
     prisma.payment.aggregate({
-      where: { status: 'COMPLETED', createdAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) } },
+      where: { status: 'COMPLETED', createdAt: { gte: yesterdayStart, lt: todayStart } },
       _sum: { amount: true },
     }),
+    // Month revenue
+    prisma.payment.aggregate({
+      where: { status: 'COMPLETED', createdAt: { gte: monthStart } },
+      _sum: { amount: true },
+    }),
+ 
     prisma.wallet.aggregate({ _sum: { balance: true } }),
-    prisma.driverProfile.count({ where: { isApproved: false } }),
-    prisma.deliveryPartnerProfile.count({ where: { isApproved: false } }),
+    prisma.driverProfile.count({ where: { isApproved: false, isRejected: false } }),
+    prisma.deliveryPartnerProfile.count({ where: { isApproved: false, isRejected: false } }),
     prisma.supportTicket.count({ where: { status: 'open' } }),
+ 
+    // New users today (for delta)
+    prisma.user.count({ where: { createdAt: { gte: todayStart } } }),
+    // New users yesterday (for delta)
+    prisma.user.count({ where: { createdAt: { gte: yesterdayStart, lt: todayStart } } }),
   ]);
-
+ 
+  // ── Revenue delta (today vs yesterday) ──────────────────────────────────────
+  const todayRev     = todayRevenue._sum.amount     ?? 0;
+  const yesterdayRev = yesterdayRevenue._sum.amount ?? 0;
+ 
+  let revenueDelta = null;
+  if (yesterdayRev > 0) {
+    revenueDelta = parseFloat((((todayRev - yesterdayRev) / yesterdayRev) * 100).toFixed(1));
+  } else if (todayRev > 0) {
+    revenueDelta = 100; // first revenue of the platform
+  }
+ 
+  // ── User delta (today vs yesterday signups) ──────────────────────────────────
+  let userDelta = null;
+  if (newUsersYesterday > 0) {
+    userDelta = parseFloat((((newUsersToday - newUsersYesterday) / newUsersYesterday) * 100).toFixed(1));
+  } else if (newUsersToday > 0) {
+    userDelta = 100;
+  }
+ 
   res.status(200).json({
     success: true,
     data: {
-      users:     { total: totalUsers, drivers: totalDrivers, partners: totalPartners },
-      rides:     { total: totalRides, active: activeRides },
-      deliveries:{ total: totalDeliveries, active: activeDeliveries },
-      revenue:   { today: todayRevenue._sum.amount || 0, month: monthRevenue._sum.amount || 0, currency: 'NGN' },
-      wallet:    { totalBalance: totalWalletBalance._sum.balance || 0 },
-      pending:   { drivers: pendingDrivers, partners: pendingPartners },
-      support:   { openTickets },
+      users:      { total: totalUsers, drivers: totalDrivers, partners: totalPartners, newToday: newUsersToday },
+      rides:      { total: totalRides, active: activeRides },
+      deliveries: { total: totalDeliveries, active: activeDeliveries },
+      revenue: {
+        today:         todayRev,
+        yesterday:     yesterdayRev,
+        month:         monthRevenue._sum.amount ?? 0,
+        currency:      'NGN',
+        revenueDelta,  // % change today vs yesterday, or null if no baseline
+      },
+      wallet:  { totalBalance: totalWalletBalance._sum.balance ?? 0 },
+      pending: { drivers: pendingDrivers, partners: pendingPartners },
+      support: { openTickets },
+      deltas:  { revenue: revenueDelta, users: userDelta }, // surfaced separately for convenience
     },
   });
 };
@@ -887,6 +932,156 @@ exports.getRevenueAnalytics = async (req, res) => {
   const byMethod = {};
   payments.forEach(p => { byMethod[p.method] = (byMethod[p.method] || 0) + p.amount; });
   res.status(200).json({ success: true, data: { totalRevenue, platformFee: totalRevenue * 0.20, netRevenue: totalRevenue * 0.80, transactionCount: payments.length, dailyRevenue: Object.values(revenueByDate), byMethod, period, currency: 'NGN' } });
+};
+
+exports.getPerformanceAnalytics = async (req, res) => {
+  const { period = 'week' } = req.query;
+ 
+  let startDate = new Date();
+  if (period === 'week')  startDate.setDate(startDate.getDate() - 7);
+  else if (period === 'month') startDate.setMonth(startDate.getMonth() - 1);
+  else if (period === 'year')  startDate.setFullYear(startDate.getFullYear() - 1);
+ 
+  const dateFilter = { gte: startDate };
+ 
+  const [
+    completedRides,
+    cancelledRides,
+    completedDeliveries,
+    cancelledDeliveries,
+    ridesWithDuration,
+    deliveriesWithDuration,
+    driverRatingAgg,
+    partnerRatingAgg,
+    dailyRides,
+    dailyDeliveries,
+  ] = await Promise.all([
+    prisma.ride.count({ where: { status: 'COMPLETED',  requestedAt: dateFilter } }),
+    prisma.ride.count({ where: { status: 'CANCELLED',  requestedAt: dateFilter } }),
+    prisma.delivery.count({ where: { status: 'DELIVERED', requestedAt: dateFilter } }),
+    prisma.delivery.count({ where: { status: 'CANCELLED', requestedAt: dateFilter } }),
+ 
+    // Average ride duration in minutes (completedAt - acceptedAt, both must exist)
+    prisma.ride.findMany({
+      where: {
+        status: 'COMPLETED',
+        requestedAt: dateFilter,
+        acceptedAt:  { not: null },
+        completedAt: { not: null },
+      },
+      select: { acceptedAt: true, completedAt: true },
+    }),
+ 
+    // Average delivery duration in minutes (deliveredAt - assignedAt, both must exist)
+    prisma.delivery.findMany({
+      where: {
+        status: 'DELIVERED',
+        requestedAt: dateFilter,
+        assignedAt:  { not: null },
+        deliveredAt: { not: null },
+      },
+      select: { assignedAt: true, deliveredAt: true },
+    }),
+ 
+    // Average driver rating (from Rating table, linked via rideId)
+    prisma.rating.aggregate({
+      where: { ride: { requestedAt: dateFilter }, driverRating: { not: null } },
+      _avg: { driverRating: true },
+    }).catch(() => ({ _avg: { driverRating: null } })),
+ 
+    // Average delivery partner rating
+    prisma.rating.aggregate({
+      where: { delivery: { requestedAt: dateFilter }, partnerRating: { not: null } },
+      _avg: { partnerRating: true },
+    }).catch(() => ({ _avg: { partnerRating: null } })),
+ 
+    // Daily breakdown for rides (last 7 days always shown)
+    prisma.ride.findMany({
+      where: { requestedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+      select: { status: true, requestedAt: true },
+    }),
+ 
+    prisma.delivery.findMany({
+      where: { requestedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+      select: { status: true, requestedAt: true },
+    }),
+  ]);
+ 
+  // ── Derived metrics ──────────────────────────────────────────────────────
+ 
+  const totalRides      = completedRides + cancelledRides;
+  const totalDeliveries = completedDeliveries + cancelledDeliveries;
+ 
+  const rideCompletionRate     = totalRides      > 0 ? (completedRides      / totalRides)      * 100 : 0;
+  const deliveryCompletionRate = totalDeliveries > 0 ? (completedDeliveries / totalDeliveries) * 100 : 0;
+  const overallCompletionRate  = (totalRides + totalDeliveries) > 0
+    ? ((completedRides + completedDeliveries) / (totalRides + totalDeliveries)) * 100
+    : 0;
+ 
+  const avgRideMinutes = ridesWithDuration.length > 0
+    ? ridesWithDuration.reduce((sum, r) => {
+        return sum + (new Date(r.completedAt).getTime() - new Date(r.acceptedAt).getTime());
+      }, 0) / ridesWithDuration.length / 60_000
+    : null;
+ 
+  const avgDeliveryMinutes = deliveriesWithDuration.length > 0
+    ? deliveriesWithDuration.reduce((sum, d) => {
+        return sum + (new Date(d.deliveredAt).getTime() - new Date(d.assignedAt).getTime());
+      }, 0) / deliveriesWithDuration.length / 60_000
+    : null;
+ 
+  // ── Weekly activity by day ───────────────────────────────────────────────
+ 
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayMap = {};
+  DAY_NAMES.forEach(d => { dayMap[d] = { day: d, rides: 0, deliveries: 0 }; });
+ 
+  dailyRides.forEach(r => {
+    const day = DAY_NAMES[new Date(r.requestedAt).getDay()];
+    dayMap[day].rides++;
+  });
+  dailyDeliveries.forEach(d => {
+    const day = DAY_NAMES[new Date(d.requestedAt).getDay()];
+    dayMap[day].deliveries++;
+  });
+ 
+  // Return in Mon→Sun order
+  const weeklyActivity = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    .map(d => dayMap[d]);
+ 
+  // ── Completion vs cancellation pie data ──────────────────────────────────
+ 
+  const completionData = [
+    { name: 'Completed', value: parseFloat(overallCompletionRate.toFixed(1)) },
+    { name: 'Cancelled', value: parseFloat((100 - overallCompletionRate).toFixed(1)) },
+  ];
+ 
+  res.status(200).json({
+    success: true,
+    data: {
+      period,
+      metrics: {
+        averageRideTime:      avgRideMinutes     !== null ? parseFloat(avgRideMinutes.toFixed(1))     : null,
+        averageDeliveryTime:  avgDeliveryMinutes !== null ? parseFloat(avgDeliveryMinutes.toFixed(1)) : null,
+        driverRating:         driverRatingAgg._avg.driverRating  !== null
+                                ? parseFloat((driverRatingAgg._avg.driverRating ?? 0).toFixed(1))  : null,
+        partnerRating:        partnerRatingAgg._avg.partnerRating !== null
+                                ? parseFloat((partnerRatingAgg._avg.partnerRating ?? 0).toFixed(1)) : null,
+        completionRate:       parseFloat(overallCompletionRate.toFixed(1)),
+        rideCompletionRate:   parseFloat(rideCompletionRate.toFixed(1)),
+        deliveryCompletionRate: parseFloat(deliveryCompletionRate.toFixed(1)),
+        cancellationRate:     parseFloat((100 - overallCompletionRate).toFixed(1)),
+        totalRides,
+        totalDeliveries,
+        completedRides,
+        completedDeliveries,
+        cancelledRides,
+        cancelledDeliveries,
+      },
+      weeklyActivity,
+      completionData,
+    },
+  });
 };
 
 exports.getUserGrowth = async (req, res) => {
