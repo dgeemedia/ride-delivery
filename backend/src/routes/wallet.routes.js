@@ -6,6 +6,13 @@ const { authenticate, authorize } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
+router.get('/debug-env', (req, res) => {
+  res.json({
+    hasKey: !!process.env.PAYSTACK_SECRET_KEY,
+    keyPreview: process.env.PAYSTACK_SECRET_KEY?.slice(0, 15) + '...',
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC — Paystack webhook (no auth)
 // ─────────────────────────────────────────────────────────────────────────────

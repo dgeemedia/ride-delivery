@@ -67,21 +67,17 @@ export default function WalletTopUpScreen({ navigation }) {
 
       if (!authUrl) throw new Error('No payment URL returned');
 
-      const canOpen = await Linking.canOpenURL(authUrl);
-      if (canOpen) {
         await Linking.openURL(authUrl);
         Alert.alert(
           'Payment Initiated 🚀',
           `Complete the payment of ₦${formatNGN(num)} in your browser. Your wallet will be credited automatically.`,
           [{ text: 'Done', onPress: () => navigation.goBack() }]
         );
-      } else {
-        throw new Error('Cannot open payment URL');
-      }
-    } catch (err) {
+      } catch (err) {
+      console.log('TopUp error:', JSON.stringify(err, null, 2));
       Alert.alert(
         'Top Up Failed',
-        err?.response?.data?.message ?? err?.message ?? 'Could not initialize payment. Try again.'
+        err?.message ?? err?.error ?? JSON.stringify(err) ?? 'Could not initialize payment. Try again.'
       );
     } finally {
       setLoading(false);

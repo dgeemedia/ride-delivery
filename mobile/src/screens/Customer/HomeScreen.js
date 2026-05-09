@@ -8,14 +8,14 @@ import {
   StatusBar, Dimensions, Animated, ActivityIndicator, Image,
   Alert, Platform, Modal, SafeAreaView, ScrollView,
 } from 'react-native';
-import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated'; // ← added
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { LinearGradient }    from 'expo-linear-gradient';
 import { BlurView }          from 'expo-blur';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth }           from '../../context/AuthContext';
 import { useTheme }          from '../../context/ThemeContext';
-import { useScrollY }        from '../../context/ScrollContext';            // ← added
+import { useScrollY }        from '../../context/ScrollContext';
 import { userAPI, rideAPI, deliveryAPI } from '../../services/api';
 import ActiveRideBanner      from '../../components/ActiveRideBanner';
 import ActiveDeliveryBanner  from '../../components/ActiveDeliveryBanner';
@@ -27,9 +27,9 @@ import { CommonActions } from '@react-navigation/native';
 const { width } = Dimensions.get('window');
 const H_PAD   = 20;
 const CARD_W  = width - H_PAD * 2;
-const TAB_CONTENT_H = 54;   // Consistent with navigators
+const TAB_CONTENT_H = 54;
 
-// ── Glass helpers (unchanged) ────────────────────────────────────────────────
+// ── Glass helpers ────────────────────────────────────────────────────────────
 const G = {
   card:    (mode) => mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.75)',
   cardMid: (mode) => mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.88)',
@@ -39,7 +39,7 @@ const G = {
   glow:    '#FFFFFF',
 };
 
-// ── Tips data (unchanged) ────────────────────────────────────────────────────
+// ── Tips data ────────────────────────────────────────────────────────────────
 const RIDE_TIPS = [
   { id:'r1', icon:'location-outline',      title:'Pin your pickup precisely',  body:"Drag the map pin to your exact door — saves your driver hunting time." },
   { id:'r3', icon:'star-outline',           title:'Rate every ride',           body:"Honest ratings help the best drivers rise to the top." },
@@ -54,16 +54,16 @@ const DELIVERY_TIPS = [
   { id:'d5', icon:'notifications-outline',  title:'Watch your delivery alerts', body:"You'll get push notifications at every status change." },
 ];
 
-// ── Service cards (unchanged) ────────────────────────────────────────────────
+// ── Service cards ────────────────────────────────────────────────────────────
 const buildServiceCards = (nav, maint, showAlert) => [
   {
     id:'ride', icon:'car-sport-outline', label:'RIDE', title:'Book a Ride',
-    subtitle:'Fast · Safe · Reliable', cta:'Book Now', filled:true,
+    subtitle:'Fast • Safe • Reliable', cta:'Book Now', filled:true,
     onPress:() => { if(maint.isOn){showAlert();return;} nav.navigate('RequestRide'); },
   },
   {
     id:'delivery', icon:'cube-outline', label:'DELIVERY', title:'Send a Package',
-    subtitle:'Door‑to‑door delivery', cta:'Book Now', filled:false,
+    subtitle:'Door to door delivery', cta:'Book Now', filled:false,
     onPress:() => { if(maint.isOn){showAlert();return;} nav.navigate('RequestDelivery'); },
   },
   {
@@ -73,13 +73,12 @@ const buildServiceCards = (nav, maint, showAlert) => [
   },
   {
     id:'wallet', icon:'wallet-outline', label:'WALLET', title:'Fund Your Wallet',
-    subtitle:'Quick & secure top‑up', cta:'Top Up', filled:false,
+    subtitle:'Quick & secure top up', cta:'Top Up', filled:false,
     onPress:() => nav.getParent()?.navigate('WalletTab'),
   },
 ];
 
-// ── Sub‑components (completely unchanged – ServiceCarousel, DrawerMenu, etc.) ─
-
+// ── ServiceCarousel ──────────────────────────────────────────────────────────
 const ServiceCarousel = ({ cards, theme, mode }) => {
   const scrollRef  = useRef(null);
   const currentIdx = useRef(0);
@@ -168,7 +167,6 @@ const ServiceCarousel = ({ cards, theme, mode }) => {
         })}
       </ScrollView>
 
-      {/* Dot indicators */}
       <View style={sc.dots}>
         {cards.map((_, i) => (
           <View
@@ -200,8 +198,7 @@ const sc = StyleSheet.create({
   dot:      { height:6, borderRadius:3 },
 });
 
-// ── DrawerMenu, WalletStrip, StatsRow, TipsSection, HistoryItem etc. ────────
-// (all unchanged – kept for completeness)
+// ── DrawerMenu ───────────────────────────────────────────────────────────────
 const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
   const { logout } = useAuth();
 
@@ -246,10 +243,18 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
             style: 'destructive',
             onPress: async () => {
               await logout();
-              navigation.dispatch(
+              // navigation = HomeStack navigator
+              // .getParent() = Tab navigator (CustomerNavigator)
+              // .getParent() = Root navigator (where Auth lives)
+              const rootNav = navigation.getParent()?.getParent();
+              const targetNav = rootNav ?? navigation;
+              targetNav.dispatch(
                 CommonActions.reset({
                   index: 0,
-                  routes: [{ name: 'Auth', params: { screen: 'Login' } }],
+                  routes: [{
+                    name: 'Auth',
+                    state: { routes: [{ name: 'Login' }] },
+                  }],
                 })
               );
             },
@@ -350,7 +355,7 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
           </TouchableOpacity>
 
           <View style={[dm.footer, { borderTopColor: G.border(mode) }]}>
-            <Text style={[dm.footerTxt, { color: theme.hint }]}>DrivAfrica · v1.0.0</Text>
+            <Text style={[dm.footerTxt, { color: theme.hint }]}>DrivAfrica • v1.0.0</Text>
           </View>
         </SafeAreaView>
       </Animated.View>
@@ -377,6 +382,7 @@ const dm = StyleSheet.create({
   footerTxt:  { fontSize:11, textAlign:'center' },
 });
 
+// ── WalletStrip ──────────────────────────────────────────────────────────────
 const WalletStrip = ({ balance, onTopUp, theme, mode }) => (
   <View style={[wl.wrap, { borderColor: G.borderHi(mode), overflow:'hidden' }]}>
     <LinearGradient
@@ -410,6 +416,7 @@ const wl = StyleSheet.create({
   btnTxt:  { fontSize:12, fontWeight:'800' },
 });
 
+// ── StatsRow ─────────────────────────────────────────────────────────────────
 const StatsRow = ({ stats, theme, mode }) => (
   <View style={[sr.wrap, { borderColor: G.border(mode), overflow:'hidden' }]}>
     <LinearGradient
@@ -441,6 +448,7 @@ const sr = StyleSheet.create({
   divider: { width:1, height:32 },
 });
 
+// ── TipsSection ──────────────────────────────────────────────────────────────
 const TipCard = ({ item, theme, mode }) => (
   <View style={tp.card}>
     <View style={[tp.iconWrap, { backgroundColor: G.icon(mode) }]}>
@@ -510,6 +518,7 @@ const tp = StyleSheet.create({
   showMoreTxt:  { fontSize:12, fontWeight:'700' },
 });
 
+// ── HistoryItem ──────────────────────────────────────────────────────────────
 const STATUS_META = {
   COMPLETED:   { label:'Done',      dot:'#5DAA72' },
   CANCELLED:   { label:'Cancelled', dot:'#E05555' },
@@ -549,6 +558,7 @@ const hi = StyleSheet.create({
   statusTxt: { fontSize:10, fontWeight:'600' },
 });
 
+// ── EmptyHistory ─────────────────────────────────────────────────────────────
 const EmptyHistory = ({ theme, mode, onBook }) => (
   <View style={eh.wrap}>
     <View style={[eh.iconWrap, { backgroundColor: G.icon(mode), borderColor: G.border(mode) }]}>
@@ -571,6 +581,7 @@ const eh = StyleSheet.create({
   btnTxt:  { fontSize:13, fontWeight:'800' },
 });
 
+// ── ChooseDriverBar ──────────────────────────────────────────────────────────
 const ChooseDriverBar = ({ theme, mode, onPress }) => (
   <TouchableOpacity
     style={[cd.bar, { borderColor: G.border(mode), overflow:'hidden' }]}
@@ -587,7 +598,7 @@ const ChooseDriverBar = ({ theme, mode, onPress }) => (
     </View>
     <View style={{ flex:1 }}>
       <Text style={[cd.title, { color: theme.foreground }]}>Choose Your Driver</Text>
-      <Text style={[cd.sub, { color: theme.hint }]}>Browse nearby · See ratings & fares</Text>
+      <Text style={[cd.sub, { color: theme.hint }]}>Browse nearby • See ratings & fares</Text>
     </View>
     <Ionicons name="chevron-forward" size={15} color={theme.hint} />
   </TouchableOpacity>
@@ -603,7 +614,7 @@ const cd = StyleSheet.create({
 // MAIN HOME SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
-  const scrollY         = useScrollY();            // ← added
+  const scrollY         = useScrollY();
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
@@ -732,7 +743,7 @@ export default function HomeScreen({ navigation }) {
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={darkMode ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
 
-      {/* Ambient glow orbs (unchanged) */}
+      {/* Ambient glow orbs */}
       <View style={[s.orb1, { backgroundColor: darkMode ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.03)' }]} />
       <View style={[s.orb2, { backgroundColor: darkMode ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.02)' }]} />
 
@@ -751,7 +762,6 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* ── Animated ScrollView that feeds scroll offset to the tab bar ─── */}
       <AnimatedRN.ScrollView
         contentContainerStyle={[s.scroll, { paddingTop, paddingBottom }]}
         showsVerticalScrollIndicator={false}
@@ -761,7 +771,7 @@ export default function HomeScreen({ navigation }) {
       >
         <Animated.View style={{ opacity: fadeA, transform:[{ translateY: slideA }] }}>
 
-          {/* HEADER (unchanged) */}
+          {/* HEADER */}
           <View style={s.header}>
             <TouchableOpacity
               style={[s.iconBtn, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}
@@ -804,17 +814,21 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* ACTIVE BANNERS (unchanged) */}
+          {/* ACTIVE BANNERS */}
           {activeRide && (
             <ActiveRideBanner
-              ride={activeRide} role="CUSTOMER" theme={theme}
+              ride={activeRide}
+              role="CUSTOMER"
+              theme={theme}
               onPress={() => navigation.navigate('RideTracking',{ rideId: activeRide.id })}
               onCancel={activeRide.status === 'REQUESTED' ? handleCancelRide : undefined}
             />
           )}
           {activeDelivery && (
             <ActiveDeliveryBanner
-              delivery={activeDelivery} role="CUSTOMER" theme={theme}
+              delivery={activeDelivery}
+              role="CUSTOMER"
+              theme={theme}
               onPress={() => navigation.navigate('DeliveryTracking',{ deliveryId: activeDelivery.id })}
               onCancel={activeDelivery.status === 'PENDING' ? handleCancelDelivery : undefined}
             />

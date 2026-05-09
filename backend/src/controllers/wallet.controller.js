@@ -168,7 +168,7 @@ exports.initializeTopUp = async (req, res) => {
 
   const paystackRes = await paymentService.paystackInitialize({
     email:       req.user.email,
-    amount:      amount * 100,     // kobo
+    amount,    
     reference,
     metadata:    { userId: req.user.id, type: 'wallet_topup', amount },
     callbackUrl: `${process.env.API_BASE_URL}/api/wallet/topup/verify`,

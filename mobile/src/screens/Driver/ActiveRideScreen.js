@@ -123,29 +123,44 @@ const rc = StyleSheet.create({
 
 // ── MAIN ───────────────────────────────────────────────────────────────────────
 export default function ActiveRideScreen({ route, navigation }) {
-  const { theme, mode } = useTheme();
-  const insets          = useSafeAreaInsets();
-
-  const rideId = route?.params?.rideId;
+  const { theme } = useTheme();
+  const insets    = useSafeAreaInsets();
+  const rideId    = route?.params?.rideId;
 
   const [ride,    setRide]    = useState(null);
   const [myLoc,   setMyLoc]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [acting,  setActing]  = useState(false);
 
-  const mapRef           = useRef(null);
+  const mapRef = useRef(null);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // KEY FIX: ONE Animated.Value, useNativeDriver: false throughout.
-  //
-  // The previous version used sheetEnterA (useNativeDriver: true, transform)
-  // AND sheetHeightAnim (useNativeDriver: false, height) on the SAME Animated.View,
-  // which React Native forbids. Now sheetHeightAnim starts at 0 and springs to
-  // SHEET_DEFAULT on mount — one value, one driver, no conflict.
+  // ONE Animated.Value, useNativeDriver: false throughout.
+  // sheetHeightAnim starts at 0 and springs to SHEET_DEFAULT on mount.
+  // No transform / native-driver animation touches this node — ever.
   // ─────────────────────────────────────────────────────────────────────────────
   const sheetHeightAnim  = useRef(new Animated.Value(0)).current;
   const currentHeightRef = useRef(0);
   const startHeightRef   = useRef(0);
+
+  // ── Memoized interpolation — created ONCE, never recreated on re-render ────
+  const statusPillBottom = useRef(
+    sheetHeightAnim.interpolate({
+      inputRange:  [0, SHEET_MIN, SHEET_MAX],
+      outputRange: [
+        TAB_BAR_HEIGHT + 12,
+        TAB_BAR_HEIGHT + SHEET_MIN + 12,
+        TAB_BAR_HEIGHT + SHEET_MAX + 12,
+      ],
+      extrapolate: 'clamp',
+    })
+  ).current;
+
+  // ── Navigation helper ─────────────────────────────────────────────────────
+  // ActiveRideScreen is nested inside DashboardStack (see DriverNavigator.js).
+  // popToTop() goes to the stack root (DriverDashboard) without needing to
+  // hard-code a screen name — immune to future renames.
+  const goToDashboard = useCallback(() => navigation.popToTop(), [navigation]);
 
   // ── PanResponder — draggable sheet ─────────────────────────────────────────
   const panResponder = useRef(
@@ -168,18 +183,11 @@ export default function ActiveRideScreen({ route, navigation }) {
         const mid1 = (SHEET_MIN + SHEET_DEFAULT) / 2;
         const mid2 = (SHEET_DEFAULT + SHEET_MAX) / 2;
         let target;
-        if (gs.vy < -0.5) {
-          target = h > SHEET_DEFAULT ? SHEET_MAX : SHEET_DEFAULT;
-        } else if (gs.vy > 0.5) {
-          target = h < SHEET_DEFAULT ? SHEET_MIN : SHEET_DEFAULT;
-        } else {
-          target = h < mid1 ? SHEET_MIN : h < mid2 ? SHEET_DEFAULT : SHEET_MAX;
-        }
+        if      (gs.vy < -0.5) target = h > SHEET_DEFAULT ? SHEET_MAX : SHEET_DEFAULT;
+        else if (gs.vy >  0.5) target = h < SHEET_DEFAULT ? SHEET_MIN : SHEET_DEFAULT;
+        else                   target = h < mid1 ? SHEET_MIN : h < mid2 ? SHEET_DEFAULT : SHEET_MAX;
         Animated.spring(sheetHeightAnim, {
-          toValue:         target,
-          useNativeDriver: false,
-          tension:         120,
-          friction:        14,
+          toValue: target, tension: 120, friction: 14, useNativeDriver: false,
         }).start(() => { currentHeightRef.current = target; });
       },
     })
@@ -188,10 +196,7 @@ export default function ActiveRideScreen({ route, navigation }) {
   // ── Load ride from API ──────────────────────────────────────────────────────
   const loadRide = useCallback(async () => {
     try {
-      let res;
-      if (rideId) {
-        res = await rideAPI.getActiveRide();
-      }
+      const res        = rideId ? await rideAPI.getActiveRide() : null;
       const loadedRide = res?.data?.ride ?? res?.ride ?? null;
       setRide(loadedRide);
       console.log('[ActiveRide] Loaded ride:', loadedRide?.id, 'status:', loadedRide?.status);
@@ -218,17 +223,17 @@ export default function ActiveRideScreen({ route, navigation }) {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          const loc    = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
           const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
           setMyLoc(coords);
-          socketService.updateLocation({ latitude: coords.latitude, longitude: coords.longitude });
+          socketService.updateLocation(coords);
 
           locationWatcher = await Location.watchPositionAsync(
             { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 10 },
-            (position) => {
-              const c = { latitude: position.coords.latitude, longitude: position.coords.longitude };
-              setMyLoc(c);
-              socketService.updateLocation({ latitude: c.latitude, longitude: c.longitude });
+            ({ coords: c }) => {
+              const loc2 = { latitude: c.latitude, longitude: c.longitude };
+              setMyLoc(loc2);
+              socketService.updateLocation(loc2);
             }
           );
         }
@@ -236,17 +241,15 @@ export default function ActiveRideScreen({ route, navigation }) {
     })();
 
     const handleCancelled = (data) => {
-      if (data.rideId === rideId) {
-        Alert.alert('Ride Cancelled', 'The customer has cancelled this ride.', [
-          { text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] }) },
-        ]);
-      }
+      if (data.rideId !== rideId) return;
+      Alert.alert('Ride Cancelled', 'The customer has cancelled this ride.', [
+        { text: 'OK', onPress: goToDashboard },
+      ]);
     };
     const handleStatus = (data) => {
-      if (data.rideId === rideId) {
-        setRide(prev => prev ? { ...prev, status: data.status } : prev);
-        if (data.status === 'CANCELLED') handleCancelled(data);
-      }
+      if (data.rideId !== rideId) return;
+      setRide(prev => prev ? { ...prev, status: data.status } : prev);
+      if (data.status === 'CANCELLED') handleCancelled(data);
     };
 
     socketService.on('ride:status:update', handleStatus);
@@ -274,7 +277,7 @@ export default function ActiveRideScreen({ route, navigation }) {
   const handleStart = async () => {
     setActing(true);
     try {
-      const res = await rideAPI.startRide(ride.id);
+      const res     = await rideAPI.startRide(ride.id);
       const updated = res?.data?.ride ?? res?.ride;
       setRide(prev => ({ ...prev, status: 'IN_PROGRESS', ...(updated || {}) }));
 
@@ -300,7 +303,7 @@ export default function ActiveRideScreen({ route, navigation }) {
       setActing(true);
       try {
         await rideAPI.completeRide(ride.id, { paymentMethod: 'CASH' });
-        navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] });
+        goToDashboard();
       } catch (err) {
         Alert.alert('Error', err?.response?.data?.message ?? 'Could not complete ride.');
       } finally { setActing(false); }
@@ -326,17 +329,10 @@ export default function ActiveRideScreen({ route, navigation }) {
   const dropoffLng = ride?.dropoffLng;
 
   const mapRegion = myLoc
-    ? { latitude: myLoc.latitude,  longitude: myLoc.longitude,  latitudeDelta: 0.03, longitudeDelta: 0.03 }
+    ? { latitude: myLoc.latitude, longitude: myLoc.longitude, latitudeDelta: 0.03, longitudeDelta: 0.03 }
     : pickupLat
     ? { latitude: pickupLat, longitude: pickupLng, latitudeDelta: 0.05, longitudeDelta: 0.05 }
     : undefined;
-
-  // Status pill bottom tracks above the draggable sheet (both JS-driven — no conflict)
-  const statusPillBottom = sheetHeightAnim.interpolate({
-    inputRange:  [0, SHEET_MIN, SHEET_MAX],
-    outputRange: [TAB_BAR_HEIGHT + 12, TAB_BAR_HEIGHT + SHEET_MIN + 12, TAB_BAR_HEIGHT + SHEET_MAX + 12],
-    extrapolate: 'clamp',
-  });
 
   const backBtnTop     = insets.top + 14;
   const sheetPadBottom = insets.bottom + 16;
@@ -357,7 +353,7 @@ export default function ActiveRideScreen({ route, navigation }) {
         <Ionicons name="alert-circle-outline" size={40} color={theme.hint} />
         <Text style={[s.centerTxt, { color: theme.hint }]}>No active ride found.</Text>
         <TouchableOpacity
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] })}
+          onPress={goToDashboard}
           style={[s.goBackBtn, { borderColor: theme.border }]}
         >
           <Text style={[s.goBackTxt, { color: theme.foreground }]}>Go to Dashboard</Text>
@@ -414,13 +410,13 @@ export default function ActiveRideScreen({ route, navigation }) {
       {/* ── Back button ── */}
       <TouchableOpacity
         style={[s.backNav, { top: backBtnTop, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
-        onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] })}
+        onPress={goToDashboard}
         activeOpacity={0.85}
       >
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      {/* ── Status pill — JS-driver bottom interpolated from sheetHeightAnim ── */}
+      {/* ── Status pill — memoized JS-driver bottom interpolation ── */}
       <Animated.View style={[s.statusPill, {
         backgroundColor: statusCfg.color + '18',
         borderColor:     statusCfg.color + '50',
@@ -437,8 +433,7 @@ export default function ActiveRideScreen({ route, navigation }) {
         height:          sheetHeightAnim,
         bottom:          TAB_BAR_HEIGHT,
       }]}>
-
-        {/* ── Drag handle — PanResponder lives here only ── */}
+        {/* Drag handle — PanResponder lives here only */}
         <View style={s.dragHandleArea} {...panResponder.panHandlers}>
           <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
         </View>
@@ -525,7 +520,7 @@ export default function ActiveRideScreen({ route, navigation }) {
             {(status === 'COMPLETED' || status === 'CANCELLED') && (
               <TouchableOpacity
                 style={[s.actionBtn, { backgroundColor: theme.backgroundAlt, borderWidth: 1, borderColor: theme.border }]}
-                onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] })}
+                onPress={goToDashboard}
                 activeOpacity={0.85}
               >
                 <Ionicons name="home-outline" size={18} color={theme.foreground} />
@@ -552,7 +547,6 @@ const s = StyleSheet.create({
   statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
 
-  // Bottom sheet
   sheet: {
     position:             'absolute',
     left:                 0,
@@ -563,31 +557,20 @@ const s = StyleSheet.create({
     overflow:             'hidden',
   },
 
-  // Drag handle
-  dragHandleArea: {
-    width:           '100%',
-    paddingVertical: 12,
-    alignItems:      'center',
-  },
-  dragHandle: {
-    width:        44,
-    height:       4,
-    borderRadius: 2,
-  },
+  dragHandleArea: { width: '100%', paddingVertical: 12, alignItems: 'center' },
+  dragHandle:     { width: 44, height: 4, borderRadius: 2 },
+  scrollContent:  { paddingHorizontal: 20 },
 
-  scrollContent: { paddingHorizontal: 20 },
+  fareStrip:    { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
+  fareItem:     { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
+  fareLabel:    { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
+  fareValue:    { fontSize: 14, fontWeight: '900' },
+  fareDivider:  { width: 1 },
 
-  // Fare strip
-  fareStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
-  fareItem:    { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
-  fareLabel:   { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
-  fareValue:   { fontSize: 14, fontWeight: '900' },
-  fareDivider: { width: 1 },
+  notesCard:    { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 14 },
+  notesTxt:     { flex: 1, fontSize: 12, lineHeight: 18 },
 
-  notesCard:   { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 14 },
-  notesTxt:    { flex: 1, fontSize: 12, lineHeight: 18 },
-
-  actionArea:  { marginBottom: 8 },
-  actionBtn:   { borderRadius: 16, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  actionBtnTxt:{ fontSize: 15, fontWeight: '900', color: '#080C18' },
+  actionArea:   { marginBottom: 8 },
+  actionBtn:    { borderRadius: 16, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  actionBtnTxt: { fontSize: 15, fontWeight: '900', color: '#080C18' },
 });
