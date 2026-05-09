@@ -63,17 +63,32 @@ export default function WalletTopUpScreen({ navigation }) {
     setLoading(true);
     try {
       const res = await walletAPI.initializeTopUp({ amount: num });
-      const authUrl = res?.data?.authorizationUrl ?? res?.data?.data?.authorization_url;
+      const authUrl   = res?.data?.authorizationUrl ?? res?.data?.data?.authorization_url;
+      const reference = res?.data?.reference;
 
       if (!authUrl) throw new Error('No payment URL returned');
 
-        await Linking.openURL(authUrl);
-        Alert.alert(
-          'Payment Initiated 🚀',
-          `Complete the payment of ₦${formatNGN(num)} in your browser. Your wallet will be credited automatically.`,
-          [{ text: 'Done', onPress: () => navigation.goBack() }]
-        );
-      } catch (err) {
+      const verifyPayment = async (ref) => {
+        try {
+          await walletAPI.verifyPaystackTopup({ reference: ref });
+          Alert.alert('Success! 🎉', 'Your wallet has been credited.', [
+            { text: 'OK', onPress: () => navigation.goBack() }
+          ]);
+        } catch (e) {
+          Alert.alert('Verification Failed', e?.message ?? 'Could not verify payment. Contact support.');
+        }
+      };
+
+      await Linking.openURL(authUrl);
+      Alert.alert(
+        'Payment Initiated 🚀',
+        `Complete the payment of ₦${formatNGN(num)} in your browser. Tap "Verify Payment" once done.`,
+        [
+          { text: 'Verify Payment', onPress: () => verifyPayment(reference) },
+          { text: 'Later',          onPress: () => navigation.goBack() },
+        ]
+      );
+    } catch (err) {
       console.log('TopUp error:', JSON.stringify(err, null, 2));
       Alert.alert(
         'Top Up Failed',

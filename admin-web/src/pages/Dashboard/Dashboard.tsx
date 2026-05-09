@@ -69,7 +69,7 @@ const Dashboard: React.FC = () => {
 
   const statCards = [
     {
-      title:    'Total Users',
+      title:    'Total Customers',
       value:    stats.users.total.toLocaleString(),
       icon:     Users,
       color:    'bg-primary-500',
