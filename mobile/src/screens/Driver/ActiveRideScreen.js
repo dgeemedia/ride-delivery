@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
-  Platform,
+  Platform, PanResponder, Linking,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons }          from '@expo/vector-icons';
@@ -15,6 +15,14 @@ import * as Location         from '../../shims/Location';
 
 const { height } = Dimensions.get('window');
 const DA = '#FFB800';
+
+// ── Tab bar height offset — ensures content is never hidden behind the footer ──
+const TAB_BAR_HEIGHT = 60;
+
+// ── Draggable sheet snap heights ──────────────────────────────────────────────
+const SHEET_MIN     = 160;
+const SHEET_DEFAULT = Math.round(height * 0.52);
+const SHEET_MAX     = Math.round(height * 0.84);
 
 const DARK_MAP_STYLE = [
   { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
@@ -30,10 +38,22 @@ const DARK_MAP_STYLE = [
 
 const STATUS_CONFIG = {
   ACCEPTED:    { label: 'Head to Pickup',   color: DA,        icon: 'navigate-outline'        },
-  ARRIVED:     { label: 'Arrived',          color: '#A78BFA', icon: 'location-outline'         },
-  IN_PROGRESS: { label: 'Ride in Progress', color: '#5DAA72', icon: 'car-sport-outline'        },
-  COMPLETED:   { label: 'Completed',        color: '#5DAA72', icon: 'checkmark-circle-outline' },
-  CANCELLED:   { label: 'Cancelled',        color: '#E05555', icon: 'close-circle-outline'     },
+  ARRIVED:     { label: 'Arrived',          color: '#A78BFA', icon: 'location-outline'        },
+  IN_PROGRESS: { label: 'Ride in Progress', color: '#5DAA72', icon: 'car-sport-outline'       },
+  COMPLETED:   { label: 'Completed',        color: '#5DAA72', icon: 'checkmark-circle-outline'},
+  CANCELLED:   { label: 'Cancelled',        color: '#E05555', icon: 'close-circle-outline'    },
+};
+
+// ── Phone call helper ─────────────────────────────────────────────────────────
+const callPhone = (phone) => {
+  if (!phone) return;
+  const url = `tel:${phone.replace(/\s+/g, '')}`;
+  Linking.canOpenURL(url)
+    .then(supported => {
+      if (supported) Linking.openURL(url);
+      else Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
+    })
+    .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
 };
 
 // ── CustomerCard ───────────────────────────────────────────────────────────────
@@ -52,9 +72,15 @@ const CustomerCard = ({ ride, theme }) => (
         <Text style={[cc.phone, { color: theme.hint }]}>{ride.customer.phone}</Text>
       )}
     </View>
-    <TouchableOpacity style={[cc.callBtn, { backgroundColor: DA + '18', borderColor: DA + '40' }]}>
-      <Ionicons name="call-outline" size={17} color={DA} />
-    </TouchableOpacity>
+    {ride.customer?.phone && (
+      <TouchableOpacity
+        style={[cc.callBtn, { backgroundColor: DA + '18', borderColor: DA + '40' }]}
+        onPress={() => callPhone(ride.customer.phone)}
+        activeOpacity={0.75}
+      >
+        <Ionicons name="call" size={17} color={DA} />
+      </TouchableOpacity>
+    )}
   </View>
 );
 const cc = StyleSheet.create({
@@ -107,8 +133,57 @@ export default function ActiveRideScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [acting,  setActing]  = useState(false);
 
-  const mapRef = useRef(null);
-  const sheetA = useRef(new Animated.Value(0)).current;
+  const mapRef           = useRef(null);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // KEY FIX: ONE Animated.Value, useNativeDriver: false throughout.
+  //
+  // The previous version used sheetEnterA (useNativeDriver: true, transform)
+  // AND sheetHeightAnim (useNativeDriver: false, height) on the SAME Animated.View,
+  // which React Native forbids. Now sheetHeightAnim starts at 0 and springs to
+  // SHEET_DEFAULT on mount — one value, one driver, no conflict.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const sheetHeightAnim  = useRef(new Animated.Value(0)).current;
+  const currentHeightRef = useRef(0);
+  const startHeightRef   = useRef(0);
+
+  // ── PanResponder — draggable sheet ─────────────────────────────────────────
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder:        () => true,
+      onMoveShouldSetPanResponder:         (_, gs) => Math.abs(gs.dy) > 3,
+      onPanResponderGrant: () => {
+        sheetHeightAnim.stopAnimation((val) => {
+          currentHeightRef.current = val;
+          startHeightRef.current   = val;
+        });
+      },
+      onPanResponderMove: (_, gs) => {
+        const proposed = startHeightRef.current - gs.dy;
+        const clamped  = Math.max(SHEET_MIN, Math.min(SHEET_MAX, proposed));
+        sheetHeightAnim.setValue(clamped);
+      },
+      onPanResponderRelease: (_, gs) => {
+        const h    = startHeightRef.current - gs.dy;
+        const mid1 = (SHEET_MIN + SHEET_DEFAULT) / 2;
+        const mid2 = (SHEET_DEFAULT + SHEET_MAX) / 2;
+        let target;
+        if (gs.vy < -0.5) {
+          target = h > SHEET_DEFAULT ? SHEET_MAX : SHEET_DEFAULT;
+        } else if (gs.vy > 0.5) {
+          target = h < SHEET_DEFAULT ? SHEET_MIN : SHEET_DEFAULT;
+        } else {
+          target = h < mid1 ? SHEET_MIN : h < mid2 ? SHEET_DEFAULT : SHEET_MAX;
+        }
+        Animated.spring(sheetHeightAnim, {
+          toValue:         target,
+          useNativeDriver: false,
+          tension:         120,
+          friction:        14,
+        }).start(() => { currentHeightRef.current = target; });
+      },
+    })
+  ).current;
 
   // ── Load ride from API ──────────────────────────────────────────────────────
   const loadRide = useCallback(async () => {
@@ -130,7 +205,13 @@ export default function ActiveRideScreen({ route, navigation }) {
   useEffect(() => {
     loadRide();
 
-    Animated.spring(sheetA, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }).start();
+    // Entrance animation — JS driver only (height is a layout prop)
+    Animated.spring(sheetHeightAnim, {
+      toValue:         SHEET_DEFAULT,
+      tension:         80,
+      friction:        9,
+      useNativeDriver: false,
+    }).start(() => { currentHeightRef.current = SHEET_DEFAULT; });
 
     let locationWatcher = null;
     (async () => {
@@ -214,8 +295,6 @@ export default function ActiveRideScreen({ route, navigation }) {
   };
 
   // ── Complete ─────────────────────────────────────────────────────────────────
-  // FIX: removed `actualFare` from the body — the backend ignores it and
-  // computes its own final fare; sending it can trigger route validators.
   const handleComplete = () => {
     const doComplete = async () => {
       setActing(true);
@@ -252,9 +331,15 @@ export default function ActiveRideScreen({ route, navigation }) {
     ? { latitude: pickupLat, longitude: pickupLng, latitudeDelta: 0.05, longitudeDelta: 0.05 }
     : undefined;
 
-  const sheetTranslate = sheetA.interpolate({ inputRange: [0, 1], outputRange: [300, 0] });
+  // Status pill bottom tracks above the draggable sheet (both JS-driven — no conflict)
+  const statusPillBottom = sheetHeightAnim.interpolate({
+    inputRange:  [0, SHEET_MIN, SHEET_MAX],
+    outputRange: [TAB_BAR_HEIGHT + 12, TAB_BAR_HEIGHT + SHEET_MIN + 12, TAB_BAR_HEIGHT + SHEET_MAX + 12],
+    extrapolate: 'clamp',
+  });
+
   const backBtnTop     = insets.top + 14;
-  const sheetPadBottom = insets.bottom + 12;
+  const sheetPadBottom = insets.bottom + 16;
 
   // ── Loading ──────────────────────────────────────────────────────────────────
   if (loading) {
@@ -285,6 +370,7 @@ export default function ActiveRideScreen({ route, navigation }) {
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
+      {/* ── MAP ── */}
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
@@ -325,6 +411,7 @@ export default function ActiveRideScreen({ route, navigation }) {
 
       <View style={s.topGradient} pointerEvents="none" />
 
+      {/* ── Back button ── */}
       <TouchableOpacity
         style={[s.backNav, { top: backBtnTop, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
         onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] })}
@@ -333,23 +420,34 @@ export default function ActiveRideScreen({ route, navigation }) {
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      {/* Status pill */}
-      <View style={[s.statusPill, { backgroundColor: statusCfg.color + '18', borderColor: statusCfg.color + '50', bottom: height * 0.44 }]}>
+      {/* ── Status pill — JS-driver bottom interpolated from sheetHeightAnim ── */}
+      <Animated.View style={[s.statusPill, {
+        backgroundColor: statusCfg.color + '18',
+        borderColor:     statusCfg.color + '50',
+        bottom:          statusPillBottom,
+      }]}>
         <Ionicons name={statusCfg.icon} size={13} color={statusCfg.color} />
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
-      </View>
+      </Animated.View>
 
-      {/* Bottom sheet */}
+      {/* ── Bottom sheet — height animated with JS driver only; no transform/native driver ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
-        transform:       [{ translateY: sheetTranslate }],
+        height:          sheetHeightAnim,
+        bottom:          TAB_BAR_HEIGHT,
       }]}>
+
+        {/* ── Drag handle — PanResponder lives here only ── */}
+        <View style={s.dragHandleArea} {...panResponder.panHandlers}>
+          <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
+        </View>
+
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: sheetPadBottom }}
+          contentContainerStyle={[s.scrollContent, { paddingBottom: sheetPadBottom }]}
+          keyboardShouldPersistTaps="handled"
         >
-
           {/* Fare strip */}
           <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <View style={s.fareItem}>
@@ -383,10 +481,15 @@ export default function ActiveRideScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* Action button */}
+          {/* ── Action button — progresses the ride ── */}
           <View style={s.actionArea}>
             {status === 'ACCEPTED' && (
-              <TouchableOpacity style={[s.actionBtn, { backgroundColor: DA }]} onPress={handleArrive} disabled={acting} activeOpacity={0.88}>
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: DA }]}
+                onPress={handleArrive}
+                disabled={acting}
+                activeOpacity={0.88}
+              >
                 {acting
                   ? <ActivityIndicator color="#080C18" />
                   : (<><Ionicons name="location-outline" size={18} color="#080C18" /><Text style={s.actionBtnTxt}>I've Arrived at Pickup</Text></>)
@@ -394,7 +497,12 @@ export default function ActiveRideScreen({ route, navigation }) {
               </TouchableOpacity>
             )}
             {status === 'ARRIVED' && (
-              <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#A78BFA' }]} onPress={handleStart} disabled={acting} activeOpacity={0.88}>
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: '#A78BFA' }]}
+                onPress={handleStart}
+                disabled={acting}
+                activeOpacity={0.88}
+              >
                 {acting
                   ? <ActivityIndicator color="#080C18" />
                   : (<><Ionicons name="car-sport-outline" size={18} color="#080C18" /><Text style={s.actionBtnTxt}>Start Ride</Text></>)
@@ -402,7 +510,12 @@ export default function ActiveRideScreen({ route, navigation }) {
               </TouchableOpacity>
             )}
             {status === 'IN_PROGRESS' && (
-              <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#5DAA72' }]} onPress={handleComplete} disabled={acting} activeOpacity={0.88}>
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: '#5DAA72' }]}
+                onPress={handleComplete}
+                disabled={acting}
+                activeOpacity={0.88}
+              >
                 {acting
                   ? <ActivityIndicator color="#080C18" />
                   : (<><Ionicons name="checkmark-circle-outline" size={18} color="#080C18" /><Text style={s.actionBtnTxt}>Complete Ride</Text></>)
@@ -420,7 +533,6 @@ export default function ActiveRideScreen({ route, navigation }) {
               </TouchableOpacity>
             )}
           </View>
-
         </ScrollView>
       </Animated.View>
     </View>
@@ -436,17 +548,45 @@ const s = StyleSheet.create({
   topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
   backNav:     { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
   driverPin:   { width: 32, height: 32, borderRadius: 16, backgroundColor: DA, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
-  statusPill:  { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
-  statusPillTxt:{ fontSize: 12, fontWeight: '700' },
-  // Removed paddingHorizontal/paddingTop/paddingBottom — now in ScrollView contentContainerStyle
-  sheet:       { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, maxHeight: height * 0.58 },
+
+  statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
+  statusPillTxt: { fontSize: 12, fontWeight: '700' },
+
+  // Bottom sheet
+  sheet: {
+    position:             'absolute',
+    left:                 0,
+    right:                0,
+    borderTopLeftRadius:  28,
+    borderTopRightRadius: 28,
+    borderTopWidth:       1,
+    overflow:             'hidden',
+  },
+
+  // Drag handle
+  dragHandleArea: {
+    width:           '100%',
+    paddingVertical: 12,
+    alignItems:      'center',
+  },
+  dragHandle: {
+    width:        44,
+    height:       4,
+    borderRadius: 2,
+  },
+
+  scrollContent: { paddingHorizontal: 20 },
+
+  // Fare strip
   fareStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
   fareItem:    { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
   fareLabel:   { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
   fareValue:   { fontSize: 14, fontWeight: '900' },
   fareDivider: { width: 1 },
+
   notesCard:   { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 14 },
   notesTxt:    { flex: 1, fontSize: 12, lineHeight: 18 },
+
   actionArea:  { marginBottom: 8 },
   actionBtn:   { borderRadius: 16, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
   actionBtnTxt:{ fontSize: 15, fontWeight: '900', color: '#080C18' },

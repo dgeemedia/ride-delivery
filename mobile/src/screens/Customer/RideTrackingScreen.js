@@ -3,18 +3,24 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
-  Platform,
+  PanResponder, Linking,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
-// ── Uncomment shieldAPI below when Shield is ready to launch ──────────────────
 import { rideAPI/*, shieldAPI*/ } from '../../services/api';
-// ─────────────────────────────────────────────────────────────────────────────
 import socketService          from '../../services/socket';
 
 const { height } = Dimensions.get('window');
+
+// ── Tab bar offset ────────────────────────────────────────────────────────────
+const TAB_BAR_HEIGHT = 60;
+
+// ── Sheet snap heights ─────────────────────────────────────────────────────────
+const SHEET_MIN     = 160;
+const SHEET_DEFAULT = Math.round(height * 0.50);
+const SHEET_MAX     = Math.round(height * 0.82);
 
 const DARK_MAP_STYLE = [
   { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
@@ -37,13 +43,24 @@ const STATUS_CONFIG = {
   CANCELLED:   { label: 'Ride cancelled',          color: '#E05555', icon: 'close-circle-outline'     },
 };
 
-// ── DriverInfoCard ────────────────────────────────────────────────────────────
+// ── Phone helper ──────────────────────────────────────────────────────────────
+const callPhone = (phone) => {
+  if (!phone) return;
+  const url = `tel:${String(phone).replace(/\s+/g, '')}`;
+  Linking.canOpenURL(url)
+    .then(ok => {
+      if (ok) Linking.openURL(url);
+      else Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
+    })
+    .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
+};
+
+// ── DriverInfoCard ─────────────────────────────────────────────────────────────
 const DriverInfoCard = ({ ride, theme }) => {
   const driver = ride?.driver;
   if (!driver) return null;
   const dp     = driver.driverProfile;
   const accent = theme.accent;
-
   return (
     <View style={[di.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
       <View style={[di.avatar, { backgroundColor: accent + '18' }]}>
@@ -68,8 +85,12 @@ const DriverInfoCard = ({ ride, theme }) => {
         )}
       </View>
       {driver.phone && (
-        <TouchableOpacity style={[di.callBtn, { backgroundColor: accent + '18', borderColor: accent + '40' }]}>
-          <Ionicons name="call-outline" size={17} color={accent} />
+        <TouchableOpacity
+          style={[di.callBtn, { backgroundColor: accent + '18', borderColor: accent + '40' }]}
+          onPress={() => callPhone(driver.phone)}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="call" size={17} color={accent} />
         </TouchableOpacity>
       )}
     </View>
@@ -126,143 +147,164 @@ export default function RideTrackingScreen({ route, navigation }) {
   const [driverLocation, setDriverLocation] = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [cancelling,     setCancelling]     = useState(false);
-  // ── Uncomment when Shield is ready to launch ────────────────────────────────
-  // const [shieldActive, setShieldActive] = useState(false);
-  // ────────────────────────────────────────────────────────────────────────────
 
   const mapRef          = useRef(null);
-  const sheetA          = useRef(new Animated.Value(0)).current;
   const hasNavigatedRef = useRef(false);
 
-  // ── Load ride ───────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ONE Animated.Value, useNativeDriver: false throughout.
+  // sheetHeightAnim starts at 0 and springs to SHEET_DEFAULT on mount.
+  // No transform/native-driver animation touches this node — ever.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const sheetHeightAnim  = useRef(new Animated.Value(0)).current;
+  const currentHeightRef = useRef(0);
+  const startHeightRef   = useRef(0);
+
+  // ── Memoized interpolation — created ONCE, never recreated on re-render ────
+  // Recreating this every render leaves stale listener nodes registered on
+  // sheetHeightAnim, which can cause the "moved to native" crash on some RN
+  // versions.
+  const statusPillBottom = useRef(
+    sheetHeightAnim.interpolate({
+      inputRange:  [0, SHEET_MIN, SHEET_MAX],
+      outputRange: [
+        TAB_BAR_HEIGHT + 10,
+        TAB_BAR_HEIGHT + SHEET_MIN + 10,
+        TAB_BAR_HEIGHT + SHEET_MAX + 10,
+      ],
+      extrapolate: 'clamp',
+    })
+  ).current;
+
+  // ── Entrance animation ────────────────────────────────────────────────────
+  useEffect(() => {
+    Animated.spring(sheetHeightAnim, {
+      toValue:         SHEET_DEFAULT,
+      tension:         80,
+      friction:        9,
+      useNativeDriver: false,   // height is a layout prop — JS driver required
+    }).start(() => { currentHeightRef.current = SHEET_DEFAULT; });
+  }, []);
+
+  // ── PanResponder (attached to drag handle only) ───────────────────────────
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder:  (_, gs) => Math.abs(gs.dy) > 4,
+      onPanResponderGrant: () => {
+        // stopAnimation callback gives the exact current value mid-spring
+        sheetHeightAnim.stopAnimation((val) => {
+          currentHeightRef.current = val;
+          startHeightRef.current   = val;
+        });
+      },
+      onPanResponderMove: (_, gs) => {
+        const next = Math.max(SHEET_MIN, Math.min(SHEET_MAX,
+          startHeightRef.current - gs.dy));
+        sheetHeightAnim.setValue(next);
+      },
+      onPanResponderRelease: (_, gs) => {
+        const h    = startHeightRef.current - gs.dy;
+        const mid1 = (SHEET_MIN + SHEET_DEFAULT) / 2;
+        const mid2 = (SHEET_DEFAULT + SHEET_MAX) / 2;
+        let target;
+        if      (gs.vy < -0.5) target = h > SHEET_DEFAULT ? SHEET_MAX : SHEET_DEFAULT;
+        else if (gs.vy >  0.5) target = h < SHEET_DEFAULT ? SHEET_MIN : SHEET_DEFAULT;
+        else                   target = h < mid1 ? SHEET_MIN : h < mid2 ? SHEET_DEFAULT : SHEET_MAX;
+        Animated.spring(sheetHeightAnim, {
+          toValue: target, tension: 120, friction: 14, useNativeDriver: false,
+        }).start(() => { currentHeightRef.current = target; });
+      },
+    })
+  ).current;
+
+  // ── Load ride ─────────────────────────────────────────────────────────────
   const loadRide = useCallback(async () => {
     try {
       const res = await rideAPI.getActiveRide();
       const r   = res?.data?.ride ?? res?.ride ?? null;
       setRide(r);
-
       if (r?.driver?.driverProfile?.currentLat) {
         setDriverLocation({
           latitude:  r.driver.driverProfile.currentLat,
           longitude: r.driver.driverProfile.currentLng,
         });
       }
-
-      if (r?.id) {
-        socketService.joinRide(r.id);
-        // ── Uncomment when Shield is ready to launch ────────────────────────
-        // try {
-        //   const sRes = await shieldAPI.getSession({ rideId: r.id });
-        //   setShieldActive(!!sRes?.data?.session);
-        // } catch {}
-        // ───────────────────────────────────────────────────────────────────
-      }
+      if (r?.id) socketService.joinRide(r.id);
     } catch (err) {
       console.error('[RideTracking] loadRide:', err?.message);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [rideId]);
 
-  // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     loadRide();
-    Animated.spring(sheetA, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }).start();
 
     const handleStatus = (data) => {
       if (!data.rideId || data.rideId !== rideId) return;
       setRide(prev => prev ? { ...prev, status: data.status, driver: data.driver ?? prev.driver } : prev);
-
       if (data.status === 'COMPLETED') {
         if (hasNavigatedRef.current) return;
         hasNavigatedRef.current = true;
-        setTimeout(() => {
-          navigation.navigate('RateRide', { rideId, driver: data.driver ?? ride?.driver });
-        }, 500);
+        setTimeout(() => navigation.navigate('RateRide', { rideId, driver: data.driver }), 500);
       }
-
       if (data.status === 'CANCELLED') {
         Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [
-          { text: 'OK', onPress: () => navigation.navigate('Home') }
+          { text: 'OK', onPress: () => navigation.navigate('Home') },
         ]);
       }
     };
-
     const handleCancelled = (data) => {
       if (data.rideId !== rideId) return;
       Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [
-        { text: 'OK', onPress: () => navigation.navigate('Home') }
+        { text: 'OK', onPress: () => navigation.navigate('Home') },
       ]);
     };
-
     const handleDriverLoc = (data) => {
       const loc = { latitude: data.lat, longitude: data.lng };
       setDriverLocation(loc);
       mapRef.current?.animateToRegion({ ...loc, latitudeDelta: 0.03, longitudeDelta: 0.03 }, 800);
     };
 
-    // ── Uncomment when Shield is ready to launch ──────────────────────────────
-    // const handleShieldActivated   = () => setShieldActive(true);
-    // const handleShieldDeactivated = () => setShieldActive(false);
-    // ─────────────────────────────────────────────────────────────────────────
-
     socketService.on('ride:status:update',     handleStatus);
     socketService.on('ride:cancelled',         handleCancelled);
     socketService.on('driver:location:update', handleDriverLoc);
-    // ── Uncomment when Shield is ready to launch ──────────────────────────────
-    // socketService.on('shield:activated',   handleShieldActivated);
-    // socketService.on('shield:deactivated', handleShieldDeactivated);
-    // ─────────────────────────────────────────────────────────────────────────
-
     return () => {
       socketService.off('ride:status:update',     handleStatus);
       socketService.off('ride:cancelled',         handleCancelled);
       socketService.off('driver:location:update', handleDriverLoc);
-      // ── Uncomment when Shield is ready to launch ──────────────────────────
-      // socketService.off('shield:activated',   handleShieldActivated);
-      // socketService.off('shield:deactivated', handleShieldDeactivated);
-      // ─────────────────────────────────────────────────────────────────────
       if (rideId) socketService.leaveRide(rideId);
     };
   }, [rideId]);
 
-  // ── Cancel handler ──────────────────────────────────────────────────────────
+  // ── Cancel ────────────────────────────────────────────────────────────────
   const handleCancel = () => {
-    Alert.alert(
-      'Cancel Ride?',
-      'Are you sure you want to cancel this ride?',
-      [
-        { text: 'Keep Ride', style: 'cancel' },
-        {
-          text: 'Cancel Ride',
-          style: 'destructive',
-          onPress: async () => {
-            setCancelling(true);
-            try {
-              await rideAPI.cancelRide(rideId, { reason: 'Customer cancelled from tracking screen' });
-              navigation.navigate('Home');
-            } catch (err) {
-              Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
-            } finally {
-              setCancelling(false);
-            }
-          },
+    Alert.alert('Cancel Ride?', 'Are you sure you want to cancel this ride?', [
+      { text: 'Keep Ride', style: 'cancel' },
+      {
+        text: 'Cancel Ride', style: 'destructive',
+        onPress: async () => {
+          setCancelling(true);
+          try {
+            await rideAPI.cancelRide(rideId, { reason: 'Customer cancelled from tracking screen' });
+            navigation.navigate('Home');
+          } catch (err) {
+            Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
+          } finally { setCancelling(false); }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  // ── Derived values ──────────────────────────────────────────────────────────
-  const status         = ride?.status ?? 'REQUESTED';
-  const statusCfg      = STATUS_CONFIG[status] ?? STATUS_CONFIG.ACCEPTED;
-  const pickupLat      = ride?.pickupLat;
-  const pickupLng      = ride?.pickupLng;
-  const dropoffLat     = ride?.dropoffLat;
-  const dropoffLng     = ride?.dropoffLng;
-  const canCancel      = ['REQUESTED', 'ACCEPTED'].includes(status);
-  const isActiveTrip   = ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'].includes(status);
-  const backBtnTop     = insets.top + 14;
-  const sheetPadBottom = insets.bottom + 12;
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const status     = ride?.status ?? 'REQUESTED';
+  const statusCfg  = STATUS_CONFIG[status] ?? STATUS_CONFIG.ACCEPTED;
+  const pickupLat  = ride?.pickupLat;
+  const pickupLng  = ride?.pickupLng;
+  const dropoffLat = ride?.dropoffLat;
+  const dropoffLng = ride?.dropoffLng;
+  const canCancel  = ['REQUESTED', 'ACCEPTED'].includes(status);
+  const backBtnTop = insets.top + 14;
+  const padBottom  = insets.bottom + 20;
 
   const mapRegion = driverLocation
     ? { ...driverLocation, latitudeDelta: 0.03, longitudeDelta: 0.03 }
@@ -270,9 +312,6 @@ export default function RideTrackingScreen({ route, navigation }) {
     ? { latitude: pickupLat, longitude: pickupLng, latitudeDelta: 0.05, longitudeDelta: 0.05 }
     : undefined;
 
-  const sheetTranslate = sheetA.interpolate({ inputRange: [0, 1], outputRange: [300, 0] });
-
-  // ── Loading state ───────────────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={[s.center, { backgroundColor: theme.background }]}>
@@ -281,29 +320,22 @@ export default function RideTrackingScreen({ route, navigation }) {
       </View>
     );
   }
-
-  // ── Not found state ─────────────────────────────────────────────────────────
   if (!ride) {
     return (
       <View style={[s.center, { backgroundColor: theme.background }]}>
         <Ionicons name="alert-circle-outline" size={40} color={theme.hint} />
         <Text style={[s.centerTxt, { color: theme.hint }]}>Ride not found.</Text>
-        <TouchableOpacity
-          style={[s.goHomeBtn, { borderColor: theme.border }]}
-          onPress={() => navigation.navigate('Home')}
-        >
+        <TouchableOpacity style={[s.goHomeBtn, { borderColor: theme.border }]} onPress={() => navigation.navigate('Home')}>
           <Text style={[s.goHomeTxt, { color: theme.foreground }]}>Go Home</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // ── Main render ─────────────────────────────────────────────────────────────
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* ── MAP ── */}
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
@@ -338,59 +370,53 @@ export default function RideTrackingScreen({ route, navigation }) {
               { latitude: pickupLat,  longitude: pickupLng  },
               { latitude: dropoffLat, longitude: dropoffLng },
             ]}
-            strokeColor={theme.accent}
-            strokeWidth={3}
-            lineDashPattern={[8, 5]}
+            strokeColor={theme.accent} strokeWidth={3} lineDashPattern={[8, 5]}
           />
         )}
         {driverLocation && pickupLat && ['ACCEPTED', 'ARRIVED'].includes(status) && (
           <Polyline
-            coordinates={[
-              driverLocation,
-              { latitude: pickupLat, longitude: pickupLng },
-            ]}
-            strokeColor={statusCfg.color}
-            strokeWidth={2}
-            lineDashPattern={[4, 6]}
+            coordinates={[driverLocation, { latitude: pickupLat, longitude: pickupLng }]}
+            strokeColor={statusCfg.color} strokeWidth={2} lineDashPattern={[4, 6]}
           />
         )}
       </MapView>
 
-      {/* ── Top gradient ── */}
       <View style={s.topGradient} pointerEvents="none" />
 
-      {/* ── Back button ── */}
       <TouchableOpacity
-        style={[s.backBtn, {
-          top:             backBtnTop,
-          backgroundColor: theme.backgroundAlt + 'EE',
-          borderColor:     theme.border,
-        }]}
+        style={[s.backBtn, { top: backBtnTop, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
         onPress={() => navigation.navigate('Home')}
         activeOpacity={0.85}
       >
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      {/* ── Status pill ── */}
-      <View style={[s.statusPill, {
+      {/* Status pill — bottom driven by memoized JS interpolation of sheetHeightAnim */}
+      <Animated.View style={[s.statusPill, {
         backgroundColor: statusCfg.color + '18',
         borderColor:     statusCfg.color + '50',
-        bottom:          height * 0.46,
+        bottom:          statusPillBottom,
       }]}>
         <Ionicons name={statusCfg.icon} size={13} color={statusCfg.color} />
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
-      </View>
+      </Animated.View>
 
-      {/* ── Bottom sheet ── */}
+      {/* Bottom sheet — height animated with JS driver only; no transform/native driver */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
-        transform:       [{ translateY: sheetTranslate }],
+        height:          sheetHeightAnim,
+        bottom:          TAB_BAR_HEIGHT,
       }]}>
+        {/* Drag handle — PanResponder lives here only */}
+        <View style={s.dragHandleWrap} {...panResponder.panHandlers}>
+          <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
+        </View>
+
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: sheetPadBottom }}
+          contentContainerStyle={[s.scrollContent, { paddingBottom: padBottom }]}
+          keyboardShouldPersistTaps="handled"
         >
           {/* Fare strip */}
           <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
@@ -419,24 +445,13 @@ export default function RideTrackingScreen({ route, navigation }) {
 
           {/* ── Uncomment when Shield is ready to launch ──────────────────────
           {isActiveTrip && (
-            <TouchableOpacity
-              style={[s.shieldBtn, {
-                backgroundColor: shieldActive ? '#4CAF5020' : '#4CAF5010',
-                borderColor:     shieldActive ? '#4CAF50'   : '#4CAF5050',
-              }]}
-              onPress={() => navigation.navigate('Shield', { rideId: ride.id })}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="shield-checkmark" size={16} color="#4CAF50" />
-              <Text style={s.shieldBtnTxt}>
-                {shieldActive ? '🛡️ SHIELD Active — Tap to manage' : 'Activate SHIELD Safety'}
-              </Text>
-              <Ionicons name="chevron-forward" size={14} color="#4CAF50" />
+            <TouchableOpacity style={[s.shieldBtn, { ... }]}
+              onPress={() => navigation.navigate('Shield', { rideId: ride.id })}>
+              ...
             </TouchableOpacity>
           )}
           ─────────────────────────────────────────────────────────────────── */}
 
-          {/* Cancel button */}
           {canCancel && (
             <TouchableOpacity
               style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
@@ -444,9 +459,7 @@ export default function RideTrackingScreen({ route, navigation }) {
               disabled={cancelling}
               activeOpacity={0.8}
             >
-              {cancelling ? (
-                <ActivityIndicator color="#E05555" size="small" />
-              ) : (
+              {cancelling ? <ActivityIndicator color="#E05555" size="small" /> : (
                 <>
                   <Ionicons name="close-circle-outline" size={16} color="#E05555" />
                   <Text style={s.cancelTxt}>Cancel Ride</Text>
@@ -455,23 +468,18 @@ export default function RideTrackingScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* Post-trip button */}
           {(status === 'COMPLETED' || status === 'CANCELLED') && (
             <TouchableOpacity
               style={[s.homeBtn, { backgroundColor: theme.accent }]}
               onPress={() => {
-                if (status === 'COMPLETED') {
-                  navigation.navigate('RateRide', { rideId, driver: ride?.driver });
-                } else {
-                  navigation.navigate('Home');
-                }
+                if (status === 'COMPLETED') navigation.navigate('RateRide', { rideId, driver: ride?.driver });
+                else                        navigation.navigate('Home');
               }}
               activeOpacity={0.88}
             >
               <Ionicons
                 name={status === 'COMPLETED' ? 'star-outline' : 'home-outline'}
-                size={18}
-                color={accentFg}
+                size={18} color={accentFg}
               />
               <Text style={[s.homeBtnTxt, { color: accentFg }]}>
                 {status === 'COMPLETED' ? 'Rate Your Driver' : 'Back to Home'}
@@ -485,15 +493,12 @@ export default function RideTrackingScreen({ route, navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:        { flex: 1 },
+  root:      { flex: 1 },
+  center:    { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
+  centerTxt: { fontSize: 14 },
+  goHomeBtn: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
+  goHomeTxt: { fontSize: 14, fontWeight: '600' },
 
-  // Loading / not found
-  center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
-  centerTxt:   { fontSize: 14 },
-  goHomeBtn:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
-  goHomeTxt:   { fontSize: 14, fontWeight: '600' },
-
-  // Map overlays
   topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
   backBtn:     { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
   driverPin:   { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
@@ -501,37 +506,32 @@ const s = StyleSheet.create({
   statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
 
-  // Bottom sheet — uses maxHeight so map stays visible, ScrollView handles overflow
   sheet: {
     position:             'absolute',
-    bottom:               0,
     left:                 0,
     right:                0,
     borderTopLeftRadius:  28,
     borderTopRightRadius: 28,
     borderTopWidth:       1,
-    paddingHorizontal:    20,
-    paddingTop:           20,
-    maxHeight:            height * 0.55,
     overflow:             'hidden',
   },
 
-  // Fare strip
+  dragHandleWrap: { width: '100%', paddingVertical: 12, alignItems: 'center' },
+  dragHandle:     { width: 44, height: 4, borderRadius: 2 },
+  scrollContent:  { paddingHorizontal: 20 },
+
   fareStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
   fareItem:    { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
   fareLabel:   { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
   fareValue:   { fontSize: 14, fontWeight: '900' },
   fareDivider: { width: 1 },
 
-  // Shield — styles kept for when Shield is uncommented
   shieldBtn:    { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
   shieldBtnTxt: { flex: 1, fontSize: 13, fontWeight: '700', color: '#4CAF50' },
 
-  // Cancel
   cancelBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, marginBottom: 8 },
   cancelTxt: { fontSize: 14, fontWeight: '700', color: '#E05555' },
 
-  // Home / rate
   homeBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8 },
   homeBtnTxt: { fontSize: 15, fontWeight: '800' },
 });
