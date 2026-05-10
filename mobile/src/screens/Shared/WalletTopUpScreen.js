@@ -3,12 +3,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, StatusBar, Animated, ActivityIndicator,
-  Alert, Keyboard, Linking,
+  Alert, Keyboard, Linking, Dimensions, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 import { walletAPI } from '../../services/api';
+
+const { height } = Dimensions.get('window');
 
 const QUICK_AMOUNTS = [1000, 2000, 5000, 10000, 20000, 50000];
 
@@ -17,6 +19,7 @@ const formatNGN = (n) =>
 
 export default function WalletTopUpScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const insets          = useSafeAreaInsets();
 
   const accent = theme.accent;
 
@@ -25,14 +28,23 @@ export default function WalletTopUpScreen({ navigation }) {
   const [limits,  setLimits]  = useState({ min: 100, max: 1000000 });
   const shakeA = useRef(new Animated.Value(0)).current;
 
-  // Fetch admin-configured deposit limits on mount
+  // ── Header height: safe-area top + inner row ──────────────────────────────
+  const HEADER_INNER_H = 68; // paddingVertical(14)*2 + content(~40)
+  const HEADER_H       = insets.top + HEADER_INNER_H;
+
+  // ── KEY: bounded scroll height — screen minus header and bottom inset.
+  // No tab bar on this stack screen, so only subtract the safe-area bottom
+  // to avoid the home indicator. This gives ScrollView a concrete boundary
+  // identical to the driver dashboard sheet pattern.
+  const SCROLL_H = height - HEADER_H - insets.bottom;
+
   useEffect(() => {
     walletAPI.getDepositLimits?.()
       .then(res => {
         const { min, max } = res?.data ?? {};
         if (min && max) setLimits({ min, max });
       })
-      .catch(() => {}); // silently fall back to defaults
+      .catch(() => {});
   }, []);
 
   const shake = () => {
@@ -102,11 +114,19 @@ export default function WalletTopUpScreen({ navigation }) {
   const amtNum = parseFloat(amount) || 0;
 
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
+    <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      {/* Header */}
-      <View style={[s.header, { borderBottomColor: theme.border }]}>
+      {/* ── Header ── */}
+      <View style={[
+        s.header,
+        {
+          paddingTop:        insets.top,
+          height:            HEADER_H,
+          backgroundColor:   theme.background,
+          borderBottomColor: theme.border,
+        },
+      ]}>
         <TouchableOpacity
           style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
           onPress={() => navigation.goBack()}
@@ -120,186 +140,188 @@ export default function WalletTopUpScreen({ navigation }) {
         </View>
       </View>
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={s.scroll}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Info card */}
-        <View style={[s.infoCard, { backgroundColor: accent + '0D', borderColor: accent + '30' }]}>
-          <Ionicons name="information-circle-outline" size={18} color={accent} />
-          <View style={{ flex: 1 }}>
-            <Text style={[s.infoTitle, { color: accent }]}>Why top up?</Text>
-            <Text style={[s.infoBody, { color: theme.hint }]}>
-              Use your wallet for faster, cashless payments on every ride and delivery.
+      {/* ── KEY: bounded container — explicit pixel height gives ScrollView
+           a concrete parent boundary so it scrolls to the last item without
+           overflowing. Same pattern as the driver dashboard sheet. ── */}
+      <View style={{ height: SCROLL_H }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          bounces
+          overScrollMode="always"
+        >
+          {/* Info card */}
+          <View style={[s.infoCard, { backgroundColor: accent + '0D', borderColor: accent + '30' }]}>
+            <Ionicons name="information-circle-outline" size={18} color={accent} />
+            <View style={{ flex: 1 }}>
+              <Text style={[s.infoTitle, { color: accent }]}>Why top up?</Text>
+              <Text style={[s.infoBody, { color: theme.hint }]}>
+                Use your wallet for faster, cashless payments on every ride and delivery.
+              </Text>
+            </View>
+          </View>
+
+          {/* Limit hint */}
+          <View style={[s.limitHint, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+            <Ionicons name="information-circle-outline" size={14} color={theme.hint} />
+            <Text style={[s.limitHintTxt, { color: theme.hint }]}>
+              Min: ₦{formatNGN(limits.min)} · Max: ₦{formatNGN(limits.max)} per transaction
             </Text>
           </View>
-        </View>
 
-        {/* Limit hint */}
-        <View style={[s.limitHint, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-          <Ionicons name="information-circle-outline" size={14} color={theme.hint} />
-          <Text style={[s.limitHintTxt, { color: theme.hint }]}>
-            Min: ₦{formatNGN(limits.min)} · Max: ₦{formatNGN(limits.max)} per transaction
-          </Text>
-        </View>
+          {/* Amount input */}
+          <Text style={[s.sectionLabel, { color: theme.hint }]}>ENTER AMOUNT</Text>
 
-        {/* Amount input */}
-        <Text style={[s.sectionLabel, { color: theme.hint }]}>ENTER AMOUNT</Text>
+          <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
+            <View style={[
+              s.inputCard,
+              {
+                backgroundColor: theme.backgroundAlt,
+                borderColor: amtNum > 0 ? accent + '80' : theme.border,
+              }
+            ]}>
+              <Text style={[s.currency, { color: accent }]}>₦</Text>
 
-        <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
-          <View style={[
-            s.inputCard,
-            {
-              backgroundColor: theme.backgroundAlt,
-              borderColor: amtNum > 0 ? accent + '80' : theme.border,
-            }
-          ]}>
-            <Text style={[s.currency, { color: accent }]}>₦</Text>
+              <TextInput
+                style={[s.input, { color: theme.foreground }]}
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={theme.hint}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+                maxLength={8}
+              />
 
-            <TextInput
-              style={[s.input, { color: theme.foreground }]}
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType="numeric"
-              placeholder="0"
-              placeholderTextColor={theme.hint}
-              returnKeyType="done"
-              onSubmitEditing={Keyboard.dismiss}
-              maxLength={8}
-            />
+              {amtNum > 0 && (
+                <TouchableOpacity onPress={() => setAmount('')}>
+                  <Ionicons name="close-circle" size={20} color={theme.hint} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </Animated.View>
 
-            {amtNum > 0 && (
-              <TouchableOpacity onPress={() => setAmount('')}>
-                <Ionicons name="close-circle" size={20} color={theme.hint} />
-              </TouchableOpacity>
-            )}
+          {/* Quick amounts */}
+          <Text style={[s.sectionLabel, { color: theme.hint }]}>QUICK SELECT</Text>
+
+          <View style={s.quickGrid}>
+            {QUICK_AMOUNTS.map(q => {
+              const selected     = parseFloat(amount) === q;
+              const withinLimits = q >= limits.min && q <= limits.max;
+
+              return (
+                <TouchableOpacity
+                  key={q}
+                  style={[
+                    s.quickBtn,
+                    {
+                      backgroundColor: selected ? accent : theme.backgroundAlt,
+                      borderColor:     selected ? accent : theme.border,
+                      opacity: withinLimits ? 1 : 0.35,
+                    }
+                  ]}
+                  onPress={() => withinLimits && setAmount(String(q))}
+                  disabled={!withinLimits}
+                >
+                  <Text style={[s.quickTxt, { color: selected ? theme.accentFg : theme.foreground }]}>
+                    ₦{formatNGN(q)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        </Animated.View>
 
-        {/* Quick amounts */}
-        <Text style={[s.sectionLabel, { color: theme.hint }]}>QUICK SELECT</Text>
-
-        <View style={s.quickGrid}>
-          {QUICK_AMOUNTS.map(q => {
-            const selected = parseFloat(amount) === q;
-            const withinLimits = q >= limits.min && q <= limits.max;
-
-            return (
-              <TouchableOpacity
-                key={q}
-                style={[
-                  s.quickBtn,
-                  {
-                    backgroundColor: selected ? accent : theme.backgroundAlt,
-                    borderColor: selected ? accent : theme.border,
-                    opacity: withinLimits ? 1 : 0.35,
-                  }
-                ]}
-                onPress={() => withinLimits && setAmount(String(q))}
-                disabled={!withinLimits}
-              >
-                <Text style={[
-                  s.quickTxt,
-                  { color: selected ? theme.accentFg : theme.foreground }
-                ]}>
-                  ₦{formatNGN(q)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Breakdown */}
-        {amtNum >= limits.min && (
-          <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <View style={s.breakdownRow}>
-              <Text style={[s.breakdownLbl, { color: theme.hint }]}>Amount</Text>
-              <Text style={[s.breakdownVal, { color: theme.foreground }]}>
-                ₦{formatNGN(amtNum)}
-              </Text>
+          {/* Breakdown */}
+          {amtNum >= limits.min && (
+            <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={s.breakdownRow}>
+                <Text style={[s.breakdownLbl, { color: theme.hint }]}>Amount</Text>
+                <Text style={[s.breakdownVal, { color: theme.foreground }]}>₦{formatNGN(amtNum)}</Text>
+              </View>
+              <View style={s.breakdownRow}>
+                <Text style={[s.breakdownLbl, { color: theme.hint }]}>Processing fee</Text>
+                <Text style={[s.breakdownVal, { color: theme.accent }]}>FREE</Text>
+              </View>
+              <View style={[s.breakdownDivider, { backgroundColor: theme.border }]} />
+              <View style={s.breakdownRow}>
+                <Text style={[s.breakdownLbl, { color: accent, fontWeight: '800' }]}>Wallet credit</Text>
+                <Text style={[s.breakdownVal, { color: accent, fontWeight: '900', fontSize: 16 }]}>₦{formatNGN(amtNum)}</Text>
+              </View>
             </View>
-
-            <View style={s.breakdownRow}>
-              <Text style={[s.breakdownLbl, { color: theme.hint }]}>Processing fee</Text>
-              <Text style={[s.breakdownVal, { color: theme.accent }]}>FREE</Text>
-            </View>
-
-            <View style={[s.breakdownDivider, { backgroundColor: theme.border }]} />
-
-            <View style={s.breakdownRow}>
-              <Text style={[s.breakdownLbl, { color: accent, fontWeight: '800' }]}>
-                Wallet credit
-              </Text>
-              <Text style={[s.breakdownVal, { color: accent, fontWeight: '900', fontSize: 16 }]}>
-                ₦{formatNGN(amtNum)}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Security */}
-        <View style={[s.securityRow, { borderColor: theme.border }]}>
-          <Ionicons name="shield-checkmark-outline" size={14} color={theme.accent} />
-          <Text style={[s.securityTxt, { color: theme.hint }]}>
-            256-bit SSL encryption • Powered by Paystack • PCI-DSS compliant
-          </Text>
-        </View>
-
-        {/* Button */}
-        <TouchableOpacity
-          style={[
-            s.payBtn,
-            {
-              backgroundColor: theme.accent,
-              opacity: loading || amtNum < limits.min ? 0.75 : 1,
-            }
-          ]}
-          onPress={handleTopUp}
-          disabled={loading || amtNum < limits.min}
-        >
-          {loading ? (
-            <ActivityIndicator color={theme.accentFg} />
-          ) : (
-            <>
-              <Ionicons name="lock-closed" size={18} color={theme.accentFg} />
-              <Text style={[s.payBtnTxt, { color: theme.accentFg }]}>
-                {amtNum >= limits.min ? `Pay ₦${formatNGN(amtNum)}` : `Min ₦${formatNGN(limits.min)}`}
-              </Text>
-            </>
           )}
-        </TouchableOpacity>
 
-        <View style={{ height: 60 }} />
-      </ScrollView>
-    </SafeAreaView>
+          {/* Security */}
+          <View style={[s.securityRow, { borderColor: theme.border }]}>
+            <Ionicons name="shield-checkmark-outline" size={14} color={theme.accent} />
+            <Text style={[s.securityTxt, { color: theme.hint }]}>
+              256-bit SSL encryption • Powered by Paystack • PCI-DSS compliant
+            </Text>
+          </View>
+
+          {/* Pay button */}
+          <TouchableOpacity
+            style={[
+              s.payBtn,
+              {
+                backgroundColor: theme.accent,
+                opacity: loading || amtNum < limits.min ? 0.75 : 1,
+              }
+            ]}
+            onPress={handleTopUp}
+            disabled={loading || amtNum < limits.min}
+          >
+            {loading ? (
+              <ActivityIndicator color={theme.accentFg} />
+            ) : (
+              <>
+                <Ionicons name="lock-closed" size={18} color={theme.accentFg} />
+                <Text style={[s.payBtnTxt, { color: theme.accentFg }]}>
+                  {amtNum >= limits.min ? `Pay ₦${formatNGN(amtNum)}` : `Min ₦${formatNGN(limits.min)}`}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <View style={{ height: 32 }} />
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:       { flex: 1 },
-  header:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
-  backBtn:    { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle:{ fontSize: 17, fontWeight: '900' },
-  headerSub:  { fontSize: 11, marginTop: 1 },
-  scroll:     { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 },
+  root: { flex: 1 },
+
+  // ── Header — height set inline via HEADER_H ──
+  header: {
+    flexDirection: 'row', alignItems: 'flex-end',
+    gap: 14, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,
+  },
+  backBtn:     { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '900' },
+  headerSub:   { fontSize: 11, marginTop: 1 },
+
+  // ── Scroll content ──
+  scroll: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 },
 
   limitHint:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 20 },
   limitHintTxt: { fontSize: 11, fontWeight: '600' },
 
-  infoCard:   { flexDirection: 'row', gap: 10, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 24 },
-  infoTitle:  { fontSize: 13, fontWeight: '800', marginBottom: 4 },
-  infoBody:   { fontSize: 12, lineHeight: 18 },
+  infoCard:  { flexDirection: 'row', gap: 10, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 24 },
+  infoTitle: { fontSize: 13, fontWeight: '800', marginBottom: 4 },
+  infoBody:  { fontSize: 12, lineHeight: 18 },
 
   sectionLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 2.5, marginBottom: 12 },
   inputCard:    { flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderWidth: 1.5, paddingHorizontal: 18, paddingVertical: 4, marginBottom: 24 },
   currency:     { fontSize: 28, fontWeight: '900', marginRight: 6 },
   input:        { flex: 1, fontSize: 40, fontWeight: '900', paddingVertical: 14 },
 
-  quickGrid:  { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
-  quickBtn:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 18, paddingVertical: 11 },
-  quickTxt:   { fontSize: 14, fontWeight: '700' },
+  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
+  quickBtn:  { borderRadius: 12, borderWidth: 1, paddingHorizontal: 18, paddingVertical: 11 },
+  quickTxt:  { fontSize: 14, fontWeight: '700' },
 
   breakdownCard:    { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 16, gap: 10 },
   breakdownRow:     { flexDirection: 'row', justifyContent: 'space-between' },

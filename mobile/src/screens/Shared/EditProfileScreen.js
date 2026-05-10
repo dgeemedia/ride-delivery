@@ -3,9 +3,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Alert, KeyboardAvoidingView, Platform, ScrollView,
-  Animated, StatusBar, ActivityIndicator, Image,
+  Animated, StatusBar, ActivityIndicator, Image, Dimensions,
 } from 'react-native';
 import { Ionicons }      from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker  from 'expo-image-picker';
 import * as FileSystem   from 'expo-file-system/legacy';
 
@@ -14,6 +15,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { userAPI }  from '../../services/api';
 import api          from '../../services/api';
 
+const { height } = Dimensions.get('window');
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Upload: read file as base64 → POST /api/upload/base64 → Cloudinary URL
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,13 +24,9 @@ async function uploadToCloudinary(uri) {
   const ext      = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
   const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
 
-  // FIX: use the string literal 'base64' — FileSystem.EncodingType may be
-  // undefined on some Expo SDK versions / web environments.
   const base64Raw  = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
   const base64Data = `data:${mimeType};base64,${base64Raw}`;
 
-  // Axios interceptor returns response.data directly.
-  // Shape: { success: true, data: { url, publicId } }
   const res = await api.post('/upload/base64', { base64Data, folder: 'diakite/profiles' });
   const url = res?.data?.url ?? res?.url;
   if (!url) throw new Error('Upload succeeded but no URL returned.');
@@ -76,7 +75,7 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, editab
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Image picker helpers — expo-image-picker v14+ API
+// Image picker helpers
 // ─────────────────────────────────────────────────────────────────────────────
 async function pickFromLibrary() {
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -128,6 +127,7 @@ async function pickFromCamera() {
 export default function EditProfileScreen({ navigation }) {
   const { user, updateUser } = useAuth();
   const { theme, mode }      = useTheme();
+  const insets               = useSafeAreaInsets();
 
   const [firstName,     setFirstName]     = useState(user?.firstName    ?? '');
   const [lastName,      setLastName]      = useState(user?.lastName     ?? '');
@@ -141,6 +141,14 @@ export default function EditProfileScreen({ navigation }) {
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(18)).current;
 
+  // ── Header height — safe-area top + inner row ─────────────────────────────
+  const HEADER_H = insets.top + 56; // 56 = paddingBottom(14) + content row(~42)
+
+  // ── KEY: bounded scroll height — screen minus header and safe-area bottom.
+  // No tab bar on this screen (it's a stack modal), so we only subtract
+  // the header and the bottom inset to avoid the home indicator overlap.
+  const SCROLL_H = height - HEADER_H - insets.bottom;
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeA,  { toValue: 1, duration: 450, useNativeDriver: true }),
@@ -148,7 +156,6 @@ export default function EditProfileScreen({ navigation }) {
     ]).start();
   }, []);
 
-  // ── Show picker action sheet ────────────────────────────────────────────────
   const handleAvatarPress = () => {
     Alert.alert(
       'Profile Photo',
@@ -174,14 +181,12 @@ export default function EditProfileScreen({ navigation }) {
     );
   };
 
-  // ── Has anything changed? ───────────────────────────────────────────────────
   const hasChanges =
     firstName     !== (user?.firstName ?? '') ||
     lastName      !== (user?.lastName  ?? '') ||
     phone         !== (user?.phone     ?? '') ||
     imageLocalUri !== null;
 
-  // ── Save ────────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!firstName.trim()) return Alert.alert('Required', 'First name cannot be empty.');
     if (!lastName.trim())  return Alert.alert('Required', 'Last name cannot be empty.');
@@ -190,7 +195,6 @@ export default function EditProfileScreen({ navigation }) {
     try {
       let finalImageUrl = profileImage;
 
-      // Step 1 — upload new photo if selected
       if (imageLocalUri) {
         setUploading(true);
         finalImageUrl = await uploadToCloudinary(imageLocalUri);
@@ -199,7 +203,6 @@ export default function EditProfileScreen({ navigation }) {
         setImageLocalUri(null);
       }
 
-      // Step 2 — patch profile
       const payload = {
         firstName: firstName.trim(),
         lastName:  lastName.trim(),
@@ -221,23 +224,26 @@ export default function EditProfileScreen({ navigation }) {
     }
   };
 
-  // ── Derived ─────────────────────────────────────────────────────────────────
   const displayUri = imageLocalUri ?? profileImage;
   const initials   = `${firstName?.[0] ?? ''}${lastName?.[0] ?? ''}`.toUpperCase();
   const busy       = saving || uploading;
-
-  // FIX: resolve foreground color for elements that sit ON the accent colour.
-  // theme.accentFg is '#000000' when accent is white (dark mode)
-  //                and '#FFFFFF' when accent is black (light mode).
-  const onAccent = theme.accentFg ?? '#FFFFFF';
-  const savedBg  = '#5DAA72';
+  const onAccent   = theme.accentFg ?? '#FFFFFF';
+  const savedBg    = '#5DAA72';
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
       {/* ── Header ── */}
-      <View style={[s.header, { borderBottomColor: theme.border }]}>
+      <View style={[
+        s.header,
+        {
+          paddingTop:        insets.top,
+          height:            HEADER_H,
+          backgroundColor:   theme.background,
+          borderBottomColor: theme.border,
+        },
+      ]}>
         <TouchableOpacity
           style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
           onPress={() => navigation.goBack()}
@@ -248,109 +254,121 @@ export default function EditProfileScreen({ navigation }) {
         <View style={{ width: 38 }} />
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+      {/* ── KEY: bounded container — gives KeyboardAvoidingView + ScrollView
+           a concrete pixel height to work against rather than relying on
+           flex:1 which can overflow on some layouts. ── */}
+      <View style={{ height: SCROLL_H }}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={s.scroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            bounces
+            overScrollMode="always"
+          >
+            <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
 
-            {/* ── Avatar ── */}
-            <View style={s.avatarSection}>
-              <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.8} style={s.avatarWrap}>
-                {displayUri ? (
-                  <Image
-                    source={{ uri: displayUri }}
-                    style={[s.avatarImg, { borderColor: theme.accent + '50' }]}
-                  />
-                ) : (
-                  <View style={[s.avatarPlaceholder, { backgroundColor: theme.accent + '18', borderColor: theme.accent + '35' }]}>
-                    <Text style={[s.avatarInitials, { color: theme.accent }]}>{initials || '?'}</Text>
+              {/* ── Avatar ── */}
+              <View style={s.avatarSection}>
+                <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.8} style={s.avatarWrap}>
+                  {displayUri ? (
+                    <Image
+                      source={{ uri: displayUri }}
+                      style={[s.avatarImg, { borderColor: theme.accent + '50' }]}
+                    />
+                  ) : (
+                    <View style={[s.avatarPlaceholder, { backgroundColor: theme.accent + '18', borderColor: theme.accent + '35' }]}>
+                      <Text style={[s.avatarInitials, { color: theme.accent }]}>{initials || '?'}</Text>
+                    </View>
+                  )}
+
+                  <View style={[s.cameraBadge, { backgroundColor: theme.accent, borderColor: theme.background }]}>
+                    {uploading
+                      ? <ActivityIndicator size="small" color={onAccent} />
+                      : <Ionicons name="camera" size={13} color={onAccent} />
+                    }
+                  </View>
+                </TouchableOpacity>
+
+                <Text style={[s.avatarHint, { color: theme.hint }]}>
+                  {imageLocalUri ? 'New photo selected — tap Save to apply' : 'Tap photo to update'}
+                </Text>
+
+                {imageLocalUri && (
+                  <View style={[s.pendingPill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '28' }]}>
+                    <Ionicons name="checkmark-circle-outline" size={12} color={theme.accent} />
+                    <Text style={[s.pendingPillTxt, { color: theme.accent }]}>Photo ready to upload</Text>
                   </View>
                 )}
+              </View>
 
-                {/* Camera badge — FIX: icon color uses theme.accentFg */}
-                <View style={[s.cameraBadge, { backgroundColor: theme.accent, borderColor: theme.background }]}>
-                  {uploading
-                    ? <ActivityIndicator size="small" color={onAccent} />
-                    : <Ionicons name="camera" size={13} color={onAccent} />
-                  }
-                </View>
+              {/* ── Personal details ── */}
+              <Text style={[s.sectionLabel, { color: theme.hint }]}>PERSONAL DETAILS</Text>
+              <FloatInput label="First Name" iconName="person-outline" value={firstName} onChangeText={setFirstName} />
+              <FloatInput label="Last Name"  iconName="person-outline" value={lastName}  onChangeText={setLastName}  />
+              <FloatInput label="Phone"      iconName="call-outline"   value={phone}     onChangeText={setPhone}     keyboardType="phone-pad" />
+
+              {/* ── Account (read-only) ── */}
+              <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 8 }]}>ACCOUNT</Text>
+              <FloatInput label="Email" iconName="mail-outline" value={user?.email ?? ''} editable={false} />
+              <Text style={[s.fieldNote, { color: theme.hint }]}>Email cannot be changed. Contact support if needed.</Text>
+
+              {/* ── Save button ── */}
+              <TouchableOpacity
+                style={[
+                  s.saveBtn,
+                  { backgroundColor: saved ? savedBg : theme.accent, shadowColor: theme.accent },
+                  (!hasChanges || busy) && !saved && { opacity: 0.38 },
+                ]}
+                onPress={handleSave}
+                disabled={!hasChanges || busy || saved}
+                activeOpacity={0.85}
+              >
+                {busy ? (
+                  <View style={s.btnRow}>
+                    <ActivityIndicator color={saved ? '#FFFFFF' : onAccent} size="small" />
+                    <Text style={[s.saveBtnTxt, { color: saved ? '#FFFFFF' : onAccent }]}>
+                      {uploading ? 'Uploading photo…' : 'Saving…'}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={s.btnRow}>
+                    <Ionicons
+                      name={saved ? 'checkmark' : 'save-outline'}
+                      size={18}
+                      color={saved ? '#FFFFFF' : onAccent}
+                    />
+                    <Text style={[s.saveBtnTxt, { color: saved ? '#FFFFFF' : onAccent }]}>
+                      {saved ? 'Saved!' : 'Save Changes'}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
 
-              <Text style={[s.avatarHint, { color: theme.hint }]}>
-                {imageLocalUri ? 'New photo selected — tap Save to apply' : 'Tap photo to update'}
-              </Text>
-
-              {imageLocalUri && (
-                <View style={[s.pendingPill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '28' }]}>
-                  <Ionicons name="checkmark-circle-outline" size={12} color={theme.accent} />
-                  <Text style={[s.pendingPillTxt, { color: theme.accent }]}>Photo ready to upload</Text>
-                </View>
-              )}
-            </View>
-
-            {/* ── Personal details ── */}
-            <Text style={[s.sectionLabel, { color: theme.hint }]}>PERSONAL DETAILS</Text>
-            <FloatInput label="First Name" iconName="person-outline" value={firstName} onChangeText={setFirstName} />
-            <FloatInput label="Last Name"  iconName="person-outline" value={lastName}  onChangeText={setLastName}  />
-            <FloatInput label="Phone"      iconName="call-outline"   value={phone}     onChangeText={setPhone}     keyboardType="phone-pad" />
-
-            {/* ── Account (read-only) ── */}
-            <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 8 }]}>ACCOUNT</Text>
-            <FloatInput label="Email" iconName="mail-outline" value={user?.email ?? ''} editable={false} />
-            <Text style={[s.fieldNote, { color: theme.hint }]}>Email cannot be changed. Contact support if needed.</Text>
-
-            {/* ── Save button ── */}
-            {/* FIX: button bg = theme.accent; text/icon color = theme.accentFg (not hardcoded white) */}
-            <TouchableOpacity
-              style={[
-                s.saveBtn,
-                { backgroundColor: saved ? savedBg : theme.accent, shadowColor: theme.accent },
-                (!hasChanges || busy) && !saved && { opacity: 0.38 },
-              ]}
-              onPress={handleSave}
-              disabled={!hasChanges || busy || saved}
-              activeOpacity={0.85}
-            >
-              {busy ? (
-                <View style={s.btnRow}>
-                  <ActivityIndicator color={saved ? '#FFFFFF' : onAccent} size="small" />
-                  <Text style={[s.saveBtnTxt, { color: saved ? '#FFFFFF' : onAccent }]}>
-                    {uploading ? 'Uploading photo…' : 'Saving…'}
-                  </Text>
-                </View>
-              ) : (
-                <View style={s.btnRow}>
-                  <Ionicons
-                    name={saved ? 'checkmark' : 'save-outline'}
-                    size={18}
-                    color={saved ? '#FFFFFF' : onAccent}
-                  />
-                  <Text style={[s.saveBtnTxt, { color: saved ? '#FFFFFF' : onAccent }]}>
-                    {saved ? 'Saved!' : 'Save Changes'}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
-          </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+            </Animated.View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
     </View>
   );
 }
 
 const s = StyleSheet.create({
   root:              { flex: 1 },
+
+  // ── Header — height set inline via HEADER_H ──
   header:            {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 56 : 40,
-    paddingBottom: 14, borderBottomWidth: 1,
+    flexDirection: 'row', alignItems: 'flex-end',
+    paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,
   },
   backBtn:           { width: 38, height: 38, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle:       { fontSize: 16, fontWeight: '700' },
+  headerTitle:       { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700' },
+
+  // ── Scroll content ──
   scroll:            { paddingHorizontal: 24, paddingBottom: 64, paddingTop: 28 },
 
   // Avatar
@@ -372,7 +390,7 @@ const s = StyleSheet.create({
   inputText:         { fontSize: 15, paddingTop: 18, paddingBottom: 4, fontWeight: '400' },
   fieldNote:         { fontSize: 11, marginTop: -4, marginBottom: 24, marginLeft: 2 },
 
-  // Button — text color is applied inline via theme.accentFg, not in StyleSheet
+  // Button
   saveBtn:           {
     borderRadius: 13, height: 54, justifyContent: 'center', alignItems: 'center',
     marginTop: 8, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28,

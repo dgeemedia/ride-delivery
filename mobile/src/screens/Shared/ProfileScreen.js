@@ -323,18 +323,19 @@ export default function ProfileScreen({ navigation }) {
   const showApprovalBadge = role === 'DRIVER' || role === 'DELIVERY_PARTNER';
   const isProviderRole    = role === 'DRIVER' || role === 'DELIVERY_PARTNER';
 
-  // ── Tab bar + safe area constants — mirrors DriverNavigator exactly
+  // ── Tab bar + safe area constants
   const TAB_H        = 54;
   const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
 
-  // ── Header height: safe-area top + inner content row (back btn 38px + 12px padding)
+  // ── Header height: safe-area top + inner content row
   const HEADER_INNER_H = 50;
   const HEADER_H       = insets.top + HEADER_INNER_H;
 
-  // ── Scrollable area = full screen minus header and tab bar
+  // ── KEY: bounded scroll area height — header + tab bar subtracted from screen
+  // This mirrors the DriverDashboard pattern: a fixed pixel height container
+  // gives the ScrollView a concrete boundary so it scrolls correctly.
   const SCROLL_H = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
 
-  // ── Back: pop if possible, else jump to role's home tab
   const canGoBack = navigation.canGoBack();
   const handleBack = () => {
     if (canGoBack) {
@@ -464,13 +465,13 @@ export default function ProfileScreen({ navigation }) {
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
-      {/* ── Sticky header with back arrow ──────────────────────────────────── */}
+      {/* ── Sticky header ── */}
       <View style={[
         s.header,
         {
-          paddingTop:      insets.top,
-          height:          HEADER_H,
-          backgroundColor: theme.background,
+          paddingTop:        insets.top,
+          height:            HEADER_H,
+          backgroundColor:   theme.background,
           borderBottomColor: theme.border,
         },
       ]}>
@@ -483,15 +484,13 @@ export default function ProfileScreen({ navigation }) {
           <Ionicons name="arrow-back" size={20} color={theme.foreground} />
         </TouchableOpacity>
         <Text style={[s.headerTitle, { color: theme.foreground }]}>Profile</Text>
-        {/* Mirrors the back button width so the title is visually centred */}
         <View style={s.headerSpacer} />
       </View>
 
-      {/* ── Scrollable body
-           THE KEY: wrap ScrollView in a View with an explicit pixel height.
-           This is exactly how the driver dashboard sheet works — the sheet has
-           height: SHEET_SNAP (a fixed pixel value), not flex:1, which gives
-           the ScrollView a concrete boundary to overflow against.
+      {/* ── KEY: bounded container with explicit pixel height ──────────────────
+           A View with a fixed height (not flex:1) gives the ScrollView a
+           concrete parent boundary — identical to how the driver dashboard
+           sheet (height: SHEET_SNAP) enables perfect scrolling.
       ── */}
       <View style={{ height: SCROLL_H }}>
         <ScrollView
