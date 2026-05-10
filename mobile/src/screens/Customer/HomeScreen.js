@@ -36,13 +36,13 @@ const H_PAD = 16;
 
 // Two snap points for the draggable sheet
 const SHEET_EXPANDED  = height * 0.92;
-const SHEET_COLLAPSED = height * 0.60;
-const COLLAPSED_Y     = SHEET_EXPANDED - SHEET_COLLAPSED; // translateY when resting
+const SHEET_COLLAPSED = height * 0.78;
+const COLLAPSED_Y     = SHEET_EXPANDED - SHEET_COLLAPSED;
 
 // Tab bar height (matches CustomerNavigator)
 const TAB_CONTENT_H = 54;
 const TAB_H         = Platform.OS === 'android'
-  ? TAB_CONTENT_H + 16  // android extra bottom padding
+  ? TAB_CONTENT_H + 16
   : TAB_CONTENT_H;
 
 // ── Service card data ─────────────────────────────────────────────────────────
@@ -290,20 +290,17 @@ export default function HomeScreen({ navigation }) {
   const [historyLoading,  setHistoryLoading]  = useState(true);
   const [sheetExpanded,   setSheetExpanded]   = useState(false);
 
-  const fadeA      = useRef(new Animated.Value(0)).current;
-  // translateY: COLLAPSED_Y = resting (60%), 0 = fully expanded (92%)
+  const fadeA       = useRef(new Animated.Value(0)).current;
   const sheetTransY = useRef(new Animated.Value(COLLAPSED_Y)).current;
-  const lastY       = useRef(COLLAPSED_Y); // track current snap position
+  const lastY       = useRef(COLLAPSED_Y);
 
   // ── PanResponder for sheet drag ───────────────────────────────────────────
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        // Only capture clear vertical swipes on the handle
         return Math.abs(gestureState.dy) > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
       },
       onPanResponderGrant: () => {
-        // Stop any running animation and sync offset
         sheetTransY.stopAnimation(val => {
           sheetTransY.setOffset(val);
           sheetTransY.setValue(0);
@@ -311,18 +308,16 @@ export default function HomeScreen({ navigation }) {
         });
       },
       onPanResponderMove: (_, gestureState) => {
-        // Clamp drag between 0 (expanded) and COLLAPSED_Y (collapsed)
-        const next = lastY.current + gestureState.dy;
+        const next    = lastY.current + gestureState.dy;
         const clamped = Math.max(0, Math.min(COLLAPSED_Y, next));
         sheetTransY.setValue(clamped - lastY.current);
       },
       onPanResponderRelease: (_, gestureState) => {
         sheetTransY.flattenOffset();
-        const current = lastY.current + gestureState.dy;
+        const current  = lastY.current + gestureState.dy;
         const velocity = gestureState.vy;
         const midpoint = COLLAPSED_Y / 2;
 
-        // Snap decision: velocity or position
         const snapToExpanded =
           velocity < -0.5 ||
           (velocity >= -0.5 && velocity <= 0.5 && current < midpoint);
@@ -341,27 +336,17 @@ export default function HomeScreen({ navigation }) {
     })
   ).current;
 
-  // ── Snap helpers for programmatic control ─────────────────────────────────
+  // ── Snap helpers ──────────────────────────────────────────────────────────
   const snapExpand = useCallback(() => {
     lastY.current = 0;
     setSheetExpanded(true);
-    Animated.spring(sheetTransY, {
-      toValue: 0,
-      useNativeDriver: true,
-      tension: 68,
-      friction: 13,
-    }).start();
+    Animated.spring(sheetTransY, { toValue: 0, useNativeDriver: true, tension: 68, friction: 13 }).start();
   }, [sheetTransY]);
 
   const snapCollapse = useCallback(() => {
     lastY.current = COLLAPSED_Y;
     setSheetExpanded(false);
-    Animated.spring(sheetTransY, {
-      toValue: COLLAPSED_Y,
-      useNativeDriver: true,
-      tension: 68,
-      friction: 13,
-    }).start();
+    Animated.spring(sheetTransY, { toValue: COLLAPSED_Y, useNativeDriver: true, tension: 68, friction: 13 }).start();
   }, [sheetTransY]);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
@@ -576,117 +561,119 @@ export default function HomeScreen({ navigation }) {
           transform: [{ translateY: sheetTransY }],
         }]}
       >
-        {/* ── Drag handle — attach PanResponder here ── */}
+        {/* ── Drag handle — PanResponder lives here only ── */}
         <View style={s.handleWrap} {...panResponder.panHandlers}>
           <View style={[s.handle, { backgroundColor: darkMode ? 'rgba(255,255,255,0.20)' : 'rgba(0,0,0,0.16)' }]} />
-          {/* Expanded title bar */}
           {sheetExpanded && (
             <Text style={[s.expandedTitle, { color: theme.foreground }]}>Recent Trips</Text>
           )}
         </View>
 
-        {/* Greeting */}
-        <View style={s.greetRow}>
-          <Text style={[s.greetTxt, { color: theme.foreground }]}>
-            {greet}, {user?.firstName}.
-          </Text>
-          <TouchableOpacity
-            style={[s.notifBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
-            onPress={() => navigation.navigate('Notifications')}
-          >
-            <Ionicons name="notifications-outline" size={20} color={theme.foreground} />
-            <View style={[s.notifDot, { borderColor: sheetBg }]} />
-          </TouchableOpacity>
-        </View>
+        {/* ── Bounded inner container — gives ScrollView a proper flex parent ── */}
+        <View style={s.sheetInner}>
 
-        {/* Active banners */}
-        {activeRide && (
-          <ActiveRideBanner
-            ride={activeRide}
-            role="CUSTOMER"
-            theme={theme}
-            onPress={() => navigation.navigate('RideTracking', { rideId: activeRide.id })}
-            onCancel={activeRide.status === 'REQUESTED' ? handleCancelRide : undefined}
-          />
-        )}
-        {activeDelivery && (
-          <ActiveDeliveryBanner
-            delivery={activeDelivery}
-            role="CUSTOMER"
-            theme={theme}
-            onPress={() => navigation.navigate('DeliveryTracking', { deliveryId: activeDelivery.id })}
-            onCancel={activeDelivery.status === 'PENDING' ? handleCancelDelivery : undefined}
-          />
-        )}
-
-        {/* ── Service icon row ── */}
-        <View style={s.serviceRow}>
-          {serviceCards.map(item => (
-            <ServiceIcon key={item.id} item={item} theme={theme} darkMode={darkMode} />
-          ))}
-        </View>
-
-        {/* Where to? search bar */}
-        <TouchableOpacity
-          style={[s.searchBar, { backgroundColor: inputBg, borderColor: inputBorder }]}
-          onPress={() => {
-            if (maintenance.isOn) { showMaintenanceAlert(); return; }
-            navigation.navigate('RequestRide');
-          }}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="search-outline" size={18} color={hintColor} />
-          <Text style={[s.searchHint, { color: hintColor }]}>Where to?</Text>
-          <View style={[s.laterPill, {
-            backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
-            borderColor: inputBorder,
-          }]}>
-            <Ionicons name="calendar-outline" size={13} color={hintColor} />
-            <Text style={[s.laterTxt, { color: hintColor }]}>Later</Text>
+          {/* Greeting */}
+          <View style={s.greetRow}>
+            <Text style={[s.greetTxt, { color: theme.foreground }]}>
+              {greet}, {user?.firstName}.
+            </Text>
+            <TouchableOpacity
+              style={[s.notifBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
+              onPress={() => navigation.navigate('Notifications')}
+            >
+              <Ionicons name="notifications-outline" size={20} color={theme.foreground} />
+              <View style={[s.notifDot, { borderColor: sheetBg }]} />
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
 
-        {/* Section label */}
-        {!sheetExpanded && recentAddresses.length > 0 && (
-          <TouchableOpacity style={s.sectionRow} onPress={snapExpand} activeOpacity={0.7}>
-            <Text style={[s.sectionLabel, { color: theme.hint }]}>Recent trips</Text>
-            <Ionicons name="chevron-up" size={13} color={theme.hint} />
-          </TouchableOpacity>
-        )}
-
-        {/* Recent addresses — scrollable */}
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingBottom: scrollPaddingBottom,
-            paddingHorizontal: H_PAD,
-          }}
-          keyboardShouldPersistTaps="handled"
-          // Let scroll work normally when expanded; block when collapsed so drag works
-          scrollEnabled={sheetExpanded}
-        >
-          {historyLoading ? (
-            <ActivityIndicator color={theme.foreground} style={{ marginTop: 24 }} />
-          ) : recentAddresses.length > 0 ? (
-            recentAddresses.map((item, i) => (
-              <RecentItem
-                key={item.id}
-                address={item.address}
-                subtext={item.subtext}
-                onPress={item.onPress}
-                theme={theme}
-                darkMode={darkMode}
-                last={i === recentAddresses.length - 1}
-              />
-            ))
-          ) : (
-            <View style={s.emptyWrap}>
-              <Ionicons name="map-outline" size={28} color={hintColor} />
-              <Text style={[s.emptyTxt, { color: hintColor }]}>No recent trips yet</Text>
-            </View>
+          {/* Active banners */}
+          {activeRide && (
+            <ActiveRideBanner
+              ride={activeRide}
+              role="CUSTOMER"
+              theme={theme}
+              onPress={() => navigation.navigate('RideTracking', { rideId: activeRide.id })}
+              onCancel={activeRide.status === 'REQUESTED' ? handleCancelRide : undefined}
+            />
           )}
-        </ScrollView>
+          {activeDelivery && (
+            <ActiveDeliveryBanner
+              delivery={activeDelivery}
+              role="CUSTOMER"
+              theme={theme}
+              onPress={() => navigation.navigate('DeliveryTracking', { deliveryId: activeDelivery.id })}
+              onCancel={activeDelivery.status === 'PENDING' ? handleCancelDelivery : undefined}
+            />
+          )}
+
+          {/* ── Service icon row ── */}
+          <View style={s.serviceRow}>
+            {serviceCards.map(item => (
+              <ServiceIcon key={item.id} item={item} theme={theme} darkMode={darkMode} />
+            ))}
+          </View>
+
+          {/* Where to? search bar */}
+          <TouchableOpacity
+            style={[s.searchBar, { backgroundColor: inputBg, borderColor: inputBorder }]}
+            onPress={() => {
+              if (maintenance.isOn) { showMaintenanceAlert(); return; }
+              navigation.navigate('RequestRide');
+            }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="search-outline" size={18} color={hintColor} />
+            <Text style={[s.searchHint, { color: hintColor }]}>Where to?</Text>
+            <View style={[s.laterPill, {
+              backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
+              borderColor: inputBorder,
+            }]}>
+              <Ionicons name="calendar-outline" size={13} color={hintColor} />
+              <Text style={[s.laterTxt, { color: hintColor }]}>Later</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Section label */}
+          {!sheetExpanded && recentAddresses.length > 0 && (
+            <TouchableOpacity style={s.sectionRow} onPress={snapExpand} activeOpacity={0.7}>
+              <Text style={[s.sectionLabel, { color: theme.hint }]}>Recent trips</Text>
+              <Ionicons name="chevron-up" size={13} color={theme.hint} />
+            </TouchableOpacity>
+          )}
+
+          {/* ── Scrollable recent list — flex:1 fills remaining bounded height ── */}
+          <ScrollView
+            style={s.scrollArea}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingBottom: scrollPaddingBottom,
+              paddingHorizontal: H_PAD,
+            }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {historyLoading ? (
+              <ActivityIndicator color={theme.foreground} style={{ marginTop: 24 }} />
+            ) : recentAddresses.length > 0 ? (
+              recentAddresses.map((item, i) => (
+                <RecentItem
+                  key={item.id}
+                  address={item.address}
+                  subtext={item.subtext}
+                  onPress={item.onPress}
+                  theme={theme}
+                  darkMode={darkMode}
+                  last={i === recentAddresses.length - 1}
+                />
+              ))
+            ) : (
+              <View style={s.emptyWrap}>
+                <Ionicons name="map-outline" size={28} color={hintColor} />
+                <Text style={[s.emptyTxt, { color: hintColor }]}>No recent trips yet</Text>
+              </View>
+            )}
+          </ScrollView>
+
+        </View>{/* end sheetInner */}
       </Animated.View>
     </View>
   );
@@ -722,7 +709,7 @@ const s = StyleSheet.create({
   hamburger: { gap: 4.5, alignItems: 'center', justifyContent: 'center' },
   hLine:     { width: 16, height: 1.8, borderRadius: 1 },
   hLineMid:  { width: 11 },
-  avatar:        { width: 44, height: 44, borderRadius: 22, borderWidth: 2 },
+  avatar:         { width: 44, height: 44, borderRadius: 22, borderWidth: 2 },
   avatarFallback: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
   avatarInitials: { fontSize: 14, fontWeight: '800' },
 
@@ -732,7 +719,7 @@ const s = StyleSheet.create({
     borderWidth: 1, justifyContent: 'center', alignItems: 'center',
   },
 
-  // Sheet — height is SHEET_EXPANDED, translateY controls visible portion
+  // Sheet
   sheet: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
     borderTopLeftRadius: 26, borderTopRightRadius: 26,
@@ -740,18 +727,28 @@ const s = StyleSheet.create({
     shadowOpacity: 0.14, shadowRadius: 14, elevation: 22,
   },
 
-  // Handle area — receives pan events
+  // Handle area — PanResponder only, no flex
   handleWrap: {
     alignItems: 'center',
     paddingTop: 10,
     paddingBottom: 6,
-    // Extra hit area height so it's easy to grab
     minHeight: 36,
   },
-  handle:       { width: 38, height: 4, borderRadius: 2 },
-  expandedTitle: {
-    marginTop: 6,
-    fontSize: 16, fontWeight: '800', letterSpacing: -0.3,
+  handle:        { width: 38, height: 4, borderRadius: 2 },
+  expandedTitle: { marginTop: 6, fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
+
+  // ── KEY ADDITION: bounded container below the handle ──────────────────────
+  // flex:1 means it fills exactly the remaining sheet height after the handle,
+  // giving ScrollView a real parent height to work against — same pattern as
+  // DriverDashboardScreen's sheetScroll inside its fixed-height sheet.
+  sheetInner: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+
+  // ScrollView itself — flex:1 fills remaining height after static elements
+  scrollArea: {
+    flex: 1,
   },
 
   greetRow: {
