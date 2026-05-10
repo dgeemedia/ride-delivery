@@ -2,271 +2,280 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, Animated, ActivityIndicator, RefreshControl,
+  ActivityIndicator, Animated, Dimensions, StatusBar,
 } from 'react-native';
 import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
-import { Ionicons }    from '@expo/vector-icons';
+import { Ionicons }     from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme }    from '../../context/ThemeContext';
-import { useScrollY }  from '../../context/ScrollContext';
-import { rideAPI }     from '../../services/api';
+import { useTheme }     from '../../context/ThemeContext';
+import { useScrollY }   from '../../context/ScrollContext';
+import { rideAPI }      from '../../services/api';
 
-const DA     = '#FFB800';
-const GREEN  = '#5DAA72';
+const { width } = Dimensions.get('window');
+const GREEN  = '#34C759';
 const RED    = '#E05555';
-const PURPLE = '#A78BFA';
+const AMBER  = '#FFB800';
 
-const STATUS_CFG = {
-  COMPLETED: { color: GREEN,  icon: 'checkmark-circle-outline', label: 'Completed' },
-  CANCELLED: { color: RED,    icon: 'close-circle-outline',     label: 'Cancelled' },
+const STATUS_CONFIG = {
+  COMPLETED:  { color: GREEN,  icon: 'checkmark-circle-outline', label: 'Completed'  },
+  CANCELLED:  { color: RED,    icon: 'close-circle-outline',     label: 'Cancelled'  },
+  IN_PROGRESS:{ color: AMBER,  icon: 'time-outline',             label: 'In Progress'},
+  ACCEPTED:   { color: AMBER,  icon: 'car-outline',              label: 'Accepted'   },
+  ARRIVED:    { color: AMBER,  icon: 'location-outline',         label: 'Arrived'    },
 };
 
-const RideCard = ({ item, theme }) => {
-  const cfg  = STATUS_CFG[item.status] ?? STATUS_CFG.COMPLETED;
-  const date = new Date(item.requestedAt ?? item.completedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
-  const time = new Date(item.requestedAt ?? item.completedAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
-  const gross    = item.actualFare ?? item.estimatedFare ?? 0;
-  const net      = item.payment?.driverEarnings ?? 0;
-  const platFee  = item.payment?.platformFee ?? 0;
-
+// ─────────────────────────────────────────────────────────────────────────────
+// RideCard
+// ─────────────────────────────────────────────────────────────────────────────
+const RideCard = ({ item, theme, onPress }) => {
+  const cfg  = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.COMPLETED;
+  const fare = Number(item.driverEarnings ?? item.fare ?? 0);
   return (
-    <View style={[rc.card, { backgroundColor: theme.backgroundAlt, borderColor: cfg.color + '30', borderLeftColor: cfg.color }]}>
-      {/* Header */}
-      <View style={rc.header}>
-        <View style={[rc.iconWrap, { backgroundColor: DA + '18' }]}>
-          <Ionicons name="car-sport-outline" size={18} color={DA} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[rc.date, { color: theme.hint }]}>{date} · {time}</Text>
-          {item.customer && (
-            <Text style={[rc.customer, { color: theme.foreground }]}>
-              {item.customer.firstName} {item.customer.lastName}
-            </Text>
-          )}
-        </View>
-        <View style={[rc.statusPill, { backgroundColor: cfg.color + '15' }]}>
-          <Ionicons name={cfg.icon} size={11} color={cfg.color} />
-          <Text style={[rc.statusTxt, { color: cfg.color }]}>{cfg.label}</Text>
-        </View>
+    <TouchableOpacity
+      style={[rc.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+      onPress={() => onPress(item)}
+      activeOpacity={0.8}
+    >
+      {/* Status pill */}
+      <View style={[rc.statusPill, { backgroundColor: cfg.color + '18' }]}>
+        <Ionicons name={cfg.icon} size={12} color={cfg.color} />
+        <Text style={[rc.statusTxt, { color: cfg.color }]}>{cfg.label}</Text>
       </View>
 
       {/* Route */}
       <View style={rc.route}>
         <View style={rc.routeRow}>
-          <View style={[rc.dot, { backgroundColor: DA }]} />
-          <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={1}>{item.pickupAddress}</Text>
+          <View style={[rc.dot, { backgroundColor: GREEN }]} />
+          <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={1}>{item.pickupAddress ?? 'Pickup'}</Text>
         </View>
         <View style={[rc.routeLine, { backgroundColor: theme.border }]} />
         <View style={rc.routeRow}>
           <View style={[rc.dot, { backgroundColor: RED }]} />
-          <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={1}>{item.dropoffAddress}</Text>
+          <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={1}>{item.dropoffAddress ?? 'Dropoff'}</Text>
         </View>
       </View>
 
-      {/* Earnings breakdown — only for completed */}
-      {item.status === 'COMPLETED' && (
-        <View style={[rc.earningsBox, { backgroundColor: DA + '08', borderColor: DA + '25' }]}>
-          <View style={rc.earningRow}>
-            <Text style={[rc.earningLbl, { color: theme.hint }]}>Gross Fare</Text>
-            <Text style={[rc.earningVal, { color: theme.foreground }]}>
-              ₦{Number(gross).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-            </Text>
-          </View>
-          <View style={rc.earningRow}>
-            <Text style={[rc.earningLbl, { color: theme.hint }]}>Platform Fee</Text>
-            <Text style={[rc.earningVal, { color: RED }]}>
-              -₦{Number(platFee).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-            </Text>
-          </View>
-          <View style={[rc.earningDivider, { backgroundColor: DA + '30' }]} />
-          <View style={rc.earningRow}>
-            <Text style={[rc.earningLbl, { color: DA, fontWeight: '800' }]}>Your Earnings</Text>
-            <Text style={[rc.earningVal, { color: DA, fontWeight: '900', fontSize: 15 }]}>
-              ₦{Number(net).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Meta */}
-      <View style={[rc.meta, { borderTopColor: theme.border }]}>
-        <View style={rc.metaItem}>
-          <Ionicons name="navigate-outline" size={11} color={theme.hint} />
-          <Text style={[rc.metaTxt, { color: theme.hint }]}>{item.distance?.toFixed(1) ?? '—'} km</Text>
-        </View>
-        <View style={[rc.metaDiv, { backgroundColor: theme.border }]} />
-        <View style={rc.metaItem}>
-          <Ionicons name="cash-outline" size={11} color={theme.hint} />
-          <Text style={[rc.metaTxt, { color: theme.hint }]}>{item.payment?.method ?? 'CASH'}</Text>
-        </View>
-        {item.rating && (
-          <>
-            <View style={[rc.metaDiv, { backgroundColor: theme.border }]} />
-            <View style={rc.metaItem}>
-              <Ionicons name="star" size={11} color="#C9A96E" />
-              <Text style={[rc.metaTxt, { color: theme.hint }]}>{item.rating.rating}/5</Text>
-              {item.rating.comment && (
-                <Text style={[rc.metaTxt, { color: theme.hint }]} numberOfLines={1}>
-                  · "{item.rating.comment}"
-                </Text>
-              )}
-            </View>
-          </>
-        )}
+      {/* Footer */}
+      <View style={rc.footer}>
+        <Text style={[rc.date, { color: theme.hint }]}>
+          {item.completedAt ?? item.createdAt
+            ? new Date(item.completedAt ?? item.createdAt).toLocaleDateString('en-NG', {
+                day: 'numeric', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit',
+              })
+            : '—'}
+        </Text>
+        <Text style={[rc.fare, { color: fare > 0 ? GREEN : theme.hint }]}>
+          {fare > 0 ? `+₦${fare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}` : '—'}
+        </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
+
 const rc = StyleSheet.create({
-  card:        { borderRadius: 18, borderWidth: 1, borderLeftWidth: 3, padding: 16, marginBottom: 12 },
-  header:      { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 12 },
-  iconWrap:    { width: 38, height: 38, borderRadius: 11, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  date:        { fontSize: 10, marginBottom: 2 },
-  customer:    { fontSize: 13, fontWeight: '700' },
-  statusPill:  { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  statusTxt:   { fontSize: 10, fontWeight: '700' },
-  route:       { marginBottom: 12 },
-  routeRow:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dot:         { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  routeLine:   { width: 1.5, height: 10, marginLeft: 3.5, marginVertical: 3 },
-  addr:        { flex: 1, fontSize: 13, fontWeight: '600' },
-  earningsBox: { borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 12, gap: 7 },
-  earningRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  earningLbl:  { fontSize: 12 },
-  earningVal:  { fontSize: 13, fontWeight: '700' },
-  earningDivider:{ height: 1, marginVertical: 2 },
-  meta:        { flexDirection: 'row', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, gap: 8, flexWrap: 'wrap' },
-  metaItem:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaDiv:     { width: 1, height: 12 },
-  metaTxt:     { fontSize: 11 },
+  card:       { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 10 },
+  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginBottom: 10 },
+  statusTxt:  { fontSize: 10, fontWeight: '700' },
+  route:      { marginBottom: 10 },
+  routeRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 3 },
+  dot:        { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  routeLine:  { width: 1, height: 10, marginLeft: 3.5, marginVertical: 1 },
+  addr:       { fontSize: 12, fontWeight: '600', flex: 1 },
+  footer:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  date:       { fontSize: 11 },
+  fare:       { fontSize: 14, fontWeight: '800' },
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 export default function DriverHistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const scrollY         = useScrollY();
 
-  const [rides,      setRides]      = useState([]);
-  const [page,       setPage]       = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [loadingMore,setLoadingMore]= useState(false);
+  // All hooks at top level
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => { scrollY.value = event.contentOffset.y; },
+  });
 
-  const fadeA = useRef(new Animated.Value(0)).current;
+  const [rides,   setRides]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [page,    setPage]    = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [filter,  setFilter]  = useState('ALL');
 
-  const totals = {
-    completed: rides.filter(r => r.status === 'COMPLETED').length,
-    cancelled: rides.filter(r => r.status === 'CANCELLED').length,
-    earned:    rides.filter(r => r.status === 'COMPLETED')
-                    .reduce((s, r) => s + (r.payment?.driverEarnings ?? 0), 0),
+  const fadeA  = useRef(new Animated.Value(0)).current;
+  const slideA = useRef(new Animated.Value(16)).current;
+
+  const FILTERS = ['ALL', 'COMPLETED', 'CANCELLED'];
+
+  // ── Fetch ─────────────────────────────────────────────────────────────────
+  const fetchRides = useCallback(async (pageNum = 1, currentFilter = filter, append = false) => {
+    try {
+      const params = {
+        limit: 20,
+        page: pageNum,
+        ...(currentFilter !== 'ALL' && { status: currentFilter }),
+      };
+      const res   = await rideAPI.getRideHistory(params);
+      const list  = res?.data?.rides ?? res?.rides ?? [];
+      const total = res?.data?.total ?? res?.total ?? list.length;
+
+      setRides(prev => append ? [...prev, ...list] : list);
+      setHasMore(pageNum * 20 < total);
+    } catch (err) {
+      console.warn('[DriverHistory] fetch error:', err?.message);
+    } finally {
+      setLoading(false);
+      Animated.parallel([
+        Animated.timing(fadeA,  { toValue: 1, duration: 450, useNativeDriver: true }),
+        Animated.timing(slideA, { toValue: 0, duration: 450, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [filter]);
+
+  useEffect(() => {
+    setLoading(true);
+    setPage(1);
+    fadeA.setValue(0);
+    slideA.setValue(16);
+    fetchRides(1, filter, false);
+  }, [filter]);
+
+  const loadMore = () => {
+    if (!hasMore || loading) return;
+    const next = page + 1;
+    setPage(next);
+    fetchRides(next, filter, true);
   };
 
-  const load = useCallback(async (reset = false) => {
-    const p = reset ? 1 : page;
-    if (!reset && p > totalPages) return;
-    if (reset) setLoading(true); else setLoadingMore(true);
-    try {
-      const res  = await rideAPI.getRideHistory({ page: p, limit: 15 });
-      const list = res?.data?.rides ?? [];
-      setRides(prev => reset ? list : [...prev, ...list]);
-      setTotalPages(res?.data?.pagination?.pages ?? 1);
-      setPage(reset ? 2 : p + 1);
-    } catch {}
-    finally {
-      setLoading(false); setRefreshing(false); setLoadingMore(false);
-      Animated.timing(fadeA, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+  const handleRidePress = (item) => {
+    if (item.status === 'COMPLETED' && !item.driverRating) {
+      navigation.navigate('RateRide', { rideId: item.id });
     }
-  }, [page, totalPages]);
+  };
 
-  useEffect(() => { load(true); }, []);
+  // ── Back → Dashboard home tab ─────────────────────────────────────────────
+  const goHome = () => navigation.getParent()?.navigate('DashboardTab');
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
+
       <SafeAreaView edges={['top', 'left', 'right']}>
+        {/* Header */}
         <View style={[s.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-            onPress={() => navigation.goBack()}
+            onPress={goHome}   // ← navigates to Dashboard, not Earnings
+            activeOpacity={0.8}
           >
             <Ionicons name="arrow-back" size={18} color={theme.foreground} />
           </TouchableOpacity>
-          <View>
-            <Text style={[s.headerTitle, { color: theme.foreground }]}>Ride History</Text>
-            <Text style={[s.headerSub, { color: theme.hint }]}>{rides.length} rides loaded</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.eyebrow, { color: theme.hint }]}>DRIVER</Text>
+            <Text style={[s.title, { color: theme.foreground }]}>Ride History</Text>
           </View>
         </View>
 
-        {!loading && (
-          <View style={[s.summaryStrip, { backgroundColor: theme.backgroundAlt, borderBottomColor: theme.border }]}>
-            <View style={s.sumItem}>
-              <Text style={[s.sumVal, { color: GREEN }]}>{totals.completed}</Text>
-              <Text style={[s.sumLbl, { color: theme.hint }]}>Completed</Text>
-            </View>
-            <View style={[s.sumDiv, { backgroundColor: theme.border }]} />
-            <View style={s.sumItem}>
-              <Text style={[s.sumVal, { color: RED }]}>{totals.cancelled}</Text>
-              <Text style={[s.sumLbl, { color: theme.hint }]}>Cancelled</Text>
-            </View>
-            <View style={[s.sumDiv, { backgroundColor: theme.border }]} />
-            <View style={s.sumItem}>
-              <Text style={[s.sumVal, { color: DA }]}>
-                ₦{totals.earned.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-              </Text>
-              <Text style={[s.sumLbl, { color: theme.hint }]}>Net Earned</Text>
-            </View>
-          </View>
-        )}
+        {/* Filter pills */}
+        <View style={[s.filterRow, { borderBottomColor: theme.border }]}>
+          {FILTERS.map(f => {
+            const active = filter === f;
+            return (
+              <TouchableOpacity
+                key={f}
+                style={[
+                  s.filterPill,
+                  active
+                    ? { backgroundColor: GREEN }
+                    : { backgroundColor: theme.backgroundAlt, borderColor: theme.border },
+                ]}
+                onPress={() => setFilter(f)}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.filterTxt, { color: active ? '#fff' : theme.hint }]}>
+                  {f === 'ALL' ? 'All' : f.charAt(0) + f.slice(1).toLowerCase()}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </SafeAreaView>
 
-      {loading ? (
-        <View style={s.center}><ActivityIndicator color={DA} size="large" /></View>
+      {loading && rides.length === 0 ? (
+        <View style={s.loadingWrap}>
+          <ActivityIndicator color={GREEN} size="large" />
+        </View>
       ) : (
-        <Animated.View style={[{ flex: 1 }, { opacity: fadeA }]}>
-          <AnimatedRN.FlatList
-            data={rides}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => <RideCard item={item} theme={theme} />}
-            contentContainerStyle={s.list}
-            showsVerticalScrollIndicator={false}
-            onScroll={useAnimatedScrollHandler({
-              onScroll: (event) => {
-                scrollY.value = event.contentOffset.y;
-              },
-            })}
-            scrollEventThrottle={16}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor={DA} />}
-            onEndReached={() => { if (!loadingMore && page <= totalPages) { setLoadingMore(true); load().finally(() => setLoadingMore(false)); } }}
-            onEndReachedThreshold={0.4}
-            ListFooterComponent={loadingMore ? <ActivityIndicator color={DA} style={{ marginVertical: 16 }} /> : null}
-            ListEmptyComponent={
-              <View style={s.empty}>
-                <Ionicons name="car-outline" size={48} color={theme.hint} />
-                <Text style={[s.emptyTitle, { color: theme.foreground }]}>No rides yet</Text>
-                <Text style={[s.emptySub, { color: theme.hint }]}>Your completed rides will appear here</Text>
-              </View>
+        <AnimatedRN.ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
+          overScrollMode="never"
+          onMomentumScrollEnd={({ nativeEvent }) => {
+            const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+            if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 60) {
+              loadMore();
             }
-          />
-        </Animated.View>
+          }}
+        >
+          <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
+            {rides.length === 0 ? (
+              <View style={s.empty}>
+                <Ionicons name="car-outline" size={40} color={theme.hint} />
+                <Text style={[s.emptyTitle, { color: theme.foreground }]}>No rides yet</Text>
+                <Text style={[s.emptySub, { color: theme.hint }]}>
+                  {filter !== 'ALL'
+                    ? `No ${filter.toLowerCase()} rides found.`
+                    : 'Your ride history will appear here.'}
+                </Text>
+              </View>
+            ) : (
+              rides.map((item, i) => (
+                <RideCard key={item.id ?? i} item={item} theme={theme} onPress={handleRidePress} />
+              ))
+            )}
+
+            {hasMore && !loading && (
+              <TouchableOpacity
+                style={[s.loadMoreBtn, { borderColor: theme.border }]}
+                onPress={loadMore}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.loadMoreTxt, { color: theme.hint }]}>Load more</Text>
+              </TouchableOpacity>
+            )}
+            {loading && rides.length > 0 && (
+              <ActivityIndicator color={GREEN} style={{ marginVertical: 16 }} />
+            )}
+          </Animated.View>
+        </AnimatedRN.ScrollView>
       )}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:         { flex: 1 },
-  center:       { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header:       { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
-  backBtn:      { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle:  { fontSize: 17, fontWeight: '900' },
-  headerSub:    { fontSize: 11, marginTop: 1 },
-  summaryStrip: { flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 20, borderBottomWidth: 1 },
-  sumItem:      { flex: 1, alignItems: 'center' },
-  sumVal:       { fontSize: 16, fontWeight: '900', marginBottom: 2 },
-  sumLbl:       { fontSize: 10, fontWeight: '600' },
-  sumDiv:       { width: 1, marginVertical: 4 },
-  list:         { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 60 },
-  empty:        { alignItems: 'center', paddingTop: 80, gap: 12 },
-  emptyTitle:   { fontSize: 18, fontWeight: '800' },
-  emptySub:     { fontSize: 13, textAlign: 'center' },
+  root:        { flex: 1 },
+  header:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
+  backBtn:     { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  eyebrow:     { fontSize: 9, fontWeight: '800', letterSpacing: 3, marginBottom: 2 },
+  title:       { fontSize: 22, fontWeight: '900', letterSpacing: -0.3 },
+  filterRow:   { flexDirection: 'row', gap: 8, paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1 },
+  filterPill:  { borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 7 },
+  filterTxt:   { fontSize: 12, fontWeight: '700' },
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scroll:      { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 100 },
+  empty:       { alignItems: 'center', paddingTop: 60, gap: 12 },
+  emptyTitle:  { fontSize: 16, fontWeight: '800' },
+  emptySub:    { fontSize: 13, textAlign: 'center', maxWidth: 240 },
+  loadMoreBtn: { borderRadius: 12, borderWidth: 1, paddingVertical: 13, alignItems: 'center', marginBottom: 20 },
+  loadMoreTxt: { fontSize: 13, fontWeight: '600' },
 });

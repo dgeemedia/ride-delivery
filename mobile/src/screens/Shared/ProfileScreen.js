@@ -6,12 +6,13 @@ import {
   Platform, Switch, Modal, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { userAPI, driverAPI, partnerAPI, authAPI } from '../../services/api';
 import { useBiometric } from '../../hooks/useBiometric';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const ROLE_META = {
   CUSTOMER:         { label: 'Rider',   icon: 'person-outline'   },
@@ -195,21 +196,19 @@ const mm = StyleSheet.create({
 });
 
 // ─── RatingBreakdown ──────────────────────────────────────────────────────────
-// Shows the weighted-average score, total ratings count, a 5→1 bar chart,
-// and the 5 most-recent customer comments.
 const RatingBreakdown = ({ stats, theme }) => {
-  const breakdown    = stats?.ratingBreakdown ?? {};
-  const totalRatings = stats?.totalRatings    ?? 0;
-  const average      = Number(stats?.rating   ?? 0);
-  const recentRatings = stats?.recentRatings  ?? [];
+  const breakdown     = stats?.ratingBreakdown ?? {};
+  const totalRatings  = stats?.totalRatings    ?? 0;
+  const average       = Number(stats?.rating   ?? 0);
+  const recentRatings = stats?.recentRatings   ?? [];
 
   if (totalRatings === 0) {
     return (
       <Section title="YOUR RATINGS" theme={theme}>
-        <View style={rb.empty}>
+        <View style={rbd.empty}>
           <Ionicons name="star-outline" size={28} color={theme.hint} />
-          <Text style={[rb.emptyTxt, { color: theme.hint }]}>No ratings yet</Text>
-          <Text style={[rb.emptySub, { color: theme.hint }]}>Ratings from customers will appear here</Text>
+          <Text style={[rbd.emptyTxt, { color: theme.hint }]}>No ratings yet</Text>
+          <Text style={[rbd.emptySub, { color: theme.hint }]}>Ratings from customers will appear here</Text>
         </View>
       </Section>
     );
@@ -217,83 +216,51 @@ const RatingBreakdown = ({ stats, theme }) => {
 
   return (
     <Section title="YOUR RATINGS" theme={theme}>
-
-      {/* ── Header: big score + star row + total count ── */}
-      <View style={rb.header}>
-        <View style={rb.scoreBlock}>
-          <Text style={[rb.bigScore, { color: theme.foreground }]}>{average.toFixed(1)}</Text>
-          <View style={rb.starRow}>
+      <View style={rbd.header}>
+        <View style={rbd.scoreBlock}>
+          <Text style={[rbd.bigScore, { color: theme.foreground }]}>{average.toFixed(1)}</Text>
+          <View style={rbd.starRow}>
             {[1, 2, 3, 4, 5].map(s => (
-              <Ionicons
-                key={s}
-                name={s <= Math.round(average) ? 'star' : 'star-outline'}
-                size={14}
-                color="#FFB800"
-              />
+              <Ionicons key={s} name={s <= Math.round(average) ? 'star' : 'star-outline'} size={14} color="#FFB800" />
             ))}
           </View>
-          <Text style={[rb.totalLbl, { color: theme.hint }]}>
+          <Text style={[rbd.totalLbl, { color: theme.hint }]}>
             {totalRatings} {totalRatings === 1 ? 'rating' : 'ratings'}
           </Text>
         </View>
-
-        {/* ── Bar chart: 5 → 1 ── */}
-        <View style={rb.bars}>
+        <View style={rbd.bars}>
           {[5, 4, 3, 2, 1].map(star => {
             const count = breakdown[star] ?? 0;
             const pct   = totalRatings > 0 ? count / totalRatings : 0;
             return (
-              <View key={star} style={rb.barRow}>
-                <Text style={[rb.barLbl, { color: theme.hint }]}>{star}</Text>
+              <View key={star} style={rbd.barRow}>
+                <Text style={[rbd.barLbl, { color: theme.hint }]}>{star}</Text>
                 <Ionicons name="star" size={9} color="#FFB800" style={{ marginRight: 4 }} />
-                <View style={[rb.track, { backgroundColor: theme.border }]}>
-                  <View
-                    style={[
-                      rb.fill,
-                      {
-                        width:           `${Math.round(pct * 100)}%`,
-                        backgroundColor: pct > 0.5 ? theme.accent : pct > 0.2 ? '#FFB800' : theme.hint,
-                      },
-                    ]}
-                  />
+                <View style={[rbd.track, { backgroundColor: theme.border }]}>
+                  <View style={[rbd.fill, { width: `${Math.round(pct * 100)}%`, backgroundColor: pct > 0.5 ? theme.accent : pct > 0.2 ? '#FFB800' : theme.hint }]} />
                 </View>
-                <Text style={[rb.barCount, { color: theme.hint }]}>{count}</Text>
+                <Text style={[rbd.barCount, { color: theme.hint }]}>{count}</Text>
               </View>
             );
           })}
         </View>
       </View>
-
-      {/* ── Recent customer comments ── */}
       {recentRatings.length > 0 && (
-        <View style={[rb.reviewsWrap, { borderTopColor: theme.border }]}>
-          <Text style={[rb.reviewsTitle, { color: theme.hint }]}>RECENT REVIEWS</Text>
+        <View style={[rbd.reviewsWrap, { borderTopColor: theme.border }]}>
+          <Text style={[rbd.reviewsTitle, { color: theme.hint }]}>RECENT REVIEWS</Text>
           {recentRatings.filter(r => r.comment).slice(0, 5).map((r, i) => (
-            <View
-              key={i}
-              style={[
-                rb.reviewCard,
-                { backgroundColor: theme.background, borderColor: theme.border },
-                i === 0 && { marginTop: 0 },
-              ]}
-            >
-              {/* Star dots */}
-              <View style={rb.reviewStars}>
+            <View key={i} style={[rbd.reviewCard, { backgroundColor: theme.background, borderColor: theme.border }, i === 0 && { marginTop: 0 }]}>
+              <View style={rbd.reviewStars}>
                 {[1, 2, 3, 4, 5].map(s => (
-                  <Ionicons
-                    key={s}
-                    name={s <= Math.round(r.stars) ? 'star' : 'star-outline'}
-                    size={11}
-                    color="#FFB800"
-                  />
+                  <Ionicons key={s} name={s <= Math.round(r.stars) ? 'star' : 'star-outline'} size={11} color="#FFB800" />
                 ))}
-                <Text style={[rb.reviewDate, { color: theme.hint }]}>
+                <Text style={[rbd.reviewDate, { color: theme.hint }]}>
                   {new Date(r.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
                 </Text>
               </View>
-              <Text style={[rb.reviewComment, { color: theme.foreground }]}>{r.comment}</Text>
+              <Text style={[rbd.reviewComment, { color: theme.foreground }]}>{r.comment}</Text>
               {r.pickupAddress && (
-                <Text style={[rb.reviewRoute, { color: theme.hint }]} numberOfLines={1}>
+                <Text style={[rbd.reviewRoute, { color: theme.hint }]} numberOfLines={1}>
                   📍 {r.pickupAddress.split(',')[0]}
                 </Text>
               )}
@@ -301,33 +268,24 @@ const RatingBreakdown = ({ stats, theme }) => {
           ))}
         </View>
       )}
-
     </Section>
   );
 };
-
-const rb = StyleSheet.create({
-  // empty state
+const rbd = StyleSheet.create({
   empty:        { alignItems: 'center', paddingVertical: 20, gap: 6 },
   emptyTxt:     { fontSize: 14, fontWeight: '700' },
   emptySub:     { fontSize: 12, textAlign: 'center' },
-
-  // header layout
   header:       { flexDirection: 'row', gap: 16, paddingBottom: 14 },
   scoreBlock:   { alignItems: 'center', gap: 4, width: 68 },
   bigScore:     { fontSize: 36, fontWeight: '900', letterSpacing: -1 },
   starRow:      { flexDirection: 'row', gap: 2 },
   totalLbl:     { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
-
-  // bars
   bars:         { flex: 1, gap: 5, justifyContent: 'center' },
   barRow:       { flexDirection: 'row', alignItems: 'center', gap: 4 },
   barLbl:       { fontSize: 11, fontWeight: '700', width: 10, textAlign: 'right' },
   track:        { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
   fill:         { height: 6, borderRadius: 3, minWidth: 2 },
   barCount:     { fontSize: 10, fontWeight: '600', width: 22, textAlign: 'right' },
-
-  // recent reviews
   reviewsWrap:  { borderTopWidth: 1, paddingTop: 12, marginTop: 2, paddingBottom: 6, gap: 8 },
   reviewsTitle: { fontSize: 9, fontWeight: '700', letterSpacing: 2, marginBottom: 4 },
   reviewCard:   { borderRadius: 10, borderWidth: 1, padding: 10, gap: 4 },
@@ -339,9 +297,10 @@ const rb = StyleSheet.create({
 
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
-  const { user, logout, updateUser }                         = useAuth();
-  const { theme, mode, changeMode }                          = useTheme();
+  const { user, logout, updateUser }                               = useAuth();
+  const { theme, mode, changeMode }                                = useTheme();
   const { isAvailable, isEnabled, biometricType, enable, disable } = useBiometric();
+  const insets                                                     = useSafeAreaInsets();
 
   const [stats,   setStats]   = useState(null);
   const [profile, setProfile] = useState(null);
@@ -362,6 +321,30 @@ export default function ProfileScreen({ navigation }) {
   const isApproved        = _profileData?.isApproved ?? false;
   const isRejected        = _profileData?.isRejected ?? false;
   const showApprovalBadge = role === 'DRIVER' || role === 'DELIVERY_PARTNER';
+  const isProviderRole    = role === 'DRIVER' || role === 'DELIVERY_PARTNER';
+
+  // ── Tab bar + safe area constants — mirrors DriverNavigator exactly
+  const TAB_H        = 54;
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+
+  // ── Header height: safe-area top + inner content row (back btn 38px + 12px padding)
+  const HEADER_INNER_H = 50;
+  const HEADER_H       = insets.top + HEADER_INNER_H;
+
+  // ── Scrollable area = full screen minus header and tab bar
+  const SCROLL_H = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
+
+  // ── Back: pop if possible, else jump to role's home tab
+  const canGoBack = navigation.canGoBack();
+  const handleBack = () => {
+    if (canGoBack) {
+      navigation.goBack();
+    } else {
+      const parent  = navigation.getParent();
+      const dashTab = role === 'CUSTOMER' ? 'HomeTab' : 'DashboardTab';
+      parent?.navigate(dashTab);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -404,15 +387,10 @@ export default function ProfileScreen({ navigation }) {
         const pwd = window.prompt('Enter your password to disable 2FA:');
         if (pwd) await disable2FA(pwd);
       } else {
-        Alert.prompt(
-          'Disable 2FA',
-          'Enter your password to confirm.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Disable', style: 'destructive', onPress: disable2FA },
-          ],
-          'secure-text'
-        );
+        Alert.prompt('Disable 2FA', 'Enter your password to confirm.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Disable', style: 'destructive', onPress: disable2FA },
+        ], 'secure-text');
       }
     }
   };
@@ -437,9 +415,7 @@ export default function ProfileScreen({ navigation }) {
       }
     } catch (err) {
       Alert.alert('Error', err?.response?.data?.message ?? 'Could not start 2FA setup. Try again.');
-    } finally {
-      setTwoFaLoading(false);
-    }
+    } finally { setTwoFaLoading(false); }
   };
 
   const disable2FA = async (password) => {
@@ -453,9 +429,7 @@ export default function ProfileScreen({ navigation }) {
       Alert.alert('2FA Disabled', 'Two-factor authentication has been turned off.');
     } catch (err) {
       Alert.alert('Error', err?.response?.data?.message ?? 'Incorrect password or request failed.');
-    } finally {
-      setTwoFaLoading(false);
-    }
+    } finally { setTwoFaLoading(false); }
   };
 
   const handleBiometricToggle = async (value) => {
@@ -469,20 +443,14 @@ export default function ProfileScreen({ navigation }) {
         const success = await enable();
         if (!success) Alert.alert('Failed', 'Could not enable biometric login. Please try again.');
       } else {
-        Alert.alert(
-          'Disable Biometric Login',
-          'You will need to enter your password to sign in next time.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Disable', style: 'destructive', onPress: async () => { await disable?.(); } },
-          ]
-        );
+        Alert.alert('Disable Biometric Login', 'You will need to enter your password to sign in next time.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Disable', style: 'destructive', onPress: async () => { await disable?.(); } },
+        ]);
       }
     } catch {
       Alert.alert('Error', 'Something went wrong. Please try again.');
-    } finally {
-      setBioLoading(false);
-    }
+    } finally { setBioLoading(false); }
   };
 
   const biometricLabel = biometricType === 'faceid' ? 'Face ID' : biometricType === 'iris' ? 'Iris Scan' : 'Fingerprint';
@@ -491,12 +459,278 @@ export default function ProfileScreen({ navigation }) {
   const dp = profile?.driverProfile;
   const pp = profile?.deliveryProfile;
 
-  const isProviderRole = role === 'DRIVER' || role === 'DELIVERY_PARTNER';
-
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
+
+      {/* ── Sticky header with back arrow ──────────────────────────────────── */}
+      <View style={[
+        s.header,
+        {
+          paddingTop:      insets.top,
+          height:          HEADER_H,
+          backgroundColor: theme.background,
+          borderBottomColor: theme.border,
+        },
+      ]}>
+        <TouchableOpacity
+          style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+          onPress={handleBack}
+          activeOpacity={0.75}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="arrow-back" size={20} color={theme.foreground} />
+        </TouchableOpacity>
+        <Text style={[s.headerTitle, { color: theme.foreground }]}>Profile</Text>
+        {/* Mirrors the back button width so the title is visually centred */}
+        <View style={s.headerSpacer} />
+      </View>
+
+      {/* ── Scrollable body
+           THE KEY: wrap ScrollView in a View with an explicit pixel height.
+           This is exactly how the driver dashboard sheet works — the sheet has
+           height: SHEET_SNAP (a fixed pixel value), not flex:1, which gives
+           the ScrollView a concrete boundary to overflow against.
+      ── */}
+      <View style={{ height: SCROLL_H }}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.scroll}
+          keyboardShouldPersistTaps="handled"
+          bounces
+          overScrollMode="always"
+        >
+          <Animated.View style={{ opacity: fadeA }}>
+
+            {/* ── Hero ── */}
+            <View style={s.hero}>
+              <Avatar user={user} theme={theme} />
+              <Text style={[s.name, { color: theme.foreground }]}>
+                {user?.firstName} {user?.lastName}
+              </Text>
+              <View style={[s.rolePill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '30' }]}>
+                <Ionicons name={meta.icon} size={13} color={theme.accent} />
+                <Text style={[s.roleLabel, { color: theme.accent }]}>{meta.label}</Text>
+              </View>
+              <View style={s.verifiedRow}>
+                <Ionicons
+                  name={user?.isVerified ? 'shield-checkmark-outline' : 'shield-outline'}
+                  size={13}
+                  color={user?.isVerified ? theme.accent : theme.hint}
+                />
+                <Text style={[s.verifiedTxt, { color: user?.isVerified ? theme.accent : theme.hint }]}>
+                  {user?.isVerified ? 'Verified Account' : 'Pending Email Verification'}
+                </Text>
+              </View>
+              {showApprovalBadge && !loading && (
+                <View style={[s.approvalBadge, {
+                  backgroundColor: isRejected ? '#E0555518' : isApproved ? theme.accent + '18' : theme.backgroundAlt,
+                  borderColor:     isRejected ? '#E05555'   : isApproved ? theme.accent         : theme.border,
+                }]}>
+                  <Ionicons
+                    name={isRejected ? 'close-circle-outline' : isApproved ? 'shield-checkmark-outline' : 'time-outline'}
+                    size={13}
+                    color={isRejected ? '#E05555' : isApproved ? theme.accent : theme.hint}
+                  />
+                  <Text style={[s.approvalBadgeTxt, { color: isRejected ? '#E05555' : isApproved ? theme.accent : theme.hint }]}>
+                    {isRejected ? 'Application Not Approved' : isApproved ? `Verified ${role === 'DRIVER' ? 'Driver' : 'Courier'}` : 'Pending Approval'}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Stats strip */}
+            {loading ? (
+              <ActivityIndicator color={theme.accent} style={{ marginBottom: 20 }} />
+            ) : (
+              <View style={[s.statsStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                {role === 'CUSTOMER' && (
+                  <>
+                    <View style={s.stripItem}>
+                      <Text style={[s.stripVal, { color: theme.foreground }]}>{stats?.totalRides ?? 0}</Text>
+                      <Text style={[s.stripLbl, { color: theme.hint }]}>Rides</Text>
+                    </View>
+                    <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
+                    <View style={s.stripItem}>
+                      <Text style={[s.stripVal, { color: theme.foreground }]}>{stats?.totalDeliveries ?? 0}</Text>
+                      <Text style={[s.stripLbl, { color: theme.hint }]}>Packages</Text>
+                    </View>
+                    <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
+                    <View style={s.stripItem}>
+                      <Text style={[s.stripVal, { color: theme.foreground }]}>₦{(stats?.walletBalance ?? 0).toLocaleString()}</Text>
+                      <Text style={[s.stripLbl, { color: theme.hint }]}>Wallet</Text>
+                    </View>
+                  </>
+                )}
+                {isProviderRole && (
+                  <>
+                    <View style={s.stripItem}>
+                      <Text style={[s.stripVal, { color: theme.foreground }]}>
+                        {role === 'DRIVER' ? (stats?.completedRides ?? 0) : (stats?.completedDeliveries ?? 0)}
+                      </Text>
+                      <Text style={[s.stripLbl, { color: theme.hint }]}>{role === 'DRIVER' ? 'Rides' : 'Deliveries'}</Text>
+                    </View>
+                    <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
+                    <View style={s.stripItem}>
+                      <Text style={[s.stripVal, { color: theme.foreground }]}>{Number(stats?.rating ?? 0).toFixed(1)} ⭐</Text>
+                      <Text style={[s.stripLbl, { color: theme.hint }]}>Rating</Text>
+                    </View>
+                    <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
+                    <View style={s.stripItem}>
+                      <Text style={[s.stripVal, { color: theme.foreground }]}>₦{(stats?.totalEarnings ?? 0).toLocaleString()}</Text>
+                      <Text style={[s.stripLbl, { color: theme.hint }]}>Earned</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* Rating breakdown (driver / partner only) */}
+            {isProviderRole && !loading && <RatingBreakdown stats={stats} theme={theme} />}
+
+            {/* Personal info */}
+            <Section title="PERSONAL INFORMATION" theme={theme}>
+              <InfoRow icon="mail-outline"     label="EMAIL"        value={user?.email}   theme={theme} />
+              <InfoRow icon="call-outline"     label="PHONE"        value={user?.phone}   theme={theme} />
+              <InfoRow icon="calendar-outline" label="MEMBER SINCE"
+                value={user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-NG', { year: 'numeric', month: 'long' }) : '—'}
+                theme={theme}
+              />
+            </Section>
+
+            {/* Driver — vehicle & docs */}
+            {role === 'DRIVER' && dp && (
+              <Section title="VEHICLE & DOCUMENTS" theme={theme}>
+                <InfoRow icon="car-outline"           label="VEHICLE" value={`${dp.vehicleMake ?? ''} ${dp.vehicleModel ?? ''} ${dp.vehicleYear ?? ''}`.trim()} theme={theme} />
+                <InfoRow icon="document-text-outline" label="PLATE"   value={dp.vehiclePlate} theme={theme} />
+                <View style={s.docRow}>
+                  <DocBadge label="Licence"      uploaded={!!dp.licenseImageUrl} theme={theme} />
+                  <DocBadge label="Registration" uploaded={!!dp.vehicleRegUrl}   theme={theme} />
+                  <DocBadge label="Insurance"    uploaded={!!dp.insuranceUrl}    theme={theme} />
+                </View>
+                {!dp.isApproved && !dp.isRejected && (
+                  <View style={[s.pendingNote, { borderColor: theme.border }]}>
+                    <Ionicons name="time-outline" size={14} color={theme.muted} />
+                    <Text style={[s.pendingTxt, { color: theme.muted }]}>Account under review — approval takes 24–48 hours.</Text>
+                  </View>
+                )}
+                {dp.isRejected && (
+                  <View style={[s.pendingNote, { borderColor: '#E05555' }]}>
+                    <Ionicons name="close-circle-outline" size={14} color="#E05555" />
+                    <Text style={[s.pendingTxt, { color: '#E05555' }]}>{dp.rejectionReason || 'Your application was not approved. Please contact support.'}</Text>
+                  </View>
+                )}
+              </Section>
+            )}
+
+            {/* Delivery partner — vehicle & docs */}
+            {role === 'DELIVERY_PARTNER' && pp && (
+              <Section title="VEHICLE & DOCUMENTS" theme={theme}>
+                <InfoRow icon="bicycle-outline"       label="VEHICLE TYPE" value={pp.vehicleType}  theme={theme} />
+                {pp.vehiclePlate && <InfoRow icon="document-text-outline" label="PLATE" value={pp.vehiclePlate} theme={theme} />}
+                <View style={s.docRow}>
+                  <DocBadge label="ID Document"   uploaded={!!pp.idImageUrl}      theme={theme} />
+                  <DocBadge label="Vehicle Photo" uploaded={!!pp.vehicleImageUrl} theme={theme} />
+                </View>
+                {!pp.isApproved && !pp.isRejected && (
+                  <View style={[s.pendingNote, { borderColor: theme.border }]}>
+                    <Ionicons name="time-outline" size={14} color={theme.muted} />
+                    <Text style={[s.pendingTxt, { color: theme.muted }]}>Awaiting approval. Upload your ID to speed up the process.</Text>
+                  </View>
+                )}
+                {pp.isRejected && (
+                  <View style={[s.pendingNote, { borderColor: '#E05555' }]}>
+                    <Ionicons name="close-circle-outline" size={14} color="#E05555" />
+                    <Text style={[s.pendingTxt, { color: '#E05555' }]}>{pp.rejectionReason || 'Your application was not approved. Please contact support.'}</Text>
+                  </View>
+                )}
+              </Section>
+            )}
+
+            {/* Security */}
+            <Section title="SECURITY" theme={theme}>
+              <ToggleRow
+                icon="shield-checkmark-outline"
+                label="Two-Factor Authentication"
+                sublabel={twoFaEnabled ? `Active • ${twoFaMethod === 'EMAIL' ? 'Email' : 'SMS'} verification` : 'Adds an extra login step via SMS or Email'}
+                value={twoFaEnabled}
+                onValueChange={handle2faToggle}
+                theme={theme}
+                loading={twoFaLoading}
+              />
+              {isAvailable && (
+                <ToggleRow
+                  icon={biometricIcon}
+                  label={`${biometricLabel} Login`}
+                  sublabel={isEnabled ? 'Unlock the app with biometrics' : `Use ${biometricLabel} instead of password`}
+                  value={isEnabled}
+                  onValueChange={handleBiometricToggle}
+                  theme={theme}
+                  loading={bioLoading}
+                  last
+                />
+              )}
+              {!isAvailable && (
+                <View style={[tr.row, { opacity: 0.4, paddingBottom: 10 }]}>
+                  <View style={[tr.iconWrap, { backgroundColor: theme.accent + '14' }]}>
+                    <Ionicons name="finger-print-outline" size={17} color={theme.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[tr.label, { color: theme.foreground }]}>Biometric Login</Text>
+                    <Text style={[tr.sublabel, { color: theme.hint }]}>Not available on this device</Text>
+                  </View>
+                </View>
+              )}
+            </Section>
+
+            {/* Appearance */}
+            <Section title="APPEARANCE" theme={theme}>
+              <View style={[s.modeToggle, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                {['dark', 'light'].map(m => {
+                  const active = mode === m;
+                  return (
+                    <TouchableOpacity key={m} onPress={() => changeMode(m)} style={[s.modeBtn, active && { backgroundColor: theme.accent + '20' }]} activeOpacity={0.8}>
+                      <Ionicons name={m === 'dark' ? 'moon-outline' : 'sunny-outline'} size={13} color={active ? theme.accent : theme.hint} />
+                      <Text style={[s.modeTxt, { color: active ? theme.accent : theme.hint }]}>{m === 'dark' ? 'Dark' : 'Light'}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </Section>
+
+            {/* Account */}
+            <Section title="ACCOUNT" theme={theme}>
+              <MenuItem icon="create-outline"        label="Edit Profile"       theme={theme} onPress={() => navigation.navigate('EditProfile')} />
+              {role === 'CUSTOMER' && (
+                <MenuItem icon="wallet-outline"      label="My Wallet"          theme={theme}
+                  value={stats ? `₦${(stats.walletBalance ?? 0).toLocaleString()}` : null}
+                  onPress={() => navigation.navigate('Wallet')} />
+              )}
+              {isProviderRole && (
+                <MenuItem icon="cash-outline"        label="Earnings & Payouts" theme={theme}
+                  onPress={() => navigation.navigate(role === 'DRIVER' ? 'DriverEarnings' : 'PartnerEarnings')} />
+              )}
+              <MenuItem icon="notifications-outline" label="Notifications"      theme={theme} onPress={() => navigation.navigate('Notifications')} />
+              <MenuItem icon="lock-closed-outline"   label="Change Password"    theme={theme} last onPress={() => navigation.navigate('ChangePassword')} />
+            </Section>
+
+            {/* Support */}
+            <Section title="SUPPORT" theme={theme}>
+              <MenuItem icon="help-circle-outline" label="Help & Support" theme={theme} onPress={() => navigation.navigate('Support')} />
+              <MenuItem icon="star-outline"        label="Rate the App"   theme={theme} onPress={() => navigation.navigate('AppFeedback')} />
+            </Section>
+
+            {/* Sign out */}
+            <TouchableOpacity style={[s.logoutBtn, { borderColor: theme.border }]} onPress={confirmLogout} activeOpacity={0.75}>
+              <Ionicons name="log-out-outline" size={18} color="#E05555" />
+              <Text style={s.logoutTxt}>Sign Out</Text>
+            </TouchableOpacity>
+
+            <Text style={[s.version, { color: theme.hint }]}>Diakite v1.0.0</Text>
+          </Animated.View>
+        </ScrollView>
+      </View>
 
       <MethodModal
         visible={showMethodModal}
@@ -504,294 +738,42 @@ export default function ProfileScreen({ navigation }) {
         onDismiss={() => setShowMethodModal(false)}
         theme={theme}
       />
-
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-        <Animated.View style={{ opacity: fadeA }}>
-
-          {/* ── Hero ── */}
-          <View style={s.hero}>
-            <Avatar user={user} theme={theme} />
-
-            <Text style={[s.name, { color: theme.foreground }]}>
-              {user?.firstName} {user?.lastName}
-            </Text>
-
-            <View style={[s.rolePill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '30' }]}>
-              <Ionicons name={meta.icon} size={13} color={theme.accent} />
-              <Text style={[s.roleLabel, { color: theme.accent }]}>{meta.label}</Text>
-            </View>
-
-            <View style={s.verifiedRow}>
-              <Ionicons
-                name={user?.isVerified ? 'shield-checkmark-outline' : 'shield-outline'}
-                size={13}
-                color={user?.isVerified ? theme.accent : theme.hint}
-              />
-              <Text style={[s.verifiedTxt, { color: user?.isVerified ? theme.accent : theme.hint }]}>
-                {user?.isVerified ? 'Verified Account' : 'Pending Email Verification'}
-              </Text>
-            </View>
-
-            {showApprovalBadge && !loading && (
-              <View style={[
-                s.approvalBadge,
-                {
-                  backgroundColor: isRejected ? '#E0555518' : isApproved ? theme.accent + '18' : theme.backgroundAlt,
-                  borderColor:     isRejected ? '#E05555'   : isApproved ? theme.accent         : theme.border,
-                },
-              ]}>
-                <Ionicons
-                  name={isRejected ? 'close-circle-outline' : isApproved ? 'shield-checkmark-outline' : 'time-outline'}
-                  size={13}
-                  color={isRejected ? '#E05555' : isApproved ? theme.accent : theme.hint}
-                />
-                <Text style={[s.approvalBadgeTxt, { color: isRejected ? '#E05555' : isApproved ? theme.accent : theme.hint }]}>
-                  {isRejected
-                    ? 'Application Not Approved'
-                    : isApproved
-                      ? `Verified ${role === 'DRIVER' ? 'Driver' : 'Courier'}`
-                      : 'Pending Approval'}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Stats strip */}
-          {loading ? (
-            <ActivityIndicator color={theme.accent} style={{ marginBottom: 20 }} />
-          ) : (
-            <View style={[s.statsStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              {role === 'CUSTOMER' && (
-                <>
-                  <View style={s.stripItem}>
-                    <Text style={[s.stripVal, { color: theme.foreground }]}>{stats?.totalRides ?? 0}</Text>
-                    <Text style={[s.stripLbl, { color: theme.hint }]}>Rides</Text>
-                  </View>
-                  <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
-                  <View style={s.stripItem}>
-                    <Text style={[s.stripVal, { color: theme.foreground }]}>{stats?.totalDeliveries ?? 0}</Text>
-                    <Text style={[s.stripLbl, { color: theme.hint }]}>Packages</Text>
-                  </View>
-                  <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
-                  <View style={s.stripItem}>
-                    <Text style={[s.stripVal, { color: theme.foreground }]}>₦{(stats?.walletBalance ?? 0).toLocaleString()}</Text>
-                    <Text style={[s.stripLbl, { color: theme.hint }]}>Wallet</Text>
-                  </View>
-                </>
-              )}
-              {isProviderRole && (
-                <>
-                  <View style={s.stripItem}>
-                    <Text style={[s.stripVal, { color: theme.foreground }]}>
-                      {role === 'DRIVER' ? (stats?.completedRides ?? 0) : (stats?.completedDeliveries ?? 0)}
-                    </Text>
-                    <Text style={[s.stripLbl, { color: theme.hint }]}>{role === 'DRIVER' ? 'Rides' : 'Deliveries'}</Text>
-                  </View>
-                  <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
-                  <View style={s.stripItem}>
-                    {/* Show live-computed weighted average from breakdown */}
-                    <Text style={[s.stripVal, { color: theme.foreground }]}>
-                      {Number(stats?.rating ?? 0).toFixed(1)} ⭐
-                    </Text>
-                    <Text style={[s.stripLbl, { color: theme.hint }]}>Rating</Text>
-                  </View>
-                  <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
-                  <View style={s.stripItem}>
-                    <Text style={[s.stripVal, { color: theme.foreground }]}>₦{(stats?.totalEarnings ?? 0).toLocaleString()}</Text>
-                    <Text style={[s.stripLbl, { color: theme.hint }]}>Earned</Text>
-                  </View>
-                </>
-              )}
-            </View>
-          )}
-
-          {/* ── Rating breakdown (driver / partner only) ── */}
-          {isProviderRole && !loading && (
-            <RatingBreakdown stats={stats} theme={theme} />
-          )}
-
-          {/* Personal info */}
-          <Section title="PERSONAL INFORMATION" theme={theme}>
-            <InfoRow icon="mail-outline"     label="EMAIL"        value={user?.email}   theme={theme} />
-            <InfoRow icon="call-outline"     label="PHONE"        value={user?.phone}   theme={theme} />
-            <InfoRow icon="calendar-outline" label="MEMBER SINCE"
-              value={user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-NG', { year: 'numeric', month: 'long' }) : '—'}
-              theme={theme}
-            />
-          </Section>
-
-          {/* Driver — vehicle & docs */}
-          {role === 'DRIVER' && dp && (
-            <Section title="VEHICLE & DOCUMENTS" theme={theme}>
-              <InfoRow icon="car-outline"           label="VEHICLE" value={`${dp.vehicleMake ?? ''} ${dp.vehicleModel ?? ''} ${dp.vehicleYear ?? ''}`.trim()} theme={theme} />
-              <InfoRow icon="document-text-outline" label="PLATE"   value={dp.vehiclePlate} theme={theme} />
-              <View style={s.docRow}>
-                <DocBadge label="Licence"      uploaded={!!dp.licenseImageUrl} theme={theme} />
-                <DocBadge label="Registration" uploaded={!!dp.vehicleRegUrl}   theme={theme} />
-                <DocBadge label="Insurance"    uploaded={!!dp.insuranceUrl}    theme={theme} />
-              </View>
-              {!dp.isApproved && !dp.isRejected && (
-                <View style={[s.pendingNote, { borderColor: theme.border }]}>
-                  <Ionicons name="time-outline" size={14} color={theme.muted} />
-                  <Text style={[s.pendingTxt, { color: theme.muted }]}>Account under review — approval takes 24–48 hours.</Text>
-                </View>
-              )}
-              {dp.isRejected && (
-                <View style={[s.pendingNote, { borderColor: '#E05555' }]}>
-                  <Ionicons name="close-circle-outline" size={14} color="#E05555" />
-                  <Text style={[s.pendingTxt, { color: '#E05555' }]}>
-                    {dp.rejectionReason || 'Your application was not approved. Please contact support.'}
-                  </Text>
-                </View>
-              )}
-            </Section>
-          )}
-
-          {/* Delivery partner — vehicle & docs */}
-          {role === 'DELIVERY_PARTNER' && pp && (
-            <Section title="VEHICLE & DOCUMENTS" theme={theme}>
-              <InfoRow icon="bicycle-outline"       label="VEHICLE TYPE" value={pp.vehicleType}  theme={theme} />
-              {pp.vehiclePlate && <InfoRow icon="document-text-outline" label="PLATE" value={pp.vehiclePlate} theme={theme} />}
-              <View style={s.docRow}>
-                <DocBadge label="ID Document"   uploaded={!!pp.idImageUrl}      theme={theme} />
-                <DocBadge label="Vehicle Photo" uploaded={!!pp.vehicleImageUrl} theme={theme} />
-              </View>
-              {!pp.isApproved && !pp.isRejected && (
-                <View style={[s.pendingNote, { borderColor: theme.border }]}>
-                  <Ionicons name="time-outline" size={14} color={theme.muted} />
-                  <Text style={[s.pendingTxt, { color: theme.muted }]}>Awaiting approval. Upload your ID to speed up the process.</Text>
-                </View>
-              )}
-              {pp.isRejected && (
-                <View style={[s.pendingNote, { borderColor: '#E05555' }]}>
-                  <Ionicons name="close-circle-outline" size={14} color="#E05555" />
-                  <Text style={[s.pendingTxt, { color: '#E05555' }]}>
-                    {pp.rejectionReason || 'Your application was not approved. Please contact support.'}
-                  </Text>
-                </View>
-              )}
-            </Section>
-          )}
-
-          {/* Security */}
-          <Section title="SECURITY" theme={theme}>
-            <ToggleRow
-              icon="shield-checkmark-outline"
-              label="Two-Factor Authentication"
-              sublabel={
-                twoFaEnabled
-                  ? `Active • ${twoFaMethod === 'EMAIL' ? 'Email' : 'SMS'} verification`
-                  : 'Adds an extra login step via SMS or Email'
-              }
-              value={twoFaEnabled}
-              onValueChange={handle2faToggle}
-              theme={theme}
-              loading={twoFaLoading}
-            />
-            {isAvailable && (
-              <ToggleRow
-                icon={biometricIcon}
-                label={`${biometricLabel} Login`}
-                sublabel={isEnabled ? 'Unlock the app with biometrics' : `Use ${biometricLabel} instead of password`}
-                value={isEnabled}
-                onValueChange={handleBiometricToggle}
-                theme={theme}
-                loading={bioLoading}
-                last
-              />
-            )}
-            {!isAvailable && (
-              <View style={[tr.row, { opacity: 0.4, paddingBottom: 10 }]}>
-                <View style={[tr.iconWrap, { backgroundColor: theme.accent + '14' }]}>
-                  <Ionicons name="finger-print-outline" size={17} color={theme.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[tr.label, { color: theme.foreground }]}>Biometric Login</Text>
-                  <Text style={[tr.sublabel, { color: theme.hint }]}>Not available on this device</Text>
-                </View>
-              </View>
-            )}
-          </Section>
-
-          {/* Appearance */}
-          <Section title="APPEARANCE" theme={theme}>
-            <View style={[s.modeToggle, { backgroundColor: theme.background, borderColor: theme.border }]}>
-              {['dark', 'light'].map(m => {
-                const active = mode === m;
-                return (
-                  <TouchableOpacity
-                    key={m}
-                    onPress={() => changeMode(m)}
-                    style={[s.modeBtn, active && { backgroundColor: theme.accent + '20' }]}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name={m === 'dark' ? 'moon-outline' : 'sunny-outline'} size={13} color={active ? theme.accent : theme.hint} />
-                    <Text style={[s.modeTxt, { color: active ? theme.accent : theme.hint }]}>{m === 'dark' ? 'Dark' : 'Light'}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </Section>
-
-          {/* Account */}
-          <Section title="ACCOUNT" theme={theme}>
-            <MenuItem icon="create-outline"         label="Edit Profile"       theme={theme} onPress={() => navigation.navigate('EditProfile')} />
-            {role === 'CUSTOMER' && (
-              <MenuItem icon="wallet-outline"       label="My Wallet"          theme={theme}
-                value={stats ? `₦${(stats.walletBalance ?? 0).toLocaleString()}` : null}
-                onPress={() => navigation.navigate('Wallet')} />
-            )}
-            {isProviderRole && (
-              <MenuItem icon="cash-outline"         label="Earnings & Payouts" theme={theme}
-                onPress={() => navigation.navigate(role === 'DRIVER' ? 'DriverEarnings' : 'PartnerEarnings')} />
-            )}
-            <MenuItem icon="notifications-outline"  label="Notifications"     theme={theme} onPress={() => navigation.navigate('Notifications')} />
-            <MenuItem icon="lock-closed-outline"    label="Change Password"   theme={theme} last onPress={() => navigation.navigate('ChangePassword')} />
-          </Section>
-
-          {/* Support */}
-          <Section title="SUPPORT" theme={theme}>
-            <MenuItem icon="help-circle-outline"    label="Help & Support"  theme={theme} onPress={() => navigation.navigate('Support')} />
-            <MenuItem icon="star-outline"           label="Rate the App"    theme={theme} onPress={() => navigation.navigate('AppFeedback')} />
-          </Section>
-
-          {/* Sign out */}
-          <TouchableOpacity style={[s.logoutBtn, { borderColor: theme.border }]} onPress={confirmLogout} activeOpacity={0.75}>
-            <Ionicons name="log-out-outline" size={18} color="#E05555" />
-            <Text style={s.logoutTxt}>Sign Out</Text>
-          </TouchableOpacity>
-
-          <Text style={[s.version, { color: theme.hint }]}>Diakite v1.0.0</Text>
-        </Animated.View>
-      </ScrollView>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:        { flex: 1 },
-  ambientGlow: { position: 'absolute', width: width * 1.2, height: width * 1.2, borderRadius: width * 0.6, top: -width * 0.75, alignSelf: 'center', opacity: 0.05 },
-  scroll:      { paddingHorizontal: 24, paddingBottom: 90, paddingTop: 56 },
-  hero:        { alignItems: 'center', paddingBottom: 28 },
-  name:        { fontSize: 22, fontWeight: '800', marginBottom: 10, letterSpacing: -0.3 },
-  rolePill:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 10 },
-  roleLabel:   { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
-  verifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  verifiedTxt: { fontSize: 12, fontWeight: '500' },
+  root:         { flex: 1 },
+  ambientGlow:  { position: 'absolute', width: width * 1.2, height: width * 1.2, borderRadius: width * 0.6, top: -width * 0.75, alignSelf: 'center', opacity: 0.05 },
+
+  // ── Sticky header ──
+  header:       { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 16, paddingBottom: 10, borderBottomWidth: 1 },
+  backBtn:      { width: 38, height: 38, borderRadius: 19, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  headerTitle:  { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+  headerSpacer: { width: 38 },
+
+  // ── Scroll content ──
+  scroll:       { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 32 },
+  hero:         { alignItems: 'center', paddingBottom: 28 },
+  name:         { fontSize: 22, fontWeight: '800', marginBottom: 10, letterSpacing: -0.3 },
+  rolePill:     { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 10 },
+  roleLabel:    { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+  verifiedRow:  { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  verifiedTxt:  { fontSize: 12, fontWeight: '500' },
   approvalBadge:    { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 5, marginTop: 8 },
   approvalBadgeTxt: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-  statsStrip:  { flexDirection: 'row', borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 20, alignItems: 'center' },
-  stripItem:   { flex: 1, alignItems: 'center', gap: 4 },
-  stripVal:    { fontSize: 17, fontWeight: '800' },
-  stripLbl:    { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
-  stripDivider:{ width: 1, height: 32 },
-  docRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14, marginBottom: 6 },
-  pendingNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderTopWidth: 1, paddingTop: 12, marginTop: 8, paddingBottom: 8 },
-  pendingTxt:  { flex: 1, fontSize: 12, lineHeight: 18 },
-  modeToggle:  { flexDirection: 'row', borderRadius: 10, borderWidth: 1, overflow: 'hidden', height: 38, marginBottom: 10 },
-  modeBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  modeTxt:     { fontSize: 12, fontWeight: '600' },
-  logoutBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1, paddingVertical: 15, marginBottom: 14 },
-  logoutTxt:   { fontSize: 15, fontWeight: '700', color: '#E05555' },
-  version:     { textAlign: 'center', fontSize: 11, fontWeight: '500', marginBottom: 12 },
+  statsStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 20, alignItems: 'center' },
+  stripItem:    { flex: 1, alignItems: 'center', gap: 4 },
+  stripVal:     { fontSize: 17, fontWeight: '800' },
+  stripLbl:     { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
+  stripDivider: { width: 1, height: 32 },
+  docRow:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14, marginBottom: 6 },
+  pendingNote:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderTopWidth: 1, paddingTop: 12, marginTop: 8, paddingBottom: 8 },
+  pendingTxt:   { flex: 1, fontSize: 12, lineHeight: 18 },
+  modeToggle:   { flexDirection: 'row', borderRadius: 10, borderWidth: 1, overflow: 'hidden', height: 38, marginBottom: 10 },
+  modeBtn:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  modeTxt:      { fontSize: 12, fontWeight: '600' },
+  logoutBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1, paddingVertical: 15, marginBottom: 14 },
+  logoutTxt:    { fontSize: 15, fontWeight: '700', color: '#E05555' },
+  version:      { textAlign: 'center', fontSize: 11, fontWeight: '500', marginBottom: 12 },
 });
