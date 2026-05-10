@@ -1,207 +1,92 @@
 // mobile/src/screens/Customer/HomeScreen.js
-// ── Premium Glass Edition ─────────────────────────────────────────────────────
+// ── Bolt-style: Map background + draggable bottom sheet ───────────────────────
 import React, {
   useState, useEffect, useRef, useCallback,
 } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  StatusBar, Dimensions, Animated, ActivityIndicator, Image,
-  Alert, Platform, Modal, SafeAreaView, ScrollView,
+  StatusBar, Dimensions, Animated, ActivityIndicator,
+  Image, Alert, Platform, Modal, SafeAreaView, ScrollView,
+  TextInput, PanResponder,
 } from 'react-native';
-import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
+import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
 import { LinearGradient }    from 'expo-linear-gradient';
-import { BlurView }          from 'expo-blur';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth }           from '../../context/AuthContext';
 import { useTheme }          from '../../context/ThemeContext';
-import { useScrollY }        from '../../context/ScrollContext';
-import { userAPI, rideAPI, deliveryAPI } from '../../services/api';
+import { rideAPI, deliveryAPI } from '../../services/api';
 import ActiveRideBanner      from '../../components/ActiveRideBanner';
 import ActiveDeliveryBanner  from '../../components/ActiveDeliveryBanner';
 import MaintenanceBanner     from '../../components/MaintenanceBanner';
 import { checkMaintenance }  from '../../utils/maintenanceCheck';
 import { useInactivityLogout } from '../../hooks/useInactivityLogout';
-import { CommonActions } from '@react-navigation/native';
+import { CommonActions }     from '@react-navigation/native';
 
-const { width } = Dimensions.get('window');
-const H_PAD   = 20;
-const CARD_W  = width - H_PAD * 2;
+// ── Custom SVG service icons ──────────────────────────────────────────────────
+import {
+  RidesIcon,
+  SendIcon,
+  DriversIcon,
+  SupportIcon,
+} from '../../components/ServiceIcons';
+
+const { width, height } = Dimensions.get('window');
+const H_PAD = 16;
+
+// Two snap points for the draggable sheet
+const SHEET_EXPANDED  = height * 0.92;
+const SHEET_COLLAPSED = height * 0.60;
+const COLLAPSED_Y     = SHEET_EXPANDED - SHEET_COLLAPSED; // translateY when resting
+
+// Tab bar height (matches CustomerNavigator)
 const TAB_CONTENT_H = 54;
+const TAB_H         = Platform.OS === 'android'
+  ? TAB_CONTENT_H + 16  // android extra bottom padding
+  : TAB_CONTENT_H;
 
-// ── Glass helpers ────────────────────────────────────────────────────────────
-const G = {
-  card:    (mode) => mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.75)',
-  cardMid: (mode) => mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.88)',
-  border:  (mode) => mode === 'dark' ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.07)',
-  borderHi:(mode) => mode === 'dark' ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.12)',
-  icon:    (mode) => mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-  glow:    '#FFFFFF',
-};
-
-// ── Tips data ────────────────────────────────────────────────────────────────
-const RIDE_TIPS = [
-  { id:'r1', icon:'location-outline',      title:'Pin your pickup precisely',  body:"Drag the map pin to your exact door — saves your driver hunting time." },
-  { id:'r3', icon:'star-outline',           title:'Rate every ride',           body:"Honest ratings help the best drivers rise to the top." },
-  { id:'r4', icon:'cash-outline',           title:'Fund your wallet first',    body:"Pre-funded wallet rides are always faster to confirm than cash." },
-  { id:'r5', icon:'time-outline',           title:'Book 10 mins early',        body:"Scheduling a little ahead guarantees a driver before you step outside." },
-];
-const DELIVERY_TIPS = [
-  { id:'d1', icon:'cube-outline',           title:'Pack items securely',       body:"Use sealed bags or boxes for fragile goods." },
-  { id:'d2', icon:'call-outline',           title:'Keep your recipient reachable', body:"Make sure the receiver's number is active — our courier will call ahead." },
-  { id:'d3', icon:'camera-outline',         title:'Photograph high-value items', body:"Take a quick photo before handing over valuable packages." },
-  { id:'d4', icon:'document-text-outline',  title:'Add clear labels',          body:"Write the recipient's name and address on the package itself." },
-  { id:'d5', icon:'notifications-outline',  title:'Watch your delivery alerts', body:"You'll get push notifications at every status change." },
-];
-
-// ── Service cards ────────────────────────────────────────────────────────────
-const buildServiceCards = (nav, maint, showAlert) => [
+// ── Service card data ─────────────────────────────────────────────────────────
+const buildServices = (nav, maint, warn) => [
   {
-    id:'ride', icon:'car-sport-outline', label:'RIDE', title:'Book a Ride',
-    subtitle:'Fast • Safe • Reliable', cta:'Book Now', filled:true,
-    onPress:() => { if(maint.isOn){showAlert();return;} nav.navigate('RequestRide'); },
+    id: 'ride',
+    IconComponent: RidesIcon,
+    label: 'Rides',
+    sub: "Let's get moving",
+    onPress: () => { if (maint.isOn) { warn(); return; } nav.navigate('RequestRide'); },
   },
   {
-    id:'delivery', icon:'cube-outline', label:'DELIVERY', title:'Send a Package',
-    subtitle:'Door to door delivery', cta:'Book Now', filled:false,
-    onPress:() => { if(maint.isOn){showAlert();return;} nav.navigate('RequestDelivery'); },
+    id: 'send',
+    IconComponent: SendIcon,
+    label: 'Send',
+    sub: 'Door to door',
+    onPress: () => { if (maint.isOn) { warn(); return; } nav.navigate('RequestDelivery'); },
   },
   {
-    id:'support', icon:'headset-outline', label:'SUPPORT', title:'Get Help 24/7',
-    subtitle:'Always here for you', cta:'Chat Now', filled:true,
-    onPress:() => nav.navigate('Support'),
+    id: 'nearby',
+    IconComponent: DriversIcon,
+    label: 'Drivers',
+    sub: 'Browse nearby',
+    onPress: () => {
+      if (maint.isOn) { warn(); return; }
+      nav.navigate('NearbyDrivers', {
+        pickupAddress: '', pickupLat: 6.5244, pickupLng: 3.3792,
+        dropoffAddress: '', dropoffLat: 6.4281, dropoffLng: 3.4219,
+        vehicleType: 'CAR',
+      });
+    },
   },
   {
-    id:'wallet', icon:'wallet-outline', label:'WALLET', title:'Fund Your Wallet',
-    subtitle:'Quick & secure top up', cta:'Top Up', filled:false,
-    onPress:() => nav.getParent()?.navigate('WalletTab'),
+    id: 'support',
+    IconComponent: SupportIcon,
+    label: 'Support',
+    sub: "We're here to help",
+    onPress: () => { if (maint.isOn) { warn(); return; } nav.navigate('Support'); },
   },
 ];
 
-// ── ServiceCarousel ──────────────────────────────────────────────────────────
-const ServiceCarousel = ({ cards, theme, mode }) => {
-  const scrollRef  = useRef(null);
-  const currentIdx = useRef(0);
-  const ctaScale   = useRef(new Animated.Value(1)).current;
-  const [activeIdx, setActiveIdx] = useState(0);
-
-  const advance = useCallback(() => {
-    Animated.sequence([
-      Animated.spring(ctaScale,{ toValue:0.88, useNativeDriver:true, speed:80 }),
-      Animated.spring(ctaScale,{ toValue:1.04, useNativeDriver:true, speed:80 }),
-      Animated.spring(ctaScale,{ toValue:1,    useNativeDriver:true, speed:60 }),
-    ]).start(() => {
-      const next = (currentIdx.current + 1) % cards.length;
-      currentIdx.current = next;
-      setActiveIdx(next);
-      scrollRef.current?.scrollTo({ x: next * (CARD_W + 14), animated: true });
-    });
-  }, [cards.length]);
-
-  useEffect(() => {
-    const t = setInterval(advance, 3400);
-    return () => clearInterval(t);
-  }, [advance]);
-
-  return (
-    <View>
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        decelerationRate="fast"
-        snapToInterval={CARD_W + 14}
-        snapToAlignment="start"
-        contentContainerStyle={{ paddingRight: H_PAD }}
-        style={{ marginHorizontal: -H_PAD, paddingLeft: H_PAD }}
-        onMomentumScrollEnd={e => {
-          const idx = Math.round(e.nativeEvent.contentOffset.x / (CARD_W + 14));
-          currentIdx.current = idx;
-          setActiveIdx(idx);
-        }}
-      >
-        {cards.map((item, idx) => {
-          const isFilled  = item.filled;
-          const isActive  = idx === activeIdx;
-          const darkMode  = mode === 'dark';
-
-          const bgColors  = isFilled
-            ? (darkMode ? ['rgba(255,255,255,0.10)','rgba(255,255,255,0.04)'] : ['rgba(0,0,0,0.08)','rgba(0,0,0,0.02)'])
-            : (darkMode ? ['rgba(255,255,255,0.06)','rgba(255,255,255,0.02)'] : ['rgba(255,255,255,0.95)','rgba(255,255,255,0.80)']);
-          const borderC   = isFilled ? G.borderHi(mode) : G.border(mode);
-          const fg        = theme.foreground;
-          const labelC    = darkMode ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.4)';
-          const subtitleC = darkMode ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)';
-          const ctaBg     = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.07)';
-
-          return (
-            <TouchableOpacity key={item.id} onPress={item.onPress} activeOpacity={0.9}>
-              <View style={[sc.card, { width: CARD_W, marginRight: idx === cards.length-1 ? 0 : 14, borderColor: borderC }]}>
-                <LinearGradient
-                  colors={bgColors}
-                  start={{ x:0, y:0 }}
-                  end={{ x:1, y:1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <View style={[sc.shimmer, { backgroundColor: isFilled ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.10)' }]} />
-
-                <View style={sc.topRow}>
-                  <View style={[sc.iconWrap, { backgroundColor: G.icon(mode) }]}>
-                    <Ionicons name={item.icon} size={22} color={fg} />
-                  </View>
-                  <Text style={[sc.label, { color: labelC }]}>{item.label}</Text>
-                </View>
-
-                <Text style={[sc.title, { color: fg }]}>{item.title}</Text>
-                <Text style={[sc.subtitle, { color: subtitleC }]}>{item.subtitle}</Text>
-
-                <Animated.View style={[sc.ctaWrap, { backgroundColor: ctaBg, transform: isActive ? [{ scale: ctaScale }] : [] }]}>
-                  <Text style={[sc.ctaTxt, { color: fg }]}>{item.cta}</Text>
-                  <View style={[sc.ctaArrow, { backgroundColor: G.icon(mode) }]}>
-                    <Ionicons name="arrow-forward" size={13} color={fg} />
-                  </View>
-                </Animated.View>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      <View style={sc.dots}>
-        {cards.map((_, i) => (
-          <View
-            key={i}
-            style={[sc.dot, {
-              backgroundColor: i === activeIdx ? theme.foreground : G.border(mode),
-              width: i === activeIdx ? 20 : 6,
-              opacity: i === activeIdx ? 1 : 0.4,
-            }]}
-          />
-        ))}
-      </View>
-    </View>
-  );
-};
-
-const sc = StyleSheet.create({
-  card:     { borderRadius: 26, padding: 24, marginBottom: 4, overflow: 'hidden', borderWidth: 1 },
-  shimmer:  { position:'absolute', top:0, left:0, right:0, height:1 },
-  topRow:   { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom: 20 },
-  iconWrap: { width:50, height:50, borderRadius:16, justifyContent:'center', alignItems:'center' },
-  label:    { fontSize:9, fontWeight:'800', letterSpacing:3.5 },
-  title:    { fontSize:27, fontWeight:'900', letterSpacing:-0.8, marginBottom:6 },
-  subtitle: { fontSize:13, fontWeight:'500', marginBottom:24, letterSpacing:0.2 },
-  ctaWrap:  { flexDirection:'row', alignItems:'center', gap:10, alignSelf:'flex-start', borderRadius:14, paddingVertical:11, paddingHorizontal:16 },
-  ctaTxt:   { fontSize:13, fontWeight:'800', letterSpacing:0.3 },
-  ctaArrow: { width:26, height:26, borderRadius:9, justifyContent:'center', alignItems:'center' },
-  dots:     { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5, marginTop:16 },
-  dot:      { height:6, borderRadius:3 },
-});
-
-// ── DrawerMenu ───────────────────────────────────────────────────────────────
+// ── DrawerMenu ────────────────────────────────────────────────────────────────
 const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
   const { logout } = useAuth();
-
   const slideA = useRef(new Animated.Value(-320)).current;
   const bgA    = useRef(new Animated.Value(0)).current;
 
@@ -222,7 +107,7 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
   const go = (dest, params) => {
     onClose();
     setTimeout(() => {
-      if (['WalletTab','ProfileTab','HistoryTab'].includes(dest)) {
+      if (['WalletTab', 'ProfileTab', 'HistoryTab'].includes(dest)) {
         navigation.getParent()?.navigate(dest);
       } else {
         navigation.navigate(dest, params);
@@ -233,107 +118,69 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
   const handleLogout = () => {
     onClose();
     setTimeout(async () => {
-      Alert.alert(
-        'Sign Out',
-        'Are you sure you want to sign out?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Sign Out',
-            style: 'destructive',
-            onPress: async () => {
-              await logout();
-              // navigation = HomeStack navigator
-              // .getParent() = Tab navigator (CustomerNavigator)
-              // .getParent() = Root navigator (where Auth lives)
-              const rootNav = navigation.getParent()?.getParent();
-              const targetNav = rootNav ?? navigation;
-              targetNav.dispatch(
-                CommonActions.reset({
-                  index: 0,
-                  routes: [{
-                    name: 'Auth',
-                    state: { routes: [{ name: 'Login' }] },
-                  }],
-                })
-              );
-            },
+      Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out', style: 'destructive',
+          onPress: async () => {
+            await logout();
+            const rootNav = navigation.getParent()?.getParent();
+            const targetNav = rootNav ?? navigation;
+            targetNav.dispatch(CommonActions.reset({
+              index: 0,
+              routes: [{ name: 'Auth', state: { routes: [{ name: 'Login' }] } }],
+            }));
           },
-        ]
-      );
+        },
+      ]);
     }, 300);
   };
 
   const MENU_ITEMS = [
-    { icon:'home-outline',             label:'Home',           dest:null },
-    { icon:'car-outline',              label:'Book a Ride',    dest:'RequestRide' },
-    { icon:'cube-outline',             label:'Send a Package', dest:'RequestDelivery' },
-    { icon:'people-outline',           label:'Nearby Drivers', dest:'NearbyDrivers',
-      params:{ pickupAddress:'', pickupLat:6.5244, pickupLng:3.3792, dropoffAddress:'', dropoffLat:6.4281, dropoffLng:3.4219, vehicleType:'CAR' }
-    },
-    { icon:'time-outline',             label:'My History',     dest:'HistoryTab' },
-    { icon:'wallet-outline',           label:'Wallet',         dest:'WalletTab' },
-    { icon:'notifications-outline',    label:'Notifications',  dest:'Notifications' },
-    { icon:'headset-outline',          label:'Support',        dest:'Support' },
-    { icon:'person-outline',           label:'Profile',        dest:'ProfileTab' },
+    { icon: 'home-outline',          label: 'Home',           dest: null },
+    { icon: 'car-outline',           label: 'Book a Ride',    dest: 'RequestRide' },
+    { icon: 'cube-outline',          label: 'Send a Package', dest: 'RequestDelivery' },
+    { icon: 'people-outline',        label: 'Nearby Drivers', dest: 'NearbyDrivers',
+      params: { pickupAddress: '', pickupLat: 6.5244, pickupLng: 3.3792, dropoffAddress: '', dropoffLat: 6.4281, dropoffLng: 3.4219, vehicleType: 'CAR' } },
+    { icon: 'time-outline',          label: 'My History',     dest: 'HistoryTab' },
+    { icon: 'wallet-outline',        label: 'Wallet',         dest: 'WalletTab' },
+    { icon: 'notifications-outline', label: 'Notifications',  dest: 'Notifications' },
+    { icon: 'headset-outline',       label: 'Support',        dest: 'Support' },
+    { icon: 'person-outline',        label: 'Profile',        dest: 'ProfileTab' },
   ];
 
   if (!visible) return null;
-
-  const panelBg = mode === 'dark' ? 'rgba(8,8,8,0.96)' : 'rgba(255,255,255,0.96)';
+  const darkMode = mode === 'dark';
+  const panelBg  = darkMode ? 'rgba(8,8,8,0.96)' : 'rgba(255,255,255,0.98)';
+  const border   = darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
 
   return (
     <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
       <Animated.View style={[dm.scrim, { opacity: bgA }]}>
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
-
-      <Animated.View style={[dm.panel, {
-        backgroundColor: panelBg,
-        borderRightColor: G.border(mode),
-        transform: [{ translateX: slideA }]
-      }]}>
+      <Animated.View style={[dm.panel, { backgroundColor: panelBg, borderRightColor: border, transform: [{ translateX: slideA }] }]}>
         <SafeAreaView style={{ flex: 1 }}>
-          <View style={[dm.userHeader, { borderBottomColor: G.border(mode) }]}>
-            <View style={[dm.avatar, { backgroundColor: G.cardMid(mode) }]}>
-              {user?.profileImage ? (
-                <Image source={{ uri: user.profileImage }} style={dm.avatarImg} />
-              ) : (
-                <Text style={[dm.avatarTxt, { color: theme.foreground }]}>
-                  {user?.firstName?.[0]}{user?.lastName?.[0]}
-                </Text>
-              )}
+          <View style={[dm.userHeader, { borderBottomColor: border }]}>
+            <View style={[dm.avatar, { backgroundColor: darkMode ? 'rgba(255,255,255,0.07)' : '#F0F0F0' }]}>
+              {user?.profileImage
+                ? <Image source={{ uri: user.profileImage }} style={dm.avatarImg} />
+                : <Text style={[dm.avatarTxt, { color: theme.foreground }]}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
+              }
             </View>
-            <View style={{ flex:1, minWidth:0 }}>
-              <Text style={[dm.userName, { color: theme.foreground }]} numberOfLines={1}>
-                {user?.firstName} {user?.lastName}
-              </Text>
-              <Text style={[dm.userEmail, { color: theme.hint }]} numberOfLines={1}>
-                {user?.email}
-              </Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[dm.userName, { color: theme.foreground }]} numberOfLines={1}>{user?.firstName} {user?.lastName}</Text>
+              <Text style={[dm.userEmail, { color: theme.hint }]} numberOfLines={1}>{user?.email}</Text>
             </View>
-            <TouchableOpacity
-              onPress={onClose}
-              style={[dm.closeBtn, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}
-            >
+            <TouchableOpacity onPress={onClose} style={[dm.closeBtn, { backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : '#F5F5F5', borderColor: border }]}>
               <Ionicons name="close" size={18} color={theme.foreground} />
             </TouchableOpacity>
           </View>
-
-          <ScrollView
-            style={{ flex: 1 }}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 20 }}
-          >
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
             <View style={{ paddingVertical: 8 }}>
               {MENU_ITEMS.map((item, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={[dm.menuItem, { borderBottomColor: G.border(mode) }]}
-                  onPress={() => item.dest ? go(item.dest, item.params) : onClose()}
-                  activeOpacity={0.7}
-                >
-                  <View style={[dm.menuIcon, { backgroundColor: G.icon(mode) }]}>
+                <TouchableOpacity key={i} style={[dm.menuItem, { borderBottomColor: border }]} onPress={() => item.dest ? go(item.dest, item.params) : onClose()} activeOpacity={0.7}>
+                  <View style={[dm.menuIcon, { backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : '#F5F5F5' }]}>
                     <Ionicons name={item.icon} size={18} color={theme.foreground} />
                   </View>
                   <Text style={[dm.menuLabel, { color: theme.foreground }]}>{item.label}</Text>
@@ -342,19 +189,13 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
               ))}
             </View>
           </ScrollView>
-
-          <TouchableOpacity
-            style={[dm.logoutRow, { borderTopColor: G.border(mode) }]}
-            onPress={handleLogout}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={[dm.logoutRow, { borderTopColor: border }]} onPress={handleLogout} activeOpacity={0.7}>
             <View style={[dm.menuIcon, { backgroundColor: 'rgba(224,85,85,0.10)' }]}>
               <Ionicons name="log-out-outline" size={18} color="#E05555" />
             </View>
             <Text style={dm.logoutTxt}>Sign Out</Text>
           </TouchableOpacity>
-
-          <View style={[dm.footer, { borderTopColor: G.border(mode) }]}>
+          <View style={[dm.footer, { borderTopColor: border }]}>
             <Text style={[dm.footerTxt, { color: theme.hint }]}>DrivAfrica • v1.0.0</Text>
           </View>
         </SafeAreaView>
@@ -364,276 +205,166 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
 };
 
 const dm = StyleSheet.create({
-  scrim:      { ...StyleSheet.absoluteFillObject, backgroundColor:'rgba(0,0,0,0.60)' },
-  panel:      { position:'absolute', top:0, left:0, bottom:0, width:300, borderRightWidth:1 },
-  userHeader: { flexDirection:'row', alignItems:'center', gap:12, padding:20, paddingTop:24, borderBottomWidth:1 },
-  avatar:     { width:48, height:48, borderRadius:24, justifyContent:'center', alignItems:'center', overflow:'hidden', flexShrink:0 },
-  avatarImg:  { width:48, height:48 },
-  avatarTxt:  { fontSize:16, fontWeight:'800' },
-  userName:   { fontSize:15, fontWeight:'800', marginBottom:2 },
-  userEmail:  { fontSize:12 },
-  closeBtn:   { width:34, height:34, borderRadius:10, borderWidth:1, justifyContent:'center', alignItems:'center', flexShrink:0 },
-  menuItem:   { flexDirection:'row', alignItems:'center', gap:14, paddingHorizontal:20, paddingVertical:14, borderBottomWidth:StyleSheet.hairlineWidth },
-  menuIcon:   { width:38, height:38, borderRadius:12, justifyContent:'center', alignItems:'center', flexShrink:0 },
-  menuLabel:  { flex:1, fontSize:14, fontWeight:'600' },
-  logoutRow:  { flexDirection:'row', alignItems:'center', gap:14, paddingHorizontal:20, paddingVertical:16, borderTopWidth:StyleSheet.hairlineWidth },
-  logoutTxt:  { flex:1, fontSize:14, fontWeight:'700', color:'#E05555' },
-  footer:     { padding:20, borderTopWidth:1 },
-  footerTxt:  { fontSize:11, textAlign:'center' },
+  scrim:      { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  panel:      { position: 'absolute', top: 0, left: 0, bottom: 0, width: 300, borderRightWidth: 1 },
+  userHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 20, paddingTop: 24, borderBottomWidth: 1 },
+  avatar:     { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', overflow: 'hidden', flexShrink: 0 },
+  avatarImg:  { width: 48, height: 48 },
+  avatarTxt:  { fontSize: 16, fontWeight: '800' },
+  userName:   { fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  userEmail:  { fontSize: 12 },
+  closeBtn:   { width: 34, height: 34, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  menuItem:   { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  menuIcon:   { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  menuLabel:  { flex: 1, fontSize: 14, fontWeight: '600' },
+  logoutRow:  { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 16, borderTopWidth: StyleSheet.hairlineWidth },
+  logoutTxt:  { flex: 1, fontSize: 14, fontWeight: '700', color: '#E05555' },
+  footer:     { padding: 20, borderTopWidth: 1 },
+  footerTxt:  { fontSize: 11, textAlign: 'center' },
 });
 
-// ── WalletStrip ──────────────────────────────────────────────────────────────
-const WalletStrip = ({ balance, onTopUp, theme, mode }) => (
-  <View style={[wl.wrap, { borderColor: G.borderHi(mode), overflow:'hidden' }]}>
-    <LinearGradient
-      colors={mode==='dark' ? ['rgba(255,255,255,0.07)','rgba(255,255,255,0.03)'] : ['rgba(255,255,255,0.95)','rgba(255,255,255,0.80)']}
-      start={{ x:0, y:0 }} end={{ x:1, y:1 }}
-      style={StyleSheet.absoluteFill}
-    />
-    <View style={[wl.shimmer, { backgroundColor: mode==='dark' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.9)' }]} />
-    <View style={[wl.iconWrap, { backgroundColor: G.icon(mode) }]}>
-      <Ionicons name="wallet-outline" size={20} color={theme.foreground} />
+// ── ServiceIcon ───────────────────────────────────────────────────────────────
+const ServiceIcon = ({ item, theme, darkMode }) => (
+  <TouchableOpacity style={si.wrap} onPress={item.onPress} activeOpacity={0.8}>
+    <View style={[si.iconBox, { backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : '#F2F2F2' }]}>
+      <item.IconComponent size={52} />
     </View>
-    <View style={{ flex:1, minWidth:0 }}>
-      <Text style={[wl.label, { color: theme.hint }]}>WALLET BALANCE</Text>
-      <Text style={[wl.amount, { color: theme.foreground }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-        {'\u20A6'}{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits:2 })}
-      </Text>
-    </View>
-    <TouchableOpacity style={[wl.btn, { backgroundColor: G.cardMid(mode), borderColor: G.border(mode) }]} onPress={onTopUp} activeOpacity={0.85}>
-      <Ionicons name="add" size={14} color={theme.foreground} />
-      <Text style={[wl.btnTxt, { color: theme.foreground }]}>Top Up</Text>
-    </TouchableOpacity>
-  </View>
-);
-const wl = StyleSheet.create({
-  wrap:    { borderRadius:22, borderWidth:1, padding:18, flexDirection:'row', alignItems:'center', gap:14, marginBottom:14 },
-  shimmer: { position:'absolute', top:0, left:0, right:0, height:1 },
-  iconWrap:{ width:46, height:46, borderRadius:14, justifyContent:'center', alignItems:'center', flexShrink:0 },
-  label:   { fontSize:9, fontWeight:'700', letterSpacing:2.5, marginBottom:4 },
-  amount:  { fontSize:22, fontWeight:'900', letterSpacing:-0.8 },
-  btn:     { flexDirection:'row', alignItems:'center', gap:5, borderRadius:13, paddingHorizontal:14, paddingVertical:10, borderWidth:1, flexShrink:0 },
-  btnTxt:  { fontSize:12, fontWeight:'800' },
-});
-
-// ── StatsRow ─────────────────────────────────────────────────────────────────
-const StatsRow = ({ stats, theme, mode }) => (
-  <View style={[sr.wrap, { borderColor: G.border(mode), overflow:'hidden' }]}>
-    <LinearGradient
-      colors={mode==='dark' ? ['rgba(255,255,255,0.05)','rgba(255,255,255,0.02)'] : ['rgba(255,255,255,0.9)','rgba(255,255,255,0.7)']}
-      start={{ x:0, y:0 }} end={{ x:1, y:1 }}
-      style={StyleSheet.absoluteFill}
-    />
-    {[
-      { icon:'car-outline',  value: stats?.totalRides ?? 0,     label:'Rides'    },
-      { icon:'cube-outline', value: stats?.totalDeliveries ?? 0, label:'Packages' },
-      { icon:'cash-outline', value: `₦${((stats?.totalSpent ?? 0)/1000).toFixed(1)}k`, label:'Spent' },
-    ].map((item, i) => (
-      <React.Fragment key={item.label}>
-        {i > 0 && <View style={[sr.divider, { backgroundColor: G.border(mode) }]} />}
-        <View style={sr.item}>
-          <Ionicons name={item.icon} size={13} color={theme.hint} style={{ marginBottom:4 }} />
-          <Text style={[sr.val, { color: theme.foreground }]}>{item.value}</Text>
-          <Text style={[sr.lbl, { color: theme.hint }]}>{item.label}</Text>
-        </View>
-      </React.Fragment>
-    ))}
-  </View>
-);
-const sr = StyleSheet.create({
-  wrap:    { flexDirection:'row', borderRadius:18, borderWidth:1, padding:14, alignItems:'center', marginBottom:24, overflow:'hidden' },
-  item:    { flex:1, alignItems:'center' },
-  val:     { fontSize:19, fontWeight:'900', marginBottom:2, letterSpacing:-0.5 },
-  lbl:     { fontSize:9, fontWeight:'600', letterSpacing:0.5 },
-  divider: { width:1, height:32 },
-});
-
-// ── TipsSection ──────────────────────────────────────────────────────────────
-const TipCard = ({ item, theme, mode }) => (
-  <View style={tp.card}>
-    <View style={[tp.iconWrap, { backgroundColor: G.icon(mode) }]}>
-      <Ionicons name={item.icon} size={17} color={theme.foreground} />
-    </View>
-    <View style={{ flex:1, minWidth:0 }}>
-      <Text style={[tp.title, { color: theme.foreground }]}>{item.title}</Text>
-      <Text style={[tp.body,  { color: theme.hint }]}>{item.body}</Text>
-    </View>
-  </View>
-);
-
-const TipsSection = ({ title, tips, icon, theme, mode }) => {
-  const [expanded, setExpanded] = useState(false);
-  const rotA = useRef(new Animated.Value(0)).current;
-  const toggle = () => {
-    Animated.spring(rotA,{ toValue: expanded ? 0 : 1, useNativeDriver:true, tension:80, friction:10 }).start();
-    setExpanded(v => !v);
-  };
-  const rotate = rotA.interpolate({ inputRange:[0,1], outputRange:['0deg','180deg'] });
-  const shown  = expanded ? tips : tips.slice(0,2);
-  return (
-    <View style={[tp.section, { borderColor: G.border(mode), overflow:'hidden' }]}>
-      <LinearGradient
-        colors={mode==='dark' ? ['rgba(255,255,255,0.05)','rgba(255,255,255,0.02)'] : ['rgba(255,255,255,0.9)','rgba(255,255,255,0.7)']}
-        start={{ x:0, y:0 }} end={{ x:1, y:1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <TouchableOpacity style={tp.header} onPress={toggle} activeOpacity={0.8}>
-        <View style={[tp.headerIcon, { backgroundColor: G.icon(mode) }]}>
-          <Ionicons name={icon} size={15} color={theme.foreground} />
-        </View>
-        <Text style={[tp.sectionTitle, { color: theme.foreground }]}>{title}</Text>
-        <Animated.View style={{ transform:[{ rotate }] }}>
-          <Ionicons name="chevron-down" size={15} color={theme.hint} />
-        </Animated.View>
-      </TouchableOpacity>
-      <View style={[tp.divider, { backgroundColor: G.border(mode) }]} />
-      {shown.map((tip, i) => (
-        <View key={tip.id}>
-          <TipCard item={tip} theme={theme} mode={mode} />
-          {i < shown.length-1 && <View style={[tp.itemDivider, { backgroundColor: G.border(mode) }]} />}
-        </View>
-      ))}
-      {!expanded && tips.length > 2 && (
-        <TouchableOpacity style={tp.showMore} onPress={toggle} activeOpacity={0.7}>
-          <Text style={[tp.showMoreTxt, { color: theme.hint }]}>Show {tips.length-2} more</Text>
-          <Ionicons name="chevron-down" size={13} color={theme.hint} />
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-};
-
-const tp = StyleSheet.create({
-  section:      { borderRadius:20, borderWidth:1, overflow:'hidden', marginBottom:14 },
-  header:       { flexDirection:'row', alignItems:'center', gap:10, padding:16 },
-  headerIcon:   { width:34, height:34, borderRadius:10, justifyContent:'center', alignItems:'center', flexShrink:0 },
-  sectionTitle: { flex:1, fontSize:13, fontWeight:'800' },
-  divider:      { height:StyleSheet.hairlineWidth, marginHorizontal:16 },
-  itemDivider:  { height:StyleSheet.hairlineWidth, marginHorizontal:16 },
-  card:         { flexDirection:'row', alignItems:'flex-start', gap:12, paddingHorizontal:16, paddingVertical:14 },
-  iconWrap:     { width:34, height:34, borderRadius:10, justifyContent:'center', alignItems:'center', flexShrink:0, marginTop:1 },
-  title:        { fontSize:13, fontWeight:'700', marginBottom:4 },
-  body:         { fontSize:12, lineHeight:17 },
-  showMore:     { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5, padding:14 },
-  showMoreTxt:  { fontSize:12, fontWeight:'700' },
-});
-
-// ── HistoryItem ──────────────────────────────────────────────────────────────
-const STATUS_META = {
-  COMPLETED:   { label:'Done',      dot:'#5DAA72' },
-  CANCELLED:   { label:'Cancelled', dot:'#E05555' },
-  IN_PROGRESS: { label:'Active',    dot:'#AAAAAA' },
-  PENDING:     { label:'Pending',   dot:'#AAAAAA' },
-};
-
-const HistoryItem = ({ icon, title, subtitle, amount, status, theme, mode, last }) => {
-  const meta = STATUS_META[status] ?? { label:status, dot: theme.hint };
-  return (
-    <View style={[hi.row, !last && { borderBottomWidth:1, borderBottomColor: G.border(mode) }]}>
-      <View style={[hi.iconWrap, { backgroundColor: G.icon(mode), borderColor: G.border(mode) }]}>
-        <Ionicons name={icon} size={15} color={theme.foreground} />
-      </View>
-      <View style={{ flex:1, minWidth:0 }}>
-        <Text style={[hi.title, { color: theme.foreground }]} numberOfLines={1}>{title}</Text>
-        <Text style={[hi.sub,   { color: theme.hint }]}       numberOfLines={1}>{subtitle}</Text>
-      </View>
-      <View style={{ alignItems:'flex-end', flexShrink:0 }}>
-        <Text style={[hi.amount, { color: theme.foreground }]}>{amount}</Text>
-        <View style={hi.statusRow}>
-          <View style={[hi.dot, { backgroundColor: meta.dot }]} />
-          <Text style={[hi.statusTxt, { color: theme.hint }]}>{meta.label}</Text>
-        </View>
-      </View>
-    </View>
-  );
-};
-const hi = StyleSheet.create({
-  row:       { flexDirection:'row', alignItems:'center', gap:12, paddingVertical:14 },
-  iconWrap:  { width:38, height:38, borderRadius:12, borderWidth:1, justifyContent:'center', alignItems:'center', flexShrink:0 },
-  title:     { fontSize:13, fontWeight:'600', marginBottom:3 },
-  sub:       { fontSize:11 },
-  amount:    { fontSize:13, fontWeight:'800', marginBottom:3 },
-  statusRow: { flexDirection:'row', alignItems:'center', gap:4 },
-  dot:       { width:5, height:5, borderRadius:3 },
-  statusTxt: { fontSize:10, fontWeight:'600' },
-});
-
-// ── EmptyHistory ─────────────────────────────────────────────────────────────
-const EmptyHistory = ({ theme, mode, onBook }) => (
-  <View style={eh.wrap}>
-    <View style={[eh.iconWrap, { backgroundColor: G.icon(mode), borderColor: G.border(mode) }]}>
-      <Ionicons name="map-outline" size={26} color={theme.foreground} />
-    </View>
-    <Text style={[eh.title, { color: theme.foreground }]}>No trips yet</Text>
-    <Text style={[eh.sub, { color: theme.hint }]}>Book your first ride or send a package to get started.</Text>
-    <TouchableOpacity style={[eh.btn, { borderColor: G.border(mode), backgroundColor: G.icon(mode) }]} onPress={onBook} activeOpacity={0.8}>
-      <Ionicons name="car-outline" size={14} color={theme.foreground} />
-      <Text style={[eh.btnTxt, { color: theme.foreground }]}>Book a Ride</Text>
-    </TouchableOpacity>
-  </View>
-);
-const eh = StyleSheet.create({
-  wrap:    { alignItems:'center', paddingVertical:32, paddingHorizontal:16 },
-  iconWrap:{ width:56, height:56, borderRadius:16, borderWidth:1, justifyContent:'center', alignItems:'center', marginBottom:14 },
-  title:   { fontSize:15, fontWeight:'800', marginBottom:6 },
-  sub:     { fontSize:12, textAlign:'center', lineHeight:18, marginBottom:18 },
-  btn:     { flexDirection:'row', alignItems:'center', gap:7, borderRadius:12, borderWidth:1, paddingHorizontal:18, paddingVertical:11 },
-  btnTxt:  { fontSize:13, fontWeight:'800' },
-});
-
-// ── ChooseDriverBar ──────────────────────────────────────────────────────────
-const ChooseDriverBar = ({ theme, mode, onPress }) => (
-  <TouchableOpacity
-    style={[cd.bar, { borderColor: G.border(mode), overflow:'hidden' }]}
-    onPress={onPress}
-    activeOpacity={0.8}
-  >
-    <LinearGradient
-      colors={mode==='dark' ? ['rgba(255,255,255,0.05)','rgba(255,255,255,0.02)'] : ['rgba(255,255,255,0.9)','rgba(255,255,255,0.75)']}
-      start={{ x:0, y:0 }} end={{ x:1, y:1 }}
-      style={StyleSheet.absoluteFill}
-    />
-    <View style={[cd.iconWrap, { backgroundColor: G.icon(mode) }]}>
-      <Ionicons name="people-outline" size={18} color={theme.foreground} />
-    </View>
-    <View style={{ flex:1 }}>
-      <Text style={[cd.title, { color: theme.foreground }]}>Choose Your Driver</Text>
-      <Text style={[cd.sub, { color: theme.hint }]}>Browse nearby • See ratings & fares</Text>
-    </View>
-    <Ionicons name="chevron-forward" size={15} color={theme.hint} />
+    <Text style={[si.label, { color: theme.foreground }]}>{item.label}</Text>
+    <Text style={[si.sub, { color: theme.hint }]}>{item.sub}</Text>
   </TouchableOpacity>
 );
-const cd = StyleSheet.create({
-  bar:     { flexDirection:'row', alignItems:'center', gap:12, borderRadius:18, borderWidth:1, paddingHorizontal:16, paddingVertical:16, marginBottom:24, overflow:'hidden' },
-  iconWrap:{ width:40, height:40, borderRadius:12, justifyContent:'center', alignItems:'center', flexShrink:0 },
-  title:   { fontSize:14, fontWeight:'800', marginBottom:2 },
-  sub:     { fontSize:11 },
+
+const si = StyleSheet.create({
+  wrap:    { alignItems: 'center', flex: 1 },
+  iconBox: {
+    width: 64, height: 64, borderRadius: 20,
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 7, overflow: 'hidden',
+  },
+  label: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
+  sub:   { fontSize: 10, fontWeight: '500' },
+});
+
+// ── RecentItem ────────────────────────────────────────────────────────────────
+const RecentItem = ({ address, subtext, onPress, theme, darkMode, last }) => (
+  <TouchableOpacity
+    style={[ri.row, !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: darkMode ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)' }]}
+    onPress={onPress}
+    activeOpacity={0.7}
+  >
+    <View style={[ri.iconWrap, { backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : '#F2F2F2' }]}>
+      <Ionicons name="time-outline" size={16} color={theme.hint} />
+    </View>
+    <View style={{ flex: 1, minWidth: 0 }}>
+      <Text style={[ri.addr, { color: theme.foreground }]} numberOfLines={1}>{address}</Text>
+      <Text style={[ri.sub,  { color: theme.hint }]}       numberOfLines={1}>{subtext}</Text>
+    </View>
+    <Ionicons name="chevron-forward" size={14} color={theme.hint} style={{ opacity: 0.5 }} />
+  </TouchableOpacity>
+);
+
+const ri = StyleSheet.create({
+  row:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
+  iconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  addr:     { fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  sub:      { fontSize: 11 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN HOME SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
-  const scrollY         = useScrollY();
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
+  const darkMode        = mode === 'dark';
 
   useInactivityLogout();
 
   const [drawerOpen,      setDrawerOpen]      = useState(false);
-  const [stats,           setStats]           = useState(null);
-  const [loading,         setLoading]         = useState(true);
-  const [historyLoading,  setHistoryLoading]  = useState(true);
   const [rideHistory,     setRideHistory]     = useState([]);
   const [deliveryHistory, setDeliveryHistory] = useState([]);
   const [activeRide,      setActiveRide]      = useState(null);
   const [activeDelivery,  setActiveDelivery]  = useState(null);
-  const [maintenance,     setMaintenance]     = useState({ isOn:false, isScheduled:false, message:'', endsAt:null });
+  const [maintenance,     setMaintenance]     = useState({ isOn: false, isScheduled: false, message: '', endsAt: null });
+  const [historyLoading,  setHistoryLoading]  = useState(true);
+  const [sheetExpanded,   setSheetExpanded]   = useState(false);
 
-  const fadeA  = useRef(new Animated.Value(0)).current;
-  const slideA = useRef(new Animated.Value(22)).current;
+  const fadeA      = useRef(new Animated.Value(0)).current;
+  // translateY: COLLAPSED_Y = resting (60%), 0 = fully expanded (92%)
+  const sheetTransY = useRef(new Animated.Value(COLLAPSED_Y)).current;
+  const lastY       = useRef(COLLAPSED_Y); // track current snap position
 
+  // ── PanResponder for sheet drag ───────────────────────────────────────────
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only capture clear vertical swipes on the handle
+        return Math.abs(gestureState.dy) > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      },
+      onPanResponderGrant: () => {
+        // Stop any running animation and sync offset
+        sheetTransY.stopAnimation(val => {
+          sheetTransY.setOffset(val);
+          sheetTransY.setValue(0);
+          lastY.current = val;
+        });
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Clamp drag between 0 (expanded) and COLLAPSED_Y (collapsed)
+        const next = lastY.current + gestureState.dy;
+        const clamped = Math.max(0, Math.min(COLLAPSED_Y, next));
+        sheetTransY.setValue(clamped - lastY.current);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        sheetTransY.flattenOffset();
+        const current = lastY.current + gestureState.dy;
+        const velocity = gestureState.vy;
+        const midpoint = COLLAPSED_Y / 2;
+
+        // Snap decision: velocity or position
+        const snapToExpanded =
+          velocity < -0.5 ||
+          (velocity >= -0.5 && velocity <= 0.5 && current < midpoint);
+
+        const snapTarget = snapToExpanded ? 0 : COLLAPSED_Y;
+        lastY.current = snapTarget;
+        setSheetExpanded(snapToExpanded);
+
+        Animated.spring(sheetTransY, {
+          toValue: snapTarget,
+          useNativeDriver: true,
+          tension: 68,
+          friction: 13,
+        }).start();
+      },
+    })
+  ).current;
+
+  // ── Snap helpers for programmatic control ─────────────────────────────────
+  const snapExpand = useCallback(() => {
+    lastY.current = 0;
+    setSheetExpanded(true);
+    Animated.spring(sheetTransY, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 68,
+      friction: 13,
+    }).start();
+  }, [sheetTransY]);
+
+  const snapCollapse = useCallback(() => {
+    lastY.current = COLLAPSED_Y;
+    setSheetExpanded(false);
+    Animated.spring(sheetTransY, {
+      toValue: COLLAPSED_Y,
+      useNativeDriver: true,
+      tension: 68,
+      friction: 13,
+    }).start();
+  }, [sheetTransY]);
+
+  // ── Data fetching ─────────────────────────────────────────────────────────
   useEffect(() => { fetchAll(); }, []);
   useEffect(() => {
     const unsub = navigation.addListener('focus', fetchAll);
@@ -642,110 +373,107 @@ export default function HomeScreen({ navigation }) {
 
   const fetchAll = async () => {
     try {
-      const [statsRes, rideRes, deliveryRes, rideHistRes, delHistRes] = await Promise.allSettled([
-        userAPI.getStats(),
+      const [rideRes, deliveryRes, rideHistRes, delHistRes] = await Promise.allSettled([
         rideAPI.getActiveRide(),
         deliveryAPI.getActiveDelivery(),
-        rideAPI.getRideHistory?.({ limit:5 }),
-        deliveryAPI.getDeliveryHistory?.({ limit:5 }),
+        rideAPI.getRideHistory?.({ limit: 5 }),
+        deliveryAPI.getDeliveryHistory?.({ limit: 5 }),
       ]);
-      if (statsRes.status === 'fulfilled')    setStats(statsRes.value?.data ?? statsRes.value);
+
       if (rideRes.status === 'fulfilled') {
         const ride = rideRes.value?.data?.ride ?? rideRes.value?.ride ?? null;
-        setActiveRide(ride && ['REQUESTED','ACCEPTED','ARRIVED','IN_PROGRESS'].includes(ride.status) ? ride : null);
+        setActiveRide(ride && ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'].includes(ride.status) ? ride : null);
       }
       if (deliveryRes.status === 'fulfilled') {
         const del = deliveryRes.value?.data?.delivery ?? null;
-        setActiveDelivery(del && ['PENDING','ASSIGNED','PICKED_UP','IN_TRANSIT'].includes(del.status) ? del : null);
+        setActiveDelivery(del && ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(del.status) ? del : null);
       }
-      if (rideHistRes.status === 'fulfilled') setRideHistory(rideHistRes.value?.data?.rides ?? rideHistRes.value?.rides ?? []);
-      if (delHistRes.status  === 'fulfilled') setDeliveryHistory(delHistRes.value?.data?.deliveries ?? delHistRes.value?.deliveries ?? []);
+      if (rideHistRes.status === 'fulfilled')
+        setRideHistory(rideHistRes.value?.data?.rides ?? rideHistRes.value?.rides ?? []);
+      if (delHistRes.status === 'fulfilled')
+        setDeliveryHistory(delHistRes.value?.data?.deliveries ?? delHistRes.value?.deliveries ?? []);
+
       const maint = await checkMaintenance();
       setMaintenance(maint);
     } catch (e) {
       console.warn('Fetch error:', e);
     } finally {
-      setLoading(false);
       setHistoryLoading(false);
-      Animated.parallel([
-        Animated.timing(fadeA,  { toValue:1, duration:550, useNativeDriver:true }),
-        Animated.timing(slideA, { toValue:0, duration:550, useNativeDriver:true }),
-      ]).start();
+      Animated.timing(fadeA, { toValue: 1, duration: 450, useNativeDriver: true }).start();
     }
   };
 
   const showMaintenanceAlert = () => {
-    const endsMsg = maintenance.endsAt ? `\n\nExpected back: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}` : '';
+    const endsMsg = maintenance.endsAt
+      ? `\n\nExpected back: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}`
+      : '';
     Alert.alert('Platform Under Maintenance', maintenance.message + endsMsg);
   };
 
-  const goToRide   = () => { if(maintenance.isOn){showMaintenanceAlert();return;} navigation.navigate('RequestRide'); };
-  const goToNearby = () => { if(maintenance.isOn){showMaintenanceAlert();return;} navigation.navigate('NearbyDrivers',{ pickupAddress:'', pickupLat:6.5244, pickupLng:3.3792, dropoffAddress:'', dropoffLat:6.4281, dropoffLng:3.4219, vehicleType:'CAR' }); };
-
   const handleCancelRide = () => {
-    Alert.alert('Cancel Ride?','Your ride request will be cancelled.',[
-      { text:'Keep', style:'cancel' },
-      { text:'Cancel Ride', style:'destructive', onPress: async () => {
-        try {
-          await rideAPI.cancelRide(activeRide.id,{ reason:'Customer cancelled from home screen' });
-          setActiveRide(null);
-        } catch(err) {
-          Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
-        }
-      }},
+    Alert.alert('Cancel Ride?', 'Your ride request will be cancelled.', [
+      { text: 'Keep', style: 'cancel' },
+      {
+        text: 'Cancel Ride', style: 'destructive',
+        onPress: async () => {
+          try {
+            await rideAPI.cancelRide(activeRide.id, { reason: 'Customer cancelled from home screen' });
+            setActiveRide(null);
+          } catch (err) {
+            Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
+          }
+        },
+      },
     ]);
   };
 
   const handleCancelDelivery = async () => {
     try {
-      await deliveryAPI.cancelDelivery(activeDelivery.id,{ reason:'Customer cancelled from home screen' });
+      await deliveryAPI.cancelDelivery(activeDelivery.id, { reason: 'Customer cancelled from home screen' });
       setActiveDelivery(null);
-    } catch(err) {
+    } catch (err) {
       Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel delivery.');
     }
   };
 
+  const recentAddresses = [
+    ...rideHistory.map(r => ({
+      id: `ride-${r.id}`,
+      address: r.dropoffAddress ?? 'Unknown destination',
+      subtext: r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : '',
+      onPress: () => navigation.navigate('RequestRide'),
+    })),
+    ...deliveryHistory.map(d => ({
+      id: `del-${d.id}`,
+      address: d.dropoffAddress ?? 'Unknown destination',
+      subtext: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : '',
+      onPress: () => navigation.navigate('RequestDelivery'),
+    })),
+  ]
+    .sort((a, b) => new Date(b.subtext) - new Date(a.subtext))
+    .slice(0, 6);
+
+  const hasMaintBanner = maintenance.isOn || maintenance.isScheduled;
+  const serviceCards   = buildServices(navigation, maintenance, showMaintenanceAlert);
+
   const hour  = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  const hasMaintBanner  = maintenance.isOn || maintenance.isScheduled;
-  const paddingTop      = hasMaintBanner ? 16 : insets.top + 16;
-  const paddingBottom   = insets.bottom + TAB_CONTENT_H + 32;
+  const sheetBg     = darkMode ? '#111111' : '#FFFFFF';
+  const hintColor   = darkMode ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.40)';
+  const inputBg     = darkMode ? 'rgba(255,255,255,0.07)' : '#F2F2F2';
+  const inputBorder = darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)';
 
-  const combinedHistory = [
-    ...rideHistory.map(r => ({
-      id:`ride-${r.id}`, icon:'car-outline',
-      title: r.dropoffAddress ?? 'Ride',
-      subtitle: r.createdAt ? new Date(r.createdAt).toLocaleString('en-NG',{ dateStyle:'short', timeStyle:'short' }) : '',
-      amount: r.fare ? `₦${Number(r.fare).toLocaleString('en-NG')}` : '—',
-      status: r.status ?? 'COMPLETED',
-    })),
-    ...deliveryHistory.map(d => ({
-      id:`del-${d.id}`, icon:'cube-outline',
-      title: d.dropoffAddress ?? 'Delivery',
-      subtitle: d.createdAt ? new Date(d.createdAt).toLocaleString('en-NG',{ dateStyle:'short', timeStyle:'short' }) : '',
-      amount: d.fare ? `₦${Number(d.fare).toLocaleString('en-NG')}` : '—',
-      status: d.status ?? 'COMPLETED',
-    })),
-  ].sort((a,b) => new Date(b.subtitle) - new Date(a.subtitle)).slice(0,6);
-
-  const serviceCards = buildServiceCards(navigation, maintenance, showMaintenanceAlert);
-  const darkMode     = mode === 'dark';
-
-  // ── Scroll handler for animated tab bar ──────────────────────────────────
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
-    },
-  });
+  // Bottom padding = tab bar height + safe area + breathing room
+  const scrollPaddingBottom = insets.bottom + TAB_H + 24;
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={darkMode ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
-
-      {/* Ambient glow orbs */}
-      <View style={[s.orb1, { backgroundColor: darkMode ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.03)' }]} />
-      <View style={[s.orb2, { backgroundColor: darkMode ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.02)' }]} />
+      <StatusBar
+        barStyle={darkMode ? 'light-content' : 'dark-content'}
+        backgroundColor="transparent"
+        translucent
+      />
 
       <DrawerMenu
         visible={drawerOpen}
@@ -756,174 +484,314 @@ export default function HomeScreen({ navigation }) {
         mode={mode}
       />
 
-      {hasMaintBanner && (
-        <View style={{ paddingTop: insets.top }}>
-          <MaintenanceBanner message={maintenance.message} endsAt={maintenance.endsAt} scheduled={maintenance.isScheduled} />
-        </View>
-      )}
+      {/* ── MAP ── */}
+      <View style={s.mapContainer}>
+        <MapView
+          style={StyleSheet.absoluteFill}
+          provider={PROVIDER_GOOGLE}
+          initialRegion={{
+            latitude: 6.5244,
+            longitude: 3.3792,
+            latitudeDelta: 0.03,
+            longitudeDelta: 0.03,
+          }}
+          showsUserLocation
+          showsMyLocationButton={false}
+          toolbarEnabled={false}
+          customMapStyle={darkMode ? DARK_MAP_STYLE : []}
+        />
 
-      <AnimatedRN.ScrollView
-        contentContainerStyle={[s.scroll, { paddingTop, paddingBottom }]}
-        showsVerticalScrollIndicator={false}
-        overScrollMode="never"
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
-      >
-        <Animated.View style={{ opacity: fadeA, transform:[{ translateY: slideA }] }}>
-
-          {/* HEADER */}
-          <View style={s.header}>
-            <TouchableOpacity
-              style={[s.iconBtn, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}
-              onPress={() => setDrawerOpen(true)}
-              activeOpacity={0.85}
-            >
-              <View style={s.hamburger}>
-                <View style={[s.hLine, { backgroundColor: theme.foreground }]} />
-                <View style={[s.hLine, s.hLineMid, { backgroundColor: theme.foreground }]} />
-                <View style={[s.hLine, { backgroundColor: theme.foreground }]} />
-              </View>
-            </TouchableOpacity>
-
-            <View style={{ flex:1, alignItems:'center' }}>
-              <Text style={[s.greet, { color: theme.hint }]}>{greet}</Text>
-              <Text style={[s.name, { color: theme.foreground }]} numberOfLines={1}>
-                {user?.firstName} {user?.lastName}
-              </Text>
-            </View>
-
-            <View style={s.headerRight}>
-              <TouchableOpacity
-                style={[s.iconBtn, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}
-                onPress={() => navigation.navigate('Notifications')}
-              >
-                <Ionicons name="notifications-outline" size={20} color={theme.foreground} />
-                <View style={[s.notifDot, { borderColor: theme.background }]} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('ProfileTab')} activeOpacity={0.85}>
-                {user?.profileImage ? (
-                  <Image source={{ uri: user.profileImage }} style={[s.avatar, { borderColor: G.borderHi(mode) }]} />
-                ) : (
-                  <View style={[s.avatarFallback, { backgroundColor: G.cardMid(mode), borderColor: G.borderHi(mode) }]}>
-                    <Text style={[s.avatarInitials, { color: theme.foreground }]}>
-                      {user?.firstName?.[0]}{user?.lastName?.[0]}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
+        {hasMaintBanner && (
+          <View style={{ paddingTop: insets.top }}>
+            <MaintenanceBanner
+              message={maintenance.message}
+              endsAt={maintenance.endsAt}
+              scheduled={maintenance.isScheduled}
+            />
           </View>
+        )}
 
-          {/* ACTIVE BANNERS */}
-          {activeRide && (
-            <ActiveRideBanner
-              ride={activeRide}
-              role="CUSTOMER"
-              theme={theme}
-              onPress={() => navigation.navigate('RideTracking',{ rideId: activeRide.id })}
-              onCancel={activeRide.status === 'REQUESTED' ? handleCancelRide : undefined}
-            />
-          )}
-          {activeDelivery && (
-            <ActiveDeliveryBanner
-              delivery={activeDelivery}
-              role="CUSTOMER"
-              theme={theme}
-              onPress={() => navigation.navigate('DeliveryTracking',{ deliveryId: activeDelivery.id })}
-              onCancel={activeDelivery.status === 'PENDING' ? handleCancelDelivery : undefined}
-            />
-          )}
+        <Animated.View style={[
+          s.mapControls,
+          { paddingTop: hasMaintBanner ? 8 : insets.top + 8, opacity: fadeA },
+        ]}>
+          <TouchableOpacity
+            style={[s.mapBtn, {
+              backgroundColor: darkMode ? 'rgba(20,20,20,0.92)' : 'rgba(255,255,255,0.95)',
+              borderColor: darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
+            }]}
+            onPress={() => setDrawerOpen(true)}
+            activeOpacity={0.85}
+          >
+            <View style={s.hamburger}>
+              <View style={[s.hLine, { backgroundColor: theme.foreground }]} />
+              <View style={[s.hLine, s.hLineMid, { backgroundColor: theme.foreground }]} />
+              <View style={[s.hLine, { backgroundColor: theme.foreground }]} />
+            </View>
+          </TouchableOpacity>
 
-          {/* WALLET */}
-          <WalletStrip
-            balance={stats?.walletBalance}
-            onTopUp={() => navigation.getParent()?.navigate('WalletTab')}
-            theme={theme}
-            mode={mode}
-          />
-
-          {/* STATS */}
-          {loading
-            ? <ActivityIndicator color={theme.foreground} style={{ marginVertical:16 }} />
-            : <StatsRow stats={stats} theme={theme} mode={mode} />
-          }
-
-          {/* SERVICES */}
-          <Text style={[s.sectionLabel, { color: theme.hint }]}>SERVICES</Text>
-          <ServiceCarousel cards={serviceCards} theme={theme} mode={mode} />
-
-          <View style={{ height:24 }} />
-
-          {/* CHOOSE DRIVER */}
-          <ChooseDriverBar theme={theme} mode={mode} onPress={goToNearby} />
-
-          {/* TIPS */}
-          <Text style={[s.sectionLabel, { color: theme.hint }]}>TIPS & GUIDES</Text>
-          <TipsSection title="Ride Tips"     icon="car-outline"  tips={RIDE_TIPS}     theme={theme} mode={mode} />
-          <TipsSection title="Delivery Tips" icon="cube-outline" tips={DELIVERY_TIPS} theme={theme} mode={mode} />
-
-          <View style={{ height:8 }} />
-
-          {/* RECENT TRIPS */}
-          <View style={s.sectionHeader}>
-            <Text style={[s.sectionLabel, { color: theme.hint, marginBottom:0, marginTop:0 }]}>RECENT TRIPS</Text>
-            <TouchableOpacity onPress={() => navigation.getParent()?.navigate('HistoryTab')} activeOpacity={0.7}>
-              <Text style={[s.seeAll, { color: theme.hint }]}>See all</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={[s.historyCard, { borderColor: G.border(mode), overflow:'hidden' }]}>
-            <LinearGradient
-              colors={darkMode ? ['rgba(255,255,255,0.04)','rgba(255,255,255,0.02)'] : ['rgba(255,255,255,0.88)','rgba(255,255,255,0.70)']}
-              start={{ x:0, y:0 }} end={{ x:1, y:1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            {historyLoading ? (
-              <ActivityIndicator color={theme.foreground} style={{ marginVertical:24 }} />
-            ) : combinedHistory.length > 0 ? (
-              combinedHistory.map((item, i) => (
-                <HistoryItem
-                  key={item.id}
-                  icon={item.icon} title={item.title} subtitle={item.subtitle}
-                  amount={item.amount} status={item.status}
-                  theme={theme} mode={mode}
-                  last={i === combinedHistory.length - 1}
-                />
-              ))
+          <TouchableOpacity
+            onPress={() => navigation.getParent()?.navigate('ProfileTab')}
+            activeOpacity={0.85}
+          >
+            {user?.profileImage ? (
+              <Image
+                source={{ uri: user.profileImage }}
+                style={[s.avatar, { borderColor: darkMode ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)' }]}
+              />
             ) : (
-              <EmptyHistory theme={theme} mode={mode} onBook={goToRide} />
+              <View style={[s.avatarFallback, {
+                backgroundColor: darkMode ? 'rgba(40,40,40,0.95)' : 'rgba(255,255,255,0.95)',
+                borderColor: darkMode ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)',
+              }]}>
+                <Text style={[s.avatarInitials, { color: theme.foreground }]}>
+                  {user?.firstName?.[0]}{user?.lastName?.[0]}
+                </Text>
+              </View>
             )}
-          </View>
-
+          </TouchableOpacity>
         </Animated.View>
-      </AnimatedRN.ScrollView>
+
+        {/* Collapse button — visible when sheet is expanded */}
+        {sheetExpanded && (
+          <TouchableOpacity
+            style={[s.collapseBtn, {
+              backgroundColor: darkMode ? 'rgba(20,20,20,0.88)' : 'rgba(255,255,255,0.92)',
+              borderColor: darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
+              bottom: SHEET_COLLAPSED + 12,
+            }]}
+            onPress={snapCollapse}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="chevron-down" size={18} color={theme.foreground} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── DRAGGABLE BOTTOM SHEET ── */}
+      <Animated.View
+        style={[s.sheet, {
+          backgroundColor: sheetBg,
+          height: SHEET_EXPANDED,
+          transform: [{ translateY: sheetTransY }],
+        }]}
+      >
+        {/* ── Drag handle — attach PanResponder here ── */}
+        <View style={s.handleWrap} {...panResponder.panHandlers}>
+          <View style={[s.handle, { backgroundColor: darkMode ? 'rgba(255,255,255,0.20)' : 'rgba(0,0,0,0.16)' }]} />
+          {/* Expanded title bar */}
+          {sheetExpanded && (
+            <Text style={[s.expandedTitle, { color: theme.foreground }]}>Recent Trips</Text>
+          )}
+        </View>
+
+        {/* Greeting */}
+        <View style={s.greetRow}>
+          <Text style={[s.greetTxt, { color: theme.foreground }]}>
+            {greet}, {user?.firstName}.
+          </Text>
+          <TouchableOpacity
+            style={[s.notifBtn, { backgroundColor: inputBg, borderColor: inputBorder }]}
+            onPress={() => navigation.navigate('Notifications')}
+          >
+            <Ionicons name="notifications-outline" size={20} color={theme.foreground} />
+            <View style={[s.notifDot, { borderColor: sheetBg }]} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Active banners */}
+        {activeRide && (
+          <ActiveRideBanner
+            ride={activeRide}
+            role="CUSTOMER"
+            theme={theme}
+            onPress={() => navigation.navigate('RideTracking', { rideId: activeRide.id })}
+            onCancel={activeRide.status === 'REQUESTED' ? handleCancelRide : undefined}
+          />
+        )}
+        {activeDelivery && (
+          <ActiveDeliveryBanner
+            delivery={activeDelivery}
+            role="CUSTOMER"
+            theme={theme}
+            onPress={() => navigation.navigate('DeliveryTracking', { deliveryId: activeDelivery.id })}
+            onCancel={activeDelivery.status === 'PENDING' ? handleCancelDelivery : undefined}
+          />
+        )}
+
+        {/* ── Service icon row ── */}
+        <View style={s.serviceRow}>
+          {serviceCards.map(item => (
+            <ServiceIcon key={item.id} item={item} theme={theme} darkMode={darkMode} />
+          ))}
+        </View>
+
+        {/* Where to? search bar */}
+        <TouchableOpacity
+          style={[s.searchBar, { backgroundColor: inputBg, borderColor: inputBorder }]}
+          onPress={() => {
+            if (maintenance.isOn) { showMaintenanceAlert(); return; }
+            navigation.navigate('RequestRide');
+          }}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="search-outline" size={18} color={hintColor} />
+          <Text style={[s.searchHint, { color: hintColor }]}>Where to?</Text>
+          <View style={[s.laterPill, {
+            backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
+            borderColor: inputBorder,
+          }]}>
+            <Ionicons name="calendar-outline" size={13} color={hintColor} />
+            <Text style={[s.laterTxt, { color: hintColor }]}>Later</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Section label */}
+        {!sheetExpanded && recentAddresses.length > 0 && (
+          <TouchableOpacity style={s.sectionRow} onPress={snapExpand} activeOpacity={0.7}>
+            <Text style={[s.sectionLabel, { color: theme.hint }]}>Recent trips</Text>
+            <Ionicons name="chevron-up" size={13} color={theme.hint} />
+          </TouchableOpacity>
+        )}
+
+        {/* Recent addresses — scrollable */}
+        <ScrollView
+          style={{ flex: 1 }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingBottom: scrollPaddingBottom,
+            paddingHorizontal: H_PAD,
+          }}
+          keyboardShouldPersistTaps="handled"
+          // Let scroll work normally when expanded; block when collapsed so drag works
+          scrollEnabled={sheetExpanded}
+        >
+          {historyLoading ? (
+            <ActivityIndicator color={theme.foreground} style={{ marginTop: 24 }} />
+          ) : recentAddresses.length > 0 ? (
+            recentAddresses.map((item, i) => (
+              <RecentItem
+                key={item.id}
+                address={item.address}
+                subtext={item.subtext}
+                onPress={item.onPress}
+                theme={theme}
+                darkMode={darkMode}
+                last={i === recentAddresses.length - 1}
+              />
+            ))
+          ) : (
+            <View style={s.emptyWrap}>
+              <Ionicons name="map-outline" size={28} color={hintColor} />
+              <Text style={[s.emptyTxt, { color: hintColor }]}>No recent trips yet</Text>
+            </View>
+          )}
+        </ScrollView>
+      </Animated.View>
     </View>
   );
 }
 
+// ── Dark map style ────────────────────────────────────────────────────────────
+const DARK_MAP_STYLE = [
+  { elementType: 'geometry',            stylers: [{ color: '#1a1a1a' }] },
+  { elementType: 'labels.text.fill',    stylers: [{ color: '#757575' }] },
+  { elementType: 'labels.text.stroke',  stylers: [{ color: '#212121' }] },
+  { featureType: 'road',                elementType: 'geometry',           stylers: [{ color: '#2c2c2c' }] },
+  { featureType: 'road.arterial',       elementType: 'geometry',           stylers: [{ color: '#373737' }] },
+  { featureType: 'road.highway',        elementType: 'geometry',           stylers: [{ color: '#3c3c3c' }] },
+  { featureType: 'water',               elementType: 'geometry',           stylers: [{ color: '#000000' }] },
+  { featureType: 'poi',                 elementType: 'labels',             stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit',             stylers: [{ visibility: 'off' }] },
+];
+
 const s = StyleSheet.create({
-  root:   { flex:1 },
-  orb1:   { position:'absolute', width:width*1.2, height:width*1.2, borderRadius:width*0.6, top:-width*0.5, right:-width*0.3 },
-  orb2:   { position:'absolute', width:width*0.8, height:width*0.8, borderRadius:width*0.4, bottom:-width*0.1, left:-width*0.2 },
-  scroll: { paddingHorizontal: H_PAD },
+  root: { flex: 1 },
 
-  header:      { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:22 },
-  greet:       { fontSize:11, fontWeight:'600', marginBottom:2, letterSpacing:0.3 },
-  name:        { fontSize:17, fontWeight:'900', letterSpacing:-0.5 },
-  headerRight: { flexDirection:'row', alignItems:'center', gap:10, flexShrink:0 },
-  iconBtn:     { width:42, height:42, borderRadius:13, borderWidth:1, justifyContent:'center', alignItems:'center' },
-  notifDot:    { position:'absolute', top:10, right:10, width:7, height:7, borderRadius:4, backgroundColor:'#E05555', borderWidth:1.5 },
-  avatar:      { width:42, height:42, borderRadius:21, borderWidth:1.5 },
-  avatarFallback:{ width:42, height:42, borderRadius:21, borderWidth:1.5, justifyContent:'center', alignItems:'center' },
-  avatarInitials:{ fontSize:14, fontWeight:'800' },
+  // Map
+  mapContainer: { flex: 1 },
+  mapControls: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', paddingHorizontal: H_PAD,
+  },
+  mapBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    borderWidth: 1, justifyContent: 'center', alignItems: 'center',
+  },
+  hamburger: { gap: 4.5, alignItems: 'center', justifyContent: 'center' },
+  hLine:     { width: 16, height: 1.8, borderRadius: 1 },
+  hLineMid:  { width: 11 },
+  avatar:        { width: 44, height: 44, borderRadius: 22, borderWidth: 2 },
+  avatarFallback: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
+  avatarInitials: { fontSize: 14, fontWeight: '800' },
 
-  hamburger: { gap:4.5, alignItems:'center', justifyContent:'center' },
-  hLine:     { width:16, height:1.8, borderRadius:1 },
-  hLineMid:  { width:11 },
+  collapseBtn: {
+    position: 'absolute', right: H_PAD,
+    width: 36, height: 36, borderRadius: 18,
+    borderWidth: 1, justifyContent: 'center', alignItems: 'center',
+  },
 
-  sectionLabel:  { fontSize:9, fontWeight:'800', letterSpacing:3.5, marginTop:8, marginBottom:14 },
-  sectionHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:22, marginBottom:14 },
-  seeAll:        { fontSize:12, fontWeight:'700' },
+  // Sheet — height is SHEET_EXPANDED, translateY controls visible portion
+  sheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    borderTopLeftRadius: 26, borderTopRightRadius: 26,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.14, shadowRadius: 14, elevation: 22,
+  },
 
-  historyCard: { borderRadius:18, borderWidth:1, paddingHorizontal:16, paddingVertical:4, marginBottom:8 },
+  // Handle area — receives pan events
+  handleWrap: {
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 6,
+    // Extra hit area height so it's easy to grab
+    minHeight: 36,
+  },
+  handle:       { width: 38, height: 4, borderRadius: 2 },
+  expandedTitle: {
+    marginTop: 6,
+    fontSize: 16, fontWeight: '800', letterSpacing: -0.3,
+  },
+
+  greetRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: H_PAD, marginBottom: 16, marginTop: 2,
+  },
+  greetTxt: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
+  notifBtn: {
+    width: 40, height: 40, borderRadius: 20, borderWidth: 1,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  notifDot: {
+    position: 'absolute', top: 9, right: 9,
+    width: 7, height: 7, borderRadius: 4,
+    backgroundColor: '#E05555', borderWidth: 1.5,
+  },
+
+  serviceRow: {
+    flexDirection: 'row', paddingHorizontal: H_PAD,
+    marginBottom: 18, gap: 4,
+  },
+
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: H_PAD, borderRadius: 14, borderWidth: 1,
+    paddingHorizontal: 14, paddingVertical: 13, marginBottom: 8,
+  },
+  searchHint: { flex: 1, fontSize: 15, fontWeight: '600' },
+  laterPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  laterTxt: { fontSize: 12, fontWeight: '600' },
+
+  sectionRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: H_PAD, marginBottom: 2, marginTop: 2,
+  },
+  sectionLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
+
+  emptyWrap: { alignItems: 'center', paddingTop: 32, gap: 10 },
+  emptyTxt:  { fontSize: 13, fontWeight: '500' },
 });
