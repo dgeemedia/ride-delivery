@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar,
   Dimensions, Animated, ActivityIndicator, Alert, Vibration,
-  ScrollView,                          // ← standard RN ScrollView (scroll fix)
+  ScrollView,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +15,12 @@ const COURIER_ACCENT = '#34D399';
 const RED            = '#E05555';
 const GREEN          = '#5DAA72';
 const TIMEOUT_SECS   = 35;
+
+// Fixed sheet + scroll heights — same bounded-container pattern as
+// DriverDashboard (SHEET_SNAP) and ProfileScreen (SCROLL_H).
+const FOOTER_H  = 12 + 54 + 20; // paddingTop + button + paddingBottom
+const SHEET_H   = height * 0.82;
+const SCROLL_H  = SHEET_H - FOOTER_H;
 
 // ── Countdown ring ─────────────────────────────────────────────────────────────
 const CountdownRing = ({ seconds, total, expired }) => {
@@ -153,7 +159,7 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
 
   const [accepting,      setAccepting]      = useState(false);
   const [countdown,      setCountdown]      = useState(TIMEOUT_SECS);
-  const [timedOut,       setTimedOut]       = useState(false);   // ← NEW: expired state
+  const [timedOut,       setTimedOut]       = useState(false);
   const [walletBalance,  setWalletBalance]  = useState(null);
   const [loadingWallet,  setLoadingWallet]  = useState(true);
   const isActingRef = useRef(false);
@@ -178,7 +184,6 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
       setCountdown(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          // ── FIX: don't auto-decline; just show expired state ──────────────
           setTimedOut(true);
           return 0;
         }
@@ -257,84 +262,93 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <View style={s.backdrop} />
 
+      {/* ── Sheet: fixed height — bounded container pattern ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
-        maxHeight: height * 0.88,
+        height: SHEET_H,
         transform: [{ translateY: slideA }],
       }]}>
-        {/* ── FIX: standard ScrollView — no reanimated conflict ── */}
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 20 }]}
-          bounces={false}
-        >
-          <View style={[s.handle, { backgroundColor: theme.border }]} />
+        <View style={[s.handle, { backgroundColor: theme.border }]} />
 
-          {/* Top row */}
-          <View style={s.topRow}>
-            <Animated.View style={[s.badge, { backgroundColor: COURIER_ACCENT, transform: [{ scale: pulseA }] }]}>
-              <Ionicons name="flash" size={12} color="#080C18" />
-              <Text style={s.badgeTxt}>NEW DELIVERY</Text>
-            </Animated.View>
-            <CountdownRing seconds={countdown} total={TIMEOUT_SECS} expired={timedOut} />
-          </View>
+        {/* ── Bounded scroll area: explicit pixel height so ScrollView has a
+             concrete boundary — mirrors DriverDashboard SHEET_SNAP / ProfileScreen SCROLL_H ── */}
+        <View style={{ height: SCROLL_H }}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.scrollContent}
+            bounces={false}
+          >
+            {/* Top row */}
+            <View style={s.topRow}>
+              <Animated.View style={[s.badge, { backgroundColor: COURIER_ACCENT, transform: [{ scale: pulseA }] }]}>
+                <Ionicons name="flash" size={12} color="#080C18" />
+                <Text style={s.badgeTxt}>NEW DELIVERY</Text>
+              </Animated.View>
+              <CountdownRing seconds={countdown} total={TIMEOUT_SECS} expired={timedOut} />
+            </View>
 
-          {/* Expired notice */}
-          {timedOut && <ExpiredBanner />}
+            {/* Expired notice */}
+            {timedOut && <ExpiredBanner />}
 
-          {/* Fee */}
-          <Text style={[s.fee, { color: COURIER_ACCENT }]}>{`₦${feeStr}`}</Text>
-          <Text style={[s.feeSub, { color: theme.hint }]}>Estimated delivery fee</Text>
+            {/* Fee */}
+            <Text style={[s.fee, { color: COURIER_ACCENT }]}>{`₦${feeStr}`}</Text>
+            <Text style={[s.feeSub, { color: theme.hint }]}>Estimated delivery fee</Text>
 
-          {/* Stats */}
-          <View style={s.statsRow}>
-            <StatPill icon="navigate-outline" value={`${distStr} km`}  theme={theme} />
-            <StatPill icon="time-outline"     value={`~${etaStr} min`} theme={theme} />
-            {hasWeight && (
-              <StatPill icon="scale-outline" value={`${request.packageWeight} kg`} theme={theme} />
+            {/* Stats */}
+            <View style={s.statsRow}>
+              <StatPill icon="navigate-outline" value={`${distStr} km`}  theme={theme} />
+              <StatPill icon="time-outline"     value={`~${etaStr} min`} theme={theme} />
+              {hasWeight && (
+                <StatPill icon="scale-outline" value={`${request.packageWeight} kg`} theme={theme} />
+              )}
+            </View>
+
+            {/* Wallet balance strip */}
+            {loadingWallet ? (
+              <View style={[s.walletLoading, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                <ActivityIndicator color={COURIER_ACCENT} size="small" />
+                <Text style={[s.walletLoadingTxt, { color: theme.hint }]}>Checking wallet...</Text>
+              </View>
+            ) : (
+              <WalletStrip
+                balance={walletBalance}
+                required={estimatedFee}
+                theme={theme}
+                onTopUp={() => slideOut(() => navigation.navigate('EarningsHome'))}
+              />
             )}
-          </View>
 
-          {/* Wallet balance strip */}
-          {loadingWallet ? (
-            <View style={[s.walletLoading, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <ActivityIndicator color={COURIER_ACCENT} size="small" />
-              <Text style={[s.walletLoadingTxt, { color: theme.hint }]}>Checking wallet...</Text>
-            </View>
-          ) : (
-            <WalletStrip
-              balance={walletBalance}
-              required={estimatedFee}
-              theme={theme}
-              onTopUp={() => slideOut(() => navigation.navigate('EarningsHome'))}
+            <View style={[s.divider, { backgroundColor: theme.border }]} />
+
+            {/* Package info */}
+            {!!request.packageDescription && (
+              <View style={[s.pkgCard, { backgroundColor: COURIER_ACCENT + '10', borderColor: COURIER_ACCENT + '30' }]}>
+                <Ionicons name="cube-outline" size={15} color={COURIER_ACCENT} />
+                <Text style={[s.pkgTxt, { color: theme.foreground }]}>{request.packageDescription}</Text>
+              </View>
+            )}
+
+            {/* Route */}
+            <RouteRow
+              icon="radio-button-on" iconColor={COURIER_ACCENT}
+              label="PICKUP" address={request.pickupAddress ?? '—'}
+              contact={request.pickupContact} theme={theme}
             />
-          )}
+            <RouteRow
+              icon="location" iconColor={RED}
+              label="DROP-OFF" address={request.dropoffAddress ?? '—'}
+              contact={request.dropoffContact} theme={theme}
+            />
 
-          <View style={[s.divider, { backgroundColor: theme.border }]} />
+            <View style={[s.divider, { backgroundColor: theme.border }]} />
+          </ScrollView>
+        </View>
 
-          {/* Package info */}
-          {!!request.packageDescription && (
-            <View style={[s.pkgCard, { backgroundColor: COURIER_ACCENT + '10', borderColor: COURIER_ACCENT + '30' }]}>
-              <Ionicons name="cube-outline" size={15} color={COURIER_ACCENT} />
-              <Text style={[s.pkgTxt, { color: theme.foreground }]}>{request.packageDescription}</Text>
-            </View>
-          )}
-
-          {/* Route */}
-          <RouteRow
-            icon="radio-button-on" iconColor={COURIER_ACCENT}
-            label="PICKUP" address={request.pickupAddress ?? '—'}
-            contact={request.pickupContact} theme={theme}
-          />
-          <RouteRow
-            icon="location" iconColor={RED}
-            label="DROP-OFF" address={request.dropoffAddress ?? '—'}
-            contact={request.dropoffContact} theme={theme}
-          />
-
-          <View style={[s.divider, { backgroundColor: theme.border }]} />
-
-          {/* Actions */}
+        {/* ── Actions footer: pinned below bounded scroll area, inside the sheet ── */}
+        <View style={[s.actionsFooter, {
+          borderTopColor: theme.border,
+          paddingBottom: insets.bottom + 12,
+        }]}>
           <View style={s.actions}>
             <TouchableOpacity
               style={[s.declineBtn, { borderColor: theme.border }]}
@@ -372,33 +386,39 @@ export default function IncomingDeliveryScreen({ route, navigation }) {
               </TouchableOpacity>
             </Animated.View>
           </View>
-        </ScrollView>
+        </View>
       </Animated.View>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:            { flex: 1, justifyContent: 'flex-end' },
-  backdrop:        { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet:           { borderTopLeftRadius: 32, borderTopRightRadius: 32, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 20 },
-  scrollContent:   { paddingHorizontal: 24, paddingTop: 14 },
-  handle:          { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  topRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  badge:           { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
-  badgeTxt:        { fontSize: 10, fontWeight: '900', color: '#080C18', letterSpacing: 1 },
-  fee:             { fontSize: 38, fontWeight: '900', letterSpacing: -1, marginBottom: 3 },
-  feeSub:          { fontSize: 12, marginBottom: 14 },
-  statsRow:        { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
-  walletLoading:   { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, borderWidth: 1, padding: 11, marginBottom: 14 },
-  walletLoadingTxt:{ fontSize: 12 },
-  divider:         { height: 1, marginBottom: 12 },
-  pkgCard:         { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, padding: 10, marginBottom: 10 },
-  pkgTxt:          { flex: 1, fontSize: 13, fontWeight: '600' },
-  actions:         { flexDirection: 'row', gap: 12, marginTop: 4 },
-  declineBtn:      { flex: 1, height: 54, borderRadius: 16, borderWidth: 1.5, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  declineTxt:      { fontSize: 14, fontWeight: '700' },
-  acceptWrap:      { flex: 2 },
-  acceptBtn:       { height: 54, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  acceptTxt:       { fontSize: 16, fontWeight: '900', color: '#080C18' },
+  root:             { flex: 1, justifyContent: 'flex-end' },
+  backdrop:         { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+
+  // Sheet: position absolute, fixed height — the bounded container
+  sheet:            { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 20 },
+
+  handle:           { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 14, marginBottom: 20 },
+  scrollContent:    { paddingHorizontal: 24, paddingBottom: 8 },
+  topRow:           { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  badge:            { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
+  badgeTxt:         { fontSize: 10, fontWeight: '900', color: '#080C18', letterSpacing: 1 },
+  fee:              { fontSize: 38, fontWeight: '900', letterSpacing: -1, marginBottom: 3 },
+  feeSub:           { fontSize: 12, marginBottom: 14 },
+  statsRow:         { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
+  walletLoading:    { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, borderWidth: 1, padding: 11, marginBottom: 14 },
+  walletLoadingTxt: { fontSize: 12 },
+  divider:          { height: 1, marginBottom: 12 },
+  pkgCard:          { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, padding: 10, marginBottom: 10 },
+  pkgTxt:           { flex: 1, fontSize: 13, fontWeight: '600' },
+
+  // Footer pinned below scroll area
+  actionsFooter:    { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12, paddingHorizontal: 24 },
+  actions:          { flexDirection: 'row', gap: 12 },
+  declineBtn:       { flex: 1, height: 54, borderRadius: 16, borderWidth: 1.5, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  declineTxt:       { fontSize: 14, fontWeight: '700' },
+  acceptWrap:       { flex: 2 },
+  acceptBtn:        { height: 54, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  acceptTxt:        { fontSize: 16, fontWeight: '900', color: '#080C18' },
 });

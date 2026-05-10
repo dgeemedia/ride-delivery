@@ -16,6 +16,12 @@ const GREEN        = '#5DAA72';
 const RED          = '#E05555';
 const TIMEOUT_SECS = 30;
 
+// Fixed sheet + scroll heights — same bounded-container pattern as
+// DriverDashboard (SHEET_SNAP) and ProfileScreen (SCROLL_H).
+const FOOTER_H = 14 + 56 + 16; // paddingTop + button height + paddingBottom
+const SHEET_H  = height * 0.82;
+const SCROLL_H = SHEET_H - FOOTER_H;
+
 // ── Countdown ring ────────────────────────────────────────────────────────────
 const CountdownRing = ({ seconds, total, color, expired }) => {
   const SIZE = 80, STROKE = 5;
@@ -138,66 +144,6 @@ const eb = StyleSheet.create({
   txt:  { flex: 1, fontSize: 12, fontWeight: '700', lineHeight: 17 },
 });
 
-// ── Action footer ─────────────────────────────────────────────────────────────
-// Now used as an absolutely positioned footer at the bottom of the screen.
-const ActionFooter = ({
-  hasSufficient, loadingWallet, accepting, timedOut,
-  onDecline, onAccept, pulseA, theme, bottomInset,
-}) => (
-  <View style={[af.footer, {
-    backgroundColor: theme.background,
-    borderTopColor: theme.border,
-    paddingBottom: bottomInset + 16,
-  }]}>
-    <View style={af.row}>
-      <TouchableOpacity
-        style={[af.declineBtn, { borderColor: theme.border }]}
-        onPress={onDecline}
-        disabled={accepting}
-        activeOpacity={0.75}
-      >
-        <Ionicons name="close-circle-outline" size={20} color={theme.hint} />
-        <Text style={[af.declineTxt, { color: theme.hint }]}>Decline</Text>
-      </TouchableOpacity>
-
-      <Animated.View style={[af.acceptWrap, { transform: [{ scale: pulseA }] }]}>
-        <TouchableOpacity
-          style={[af.acceptBtn, {
-            backgroundColor: hasSufficient ? DA : theme.border,
-            opacity: accepting ? 0.7 : 1,
-          }]}
-          onPress={onAccept}
-          disabled={accepting || loadingWallet}
-          activeOpacity={0.88}
-        >
-          {accepting ? (
-            <ActivityIndicator color="#080C18" size="small" />
-          ) : !hasSufficient && !loadingWallet ? (
-            <>
-              <Ionicons name="wallet-outline" size={20} color={theme.hint} />
-              <Text style={[af.acceptTxt, { color: theme.hint }]}>Top Up First</Text>
-            </>
-          ) : (
-            <>
-              <Ionicons name="checkmark-circle" size={22} color="#080C18" />
-              <Text style={af.acceptTxt}>{timedOut ? 'Try Accept' : 'Accept Ride'}</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </Animated.View>
-    </View>
-  </View>
-);
-const af = StyleSheet.create({
-  footer:     { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 14, paddingHorizontal: 24 },
-  row:        { flexDirection: 'row', gap: 12 },
-  declineBtn: { flex: 1, height: 56, borderRadius: 16, borderWidth: 1.5, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  declineTxt: { fontSize: 15, fontWeight: '700' },
-  acceptWrap: { flex: 2 },
-  acceptBtn:  { height: 56, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  acceptTxt:  { fontSize: 16, fontWeight: '900', color: '#080C18' },
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,9 +164,6 @@ export default function IncomingRideScreen({ route, navigation }) {
 
   const estimatedFare = Number(request.estimatedFare ?? 0);
   const hasSufficient = walletBalance !== null && walletBalance >= estimatedFare;
-
-  // ── Footer height: paddingTop (14) + buttons (56) = 70px visible content
-  const FOOTER_VISIBLE = 14 + 56;
 
   useEffect(() => {
     Vibration.vibrate([0, 250, 100, 250, 100, 250]);
@@ -318,125 +261,143 @@ export default function IncomingRideScreen({ route, navigation }) {
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Dimmed backdrop */}
+      {/* Dimmed backdrop — tapping it declines */}
       <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={doDecline} />
 
-      {/* Bottom sheet – slides from the bottom, ends just above the footer */}
+      {/* ── Sheet: fixed height — bounded container pattern ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
-        maxHeight: height * 0.88,
+        height: SHEET_H,
         transform: [{ translateY: slideA }],
-        bottom: FOOTER_VISIBLE,          // leaves room for the fixed footer
       }]}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={s.scrollContent}
-          bounces={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={[s.handle, { backgroundColor: theme.border }]} />
+        <View style={[s.handle, { backgroundColor: theme.border }]} />
 
-          {/* Badge + countdown */}
-          <View style={s.topRow}>
-            <Animated.View style={[s.badge, { backgroundColor: DA, transform: [{ scale: pulseA }] }]}>
-              <Ionicons name="flash" size={12} color="#080C18" />
-              <Text style={s.badgeTxt}>NEW RIDE REQUEST</Text>
-            </Animated.View>
-            <CountdownRing seconds={countdown} total={TIMEOUT_SECS} color={DA} expired={timedOut} />
-          </View>
-
-          {timedOut && <ExpiredBanner theme={theme} />}
-
-          <Text style={[s.fare, { color: DA }]}>₦{fareStr}</Text>
-          <Text style={[s.fareSub, { color: theme.hint }]}>Estimated fare</Text>
-
-          <View style={s.statsRow}>
-            <StatPill icon="navigate-outline" value={`${distStr} km`}  theme={theme} />
-            <StatPill icon="time-outline"     value={`~${etaStr} min`} theme={theme} />
-            <StatPill icon="cash-outline"     value={request.paymentMethod ?? 'CASH'} theme={theme} />
-          </View>
-
-          {loadingWallet ? (
-            <View style={[s.walletLoading, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <ActivityIndicator color={DA} size="small" />
-              <Text style={[s.walletLoadingTxt, { color: theme.hint }]}>Checking wallet balance...</Text>
+        {/* ── Bounded scroll area: explicit pixel height so ScrollView has a
+             concrete boundary — mirrors DriverDashboard SHEET_SNAP / ProfileScreen SCROLL_H ── */}
+        <View style={{ height: SCROLL_H }}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.scrollContent}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Badge + countdown */}
+            <View style={s.topRow}>
+              <Animated.View style={[s.badge, { backgroundColor: DA, transform: [{ scale: pulseA }] }]}>
+                <Ionicons name="flash" size={12} color="#080C18" />
+                <Text style={s.badgeTxt}>NEW RIDE REQUEST</Text>
+              </Animated.View>
+              <CountdownRing seconds={countdown} total={TIMEOUT_SECS} color={DA} expired={timedOut} />
             </View>
-          ) : (
-            <WalletStrip
-              balance={walletBalance}
-              required={estimatedFare}
-              theme={theme}
-              onTopUp={() => slideOut(() => navigation.navigate('Earnings'))}
-            />
-          )}
 
-          <View style={[s.divider, { backgroundColor: theme.border }]} />
+            {timedOut && <ExpiredBanner theme={theme} />}
 
-          {request.customer && (
-            <View style={s.customerRow}>
-              <View style={[s.cAvatar, { backgroundColor: DA + '18' }]}>
-                <Text style={[s.cInitials, { color: DA }]}>
-                  {request.customer.firstName?.[0]}{request.customer.lastName?.[0]}
-                </Text>
+            <Text style={[s.fare, { color: DA }]}>₦{fareStr}</Text>
+            <Text style={[s.fareSub, { color: theme.hint }]}>Estimated fare</Text>
+
+            <View style={s.statsRow}>
+              <StatPill icon="navigate-outline" value={`${distStr} km`}  theme={theme} />
+              <StatPill icon="time-outline"     value={`~${etaStr} min`} theme={theme} />
+              <StatPill icon="cash-outline"     value={request.paymentMethod ?? 'CASH'} theme={theme} />
+            </View>
+
+            {loadingWallet ? (
+              <View style={[s.walletLoading, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                <ActivityIndicator color={DA} size="small" />
+                <Text style={[s.walletLoadingTxt, { color: theme.hint }]}>Checking wallet balance...</Text>
               </View>
-              <View>
-                <Text style={[s.cName, { color: theme.foreground }]}>
-                  {request.customer.firstName} {request.customer.lastName}
-                </Text>
-                <View style={s.cVerified}>
-                  <Ionicons name="shield-checkmark" size={11} color={GREEN} />
-                  <Text style={[s.cVerifiedTxt, { color: GREEN }]}>Verified rider</Text>
+            ) : (
+              <WalletStrip
+                balance={walletBalance}
+                required={estimatedFare}
+                theme={theme}
+                onTopUp={() => slideOut(() => navigation.navigate('Earnings'))}
+              />
+            )}
+
+            <View style={[s.divider, { backgroundColor: theme.border }]} />
+
+            {request.customer && (
+              <View style={s.customerRow}>
+                <View style={[s.cAvatar, { backgroundColor: DA + '18' }]}>
+                  <Text style={[s.cInitials, { color: DA }]}>
+                    {request.customer.firstName?.[0]}{request.customer.lastName?.[0]}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={[s.cName, { color: theme.foreground }]}>
+                    {request.customer.firstName} {request.customer.lastName}
+                  </Text>
+                  <View style={s.cVerified}>
+                    <Ionicons name="shield-checkmark" size={11} color={GREEN} />
+                    <Text style={[s.cVerifiedTxt, { color: GREEN }]}>Verified rider</Text>
+                  </View>
                 </View>
               </View>
-            </View>
-          )}
+            )}
 
-          <RouteRow icon="radio-button-on" iconColor={DA}  label="PICKUP"   address={request.pickupAddress  ?? '—'} theme={theme} />
-          <RouteRow icon="location"        iconColor={RED} label="DROP-OFF" address={request.dropoffAddress ?? '—'} theme={theme} />
-        </ScrollView>
+            <RouteRow icon="radio-button-on" iconColor={DA}  label="PICKUP"   address={request.pickupAddress  ?? '—'} theme={theme} />
+            <RouteRow icon="location"        iconColor={RED} label="DROP-OFF" address={request.dropoffAddress ?? '—'} theme={theme} />
+          </ScrollView>
+        </View>
+
+        {/* ── Actions footer: pinned below bounded scroll area, inside the sheet ── */}
+        <View style={[s.actionsFooter, {
+          borderTopColor: theme.border,
+          paddingBottom: insets.bottom + 16,
+        }]}>
+          <View style={s.actionsRow}>
+            <TouchableOpacity
+              style={[s.declineBtn, { borderColor: theme.border }]}
+              onPress={doDecline}
+              disabled={accepting}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="close-circle-outline" size={20} color={theme.hint} />
+              <Text style={[s.declineTxt, { color: theme.hint }]}>Decline</Text>
+            </TouchableOpacity>
+
+            <Animated.View style={[s.acceptWrap, { transform: [{ scale: pulseA }] }]}>
+              <TouchableOpacity
+                style={[s.acceptBtn, {
+                  backgroundColor: hasSufficient ? DA : theme.border,
+                  opacity: accepting ? 0.7 : 1,
+                }]}
+                onPress={doAccept}
+                disabled={accepting || loadingWallet}
+                activeOpacity={0.88}
+              >
+                {accepting ? (
+                  <ActivityIndicator color="#080C18" size="small" />
+                ) : !hasSufficient && !loadingWallet ? (
+                  <>
+                    <Ionicons name="wallet-outline" size={20} color={theme.hint} />
+                    <Text style={[s.acceptTxt, { color: theme.hint }]}>Top Up First</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={22} color="#080C18" />
+                    <Text style={s.acceptTxt}>{timedOut ? 'Try Accept' : 'Accept Ride'}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </View>
       </Animated.View>
-
-      {/* Always‑visible action footer */}
-      <ActionFooter
-        hasSufficient={hasSufficient}
-        loadingWallet={loadingWallet}
-        accepting={accepting}
-        timedOut={timedOut}
-        onDecline={doDecline}
-        onAccept={doAccept}
-        pulseA={pulseA}
-        theme={theme}
-        bottomInset={insets.bottom}
-      />
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'transparent',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 20,
-  },
-  scrollContent:    { paddingHorizontal: 24, paddingTop: 14, paddingBottom: 8 },
-  handle:           { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  root:     { flex: 1, justifyContent: 'flex-end', backgroundColor: 'transparent' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+
+  // Sheet: position absolute, fixed height — the bounded container
+  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 20 },
+
+  handle:           { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 14, marginBottom: 20 },
+  scrollContent:    { paddingHorizontal: 24, paddingBottom: 8 },
   topRow:           { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   badge:            { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
   badgeTxt:         { fontSize: 10, fontWeight: '900', color: '#080C18', letterSpacing: 1 },
@@ -452,4 +413,13 @@ const s = StyleSheet.create({
   cName:            { fontSize: 15, fontWeight: '700', marginBottom: 3 },
   cVerified:        { flexDirection: 'row', alignItems: 'center', gap: 4 },
   cVerifiedTxt:     { fontSize: 11, fontWeight: '600' },
+
+  // Footer pinned below scroll area, inside the sheet
+  actionsFooter:    { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 14, paddingHorizontal: 24 },
+  actionsRow:       { flexDirection: 'row', gap: 12 },
+  declineBtn:       { flex: 1, height: 56, borderRadius: 16, borderWidth: 1.5, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  declineTxt:       { fontSize: 15, fontWeight: '700' },
+  acceptWrap:       { flex: 2 },
+  acceptBtn:        { height: 56, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  acceptTxt:        { fontSize: 16, fontWeight: '900', color: '#080C18' },
 });

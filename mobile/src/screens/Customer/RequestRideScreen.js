@@ -904,17 +904,19 @@ export default function RequestRideScreen({ navigation }) {
                   </TouchableOpacity>
                 </View>
               ) : (
-                <FlatList
-                  data={drivers}
-                  keyExtractor={(d) => d.driverId}
-                  renderItem={({ item }) => (
-                    <DriverCard driver={item} selected={selectedDriver?.driverId === item.driverId}
-                      onSelect={handleSelectDriver} accentColor={accentColor} theme={theme} />
-                  )}
-                  showsVerticalScrollIndicator={false}
-                  style={{ maxHeight: 220 }}
-                  nestedScrollEnabled
-                />
+                // ✅ FIX: Use .map() instead of FlatList to avoid nesting
+                <View style={{ maxHeight: 220 }}>
+                  {drivers.map((item) => (
+                    <DriverCard
+                      key={item.driverId}
+                      driver={item}
+                      selected={selectedDriver?.driverId === item.driverId}
+                      onSelect={handleSelectDriver}
+                      accentColor={accentColor}
+                      theme={theme}
+                    />
+                  ))}
+                </View>
               )}
 
               {selectedDriver && (

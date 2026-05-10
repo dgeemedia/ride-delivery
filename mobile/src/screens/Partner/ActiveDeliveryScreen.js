@@ -16,6 +16,14 @@ import * as Location         from 'expo-location';
 const { height } = Dimensions.get('window');
 const COURIER_ACCENT = '#34D399';
 
+// Fixed sheet + scroll heights — bounded-container pattern (same as dashboards).
+// SHEET_H  = total sheet height (position: absolute, bottom: 0).
+// ACTION_H = pinned footer: paddingTop + button + paddingBottom.
+// SCROLL_H = concrete pixel height given to the View wrapping ScrollView.
+const SHEET_H  = height * 0.54;
+const ACTION_H = 14 + 54 + 12; // paddingTop + actionBtn + paddingBottom
+const SCROLL_H = SHEET_H - ACTION_H - 20; // subtract sheet paddingTop
+
 const DARK_MAP_STYLE = [
   { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a1a' }] },
@@ -28,11 +36,11 @@ const DARK_MAP_STYLE = [
 ];
 
 const STATUS_CONFIG = {
-  ASSIGNED:    { label: 'Head to Pickup',        color: COURIER_ACCENT, icon: 'navigate-outline'         },
-  PICKED_UP:   { label: 'Package Picked Up',     color: '#FFB800',      icon: 'cube-outline'              },
-  IN_TRANSIT:  { label: 'In Transit',            color: '#A78BFA',      icon: 'car-sport-outline'         },
-  DELIVERED:   { label: 'Delivered!',            color: COURIER_ACCENT, icon: 'checkmark-circle-outline'  },
-  CANCELLED:   { label: 'Cancelled',             color: '#E05555',      icon: 'close-circle-outline'      },
+  ASSIGNED:   { label: 'Head to Pickup',    color: COURIER_ACCENT, icon: 'navigate-outline'        },
+  PICKED_UP:  { label: 'Package Picked Up', color: '#FFB800',      icon: 'cube-outline'             },
+  IN_TRANSIT: { label: 'In Transit',        color: '#A78BFA',      icon: 'car-sport-outline'        },
+  DELIVERED:  { label: 'Delivered!',        color: COURIER_ACCENT, icon: 'checkmark-circle-outline' },
+  CANCELLED:  { label: 'Cancelled',         color: '#E05555',      icon: 'close-circle-outline'     },
 };
 
 // ── Customer card ──────────────────────────────────────────────────────────────
@@ -136,12 +144,12 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
   const insets          = useSafeAreaInsets();
   const deliveryId      = route?.params?.deliveryId;
 
-  const [delivery,     setDelivery]     = useState(null);
-  const [myLoc,        setMyLoc]        = useState(null);
-  const [loading,      setLoading]      = useState(true);
-  const [acting,       setActing]       = useState(false);
-  const [recipientName,setRecipientName]= useState('');
-  const [showComplete, setShowComplete] = useState(false);
+  const [delivery,      setDelivery]      = useState(null);
+  const [myLoc,         setMyLoc]         = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [acting,        setActing]        = useState(false);
+  const [recipientName, setRecipientName] = useState('');
+  const [showComplete,  setShowComplete]  = useState(false);
 
   const mapRef = useRef(null);
   const sheetA = useRef(new Animated.Value(0)).current;
@@ -168,7 +176,7 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          const loc    = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
           const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
           setMyLoc(coords);
           socketService.updateLocation({ latitude: coords.latitude, longitude: coords.longitude });
@@ -206,7 +214,7 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
   const handlePickup = async () => {
     setActing(true);
     try {
-      const res = await deliveryAPI.pickupDelivery(delivery.id);
+      await deliveryAPI.pickupDelivery(delivery.id);
       setDelivery(prev => ({ ...prev, status: 'PICKED_UP' }));
     } catch (err) {
       Alert.alert('Error', err?.response?.data?.message ?? 'Could not update status.');
@@ -237,7 +245,7 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
 
   const handleComplete = async () => {
     if (!recipientName.trim()) {
-      Alert.alert('Recipient Name Required', 'Please enter the recipient\'s name to confirm delivery.');
+      Alert.alert('Recipient Name Required', "Please enter the recipient's name to confirm delivery.");
       return;
     }
     setActing(true);
@@ -269,7 +277,11 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
 
   const sheetTranslate = sheetA.interpolate({ inputRange: [0, 1], outputRange: [300, 0] });
   const backBtnTop     = insets.top + 14;
-  const sheetPadBottom = insets.bottom + 12;
+
+  // When showComplete panel is open, the action footer grows — adjust scroll area
+  const scrollH = showComplete && status === 'IN_TRANSIT'
+    ? SCROLL_H - 160  // shrink to make room for the confirm card
+    : SCROLL_H;
 
   if (loading) {
     return (
@@ -309,7 +321,6 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
         showsCompass={false}
         toolbarEnabled={false}
       >
-        {/* My location (partner) */}
         {myLoc && (
           <Marker coordinate={myLoc} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={s.partnerPin}>
@@ -317,19 +328,16 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
             </View>
           </Marker>
         )}
-        {/* Pickup */}
         {pickupLat && (
           <Marker coordinate={{ latitude: pickupLat, longitude: pickupLng }} anchor={{ x: 0.5, y: 1 }}>
             <Ionicons name="radio-button-on" size={24} color={COURIER_ACCENT} />
           </Marker>
         )}
-        {/* Dropoff */}
         {dropoffLat && (
           <Marker coordinate={{ latitude: dropoffLat, longitude: dropoffLng }} anchor={{ x: 0.5, y: 1 }}>
             <Ionicons name="location" size={28} color="#E05555" />
           </Marker>
         )}
-        {/* Route line */}
         {pickupLat && dropoffLat && (
           <Polyline
             coordinates={[
@@ -352,49 +360,63 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
       </TouchableOpacity>
 
       {/* Status pill */}
-      <View style={[s.statusPill, { backgroundColor: statusCfg.color + '18', borderColor: statusCfg.color + '50', bottom: height * 0.44 }]}>
+      <View style={[s.statusPill, { backgroundColor: statusCfg.color + '18', borderColor: statusCfg.color + '50', bottom: SHEET_H + 10 }]}>
         <Ionicons name={statusCfg.icon} size={13} color={statusCfg.color} />
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
       </View>
 
-      {/* Bottom sheet */}
+      {/* ── Bottom sheet: fixed height — bounded container pattern ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
-        paddingBottom:   sheetPadBottom,
+        height:          SHEET_H,
         transform:       [{ translateY: sheetTranslate }],
       }]}>
-        <ScrollView showsVerticalScrollIndicator={false}>
 
-          {/* Fee strip */}
-          <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <View style={s.fareItem}>
-              <Text style={[s.fareLabel, { color: theme.hint }]}>FEE</Text>
-              <Text style={[s.fareValue, { color: COURIER_ACCENT }]}>
-                ₦{Number(delivery.estimatedFee ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-              </Text>
+        {/* ── Bounded scroll area: explicit pixel height gives ScrollView a
+             concrete boundary — mirrors DriverDashboard SHEET_SNAP / ProfileScreen SCROLL_H ── */}
+        <View style={{ height: scrollH }}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Fare strip */}
+            <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={s.fareItem}>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>FEE</Text>
+                <Text style={[s.fareValue, { color: COURIER_ACCENT }]}>
+                  ₦{Number(delivery.estimatedFee ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                </Text>
+              </View>
+              <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
+              <View style={s.fareItem}>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>DISTANCE</Text>
+                <Text style={[s.fareValue, { color: theme.foreground }]}>{delivery.distance?.toFixed(1) ?? '—'} km</Text>
+              </View>
+              <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
+              <View style={s.fareItem}>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>PAYMENT</Text>
+                <Text style={[s.fareValue, { color: theme.foreground }]}>CASH</Text>
+              </View>
             </View>
-            <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
-            <View style={s.fareItem}>
-              <Text style={[s.fareLabel, { color: theme.hint }]}>DISTANCE</Text>
-              <Text style={[s.fareValue, { color: theme.foreground }]}>{delivery.distance?.toFixed(1) ?? '—'} km</Text>
-            </View>
-            <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
-            <View style={s.fareItem}>
-              <Text style={[s.fareLabel, { color: theme.hint }]}>PAYMENT</Text>
-              <Text style={[s.fareValue, { color: theme.foreground }]}>CASH</Text>
-            </View>
-          </View>
 
-          <CustomerCard delivery={delivery} theme={theme} />
-          <PackageCard  delivery={delivery} theme={theme} />
-          <RouteCard    delivery={delivery} status={status} theme={theme} />
+            <CustomerCard delivery={delivery} theme={theme} />
+            <PackageCard  delivery={delivery} theme={theme} />
+            <RouteCard    delivery={delivery} status={status} theme={theme} />
+          </ScrollView>
+        </View>
 
-          {/* Complete delivery — recipient name input */}
+        {/* ── Action footer: pinned below bounded scroll area, inside the sheet ── */}
+        <View style={[s.actionFooter, {
+          borderTopColor:  theme.border,
+          paddingBottom:   insets.bottom + 12,
+        }]}>
+          {/* Complete delivery — recipient name input, shown above the action button */}
           {showComplete && status === 'IN_TRANSIT' && (
             <View style={[s.completeCard, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '40' }]}>
               <Text style={[s.completeTitle, { color: theme.foreground }]}>Confirm Delivery</Text>
-              <Text style={[s.completeSub, { color: theme.hint }]}>Enter the recipient's name to finalize</Text>
+              <Text style={[s.completeSub, { color: theme.hint }]}>Enter the recipient's name to finalise</Text>
               <View style={[s.inputRow, { backgroundColor: theme.background, borderColor: theme.border }]}>
                 <Ionicons name="person-outline" size={15} color={theme.hint} />
                 <TextInput
@@ -427,43 +449,40 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* Action buttons */}
-          <View style={s.actionArea}>
-            {status === 'ASSIGNED' && (
-              <TouchableOpacity style={[s.actionBtn, { backgroundColor: COURIER_ACCENT }]} onPress={handlePickup} disabled={acting} activeOpacity={0.88}>
-                {acting
-                  ? <ActivityIndicator color="#080C18" />
-                  : (<><Ionicons name="cube-outline" size={17} color="#080C18" /><Text style={s.actionBtnTxt}>Package Picked Up</Text></>)
-                }
-              </TouchableOpacity>
-            )}
-            {status === 'PICKED_UP' && (
-              <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#FFB800' }]} onPress={handleTransit} disabled={acting} activeOpacity={0.88}>
-                {acting
-                  ? <ActivityIndicator color="#080C18" />
-                  : (<><Ionicons name="car-sport-outline" size={17} color="#080C18" /><Text style={s.actionBtnTxt}>Start Transit</Text></>)
-                }
-              </TouchableOpacity>
-            )}
-            {status === 'IN_TRANSIT' && !showComplete && (
-              <TouchableOpacity style={[s.actionBtn, { backgroundColor: COURIER_ACCENT }]} onPress={() => setShowComplete(true)} activeOpacity={0.88}>
-                <Ionicons name="checkmark-circle-outline" size={17} color="#080C18" />
-                <Text style={s.actionBtnTxt}>Mark as Delivered</Text>
-              </TouchableOpacity>
-            )}
-            {(status === 'DELIVERED' || status === 'CANCELLED') && (
-              <TouchableOpacity
-                style={[s.actionBtn, { backgroundColor: theme.backgroundAlt, borderWidth: 1, borderColor: theme.border }]}
-                onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] })}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="home-outline" size={17} color={theme.foreground} />
-                <Text style={[s.actionBtnTxt, { color: theme.foreground }]}>Back to Dashboard</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-        </ScrollView>
+          {/* Primary action button */}
+          {status === 'ASSIGNED' && (
+            <TouchableOpacity style={[s.actionBtn, { backgroundColor: COURIER_ACCENT }]} onPress={handlePickup} disabled={acting} activeOpacity={0.88}>
+              {acting
+                ? <ActivityIndicator color="#080C18" />
+                : (<><Ionicons name="cube-outline" size={17} color="#080C18" /><Text style={s.actionBtnTxt}>Package Picked Up</Text></>)
+              }
+            </TouchableOpacity>
+          )}
+          {status === 'PICKED_UP' && (
+            <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#FFB800' }]} onPress={handleTransit} disabled={acting} activeOpacity={0.88}>
+              {acting
+                ? <ActivityIndicator color="#080C18" />
+                : (<><Ionicons name="car-sport-outline" size={17} color="#080C18" /><Text style={s.actionBtnTxt}>Start Transit</Text></>)
+              }
+            </TouchableOpacity>
+          )}
+          {status === 'IN_TRANSIT' && !showComplete && (
+            <TouchableOpacity style={[s.actionBtn, { backgroundColor: COURIER_ACCENT }]} onPress={() => setShowComplete(true)} activeOpacity={0.88}>
+              <Ionicons name="checkmark-circle-outline" size={17} color="#080C18" />
+              <Text style={s.actionBtnTxt}>Mark as Delivered</Text>
+            </TouchableOpacity>
+          )}
+          {(status === 'DELIVERED' || status === 'CANCELLED') && (
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: theme.backgroundAlt, borderWidth: 1, borderColor: theme.border }]}
+              onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] })}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="home-outline" size={17} color={theme.foreground} />
+              <Text style={[s.actionBtnTxt, { color: theme.foreground }]}>Back to Dashboard</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </Animated.View>
     </View>
   );
@@ -478,25 +497,35 @@ const s = StyleSheet.create({
   topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
   backNav:     { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
   partnerPin:  { width: 32, height: 32, borderRadius: 16, backgroundColor: COURIER_ACCENT, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
-  statusPill:  { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
-  statusPillTxt:{ fontSize: 12, fontWeight: '700' },
-  sheet:       { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, paddingHorizontal: 20, paddingTop: 20, maxHeight: height * 0.54 },
-  fareStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
-  fareItem:    { flex: 1, alignItems: 'center', paddingVertical: 11, gap: 3 },
-  fareLabel:   { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
-  fareValue:   { fontSize: 14, fontWeight: '900' },
-  fareDivider: { width: 1 },
-  completeCard:{ borderRadius: 16, borderWidth: 1.5, padding: 14, marginBottom: 12 },
-  completeTitle:{ fontSize: 15, fontWeight: '800', marginBottom: 3 },
-  completeSub: { fontSize: 12, marginBottom: 12 },
-  inputRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },
-  nameInput:   { flex: 1, fontSize: 14, fontWeight: '500' },
-  completeActions:{ flexDirection: 'row', gap: 10 },
-  cancelSmall: { flex: 1, height: 44, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  cancelSmallTxt:{ fontSize: 13, fontWeight: '700' },
-  confirmSmall:{ flex: 2, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  confirmSmallTxt:{ fontSize: 13, fontWeight: '800', color: '#080C18' },
-  actionArea:  { marginBottom: 8 },
-  actionBtn:   { borderRadius: 16, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  actionBtnTxt:{ fontSize: 15, fontWeight: '900', color: '#080C18' },
+
+  statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
+  statusPillTxt: { fontSize: 12, fontWeight: '700' },
+
+  // Sheet: fixed height — the bounded container
+  sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, overflow: 'hidden' },
+
+  scrollContent: { paddingHorizontal: 20, paddingTop: 20 },
+
+  fareStrip:  { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
+  fareItem:   { flex: 1, alignItems: 'center', paddingVertical: 11, gap: 3 },
+  fareLabel:  { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
+  fareValue:  { fontSize: 14, fontWeight: '900' },
+  fareDivider:{ width: 1 },
+
+  // Action footer — pinned below the bounded scroll area
+  actionFooter: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 14, paddingHorizontal: 20 },
+
+  completeCard:    { borderRadius: 16, borderWidth: 1.5, padding: 14, marginBottom: 10 },
+  completeTitle:   { fontSize: 15, fontWeight: '800', marginBottom: 3 },
+  completeSub:     { fontSize: 12, marginBottom: 12 },
+  inputRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },
+  nameInput:       { flex: 1, fontSize: 14, fontWeight: '500' },
+  completeActions: { flexDirection: 'row', gap: 10 },
+  cancelSmall:     { flex: 1, height: 44, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  cancelSmallTxt:  { fontSize: 13, fontWeight: '700' },
+  confirmSmall:    { flex: 2, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  confirmSmallTxt: { fontSize: 13, fontWeight: '800', color: '#080C18' },
+
+  actionBtn:    { borderRadius: 16, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  actionBtnTxt: { fontSize: 15, fontWeight: '900', color: '#080C18' },
 });

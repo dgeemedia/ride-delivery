@@ -17,6 +17,9 @@ import { GOOGLE_MAPS_API_KEY } from '../../config/constants';
 
 const { width, height } = Dimensions.get('window');
 
+// ── Fixed sheet height — bounded container pattern (mirrors PartnerDashboard) ─
+const SHEET_SNAP = height * 0.75;
+
 const LAGOS_DEFAULT = {
   latitude: 6.5244, longitude: 3.3792,
   latitudeDelta: 0.012, longitudeDelta: 0.012,
@@ -202,7 +205,7 @@ const PackageInput = ({ label, icon, placeholder, value, onChangeText, keyboardT
         onChangeText={onChangeText}
         keyboardType={keyboardType ?? 'default'}
         multiline={multiline}
-        returnKeyType="done"
+        returnKeyType={multiline ? 'default' : 'done'}
         underlineColorAndroid="transparent"
       />
     </View>
@@ -418,9 +421,9 @@ export default function RequestDeliveryScreen({ navigation }) {
   const pinBounce = useRef(new Animated.Value(0)).current;
 
   const TAB_CONTENT_H  = 54;
-  const sheetPadBottom = insets.bottom + TAB_CONTENT_H + 24;
-  const backBtnTop     = insets.top + 14;
-  const sheetTop       = insets.top + 70;
+  // Bottom padding for scroll content: clears tab bar + safe area
+  const scrollPadBottom = insets.bottom + TAB_CONTENT_H + 24;
+  const backBtnTop      = insets.top + 14;
 
   const setQuickDestination = (dest) => {
     setDropoffCoords({ lat: dest.lat, lng: dest.lng });
@@ -621,7 +624,7 @@ export default function RequestDeliveryScreen({ navigation }) {
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Map */}
+      {/* ── FULL-SCREEN MAP ── */}
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
@@ -668,7 +671,7 @@ export default function RequestDeliveryScreen({ navigation }) {
 
       <View style={s.topGradient} pointerEvents="none" />
 
-      {/* Back button */}
+      {/* ── Back button — always absolute, always on top ── */}
       <TouchableOpacity
         style={[s.backBtn, { top: backBtnTop, backgroundColor: theme.card + 'CC', borderColor: theme.border }]}
         onPress={() => {
@@ -681,9 +684,12 @@ export default function RequestDeliveryScreen({ navigation }) {
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      {/* Pin-placing mode overlay */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          PIN-PLACING MODE — absolute overlays, no sheet
+      ══════════════════════════════════════════════════════════════════════ */}
       {isPickingLocation && (
         <>
+          {/* Crosshair */}
           <View style={s.crosshairWrap} pointerEvents="none">
             <View style={[s.pinShadow, { backgroundColor: pinColor + '40' }]} />
             <Animated.View style={[s.pinAnimWrap, { transform: [{ translateY: pinBounce }] }]}>
@@ -694,6 +700,7 @@ export default function RequestDeliveryScreen({ navigation }) {
             </Animated.View>
           </View>
 
+          {/* Label bar */}
           <View style={[s.pinLabelBar, { top: backBtnTop, backgroundColor: theme.card + 'EE' }]}>
             <View style={[s.pinLabelDot, { backgroundColor: pinColor }]} />
             <Text style={[s.pinLabelTxt, { color: theme.foreground }]}>
@@ -701,7 +708,12 @@ export default function RequestDeliveryScreen({ navigation }) {
             </Text>
           </View>
 
-          <View style={[s.confirmBar, { backgroundColor: theme.background, borderTopColor: theme.border, paddingBottom: sheetPadBottom }]}>
+          {/* Confirm bar */}
+          <View style={[s.confirmBar, {
+            backgroundColor: theme.background,
+            borderTopColor: theme.border,
+            paddingBottom: insets.bottom + TAB_CONTENT_H + 24,
+          }]}>
             <View style={s.confirmBarInner}>
               <View style={[s.confirmBarDot, { backgroundColor: pinColor }]} />
               <View style={{ flex: 1 }}>
@@ -727,25 +739,50 @@ export default function RequestDeliveryScreen({ navigation }) {
         </>
       )}
 
-      {/* Bottom sheet */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          KEYBOARD-AWARE SHEET WRAPPER
+          ─────────────────────────────────────────────────────────────────────
+          • Fills the whole screen but is transparent to touches (box-none)
+            so the map remains interactive underneath.
+          • KeyboardAvoidingView with behavior="padding" (iOS) shrinks its own
+            height when the keyboard appears. Because the sheet is a flex child
+            pinned to the bottom via justifyContent:"flex-end", the sheet
+            rides upward as the KAV shrinks — revealing the focused input.
+          • On Android, behavior="height" achieves the same effect.
+          ──────────────────────────────────────────────────────────────────── */}
       {!isPickingLocation && (
-        <Animated.View style={[s.sheet, {
-          backgroundColor: theme.background,
-          borderColor:     theme.border,
-          opacity:         fadeA,
-          paddingBottom:   sheetPadBottom,
-          top:             sheetTop,
-          overflow:        'hidden',
-        }]}>
-          <StepDots step={step} accentColor={accentColor} theme={theme} />
+        <KeyboardAvoidingView
+          style={s.kavWrapper}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          pointerEvents="box-none"
+        >
+          {/* ── Bounded bottom sheet ── */}
+          <Animated.View
+            style={[s.sheet, {
+              backgroundColor: theme.background,
+              borderColor:     theme.border,
+              opacity:         fadeA,
+              height:          SHEET_SNAP,
+            }]}
+          >
+            {/* Handle + step dots */}
+            <View style={s.sheetTop}>
+              <View style={[s.handle, { backgroundColor: theme.border }]} />
+              <StepDots step={step} accentColor={accentColor} theme={theme} />
+            </View>
 
-          {/* ── Step 1 ── */}
-          {step === 1 && (
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {/* ── STEP 1 — locations + package info ── */}
+            {step === 1 && (
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                contentContainerStyle={[s.scrollContent, { paddingBottom: scrollPadBottom }]}
+              >
                 <Text style={[s.sheetTitle, { color: theme.foreground }]}>Send a Package</Text>
                 <Text style={[s.sheetSub, { color: theme.hint }]}>Search or tap the map icon to pin your location</Text>
 
+                {/* Location row */}
                 <View style={s.locationRow}>
                   <View style={s.routeDots}>
                     <View style={[s.routeDot, { backgroundColor: accentColor }]} />
@@ -801,6 +838,7 @@ export default function RequestDeliveryScreen({ navigation }) {
                   </View>
                 </View>
 
+                {/* Quick destinations */}
                 <Text style={[s.quickLabel, { color: theme.hint }]}>POPULAR DESTINATIONS</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
                   {QUICK_DESTINATIONS.map((d) => (
@@ -816,6 +854,7 @@ export default function RequestDeliveryScreen({ navigation }) {
                   ))}
                 </ScrollView>
 
+                {/* Package & contact fields */}
                 <Text style={[s.sectionLabel, { color: theme.hint }]}>CONTACT & PACKAGE</Text>
                 <PackageInput label="PICKUP CONTACT"      icon="call-outline"          placeholder="+234 801 234 5678"                    value={pickupContact}      onChangeText={setPickupContact}      keyboardType="phone-pad" theme={theme} accentColor={accentColor} />
                 <PackageInput label="DROP-OFF CONTACT"    icon="call-outline"          placeholder="+234 801 234 5678"                    value={dropoffContact}     onChangeText={setDropoffContact}     keyboardType="phone-pad" theme={theme} accentColor={accentColor} />
@@ -838,182 +877,196 @@ export default function RequestDeliveryScreen({ navigation }) {
                   </Text>
                 </TouchableOpacity>
               </ScrollView>
-            </KeyboardAvoidingView>
-          )}
+            )}
 
-          {/* ── Step 2 ── */}
-          {step === 2 && (
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-              <View style={[s.feeBadge, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <View style={s.feeItem}>
-                  <Ionicons name="navigate-outline" size={13} color={theme.hint} />
-                  <Text style={[s.feeVal, { color: theme.foreground }]}>{distanceKm?.toFixed(1)} km</Text>
-                </View>
-                <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
-                <View style={s.feeItem}>
-                  <Ionicons name="time-outline" size={13} color={theme.hint} />
-                  <Text style={[s.feeVal, { color: theme.foreground }]}>~{etaMinutes} min</Text>
-                </View>
-                <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
-                <View style={s.feeItem}>
-                  <Ionicons name="cash-outline" size={13} color={theme.hint} />
-                  <Text style={[s.feeVal, { color: accentColor }]}>
-                    ₦{feeEstimate?.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-                  </Text>
-                </View>
-              </View>
-
-              <Text style={[s.sheetTitle, { color: theme.foreground }]}>
-                {loadingPartners ? 'Finding partners…' : `${partners.length} partner${partners.length !== 1 ? 's' : ''} nearby`}
-              </Text>
-              <Text style={[s.sheetSub, { color: theme.hint }]}>Choose who handles your package</Text>
-
-              {loadingPartners ? (
-                <ActivityIndicator color={accentColor} style={{ marginTop: 24 }} />
-              ) : partners.length === 0 ? (
-                <View style={s.empty}>
-                  <Ionicons name="bicycle-outline" size={36} color={theme.hint} />
-                  <Text style={[s.emptyTxt, { color: theme.hint }]}>No partners available right now</Text>
-                  <TouchableOpacity onPress={proceedToMap} style={[s.retryBtn, { borderColor: accentColor + '50' }]}>
-                    <Text style={[s.retryTxt, { color: accentColor }]}>Retry</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <FlatList
-                  data={partners}
-                  keyExtractor={(p) => p.partnerId}
-                  renderItem={({ item }) => (
-                    <PartnerCard partner={item}
-                      selected={selectedPartner?.partnerId === item.partnerId}
-                      onSelect={handleSelectPartner}
-                      accentColor={accentColor}
-                      theme={theme}
-                    />
-                  )}
-                  showsVerticalScrollIndicator={false}
-                  style={{ maxHeight: 240 }}
-                  nestedScrollEnabled
-                />
-              )}
-
-              {selectedPartner && (
-                <TouchableOpacity
-                  style={[s.primaryBtn, { backgroundColor: accentColor, marginTop: 12 }]}
-                  onPress={() => setStep(3)} activeOpacity={0.88}
-                >
-                  <Text style={[s.primaryBtnTxt, { color: accentFg }]}>Continue with {selectedPartner.firstName}</Text>
-                  <Ionicons name="arrow-forward" size={16} color={accentFg} />
-                </TouchableOpacity>
-              )}
-            </ScrollView>
-          )}
-
-          {/* ── Step 3 ── */}
-          {step === 3 && selectedPartner && (
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={[s.sheetTitle, { color: theme.foreground }]}>Confirm Delivery</Text>
-
-              <View style={[s.confirmRoute, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <View style={s.confirmRow}>
-                  <View style={[s.cDot, { backgroundColor: accentColor }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[s.confirmAddr, { color: theme.foreground }]} numberOfLines={2}>{pickupAddress}</Text>
-                    <Text style={[s.confirmContact, { color: theme.hint }]}>{pickupContact}</Text>
+            {/* ── STEP 2 — select partner ── */}
+            {step === 2 && (
+              <ScrollView
+                style={{ flex: 1 }}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={[s.scrollContent, { paddingBottom: scrollPadBottom }]}
+              >
+                {/* Fee badge */}
+                <View style={[s.feeBadge, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                  <View style={s.feeItem}>
+                    <Ionicons name="navigate-outline" size={13} color={theme.hint} />
+                    <Text style={[s.feeVal, { color: theme.foreground }]}>{distanceKm?.toFixed(1)} km</Text>
                   </View>
-                </View>
-                <View style={[s.confirmRouteLine, { backgroundColor: theme.border }]} />
-                <View style={s.confirmRow}>
-                  <View style={[s.cDot, { backgroundColor: '#E05555' }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[s.confirmAddr, { color: theme.foreground }]} numberOfLines={2}>{dropoffAddress}</Text>
-                    <Text style={[s.confirmContact, { color: theme.hint }]}>{dropoffContact}</Text>
+                  <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
+                  <View style={s.feeItem}>
+                    <Ionicons name="time-outline" size={13} color={theme.hint} />
+                    <Text style={[s.feeVal, { color: theme.foreground }]}>~{etaMinutes} min</Text>
                   </View>
-                </View>
-              </View>
-
-              <View style={[s.packageSummary, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <View style={s.pkgRow}>
-                  <Ionicons name="cube-outline" size={14} color={theme.hint} />
-                  <Text style={[s.pkgTxt, { color: theme.foreground }]}>{packageDescription}</Text>
-                </View>
-                {packageWeight ? (
-                  <View style={s.pkgRow}>
-                    <Ionicons name="scale-outline" size={14} color={theme.hint} />
-                    <Text style={[s.pkgTxt, { color: theme.foreground }]}>{packageWeight} kg</Text>
-                  </View>
-                ) : null}
-                {packageNotes ? (
-                  <View style={s.pkgRow}>
-                    <Ionicons name="document-text-outline" size={14} color={theme.hint} />
-                    <Text style={[s.pkgTxt, { color: theme.hint }]} numberOfLines={2}>{packageNotes}</Text>
-                  </View>
-                ) : null}
-              </View>
-
-              <View style={[s.confirmCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <View style={s.confirmDriver}>
-                  <View style={[s.confirmAvatarFallback, { backgroundColor: accentColor + '22' }]}>
-                    <Ionicons name={VEHICLE_ICONS[selectedPartner.vehicleType] ?? 'bicycle-outline'} size={20} color={accentColor} />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[s.confirmName, { color: theme.foreground }]}>
-                      {selectedPartner.firstName} {selectedPartner.lastName}
-                    </Text>
-                    <Text style={[s.confirmVehicle, { color: theme.hint }]}>
-                      {selectedPartner.vehicleType} • {selectedPartner.vehiclePlate ?? '—'}
-                    </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                      <Ionicons name="star" size={12} color="#C9A96E" />
-                      <Text style={[s.confirmMeta, { color: theme.hint }]}>{selectedPartner.rating?.toFixed(1) ?? '–'}</Text>
-                      <Text style={[s.confirmMeta, { color: theme.border }]}>•</Text>
-                      <Text style={[s.confirmMeta, { color: theme.hint }]}>{selectedPartner.totalDeliveries} deliveries</Text>
-                    </View>
-                  </View>
-                  <View style={s.confirmFareBox}>
-                    <Text style={[s.confirmFareLabel, { color: theme.hint }]}>FEE</Text>
-                    <Text style={[s.confirmFare, { color: accentColor }]}>
+                  <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
+                  <View style={s.feeItem}>
+                    <Ionicons name="cash-outline" size={13} color={theme.hint} />
+                    <Text style={[s.feeVal, { color: accentColor }]}>
                       ₦{feeEstimate?.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
                     </Text>
-                    <Text style={[s.confirmFareLabel, { color: theme.hint }]}>CASH</Text>
                   </View>
                 </View>
-              </View>
 
-              <View style={[s.etaStrip, { backgroundColor: accentColor + '12', borderColor: accentColor + '30' }]}>
-                <Ionicons name="time-outline" size={14} color={accentColor} />
-                <Text style={[s.etaTxt, { color: accentColor }]}>
-                  Partner arrives in approx. {selectedPartner.etaMinutes ?? etaMinutes} minutes
+                <Text style={[s.sheetTitle, { color: theme.foreground }]}>
+                  {loadingPartners ? 'Finding partners…' : `${partners.length} partner${partners.length !== 1 ? 's' : ''} nearby`}
                 </Text>
-              </View>
+                <Text style={[s.sheetSub, { color: theme.hint }]}>Choose who handles your package</Text>
 
-              <TouchableOpacity
-                style={[s.primaryBtn, { backgroundColor: requesting ? accentColor + '80' : accentColor }]}
-                onPress={confirmDelivery}
-                disabled={requesting}
-                activeOpacity={0.88}
-              >
-                {requesting ? (
-                  <ActivityIndicator color={accentFg} />
+                {loadingPartners ? (
+                  <ActivityIndicator color={accentColor} style={{ marginTop: 24 }} />
+                ) : partners.length === 0 ? (
+                  <View style={s.empty}>
+                    <Ionicons name="bicycle-outline" size={36} color={theme.hint} />
+                    <Text style={[s.emptyTxt, { color: theme.hint }]}>No partners available right now</Text>
+                    <TouchableOpacity onPress={proceedToMap} style={[s.retryBtn, { borderColor: accentColor + '50' }]}>
+                      <Text style={[s.retryTxt, { color: accentColor }]}>Retry</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : (
-                  <>
-                    <Ionicons name="checkmark-circle-outline" size={18} color={accentFg} />
-                    <Text style={[s.primaryBtnTxt, { color: accentFg }]}>Confirm Delivery</Text>
-                  </>
+                  <FlatList
+                    data={partners}
+                    keyExtractor={(p) => p.partnerId}
+                    renderItem={({ item }) => (
+                      <PartnerCard partner={item}
+                        selected={selectedPartner?.partnerId === item.partnerId}
+                        onSelect={handleSelectPartner}
+                        accentColor={accentColor}
+                        theme={theme}
+                      />
+                    )}
+                    showsVerticalScrollIndicator={false}
+                    style={{ maxHeight: 240 }}
+                    nestedScrollEnabled
+                  />
                 )}
-              </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[s.secondaryBtn, { borderColor: theme.border }]}
-                onPress={() => setStep(2)} activeOpacity={0.8}
+                {selectedPartner && (
+                  <TouchableOpacity
+                    style={[s.primaryBtn, { backgroundColor: accentColor, marginTop: 12 }]}
+                    onPress={() => setStep(3)} activeOpacity={0.88}
+                  >
+                    <Text style={[s.primaryBtnTxt, { color: accentFg }]}>Continue with {selectedPartner.firstName}</Text>
+                    <Ionicons name="arrow-forward" size={16} color={accentFg} />
+                  </TouchableOpacity>
+                )}
+              </ScrollView>
+            )}
+
+            {/* ── STEP 3 — confirm delivery ── */}
+            {step === 3 && selectedPartner && (
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={[s.scrollContent, { paddingBottom: scrollPadBottom }]}
               >
-                <Text style={[s.secondaryBtnTxt, { color: theme.hint }]}>Change Partner</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          )}
-        </Animated.View>
+                <Text style={[s.sheetTitle, { color: theme.foreground }]}>Confirm Delivery</Text>
+
+                {/* Route summary */}
+                <View style={[s.confirmRoute, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                  <View style={s.confirmRow}>
+                    <View style={[s.cDot, { backgroundColor: accentColor }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.confirmAddr, { color: theme.foreground }]} numberOfLines={2}>{pickupAddress}</Text>
+                      <Text style={[s.confirmContact, { color: theme.hint }]}>{pickupContact}</Text>
+                    </View>
+                  </View>
+                  <View style={[s.confirmRouteLine, { backgroundColor: theme.border }]} />
+                  <View style={s.confirmRow}>
+                    <View style={[s.cDot, { backgroundColor: '#E05555' }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.confirmAddr, { color: theme.foreground }]} numberOfLines={2}>{dropoffAddress}</Text>
+                      <Text style={[s.confirmContact, { color: theme.hint }]}>{dropoffContact}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Package summary */}
+                <View style={[s.packageSummary, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                  <View style={s.pkgRow}>
+                    <Ionicons name="cube-outline" size={14} color={theme.hint} />
+                    <Text style={[s.pkgTxt, { color: theme.foreground }]}>{packageDescription}</Text>
+                  </View>
+                  {packageWeight ? (
+                    <View style={s.pkgRow}>
+                      <Ionicons name="scale-outline" size={14} color={theme.hint} />
+                      <Text style={[s.pkgTxt, { color: theme.foreground }]}>{packageWeight} kg</Text>
+                    </View>
+                  ) : null}
+                  {packageNotes ? (
+                    <View style={s.pkgRow}>
+                      <Ionicons name="document-text-outline" size={14} color={theme.hint} />
+                      <Text style={[s.pkgTxt, { color: theme.hint }]} numberOfLines={2}>{packageNotes}</Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Partner card */}
+                <View style={[s.confirmCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                  <View style={s.confirmDriver}>
+                    <View style={[s.confirmAvatarFallback, { backgroundColor: accentColor + '22' }]}>
+                      <Ionicons name={VEHICLE_ICONS[selectedPartner.vehicleType] ?? 'bicycle-outline'} size={20} color={accentColor} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={[s.confirmName, { color: theme.foreground }]}>
+                        {selectedPartner.firstName} {selectedPartner.lastName}
+                      </Text>
+                      <Text style={[s.confirmVehicle, { color: theme.hint }]}>
+                        {selectedPartner.vehicleType} • {selectedPartner.vehiclePlate ?? '—'}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                        <Ionicons name="star" size={12} color="#C9A96E" />
+                        <Text style={[s.confirmMeta, { color: theme.hint }]}>{selectedPartner.rating?.toFixed(1) ?? '–'}</Text>
+                        <Text style={[s.confirmMeta, { color: theme.border }]}>•</Text>
+                        <Text style={[s.confirmMeta, { color: theme.hint }]}>{selectedPartner.totalDeliveries} deliveries</Text>
+                      </View>
+                    </View>
+                    <View style={s.confirmFareBox}>
+                      <Text style={[s.confirmFareLabel, { color: theme.hint }]}>FEE</Text>
+                      <Text style={[s.confirmFare, { color: accentColor }]}>
+                        ₦{feeEstimate?.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                      </Text>
+                      <Text style={[s.confirmFareLabel, { color: theme.hint }]}>CASH</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* ETA strip */}
+                <View style={[s.etaStrip, { backgroundColor: accentColor + '12', borderColor: accentColor + '30' }]}>
+                  <Ionicons name="time-outline" size={14} color={accentColor} />
+                  <Text style={[s.etaTxt, { color: accentColor }]}>
+                    Partner arrives in approx. {selectedPartner.etaMinutes ?? etaMinutes} minutes
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[s.primaryBtn, { backgroundColor: requesting ? accentColor + '80' : accentColor }]}
+                  onPress={confirmDelivery}
+                  disabled={requesting}
+                  activeOpacity={0.88}
+                >
+                  {requesting ? (
+                    <ActivityIndicator color={accentFg} />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle-outline" size={18} color={accentFg} />
+                      <Text style={[s.primaryBtnTxt, { color: accentFg }]}>Confirm Delivery</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[s.secondaryBtn, { borderColor: theme.border }]}
+                  onPress={() => setStep(2)} activeOpacity={0.8}
+                >
+                  <Text style={[s.secondaryBtnTxt, { color: theme.hint }]}>Change Partner</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </Animated.View>
+        </KeyboardAvoidingView>
       )}
 
-      {/* Location Search Modal */}
+      {/* ── Location Search Modal ── */}
       <LocationSearchModal
         visible={searchModal !== null}
         type={searchModal}
@@ -1033,20 +1086,26 @@ export default function RequestDeliveryScreen({ navigation }) {
 
 const s = StyleSheet.create({
   root: { flex: 1 },
-  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 120, backgroundColor: 'rgba(0,0,0,0.4)' },
 
+  topGradient: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: 120,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+
+  // Back button — always absolute, sits above everything
   backBtn: {
     position: 'absolute', left: 20, width: 42, height: 42,
     borderRadius: 13, borderWidth: 1,
     justifyContent: 'center', alignItems: 'center', zIndex: 99,
   },
 
+  // ── Pin-placing overlays ──────────────────────────────────────────────────
   crosshairWrap: {
     position: 'absolute', top: '50%', left: '50%',
     marginTop: -56, marginLeft: -20,
     alignItems: 'center', zIndex: 50,
   },
-  pinShadow: { width: 16, height: 8, borderRadius: 8, marginTop: 4 },
+  pinShadow:   { width: 16, height: 8, borderRadius: 8, marginTop: 4 },
   pinAnimWrap: { alignItems: 'center', position: 'absolute', bottom: 8 },
   pinCircle: {
     width: 40, height: 40, borderRadius: 20,
@@ -1065,6 +1124,7 @@ const s = StyleSheet.create({
   },
   pinLabelDot: { width: 8, height: 8, borderRadius: 4 },
   pinLabelTxt: { fontSize: 13, fontWeight: '600' },
+
   confirmBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
@@ -1076,18 +1136,52 @@ const s = StyleSheet.create({
   confirmBarLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 2, marginBottom: 4 },
   confirmBarAddr:  { fontSize: 14, fontWeight: '600', lineHeight: 20 },
   confirmBarBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderRadius: 16, height: 52,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, borderRadius: 16, height: 52,
   },
-  confirmBarBtnTxt: { fontSize: 15, fontWeight: '800'},
+  confirmBarBtnTxt: { fontSize: 15, fontWeight: '800' },
 
-  sheet: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1,
-    paddingHorizontal: 24, paddingTop: 22,
+  // ── Keyboard-aware wrapper ────────────────────────────────────────────────
+  // Fills the screen; pointerEvents="box-none" keeps the map touchable while
+  // still routing touch events to the sheet (a real child view).
+  kavWrapper: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
   },
+
+  // ── Bottom sheet — bounded container (height: SHEET_SNAP, set inline) ────
+  sheet: {
+    width: '100%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    overflow: 'hidden',
+    // Shadow matches PartnerDashboardScreen
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 22,
+  },
+
+  // Handle + step dots sit above the ScrollView
+  sheetTop: {
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingHorizontal: 24,
+    paddingBottom: 0,
+  },
+  handle: { width: 38, height: 4, borderRadius: 2, marginBottom: 14 },
+
+  // All step ScrollViews share the same horizontal padding + top gap
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 6,
+  },
+
+  // ── Content ───────────────────────────────────────────────────────────────
   sheetTitle: { fontSize: 20, fontWeight: '900', letterSpacing: -0.3, marginBottom: 4 },
-  sheetSub:   { fontSize: 12, fontWeight: '500', marginBottom: 16 },
+  sheetSub:   { fontSize: 12, fontWeight: '500', marginBottom: 18 },
 
   locationRow: { flexDirection: 'row', gap: 12, alignItems: 'stretch', marginBottom: 20 },
   routeDots:   { alignItems: 'center', paddingTop: 18, paddingBottom: 18 },
@@ -1114,7 +1208,7 @@ const s = StyleSheet.create({
   secondaryBtn:   { borderRadius: 14, paddingVertical: 12, alignItems: 'center', borderWidth: 1, marginTop: 8 },
   secondaryBtnTxt:{ fontSize: 14, fontWeight: '600' },
 
-  feeBadge:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
+  feeBadge:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
   feeItem:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10 },
   feeVal:     { fontSize: 13, fontWeight: '700' },
   feeDivider: { width: 1 },
