@@ -4,16 +4,16 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, Dimensions, Animated, ActivityIndicator,
-  RefreshControl,
+  RefreshControl, Platform,
 } from 'react-native';
 import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
-import { Ionicons }                    from '@expo/vector-icons';
-import { SafeAreaView }                from 'react-native-safe-area-context';
-import { useTheme }                    from '../../context/ThemeContext';
-import { useScrollY }                  from '../../context/ScrollContext';
+import { Ionicons }             from '@expo/vector-icons';
+import { useSafeAreaInsets }    from 'react-native-safe-area-context';
+import { useTheme }             from '../../context/ThemeContext';
+import { useScrollY }           from '../../context/ScrollContext';
 import { partnerAPI, walletAPI, deliveryAPI } from '../../services/api';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const COURIER_ACCENT = '#34D399';
 const GOLD           = '#FFB800';
 const PURPLE         = '#A78BFA';
@@ -43,11 +43,6 @@ const TX_CONFIG = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Filter deliveries by period client-side.
- * Safe fallback if the /deliveries/history endpoint ignores the period param.
- */
 const filterByPeriod = (list, period) => {
   if (period === 'all') return list;
   const now  = new Date();
@@ -122,9 +117,6 @@ const tr = StyleSheet.create({
   status:   { fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DeliveryRow
-// ─────────────────────────────────────────────────────────────────────────────
 const DeliveryRow = ({ delivery, theme }) => {
   const gross = Number(
     delivery.grossFee ??
@@ -148,7 +140,6 @@ const DeliveryRow = ({ delivery, theme }) => {
       <View style={[dr.iconWrap, { backgroundColor: COURIER_ACCENT + '15' }]}>
         <Ionicons name="cube-outline" size={16} color={COURIER_ACCENT} />
       </View>
-
       <View style={{ flex: 1 }}>
         <Text style={[dr.addr, { color: theme.foreground }]} numberOfLines={1}>
           {delivery.pickupAddress?.split(',')[0]} → {delivery.dropoffAddress?.split(',')[0]}
@@ -157,7 +148,6 @@ const DeliveryRow = ({ delivery, theme }) => {
           {[delivery.packageDescription, dateStr].filter(Boolean).join(' • ')}
         </Text>
       </View>
-
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={[dr.net, { color: COURIER_ACCENT }]}>
           +₦{net.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
@@ -184,6 +174,15 @@ const dr = StyleSheet.create({
 export default function PartnerEarningsScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const scrollY         = useScrollY();
+  const insets          = useSafeAreaInsets();
+
+  // ── Bounded scroll height (mirrors ProfileScreen / DriverDashboard) ─────────
+  const TAB_H        = 54;
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+  // Header inner height: paddingVertical(14*2) + back button height(40) = 68
+  const HEADER_INNER_H = 68;
+  const HEADER_H       = insets.top + HEADER_INNER_H;
+  const SCROLL_H       = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
 
   const [period,       setPeriod]       = useState('week');
   const [earnings,     setEarnings]     = useState(null);
@@ -200,7 +199,6 @@ export default function PartnerEarningsScreen({ navigation }) {
   const fadeA    = useRef(new Animated.Value(0)).current;
   const balanceA = useRef(new Animated.Value(0)).current;
 
-  // 🟢 Scroll handler defined unconditionally at top level
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       scrollY.value = event.contentOffset.y;
@@ -220,17 +218,14 @@ export default function PartnerEarningsScreen({ navigation }) {
       if (earningsRes.status === 'fulfilled') {
         setEarnings(earningsRes.value?.data);
       }
-
       if (walletRes.status === 'fulfilled') {
         setWallet(walletRes.value?.data?.wallet ?? walletRes.value?.data);
       }
-
       if (txRes.status === 'fulfilled') {
         setTransactions(txRes.value?.data?.transactions ?? []);
         setTxTotal(txRes.value?.data?.pagination?.total ?? 0);
         setTxPage(1);
       }
-
       if (deliveriesRes.status === 'fulfilled') {
         const all = deliveriesRes.value?.data?.deliveries ?? [];
         setDeliveries(filterByPeriod(all, period));
@@ -278,37 +273,43 @@ export default function PartnerEarningsScreen({ navigation }) {
         backgroundColor={theme.background}
       />
 
-      <SafeAreaView edges={['top', 'left', 'right']}>
-        {/* ── Header ── */}
-        <View style={[s.header, { borderBottomColor: theme.border }]}>
-          <TouchableOpacity
-            style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={18} color={theme.foreground} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { color: theme.foreground }]}>Earnings & Wallet</Text>
-            <Text style={[s.headerSub,   { color: theme.hint }]}>Track your income and payouts</Text>
-          </View>
-          <TouchableOpacity
-            style={[s.payoutBtn, { backgroundColor: COURIER_ACCENT }]}
-            onPress={() => navigation.navigate('Withdrawal')}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="cash-outline" size={15} color="#080C18" />
-            <Text style={s.payoutBtnTxt}>Payout</Text>
-          </TouchableOpacity>
+      {/* ── Sticky header (mirrors ProfileScreen pattern) ── */}
+      <View style={[
+        s.header,
+        {
+          paddingTop:        insets.top,
+          height:            HEADER_H,
+          backgroundColor:   theme.background,
+          borderBottomColor: theme.border,
+        },
+      ]}>
+        <TouchableOpacity
+          style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={18} color={theme.foreground} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={[s.headerTitle, { color: theme.foreground }]}>Earnings & Wallet</Text>
+          <Text style={[s.headerSub,   { color: theme.hint }]}>Track your income and payouts</Text>
         </View>
-      </SafeAreaView>
+        <TouchableOpacity
+          style={[s.payoutBtn, { backgroundColor: COURIER_ACCENT }]}
+          onPress={() => navigation.navigate('Withdrawal')}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="cash-outline" size={15} color="#080C18" />
+          <Text style={s.payoutBtnTxt}>Payout</Text>
+        </TouchableOpacity>
+      </View>
 
+      {/* ── Bounded scroll container (key: explicit pixel height) ── */}
       {loading ? (
         <View style={s.center}>
           <ActivityIndicator color={COURIER_ACCENT} size="large" />
         </View>
       ) : (
-        // 🔧 FIX: Wrap scroll view in standard Animated.View to avoid native driver conflict
-        <Animated.View style={{ flex: 1, opacity: fadeA }}>
+        <Animated.View style={{ height: SCROLL_H, opacity: fadeA }}>
           <AnimatedRN.ScrollView
             contentContainerStyle={s.scroll}
             showsVerticalScrollIndicator={false}
@@ -519,8 +520,8 @@ const s = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20 },
 
-  // Header
-  header:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
+  // ── Sticky header (matches ProfileScreen layout) ──
+  header:      { flexDirection: 'row', alignItems: 'flex-end', gap: 12, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
   backBtn:     { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '900' },
   headerSub:   { fontSize: 11, marginTop: 1 },

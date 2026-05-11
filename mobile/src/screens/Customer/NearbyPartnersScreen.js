@@ -1,31 +1,12 @@
 // mobile/src/screens/Customer/NearbyPartnersScreen.js
-//
-// Mirrors NearbyDriversScreen but for delivery partners.
-//
-// TWO MODES:
-//   browse   — navigated from HomeScreen "Couriers" card with no package info.
-//              Tapping a partner → navigates to RequestDelivery with the
-//              partner pre-selected (partnerId + partnerName in route params).
-//   booking  — navigated from RequestDeliveryScreen step 2 with full delivery
-//              details already set. Tapping a partner → ConfirmSheet → books.
-//
-// Route params (browse mode):
-//   { pickupLat, pickupLng, pickupAddress }
-//
-// Route params (booking mode — all of the above PLUS):
-//   { dropoffLat, dropoffLng, dropoffAddress,
-//     pickupContact, dropoffContact,
-//     packageDescription, packageWeight, packageNotes,
-//     feeEstimate, distanceKm, etaMinutes }
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   StatusBar, Dimensions, Animated, ActivityIndicator,
-  Alert, RefreshControl,
+  Alert, RefreshControl, ScrollView,
 } from 'react-native';
 import { Ionicons }        from '@expo/vector-icons';
-import { SafeAreaView }    from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }        from '../../context/ThemeContext';
 import { deliveryAPI }     from '../../services/api';
 
@@ -87,7 +68,6 @@ const PartnerCard = ({ partner, onPress, theme }) => {
         activeOpacity={1}
       >
         <View style={pc.top}>
-          {/* Avatar */}
           <View style={[pc.avatar, { backgroundColor: TEAL + '22' }]}>
             <Ionicons name={vehicleIcon} size={22} color={TEAL} />
           </View>
@@ -104,18 +84,16 @@ const PartnerCard = ({ partner, onPress, theme }) => {
             </Text>
           </View>
 
-          {/* ETA */}
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={[pc.eta, { color: GREEN }]}>~{partner.etaMinutes} min</Text>
             <Text style={[pc.dist, { color: theme.hint }]}>{partner.distanceKm} km</Text>
           </View>
         </View>
 
-        {/* Pills */}
         <View style={pc.pills}>
-          <Pill icon={vehicleIcon}          label={partner.vehicleType}           color={PURPLE} theme={theme} />
-          <Pill icon="navigate-outline"     label={`${partner.distanceKm} km`}    color={theme.hint} theme={theme} />
-          <Pill icon="time-outline"         label={`~${partner.etaMinutes} min`}  color={theme.hint} theme={theme} />
+          <Pill icon={vehicleIcon}          label={partner.vehicleType}                      color={PURPLE}     theme={theme} />
+          <Pill icon="navigate-outline"     label={`${partner.distanceKm} km`}               color={theme.hint} theme={theme} />
+          <Pill icon="time-outline"         label={`~${partner.etaMinutes} min`}             color={theme.hint} theme={theme} />
           <Pill icon="star-outline"         label={`${partner.totalDeliveries ?? 0} deliveries`} color={theme.hint} theme={theme} />
         </View>
       </TouchableOpacity>
@@ -134,11 +112,11 @@ const pc = StyleSheet.create({
   pills:      { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 });
 
-// ─── ConfirmSheet (booking mode only) ────────────────────────────────────────
+// ─── ConfirmSheet — fully scrollable, sticky CTA ─────────────────────────────
 const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
   const [requesting, setRequesting] = useState(false);
-  const slideA = useRef(new Animated.Value(height)).current;
-  const accentFg = theme.accentFg ?? '#111111';
+  const slideA    = useRef(new Animated.Value(height)).current;
+  const insets    = useSafeAreaInsets();
 
   const feeEstimate = routeParams.feeEstimate ?? 0;
   const vehicleIcon = VEHICLE_ICON[partner.vehicleType] ?? 'bicycle-outline';
@@ -177,61 +155,168 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
 
   return (
     <View style={cs.overlay}>
+      {/* Dimmed backdrop */}
       <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={close} activeOpacity={1} />
-      <Animated.View style={[cs.sheet, { backgroundColor: theme.background, borderColor: theme.border, transform: [{ translateY: slideA }] }]}>
-        <View style={[cs.handle, { backgroundColor: theme.border }]} />
-        <Text style={[cs.sheetTitle, { color: theme.foreground }]}>Confirm Courier</Text>
 
-        {/* Partner mini card */}
-        <View style={[cs.miniCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-          <View style={[cs.miniAvatar, { backgroundColor: TEAL + '22' }]}>
-            <Ionicons name={vehicleIcon} size={20} color={TEAL} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[cs.miniName, { color: theme.foreground }]}>
-              {partner.firstName} {partner.lastName}
-            </Text>
-            <Text style={[cs.miniVehicle, { color: theme.hint }]}>
-              {partner.vehicleType} • {partner.vehiclePlate ?? '—'}
-            </Text>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <StarRating rating={partner.rating ?? 0} theme={theme} />
-            <Text style={[cs.miniEta, { color: theme.hint }]}>~{partner.etaMinutes} min away</Text>
-          </View>
+      <Animated.View
+        style={[
+          cs.sheet,
+          {
+            backgroundColor: theme.background,
+            borderColor: theme.border,
+            maxHeight: height * 0.88,
+            paddingBottom: insets.bottom + 8,
+            transform: [{ translateY: slideA }],
+          },
+        ]}
+      >
+        {/* Handle */}
+        <View style={[cs.handle, { backgroundColor: theme.border }]} />
+
+        {/* Title row with close button */}
+        <View style={cs.titleRow}>
+          <Text style={[cs.sheetTitle, { color: theme.foreground }]}>Confirm Courier</Text>
+          <TouchableOpacity onPress={close} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="close-circle" size={24} color={theme.hint} />
+          </TouchableOpacity>
         </View>
 
-        {/* Route summary */}
-        {routeParams.pickupAddress ? (
-          <View style={[cs.routeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <View style={cs.routeRow}>
-              <View style={[cs.routeDot, { backgroundColor: TEAL }]} />
-              <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={1}>
-                {routeParams.pickupAddress}
+        {/* ── Scrollable body ── */}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={cs.scrollContent}
+        >
+          {/* Partner mini card */}
+          <View style={[cs.miniCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+            <View style={[cs.miniAvatar, { backgroundColor: TEAL + '22' }]}>
+              <Ionicons name={vehicleIcon} size={20} color={TEAL} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[cs.miniName, { color: theme.foreground }]}>
+                {partner.firstName} {partner.lastName}
+              </Text>
+              <Text style={[cs.miniVehicle, { color: theme.hint }]}>
+                {partner.vehicleType} • {partner.vehiclePlate ?? '—'}
               </Text>
             </View>
-            <View style={[cs.routeLine, { backgroundColor: theme.border }]} />
-            <View style={cs.routeRow}>
-              <View style={[cs.routeDot, { backgroundColor: RED }]} />
-              <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={1}>
-                {routeParams.dropoffAddress}
-              </Text>
+            <View style={{ alignItems: 'flex-end' }}>
+              <StarRating rating={partner.rating ?? 0} theme={theme} />
+              <Text style={[cs.miniEta, { color: theme.hint }]}>~{partner.etaMinutes} min away</Text>
             </View>
           </View>
-        ) : null}
 
-        {/* Fee */}
-        {feeEstimate > 0 && (
-          <View style={[cs.feeRow, { backgroundColor: TEAL + '10', borderColor: TEAL + '30' }]}>
-            <Ionicons name="cash-outline" size={14} color={TEAL} />
-            <Text style={[cs.feeTxt, { color: TEAL }]}>
-              Estimated fee: ₦{feeEstimate.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+          {/* Package summary (if booking mode) */}
+          {routeParams.packageDescription ? (
+            <View style={[cs.packageCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={cs.packageRow}>
+                <Ionicons name="cube-outline" size={14} color={TEAL} />
+                <Text style={[cs.packageLabel, { color: theme.hint }]}>Package</Text>
+                <Text style={[cs.packageValue, { color: theme.foreground }]} numberOfLines={1}>
+                  {routeParams.packageDescription}
+                </Text>
+              </View>
+              {routeParams.packageWeight ? (
+                <View style={cs.packageRow}>
+                  <Ionicons name="scale-outline" size={14} color={TEAL} />
+                  <Text style={[cs.packageLabel, { color: theme.hint }]}>Weight</Text>
+                  <Text style={[cs.packageValue, { color: theme.foreground }]}>
+                    {routeParams.packageWeight} kg
+                  </Text>
+                </View>
+              ) : null}
+              {routeParams.packageNotes ? (
+                <View style={cs.packageRow}>
+                  <Ionicons name="document-text-outline" size={14} color={TEAL} />
+                  <Text style={[cs.packageLabel, { color: theme.hint }]}>Note</Text>
+                  <Text style={[cs.packageValue, { color: theme.foreground }]} numberOfLines={2}>
+                    {routeParams.packageNotes}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* Route card */}
+          {routeParams.pickupAddress ? (
+            <View style={[cs.routeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={cs.routeRow}>
+                <View style={[cs.routeDot, { backgroundColor: TEAL }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[cs.routeLabel, { color: theme.hint }]}>Pickup</Text>
+                  <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
+                    {routeParams.pickupAddress}
+                  </Text>
+                  {routeParams.pickupContact ? (
+                    <Text style={[cs.routeContact, { color: theme.hint }]}>{routeParams.pickupContact}</Text>
+                  ) : null}
+                </View>
+              </View>
+              <View style={[cs.routeLine, { backgroundColor: theme.border }]} />
+              <View style={cs.routeRow}>
+                <View style={[cs.routeDot, { backgroundColor: RED }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[cs.routeLabel, { color: theme.hint }]}>Dropoff</Text>
+                  <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
+                    {routeParams.dropoffAddress}
+                  </Text>
+                  {routeParams.dropoffContact ? (
+                    <Text style={[cs.routeContact, { color: theme.hint }]}>{routeParams.dropoffContact}</Text>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Fee estimate */}
+          {feeEstimate > 0 && (
+            <View style={[cs.feeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={cs.fareRow}>
+                <Text style={[cs.fareLabel, { color: theme.hint }]}>Distance</Text>
+                <Text style={[cs.fareValue, { color: theme.foreground }]}>
+                  {routeParams.distanceKm ? `${routeParams.distanceKm} km` : '—'}
+                </Text>
+              </View>
+              {routeParams.etaMinutes ? (
+                <View style={cs.fareRow}>
+                  <Text style={[cs.fareLabel, { color: theme.hint }]}>Est. time</Text>
+                  <Text style={[cs.fareValue, { color: theme.foreground }]}>~{routeParams.etaMinutes} min</Text>
+                </View>
+              ) : null}
+              <View style={[cs.fareDivider, { backgroundColor: theme.border }]} />
+              <View style={cs.fareRow}>
+                <Text style={[cs.fareLabel, { color: theme.hint, fontWeight: '700' }]}>Estimated fee</Text>
+                <Text style={[cs.fareValue, { color: TEAL, fontWeight: '800' }]}>
+                  ₦{feeEstimate.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Info note */}
+          <View style={[cs.infoNote, { backgroundColor: TEAL + '10', borderColor: TEAL + '30' }]}>
+            <Ionicons name="information-circle-outline" size={14} color={TEAL} />
+            <Text style={[cs.infoNoteTxt, { color: TEAL }]}>
+              Final fee may vary based on actual distance and time. Payment is cash on delivery unless otherwise agreed.
             </Text>
           </View>
-        )}
 
-        <View style={cs.actions}>
-          <TouchableOpacity style={[cs.cancelBtn, { borderColor: theme.border }]} onPress={close} disabled={requesting}>
+          {/* Pills summary */}
+          <View style={cs.pillsRow}>
+            <Pill icon={vehicleIcon}      label={partner.vehicleType}                       color={PURPLE}     theme={theme} />
+            <Pill icon="navigate-outline" label={`${partner.distanceKm} km`}                color={theme.hint} theme={theme} />
+            <Pill icon="time-outline"     label={`~${partner.etaMinutes} min`}              color={theme.hint} theme={theme} />
+            <Pill icon="star-outline"     label={`${partner.totalDeliveries ?? 0} deliveries`} color={theme.hint} theme={theme} />
+          </View>
+        </ScrollView>
+
+        {/* ── Sticky action bar ── */}
+        <View style={[cs.actions, { borderTopColor: theme.border }]}>
+          <TouchableOpacity
+            style={[cs.cancelBtn, { borderColor: theme.border }]}
+            onPress={close}
+            disabled={requesting}
+          >
             <Text style={[cs.cancelTxt, { color: theme.hint }]}>Back</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -257,41 +342,63 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
 };
 
 const cs = StyleSheet.create({
-  overlay:     { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
-  sheet:       { borderTopLeftRadius: 30, borderTopRightRadius: 30, borderTopWidth: 1, padding: 24, paddingTop: 14, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.25, shadowRadius: 14, elevation: 18 },
-  handle:      { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  sheetTitle:  { fontSize: 20, fontWeight: '900', marginBottom: 16 },
-  miniCard:    { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 14 },
-  miniAvatar:  { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  miniName:    { fontSize: 14, fontWeight: '800', marginBottom: 2 },
-  miniVehicle: { fontSize: 11, fontWeight: '500' },
-  miniEta:     { fontSize: 11, marginTop: 3 },
-  routeCard:   { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 12 },
-  routeRow:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  routeDot:    { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
-  routeLine:   { width: 2, height: 18, marginLeft: 4, marginVertical: 4 },
-  routeAddr:   { flex: 1, fontSize: 13, fontWeight: '600' },
-  feeRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 16 },
-  feeTxt:      { fontSize: 13, fontWeight: '700', flex: 1 },
-  actions:     { flexDirection: 'row', gap: 12 },
-  cancelBtn:   { flex: 1, height: 54, borderRadius: 14, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
-  cancelTxt:   { fontSize: 15, fontWeight: '700' },
-  confirmBtn:  { flex: 2, height: 54, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  confirmTxt:  { fontSize: 15, fontWeight: '900', color: '#FFFFFF' },
+  overlay:      { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
+  sheet:        {
+    borderTopLeftRadius: 30, borderTopRightRadius: 30,
+    borderTopWidth: 1,
+    paddingTop: 14,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.25, shadowRadius: 14, elevation: 18,
+  },
+  handle:       { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  titleRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 14 },
+  sheetTitle:   { fontSize: 20, fontWeight: '900' },
+  scrollContent:{ paddingHorizontal: 24, paddingBottom: 8 },
+  miniCard:     { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 14 },
+  miniAvatar:   { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+  miniName:     { fontSize: 14, fontWeight: '800', marginBottom: 2 },
+  miniVehicle:  { fontSize: 11, fontWeight: '500' },
+  miniEta:      { fontSize: 11, marginTop: 3 },
+  packageCard:  { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 12, gap: 8 },
+  packageRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  packageLabel: { fontSize: 12, fontWeight: '600', width: 58 },
+  packageValue: { flex: 1, fontSize: 12, fontWeight: '600' },
+  routeCard:    { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 12 },
+  routeRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  routeDot:     { width: 10, height: 10, borderRadius: 5, flexShrink: 0, marginTop: 16 },
+  routeLine:    { width: 2, height: 18, marginLeft: 4, marginVertical: 4 },
+  routeLabel:   { fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 2 },
+  routeAddr:    { fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  routeContact: { fontSize: 11, marginTop: 2 },
+  feeCard:      { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 12 },
+  fareRow:      { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  fareLabel:    { fontSize: 13 },
+  fareValue:    { fontSize: 13, fontWeight: '600' },
+  fareDivider:  { height: 1, marginVertical: 6 },
+  infoNote:     { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 12 },
+  infoNoteTxt:  { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '500' },
+  pillsRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  // Sticky actions
+  actions:      { flexDirection: 'row', gap: 12, paddingHorizontal: 24, paddingTop: 14, borderTopWidth: 1 },
+  cancelBtn:    { flex: 1, height: 54, borderRadius: 14, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
+  cancelTxt:    { fontSize: 15, fontWeight: '700' },
+  confirmBtn:   { flex: 2, height: 54, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  confirmTxt:   { fontSize: 15, fontWeight: '900', color: '#FFFFFF' },
 });
 
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function NearbyPartnersScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
-  const params = route.params ?? {};
+  const insets          = useSafeAreaInsets();
+  const params          = route.params ?? {};
 
   // Detect mode: if dropoffAddress is present, we're in booking flow
   const isBookingMode = !!(params.dropoffAddress && params.pickupContact);
 
-  const [partners,         setPartners]         = useState([]);
-  const [loading,          setLoading]          = useState(true);
-  const [refreshing,       setRefreshing]       = useState(false);
-  const [selectedPartner,  setSelectedPartner]  = useState(null);
+  const [partners,        setPartners]        = useState([]);
+  const [loading,         setLoading]         = useState(true);
+  const [refreshing,      setRefreshing]      = useState(false);
+  const [selectedPartner, setSelectedPartner] = useState(null);
 
   const fadeA = useRef(new Animated.Value(0)).current;
 
@@ -303,7 +410,6 @@ export default function NearbyPartnersScreen({ route, navigation }) {
         pickupLng: params.pickupLng,
         radiusKm:  params.radiusKm ?? 15,
       });
-      // Filter out any mock/stub partners just like RequestRideScreen does for drivers
       const list = (res?.data?.partners ?? res?.partners ?? [])
         .filter(p => !String(p.partnerId).startsWith('mock-'));
       setPartners(list);
@@ -323,10 +429,8 @@ export default function NearbyPartnersScreen({ route, navigation }) {
 
   const handlePartnerPress = (partner) => {
     if (isBookingMode) {
-      // Full booking — show confirm sheet
       setSelectedPartner(partner);
     } else {
-      // Browse mode — jump to RequestDelivery with partner pre-selected
       navigation.navigate('RequestDelivery', {
         preSelectedPartnerId:   partner.partnerId,
         preSelectedPartnerName: `${partner.firstName} ${partner.lastName}`,
@@ -345,9 +449,13 @@ export default function NearbyPartnersScreen({ route, navigation }) {
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
 
-      <SafeAreaView edges={['top', 'left', 'right']}>
+      {/* ── Fixed header ── */}
+      <SafeAreaView edges={['top', 'left', 'right']} style={{ backgroundColor: theme.background }}>
         <View style={[s.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
@@ -372,7 +480,7 @@ export default function NearbyPartnersScreen({ route, navigation }) {
         </View>
       </SafeAreaView>
 
-      {/* Route strip — only shown in booking mode */}
+      {/* ── Route strip — only in booking mode ── */}
       {isBookingMode && params.dropoffAddress ? (
         <View style={[s.routeStrip, { backgroundColor: theme.backgroundAlt, borderBottomColor: theme.border }]}>
           <View style={s.routeItem}>
@@ -396,6 +504,7 @@ export default function NearbyPartnersScreen({ route, navigation }) {
         </View>
       ) : null}
 
+      {/* ── Scrollable list ── */}
       {loading ? (
         <View style={s.center}>
           <ActivityIndicator color={TEAL} size="large" />
@@ -413,7 +522,10 @@ export default function NearbyPartnersScreen({ route, navigation }) {
                 theme={theme}
               />
             )}
-            contentContainerStyle={s.list}
+            contentContainerStyle={[
+              s.list,
+              { paddingBottom: insets.bottom + 32 },
+            ]}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={TEAL} />
@@ -452,7 +564,7 @@ export default function NearbyPartnersScreen({ route, navigation }) {
         </Animated.View>
       )}
 
-      {/* Confirm sheet — booking mode only */}
+      {/* ── ConfirmSheet — booking mode only ── */}
       {selectedPartner && isBookingMode && (
         <ConfirmSheet
           partner={selectedPartner}
@@ -478,7 +590,7 @@ const s = StyleSheet.create({
   routeDot:    { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   routeText:   { fontSize: 12, fontWeight: '600', flex: 1 },
   fareChip:    { fontSize: 13, fontWeight: '900', marginLeft: 8 },
-  list:        { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 120 },
+  list:        { paddingHorizontal: 16, paddingTop: 14 },
   listHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   listCount:   { fontSize: 12, fontWeight: '700' },
   modeBadge:   { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },

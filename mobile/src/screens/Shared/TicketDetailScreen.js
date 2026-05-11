@@ -28,7 +28,6 @@ const formatTime = (iso) => {
 
 // ── Message bubble ─────────────────────────────────────────────────────────────
 const Bubble = ({ message, isAdmin, theme }) => {
-  const accentFg = theme.accentFg ?? '#111';
   return (
     <View style={[bu.row, isAdmin && bu.rowReverse]}>
       <View style={[bu.avatar, { backgroundColor: isAdmin ? theme.accent + '20' : theme.backgroundAlt, borderColor: theme.border }]}>
@@ -103,6 +102,7 @@ export default function TicketDetailScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [reply,      setReply]      = useState('');
   const [sending,    setSending]    = useState(false);
+  const [headerH,    setHeaderH]    = useState(80);
 
   const scrollRef = useRef(null);
   const fadeA     = useRef(new Animated.Value(0)).current;
@@ -137,15 +137,10 @@ export default function TicketDetailScreen({ navigation, route }) {
     if (!reply.trim() || sending) return;
     setSending(true);
     try {
-      // Customers can't reply via admin endpoint — we re-submit as a new ticket message
-      // by using the same support ticket reply endpoint if you expose one,
-      // or just show the reply optimistically and note it goes via email.
-      // For now we call the submit endpoint as a follow-up note:
       await supportAPI.addReply(ticketId, reply.trim());
       setReply('');
       load();
     } catch {
-      // Gracefully fail — message may not be supported yet
       setReply('');
     } finally {
       setSending(false);
@@ -154,16 +149,23 @@ export default function TicketDetailScreen({ navigation, route }) {
 
   const status = ticket ? (STATUS_META[ticket.status] ?? STATUS_META.open) : null;
 
+  // KEY: KVO offset = safeArea top + measured header height
+  const kvoOffset = insets.top + headerH + (Platform.OS === 'android' ? 16 : 0);
+
   return (
+    // KEY: KAV as root with flex:1 — owns the entire screen height
     <KeyboardAvoidingView
       style={[s.root, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 20}
+      keyboardVerticalOffset={kvoOffset}
     >
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      {/* Header */}
-      <View style={[s.header, { paddingTop: insets.top + 14, borderBottomColor: theme.border }]}>
+      {/* ── Header — fixed at top, measured for KVO offset accuracy ── */}
+      <View
+        style={[s.header, { paddingTop: insets.top + 14, borderBottomColor: theme.border }]}
+        onLayout={e => setHeaderH(e.nativeEvent.layout.height)}
+      >
         <TouchableOpacity
           style={[s.backBtn, { backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
           onPress={() => navigation.goBack()}
@@ -183,6 +185,7 @@ export default function TicketDetailScreen({ navigation, route }) {
         </View>
       </View>
 
+      {/* ── Body — flex:1 fills everything below the header ── */}
       {loading ? (
         <View style={s.center}><ActivityIndicator color={theme.accent} size="large" /></View>
       ) : !ticket ? (
@@ -190,12 +193,21 @@ export default function TicketDetailScreen({ navigation, route }) {
           <Text style={[s.notFound, { color: theme.hint }]}>Ticket not found.</Text>
         </View>
       ) : (
-        <>
+        // KEY: flex:1 wrapper distributes height between ScrollView and reply bar.
+        // Without this, ScrollView tries to size itself to content and reply bar
+        // either overlaps or gets pushed off screen.
+        <View style={{ flex: 1 }}>
+
+          {/* KEY: flex:1 on ScrollView itself — fills the View above, leaving
+                room for the reply bar below. This is the mirror of ProfileScreen's
+                bounded-height container approach. */}
           <Animated.ScrollView
             ref={scrollRef}
-            style={{ opacity: fadeA }}
-            contentContainerStyle={[s.scroll, { paddingBottom: 16 }]}
+            style={{ flex: 1, opacity: fadeA }}
+            contentContainerStyle={[s.scroll, { paddingBottom: isClosed ? insets.bottom + 20 : 16 }]}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -242,11 +254,21 @@ export default function TicketDetailScreen({ navigation, route }) {
             )}
           </Animated.ScrollView>
 
-          {/* Reply bar — hidden when closed */}
+          {/* ── Reply bar — sits BELOW the ScrollView inside the flex:1 View.
+                It never overlaps content; the ScrollView shrinks to make room.
+                paddingBottom uses insets.bottom for home-indicator clearance. ── */}
           {!isClosed && (
-            <View style={[s.replyBar, { backgroundColor: theme.backgroundAlt, borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
+            <View style={[s.replyBar, {
+              backgroundColor: theme.backgroundAlt,
+              borderTopColor: theme.border,
+              paddingBottom: insets.bottom + 8,
+            }]}>
               <TextInput
-                style={[s.replyInput, { color: theme.foreground, backgroundColor: theme.background, borderColor: theme.border }]}
+                style={[s.replyInput, {
+                  color: theme.foreground,
+                  backgroundColor: theme.background,
+                  borderColor: theme.border,
+                }]}
                 placeholder="Add a follow-up message..."
                 placeholderTextColor={theme.hint}
                 value={reply}
@@ -267,22 +289,25 @@ export default function TicketDetailScreen({ navigation, route }) {
               </TouchableOpacity>
             </View>
           )}
-        </>
+
+        </View>
       )}
     </KeyboardAvoidingView>
   );
 }
 
 const s = StyleSheet.create({
+  // KEY: flex:1 on root — KAV needs this to fill the screen
   root:   { flex: 1 },
+
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1, gap: 12 },
   backBtn:{ width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   title:  { fontSize: 15, fontWeight: '800' },
   statusLine: { fontSize: 11, fontWeight: '600', marginTop: 2 },
 
-  scroll: { paddingHorizontal: 20, paddingTop: 16 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  notFound:{ fontSize: 14 },
+  scroll:   { paddingHorizontal: 20, paddingTop: 16 },
+  center:   { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  notFound: { fontSize: 14 },
 
   awaitingWrap: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 16 },
   awaitingTxt:  { flex: 1, fontSize: 13, lineHeight: 19 },
@@ -291,6 +316,7 @@ const s = StyleSheet.create({
   resolvedTitle: { fontSize: 13, fontWeight: '800', marginBottom: 3 },
   resolvedSub:   { fontSize: 12, lineHeight: 18 },
 
+  // KEY: reply bar is in-flow (not absolute), so it pushes ScrollView up naturally
   replyBar:   { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1 },
   replyInput: { flex: 1, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, maxHeight: 100 },
   sendBtn:    { width: 44, height: 44, borderRadius: 13, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },

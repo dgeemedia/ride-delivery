@@ -3,11 +3,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   StatusBar, Animated, ActivityIndicator, Platform,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 import { walletAPI } from '../../services/api';
+
+const { height } = Dimensions.get('window');
 
 const TX_ICONS = {
   CREDIT:     { icon: 'arrow-down-circle-outline', color: '#5DAA72' },
@@ -55,11 +58,20 @@ const tx = StyleSheet.create({
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 export default function WalletScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const insets          = useSafeAreaInsets();
+
   const [wallet,  setWallet]  = useState(null);
   const [txns,    setTxns]    = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState('ALL');
   const fadeA = useRef(new Animated.Value(0)).current;
+
+  // ── Bounded scroll height (mirrors ProfileScreen) ──────────────────────────
+  const TAB_H        = 54;
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+  const HEADER_INNER_H = 50;
+  const HEADER_H     = insets.top + HEADER_INNER_H;
+  const SCROLL_H     = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
 
   useEffect(() => {
     fetchWallet();
@@ -82,14 +94,22 @@ export default function WalletScreen({ navigation }) {
   const filtered = filter === 'ALL' ? txns : txns.filter(t => t.type === filter);
 
   return (
-    <SafeAreaView style={[s.root, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
+    <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar
         barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
         backgroundColor={theme.background}
       />
 
-      {/* Header */}
-      <View style={[s.header, { borderBottomColor: theme.border }]}>
+      {/* ── Sticky header (mirrors ProfileScreen pattern) ── */}
+      <View style={[
+        s.header,
+        {
+          paddingTop:        insets.top,
+          height:            HEADER_H,
+          backgroundColor:   theme.background,
+          borderBottomColor: theme.border,
+        },
+      ]}>
         <TouchableOpacity
           style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
           onPress={() => navigation.goBack()}
@@ -100,108 +120,118 @@ export default function WalletScreen({ navigation }) {
         <View style={{ width: 38 }} />
       </View>
 
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-        <Animated.View style={{ opacity: fadeA }}>
+      {/* ── Bounded scroll container (key: explicit pixel height) ── */}
+      <View style={{ height: SCROLL_H }}>
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          bounces
+          overScrollMode="always"
+        >
+          <Animated.View style={{ opacity: fadeA }}>
 
-          {/* Balance card */}
-          <View style={[s.balanceCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <Text style={[s.balanceLabel, { color: theme.hint }]}>AVAILABLE BALANCE</Text>
-            {loading ? (
-              <ActivityIndicator color={theme.accent} style={{ marginVertical: 12 }} />
-            ) : (
-              <Text style={[s.balanceAmount, { color: theme.foreground }]}>
-                ₦{Number(wallet?.balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
-              </Text>
-            )}
-            <Text style={[s.currency, { color: theme.hint }]}>{wallet?.currency ?? 'NGN'}</Text>
+            {/* Balance card */}
+            <View style={[s.balanceCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <Text style={[s.balanceLabel, { color: theme.hint }]}>AVAILABLE BALANCE</Text>
+              {loading ? (
+                <ActivityIndicator color={theme.accent} style={{ marginVertical: 12 }} />
+              ) : (
+                <Text style={[s.balanceAmount, { color: theme.foreground }]}>
+                  ₦{Number(wallet?.balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                </Text>
+              )}
+              <Text style={[s.currency, { color: theme.hint }]}>{wallet?.currency ?? 'NGN'}</Text>
 
-            {/* Action buttons */}
-            <View style={s.actionRow}>
-              <TouchableOpacity
-                style={[s.actionBtn, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
-                onPress={() => navigation.navigate('WalletTopUp')}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="add" size={18} color={theme.accentFg} />
-                <Text style={[s.actionBtnTxt, { color: theme.accentFg }]}>Top Up</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.actionBtnOutline, { borderColor: theme.border, backgroundColor: theme.background }]}
-                onPress={() => navigation.navigate('Transfer')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="swap-horizontal-outline" size={17} color={theme.muted} />
-                <Text style={[s.actionBtnOutlineTxt, { color: theme.muted }]}>Transfer</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.actionBtnOutline, { borderColor: theme.border, backgroundColor: theme.background }]}
-                onPress={() => navigation.navigate('Withdraw')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="arrow-up-outline" size={17} color={theme.muted} />
-                <Text style={[s.actionBtnOutlineTxt, { color: theme.muted }]}>Withdraw</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Filter tabs */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={s.filterScroll}
-            contentContainerStyle={s.filterRow}
-          >
-            {FILTERS.map(f => {
-              const active = filter === f;
-              return (
+              {/* Action buttons */}
+              <View style={s.actionRow}>
                 <TouchableOpacity
-                  key={f}
-                  onPress={() => setFilter(f)}
-                  style={[
-                    s.filterTab,
-                    {
-                      backgroundColor: active ? theme.accent + '18' : 'transparent',
-                      borderColor: active ? theme.accent : theme.border,
-                    },
-                  ]}
-                  activeOpacity={0.75}
+                  style={[s.actionBtn, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
+                  onPress={() => navigation.navigate('WalletTopUp')}
+                  activeOpacity={0.85}
                 >
-                  <Text style={[s.filterTxt, { color: active ? theme.accent : theme.hint }]}>{f}</Text>
+                  <Ionicons name="add" size={18} color={theme.accentFg} />
+                  <Text style={[s.actionBtnTxt, { color: theme.accentFg }]}>Top Up</Text>
                 </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Transactions */}
-          <View style={[s.txCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <Text style={[s.txTitle, { color: theme.hint }]}>TRANSACTIONS</Text>
-            {loading ? (
-              <ActivityIndicator color={theme.accent} style={{ marginVertical: 24 }} />
-            ) : filtered.length === 0 ? (
-              <View style={s.empty}>
-                <Ionicons name="wallet-outline" size={36} color={theme.hint} style={{ marginBottom: 10 }} />
-                <Text style={[s.emptyTxt, { color: theme.muted }]}>No transactions yet</Text>
-                <Text style={[s.emptyHint, { color: theme.hint }]}>Top up your wallet to get started</Text>
+                <TouchableOpacity
+                  style={[s.actionBtnOutline, { borderColor: theme.border, backgroundColor: theme.background }]}
+                  onPress={() => navigation.navigate('Transfer')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="swap-horizontal-outline" size={17} color={theme.muted} />
+                  <Text style={[s.actionBtnOutlineTxt, { color: theme.muted }]}>Transfer</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.actionBtnOutline, { borderColor: theme.border, backgroundColor: theme.background }]}
+                  onPress={() => navigation.navigate('Withdraw')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="arrow-up-outline" size={17} color={theme.muted} />
+                  <Text style={[s.actionBtnOutlineTxt, { color: theme.muted }]}>Withdraw</Text>
+                </TouchableOpacity>
               </View>
-            ) : (
-              filtered.map((item, i) => (
-                <TxRow key={item.id ?? i} item={item} theme={theme} last={i === filtered.length - 1} />
-              ))
-            )}
-          </View>
+            </View>
 
-        </Animated.View>
-      </ScrollView>
-    </SafeAreaView>
+            {/* Filter tabs */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={s.filterScroll}
+              contentContainerStyle={s.filterRow}
+            >
+              {FILTERS.map(f => {
+                const active = filter === f;
+                return (
+                  <TouchableOpacity
+                    key={f}
+                    onPress={() => setFilter(f)}
+                    style={[
+                      s.filterTab,
+                      {
+                        backgroundColor: active ? theme.accent + '18' : 'transparent',
+                        borderColor: active ? theme.accent : theme.border,
+                      },
+                    ]}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[s.filterTxt, { color: active ? theme.accent : theme.hint }]}>{f}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Transactions */}
+            <View style={[s.txCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <Text style={[s.txTitle, { color: theme.hint }]}>TRANSACTIONS</Text>
+              {loading ? (
+                <ActivityIndicator color={theme.accent} style={{ marginVertical: 24 }} />
+              ) : filtered.length === 0 ? (
+                <View style={s.empty}>
+                  <Ionicons name="wallet-outline" size={36} color={theme.hint} style={{ marginBottom: 10 }} />
+                  <Text style={[s.emptyTxt, { color: theme.muted }]}>No transactions yet</Text>
+                  <Text style={[s.emptyHint, { color: theme.hint }]}>Top up your wallet to get started</Text>
+                </View>
+              ) : (
+                filtered.map((item, i) => (
+                  <TxRow key={item.id ?? i} item={item} theme={theme} last={i === filtered.length - 1} />
+                ))
+              )}
+            </View>
+
+          </Animated.View>
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   root:               { flex: 1 },
-  header:             { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
+  // ── Sticky header (matches ProfileScreen layout) ──
+  header:             { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 20, paddingBottom: 10, borderBottomWidth: 1 },
   backBtn:            { width: 38, height: 38, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle:        { fontSize: 16, fontWeight: '700' },
-  scroll:             { paddingHorizontal: 20, paddingBottom: 120, paddingTop: 20 },
+  headerTitle:        { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700' },
+  // ── Scroll content ──
+  scroll:             { paddingHorizontal: 20, paddingBottom: 32, paddingTop: 20 },
   balanceCard:        { borderRadius: 18, borderWidth: 1, padding: 24, marginBottom: 18, alignItems: 'center' },
   balanceLabel:       { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 10 },
   balanceAmount:      { fontSize: 38, fontWeight: '900', letterSpacing: -1, marginBottom: 4 },

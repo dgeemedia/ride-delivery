@@ -2,7 +2,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  StatusBar, Dimensions, Animated, Linking, Alert,
+  StatusBar, Dimensions, Animated, Linking, Alert, Platform,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,14 +10,15 @@ import { useTheme }          from '../../context/ThemeContext';
 import { useAuth }           from '../../context/AuthContext';
 import { settingsAPI }       from '../../services/api';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const CONTACT_DEFAULTS = {
   email:    'support@diakite.app',
   phone:    '+2348000000000',
-  whatsapp: '2348000000000',   // wa.me format — no leading +
+  whatsapp: '2348000000000',
 };
 
+// ── Section ───────────────────────────────────────────────────────────────────
 const Section = ({ title, children, theme }) => (
   <View style={[sec.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     {title && <Text style={[sec.title, { color: theme.hint }]}>{title}</Text>}
@@ -29,6 +30,7 @@ const sec = StyleSheet.create({
   title: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 6 },
 });
 
+// ── MenuItem ──────────────────────────────────────────────────────────────────
 const MenuItem = ({ icon, label, onPress, danger, value, theme, last, badge }) => {
   const color = danger ? '#E05555' : theme.foreground;
   return (
@@ -63,6 +65,7 @@ const mi = StyleSheet.create({
   badgeTxt:{ fontSize: 10, fontWeight: '800' },
 });
 
+// ── URL helper ────────────────────────────────────────────────────────────────
 const openURL = async (url) => {
   try {
     const supported = await Linking.canOpenURL(url);
@@ -71,6 +74,9 @@ const openURL = async (url) => {
   } catch { Alert.alert('Error', 'Could not open the link.'); }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 export default function SupportScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const { user }        = useAuth();
@@ -78,6 +84,8 @@ export default function SupportScreen({ navigation }) {
   const fadeA           = useRef(new Animated.Value(0)).current;
 
   const [contact, setContact] = useState(CONTACT_DEFAULTS);
+  // KEY: measure real header height so SCROLL_H is always exact
+  const [headerH, setHeaderH] = useState(56);
 
   useEffect(() => {
     settingsAPI.getContactSettings()
@@ -92,17 +100,21 @@ export default function SupportScreen({ navigation }) {
         });
       })
       .catch(() => {});
-  }, []);
 
-  useEffect(() => {
     Animated.timing(fadeA, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
-  // Helper: navigate to LegalScreen with the right content key and title
   const openLegal = (contentKey, title) =>
     navigation.navigate('Legal', { contentKey, title });
 
+  // KEY: ProfileScreen-style bounded scroll area formula
+  // headerH already includes insets.top (via paddingTop in header style)
+  // insets.bottom reserved for paddingBottom inside the scroll
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+  const SCROLL_H     = height - headerH - insets.bottom - EXTRA_BOTTOM;
+
   return (
+    // Root View — no KAV needed (no text inputs on this screen)
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar
         barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
@@ -110,136 +122,158 @@ export default function SupportScreen({ navigation }) {
       />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
-      <TouchableOpacity
-        style={[s.backBtn, { top: insets.top + 14, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
-        onPress={() => navigation.goBack()}
-        activeOpacity={0.85}
+      {/* ── Sticky header — replaces the absolute back button ────────────────
+           Measured via onLayout so SCROLL_H below is always pixel-perfect.
+           paddingTop accounts for the safe-area notch/status-bar height.     */}
+      <View
+        style={[s.header, {
+          paddingTop:        insets.top + 10,
+          backgroundColor:   theme.background,
+          borderBottomColor: theme.border,
+        }]}
+        onLayout={e => setHeaderH(e.nativeEvent.layout.height)}
       >
-        <Ionicons name="arrow-back" size={20} color={theme.foreground} />
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.85}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="arrow-back" size={20} color={theme.foreground} />
+        </TouchableOpacity>
+        <Text style={[s.headerTitle, { color: theme.foreground }]}>Help & Support</Text>
+        {/* Spacer mirrors backBtn width to keep title perfectly centred */}
+        <View style={s.headerSpacer} />
+      </View>
 
-      <ScrollView
-        contentContainerStyle={[s.scroll, { paddingTop: insets.top + 70, paddingBottom: insets.bottom + 32 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <Animated.View style={{ opacity: fadeA }}>
+      {/* KEY: bounded pixel-height container — gives ScrollView a concrete
+           parent boundary so it can calculate its own scroll area correctly
+           on both iOS and Android. Same pattern as ProfileScreen.            */}
+      <View style={{ height: SCROLL_H }}>
+        <ScrollView
+          contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 32 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View style={{ opacity: fadeA }}>
 
-          {/* Hero */}
-          <View style={s.hero}>
-            <View style={[s.heroIcon, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '30' }]}>
-              <Ionicons name="headset-outline" size={32} color={theme.accent} />
+            {/* Hero */}
+            <View style={s.hero}>
+              <View style={[s.heroIcon, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '30' }]}>
+                <Ionicons name="headset-outline" size={32} color={theme.accent} />
+              </View>
+              <Text style={[s.heroTitle, { color: theme.foreground }]}>We're here to help</Text>
+              <Text style={[s.heroSub, { color: theme.hint }]}>Reach out anytime — we respond within 24 hours.</Text>
             </View>
-            <Text style={[s.heroTitle, { color: theme.foreground }]}>Help & Support</Text>
-            <Text style={[s.heroSub, { color: theme.hint }]}>We're here to help. Reach out anytime.</Text>
-          </View>
 
-          {/* Support Tickets */}
-          <Section title="SUPPORT TICKETS" theme={theme}>
-            <MenuItem
-              icon="chatbubble-ellipses-outline"
-              label="Submit a Ticket"
-              theme={theme}
-              onPress={() => navigation.navigate('SubmitTicket')}
-            />
-            <MenuItem
-              icon="list-outline"
-              label="My Tickets"
-              theme={theme}
-              last
-              onPress={() => navigation.navigate('MyTickets')}
-            />
-          </Section>
+            {/* Support Tickets */}
+            <Section title="SUPPORT TICKETS" theme={theme}>
+              <MenuItem
+                icon="chatbubble-ellipses-outline"
+                label="Submit a Ticket"
+                theme={theme}
+                onPress={() => navigation.navigate('SubmitTicket')}
+              />
+              <MenuItem
+                icon="list-outline"
+                label="My Tickets"
+                theme={theme}
+                last
+                onPress={() => navigation.navigate('MyTickets')}
+              />
+            </Section>
 
-          {/* Contact — driven by admin settings */}
-          <Section title="CONTACT US" theme={theme}>
-            <MenuItem
-              icon="mail-outline"
-              label="Email Support"
-              value={contact.email}
-              theme={theme}
-              onPress={() => openURL(`mailto:${contact.email}`)}
-            />
-            <MenuItem
-              icon="call-outline"
-              label="Call Us"
-              value={contact.phone}
-              theme={theme}
-              onPress={() => openURL(`tel:${contact.phone}`)}
-            />
-            <MenuItem
-              icon="logo-whatsapp"
-              label="WhatsApp"
-              value={`+${contact.whatsapp}`}
-              theme={theme}
-              last
-              onPress={() => openURL(`https://wa.me/${contact.whatsapp}`)}
-            />
-          </Section>
+            {/* Contact — driven by admin settings */}
+            <Section title="CONTACT US" theme={theme}>
+              <MenuItem
+                icon="mail-outline"
+                label="Email Support"
+                value={contact.email}
+                theme={theme}
+                onPress={() => openURL(`mailto:${contact.email}`)}
+              />
+              <MenuItem
+                icon="call-outline"
+                label="Call Us"
+                value={contact.phone}
+                theme={theme}
+                onPress={() => openURL(`tel:${contact.phone}`)}
+              />
+              <MenuItem
+                icon="logo-whatsapp"
+                label="WhatsApp"
+                value={`+${contact.whatsapp}`}
+                theme={theme}
+                last
+                onPress={() => openURL(`https://wa.me/${contact.whatsapp}`)}
+              />
+            </Section>
 
-          {/* Self-service */}
-          <Section title="SELF-SERVICE" theme={theme}>
-            {/* Help Center now opens in-app LegalScreen */}
-            <MenuItem
-              icon="help-buoy-outline"
-              label="Help Center"
-              theme={theme}
-              onPress={() => openLegal('help_content', 'Help Center')}
-            />
-            {/* <MenuItem
-              icon="chatbubble-outline"
-              label="Live Chat"
-              theme={theme}
-              onPress={() => Alert.alert('Coming Soon', 'Live chat will be available in the next update.')}
-            /> */}
-            <MenuItem
-              icon="warning-outline"
-              label="Report an Issue"
-              theme={theme}
-              last
-              onPress={() => navigation.navigate('SubmitTicket')}
-            />
-          </Section>
+            {/* Self-service */}
+            <Section title="SELF-SERVICE" theme={theme}>
+              <MenuItem
+                icon="help-buoy-outline"
+                label="Help Center"
+                theme={theme}
+                onPress={() => openLegal('help_content', 'Help Center')}
+              />
+              <MenuItem
+                icon="warning-outline"
+                label="Report an Issue"
+                theme={theme}
+                last
+                onPress={() => navigation.navigate('SubmitTicket')}
+              />
+            </Section>
 
-          {/* Legal — both open in-app LegalScreen */}
-          <Section title="LEGAL" theme={theme}>
-            <MenuItem
-              icon="document-text-outline"
-              label="Terms of Service"
-              theme={theme}
-              onPress={() => openLegal('terms_content', 'Terms of Service')}
-            />
-            <MenuItem
-              icon="shield-checkmark-outline"
-              label="Privacy Policy"
-              theme={theme}
-              last
-              onPress={() => openLegal('privacy_content', 'Privacy Policy')}
-            />
-          </Section>
+            {/* Legal */}
+            <Section title="LEGAL" theme={theme}>
+              <MenuItem
+                icon="document-text-outline"
+                label="Terms of Service"
+                theme={theme}
+                onPress={() => openLegal('terms_content', 'Terms of Service')}
+              />
+              <MenuItem
+                icon="shield-checkmark-outline"
+                label="Privacy Policy"
+                theme={theme}
+                last
+                onPress={() => openLegal('privacy_content', 'Privacy Policy')}
+              />
+            </Section>
 
-          <Text style={[s.version,   { color: theme.hint }]}>Diakite v1.0.0</Text>
-          <Text style={[s.copyright, { color: theme.hint }]}>
-            © {new Date().getFullYear()} Diakite. All rights reserved.
-          </Text>
+            <Text style={[s.version,   { color: theme.hint }]}>Diakite v1.0.0</Text>
+            <Text style={[s.copyright, { color: theme.hint }]}>
+              © {new Date().getFullYear()} Diakite. All rights reserved.
+            </Text>
 
-        </Animated.View>
-      </ScrollView>
+          </Animated.View>
+        </ScrollView>
+      </View>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:        { flex: 1 },
+  root: { flex: 1 },
   ambientGlow: {
     position: 'absolute', width: width * 1.2, height: width * 1.2,
-    borderRadius: width * 0.6, top: -width * 0.75, alignSelf: 'center', opacity: 0.05,
+    borderRadius: width * 0.6, top: -width * 0.75,
+    alignSelf: 'center', opacity: 0.05,
   },
-  backBtn: {
-    position: 'absolute', left: 20, zIndex: 99,
-    width: 42, height: 42, borderRadius: 13, borderWidth: 1,
-    justifyContent: 'center', alignItems: 'center',
+
+  // ── Sticky header (replaces absolute back button) ─────────────────────────
+  header: {
+    flexDirection: 'row', alignItems: 'flex-end',
+    paddingHorizontal: 16, paddingBottom: 12,
+    borderBottomWidth: 1,
   },
-  scroll:    { paddingHorizontal: 24 },
+  backBtn:      { width: 38, height: 38, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  headerTitle:  { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+  headerSpacer: { width: 38 },
+
+  // ── Scroll content ────────────────────────────────────────────────────────
+  scroll:    { paddingHorizontal: 24, paddingTop: 24 },
   hero:      { alignItems: 'center', paddingBottom: 28 },
   heroIcon:  { width: 72, height: 72, borderRadius: 36, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   heroTitle: { fontSize: 22, fontWeight: '800', marginBottom: 8, letterSpacing: -0.3 },

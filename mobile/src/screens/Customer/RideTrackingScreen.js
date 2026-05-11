@@ -17,10 +17,16 @@ const { height } = Dimensions.get('window');
 // ── Tab bar offset ────────────────────────────────────────────────────────────
 const TAB_BAR_HEIGHT = 60;
 
-// ── Sheet snap heights ─────────────────────────────────────────────────────────
+// ── Sheet snap heights ────────────────────────────────────────────────────────
 const SHEET_MIN     = 160;
 const SHEET_DEFAULT = Math.round(height * 0.50);
 const SHEET_MAX     = Math.round(height * 0.82);
+
+// ── Fixed internal layout heights ────────────────────────────────────────────
+// DRAG_HANDLE_H = paddingVertical (12 * 2) + handle bar (4) = 28
+// These are subtracted from the animated sheet height to give the ScrollView
+// a concrete pixel boundary — same bounded-container pattern as ActiveRideScreen.
+const DRAG_HANDLE_H = 28;
 
 const DARK_MAP_STYLE = [
   { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
@@ -154,16 +160,14 @@ export default function RideTrackingScreen({ route, navigation }) {
   // ─────────────────────────────────────────────────────────────────────────────
   // ONE Animated.Value, useNativeDriver: false throughout.
   // sheetHeightAnim starts at 0 and springs to SHEET_DEFAULT on mount.
-  // No transform/native-driver animation touches this node — ever.
   // ─────────────────────────────────────────────────────────────────────────────
   const sheetHeightAnim  = useRef(new Animated.Value(0)).current;
   const currentHeightRef = useRef(0);
   const startHeightRef   = useRef(0);
 
-  // ── Memoized interpolation — created ONCE, never recreated on re-render ────
-  // Recreating this every render leaves stale listener nodes registered on
-  // sheetHeightAnim, which can cause the "moved to native" crash on some RN
-  // versions.
+  // ── Memoized interpolations — created ONCE, never recreated on re-render ──
+  // statusPillBottom tracks the top of the sheet so the pill always floats
+  // just above it, regardless of which snap the user has dragged to.
   const statusPillBottom = useRef(
     sheetHeightAnim.interpolate({
       inputRange:  [0, SHEET_MIN, SHEET_MAX],
@@ -171,6 +175,22 @@ export default function RideTrackingScreen({ route, navigation }) {
         TAB_BAR_HEIGHT + 10,
         TAB_BAR_HEIGHT + SHEET_MIN + 10,
         TAB_BAR_HEIGHT + SHEET_MAX + 10,
+      ],
+      extrapolate: 'clamp',
+    })
+  ).current;
+
+  // ── scrollHeightAnim: concrete pixel height for the ScrollView wrapper ────
+  // Subtracts the drag handle and bottom safe area so the ScrollView always
+  // has an exact boundary — mirrors ActiveRideScreen's scrollHeightAnim.
+  const sheetPadBottom  = insets.bottom + 20;
+  const scrollHeightAnim = useRef(
+    sheetHeightAnim.interpolate({
+      inputRange:  [SHEET_MIN, SHEET_DEFAULT, SHEET_MAX],
+      outputRange: [
+        SHEET_MIN     - DRAG_HANDLE_H - sheetPadBottom,
+        SHEET_DEFAULT - DRAG_HANDLE_H - sheetPadBottom,
+        SHEET_MAX     - DRAG_HANDLE_H - sheetPadBottom,
       ],
       extrapolate: 'clamp',
     })
@@ -192,7 +212,6 @@ export default function RideTrackingScreen({ route, navigation }) {
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder:  (_, gs) => Math.abs(gs.dy) > 4,
       onPanResponderGrant: () => {
-        // stopAnimation callback gives the exact current value mid-spring
         sheetHeightAnim.stopAnimation((val) => {
           currentHeightRef.current = val;
           startHeightRef.current   = val;
@@ -304,7 +323,6 @@ export default function RideTrackingScreen({ route, navigation }) {
   const dropoffLng = ride?.dropoffLng;
   const canCancel  = ['REQUESTED', 'ACCEPTED'].includes(status);
   const backBtnTop = insets.top + 14;
-  const padBottom  = insets.bottom + 20;
 
   const mapRegion = driverLocation
     ? { ...driverLocation, latitudeDelta: 0.03, longitudeDelta: 0.03 }
@@ -336,6 +354,7 @@ export default function RideTrackingScreen({ route, navigation }) {
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
+      {/* ── MAP ── */}
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
@@ -383,6 +402,7 @@ export default function RideTrackingScreen({ route, navigation }) {
 
       <View style={s.topGradient} pointerEvents="none" />
 
+      {/* ── Back button ── */}
       <TouchableOpacity
         style={[s.backBtn, { top: backBtnTop, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
         onPress={() => navigation.navigate('Home')}
@@ -391,7 +411,7 @@ export default function RideTrackingScreen({ route, navigation }) {
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      {/* Status pill — bottom driven by memoized JS interpolation of sheetHeightAnim */}
+      {/* ── Status pill — bottom driven by memoized JS interpolation ── */}
       <Animated.View style={[s.statusPill, {
         backgroundColor: statusCfg.color + '18',
         borderColor:     statusCfg.color + '50',
@@ -401,7 +421,7 @@ export default function RideTrackingScreen({ route, navigation }) {
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
       </Animated.View>
 
-      {/* Bottom sheet — height animated with JS driver only; no transform/native driver */}
+      {/* ── Bottom sheet — height animated with JS driver only ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
@@ -413,80 +433,88 @@ export default function RideTrackingScreen({ route, navigation }) {
           <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
         </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[s.scrollContent, { paddingBottom: padBottom }]}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Fare strip */}
-          <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <View style={s.fareItem}>
-              <Text style={[s.fareLabel, { color: theme.hint }]}>FARE</Text>
-              <Text style={[s.fareValue, { color: theme.accent }]}>
-                {'\u20A6'}{Number(ride.estimatedFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-              </Text>
+        {/* ── Bounded scroll area: Animated.View with interpolated height gives
+             the ScrollView a concrete pixel boundary at every snap position.
+             Mirrors ActiveRideScreen's scrollHeightAnim pattern exactly. ── */}
+        <Animated.View style={{ height: scrollHeightAnim, overflow: 'hidden' }}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Fare strip */}
+            <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={s.fareItem}>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>FARE</Text>
+                <Text style={[s.fareValue, { color: theme.accent }]}>
+                  {'\u20A6'}{Number(ride.estimatedFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                </Text>
+              </View>
+              <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
+              <View style={s.fareItem}>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>DISTANCE</Text>
+                <Text style={[s.fareValue, { color: theme.foreground }]}>
+                  {ride.distance?.toFixed(1) ?? '—'} km
+                </Text>
+              </View>
+              <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
+              <View style={s.fareItem}>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>PAYMENT</Text>
+                <Text style={[s.fareValue, { color: theme.foreground }]}>CASH</Text>
+              </View>
             </View>
-            <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
-            <View style={s.fareItem}>
-              <Text style={[s.fareLabel, { color: theme.hint }]}>DISTANCE</Text>
-              <Text style={[s.fareValue, { color: theme.foreground }]}>
-                {ride.distance?.toFixed(1) ?? '—'} km
-              </Text>
-            </View>
-            <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
-            <View style={s.fareItem}>
-              <Text style={[s.fareLabel, { color: theme.hint }]}>PAYMENT</Text>
-              <Text style={[s.fareValue, { color: theme.foreground }]}>CASH</Text>
-            </View>
-          </View>
 
-          <DriverInfoCard ride={ride} theme={theme} />
-          <RouteCard      ride={ride} theme={theme} />
+            <DriverInfoCard ride={ride} theme={theme} />
+            <RouteCard      ride={ride} theme={theme} />
 
-          {/* ── Uncomment when Shield is ready to launch ──────────────────────
-          {isActiveTrip && (
-            <TouchableOpacity style={[s.shieldBtn, { ... }]}
-              onPress={() => navigation.navigate('Shield', { rideId: ride.id })}>
-              ...
-            </TouchableOpacity>
-          )}
-          ─────────────────────────────────────────────────────────────────── */}
+            {/* ── Uncomment when Shield is ready to launch ──────────────────────
+            {isActiveTrip && (
+              <TouchableOpacity style={[s.shieldBtn, { ... }]}
+                onPress={() => navigation.navigate('Shield', { rideId: ride.id })}>
+                ...
+              </TouchableOpacity>
+            )}
+            ─────────────────────────────────────────────────────────────────── */}
 
-          {canCancel && (
-            <TouchableOpacity
-              style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
-              onPress={handleCancel}
-              disabled={cancelling}
-              activeOpacity={0.8}
-            >
-              {cancelling ? <ActivityIndicator color="#E05555" size="small" /> : (
-                <>
-                  <Ionicons name="close-circle-outline" size={16} color="#E05555" />
-                  <Text style={s.cancelTxt}>Cancel Ride</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+            {canCancel && (
+              <TouchableOpacity
+                style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
+                onPress={handleCancel}
+                disabled={cancelling}
+                activeOpacity={0.8}
+              >
+                {cancelling ? <ActivityIndicator color="#E05555" size="small" /> : (
+                  <>
+                    <Ionicons name="close-circle-outline" size={16} color="#E05555" />
+                    <Text style={s.cancelTxt}>Cancel Ride</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
 
-          {(status === 'COMPLETED' || status === 'CANCELLED') && (
-            <TouchableOpacity
-              style={[s.homeBtn, { backgroundColor: theme.accent }]}
-              onPress={() => {
-                if (status === 'COMPLETED') navigation.navigate('RateRide', { rideId, driver: ride?.driver });
-                else                        navigation.navigate('Home');
-              }}
-              activeOpacity={0.88}
-            >
-              <Ionicons
-                name={status === 'COMPLETED' ? 'star-outline' : 'home-outline'}
-                size={18} color={accentFg}
-              />
-              <Text style={[s.homeBtnTxt, { color: accentFg }]}>
-                {status === 'COMPLETED' ? 'Rate Your Driver' : 'Back to Home'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </ScrollView>
+            {(status === 'COMPLETED' || status === 'CANCELLED') && (
+              <TouchableOpacity
+                style={[s.homeBtn, { backgroundColor: theme.accent }]}
+                onPress={() => {
+                  if (status === 'COMPLETED') navigation.navigate('RateRide', { rideId, driver: ride?.driver });
+                  else                        navigation.navigate('Home');
+                }}
+                activeOpacity={0.88}
+              >
+                <Ionicons
+                  name={status === 'COMPLETED' ? 'star-outline' : 'home-outline'}
+                  size={18} color={accentFg}
+                />
+                <Text style={[s.homeBtnTxt, { color: accentFg }]}>
+                  {status === 'COMPLETED' ? 'Rate Your Driver' : 'Back to Home'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Bottom spacer so last card clears the sheet's rounded corners */}
+            <View style={{ height: 16 }} />
+          </ScrollView>
+        </Animated.View>
       </Animated.View>
     </View>
   );
@@ -506,6 +534,7 @@ const s = StyleSheet.create({
   statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
 
+  // Sheet: animated height (JS driver), positioned above tab bar
   sheet: {
     position:             'absolute',
     left:                 0,
@@ -518,7 +547,10 @@ const s = StyleSheet.create({
 
   dragHandleWrap: { width: '100%', paddingVertical: 12, alignItems: 'center' },
   dragHandle:     { width: 44, height: 4, borderRadius: 2 },
-  scrollContent:  { paddingHorizontal: 20 },
+
+  // scrollContent has no paddingBottom — the scrollHeightAnim wrapper
+  // already accounts for safe area, so content fills cleanly to the edge.
+  scrollContent: { paddingHorizontal: 20 },
 
   fareStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
   fareItem:    { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
-  Platform,
+  PanResponder,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
@@ -17,6 +17,18 @@ import socketService              from '../../services/socket';
 const { height } = Dimensions.get('window');
 const COURIER_ACCENT = '#34D399';
 
+// ── Tab bar offset ────────────────────────────────────────────────────────────
+const TAB_BAR_HEIGHT = 60;
+
+// ── Sheet snap heights ────────────────────────────────────────────────────────
+const SHEET_MIN     = 160;
+const SHEET_DEFAULT = Math.round(height * 0.48);
+const SHEET_MAX     = Math.round(height * 0.80);
+
+// ── Fixed internal layout heights ────────────────────────────────────────────
+// DRAG_HANDLE_H = paddingVertical (12 * 2) + handle bar (4) = 28
+const DRAG_HANDLE_H = 28;
+
 const DARK_MAP_STYLE = [
   { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a1a' }] },
@@ -29,12 +41,12 @@ const DARK_MAP_STYLE = [
 ];
 
 const STATUS_CONFIG = {
-  PENDING:    { label: 'Finding a delivery partner...',  color: '#4E8DBD',     icon: 'time-outline'              },
-  ASSIGNED:   { label: 'Partner is on the way',         color: COURIER_ACCENT, icon: 'bicycle-outline'          },
-  PICKED_UP:  { label: 'Package has been picked up!',   color: '#FFB800',     icon: 'cube-outline'              },
-  IN_TRANSIT: { label: 'Package is in transit',         color: '#A78BFA',     icon: 'navigate-outline'          },
-  DELIVERED:  { label: 'Package delivered! ✅',          color: COURIER_ACCENT, icon: 'checkmark-circle-outline' },
-  CANCELLED:  { label: 'Delivery cancelled',            color: '#E05555',     icon: 'close-circle-outline'      },
+  PENDING:    { label: 'Finding a delivery partner...',  color: '#4E8DBD',      icon: 'time-outline'              },
+  ASSIGNED:   { label: 'Partner is on the way',         color: COURIER_ACCENT,  icon: 'bicycle-outline'          },
+  PICKED_UP:  { label: 'Package has been picked up!',   color: '#FFB800',      icon: 'cube-outline'              },
+  IN_TRANSIT: { label: 'Package is in transit',         color: '#A78BFA',      icon: 'navigate-outline'          },
+  DELIVERED:  { label: 'Package delivered! ✅',          color: COURIER_ACCENT,  icon: 'checkmark-circle-outline' },
+  CANCELLED:  { label: 'Delivery cancelled',            color: '#E05555',      icon: 'close-circle-outline'      },
 };
 
 // ── PartnerInfoCard ───────────────────────────────────────────────────────────
@@ -141,8 +153,89 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
   // ────────────────────────────────────────────────────────────────────────────
 
   const mapRef          = useRef(null);
-  const sheetA          = useRef(new Animated.Value(0)).current;
   const hasNavigatedRef = useRef(false);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ONE Animated.Value, useNativeDriver: false throughout.
+  // Replaces the old native-driver translateY approach — height is a layout
+  // prop and requires the JS driver, same as RideTrackingScreen/ActiveRideScreen.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const sheetHeightAnim  = useRef(new Animated.Value(0)).current;
+  const currentHeightRef = useRef(0);
+  const startHeightRef   = useRef(0);
+
+  // ── Memoized interpolations — created ONCE, never recreated on re-render ──
+
+  // statusPillBottom: replaces the old hardcoded `bottom: height * 0.46`.
+  // Now tracks the sheet top edge at every snap point so the pill always
+  // floats exactly 10px above the sheet, regardless of device height.
+  const statusPillBottom = useRef(
+    sheetHeightAnim.interpolate({
+      inputRange:  [0, SHEET_MIN, SHEET_MAX],
+      outputRange: [
+        TAB_BAR_HEIGHT + 10,
+        TAB_BAR_HEIGHT + SHEET_MIN + 10,
+        TAB_BAR_HEIGHT + SHEET_MAX + 10,
+      ],
+      extrapolate: 'clamp',
+    })
+  ).current;
+
+  // scrollHeightAnim: gives the ScrollView wrapper a concrete pixel boundary
+  // at every snap position — mirrors RideTrackingScreen / ActiveRideScreen.
+  const sheetPadBottom   = insets.bottom + 20;
+  const scrollHeightAnim = useRef(
+    sheetHeightAnim.interpolate({
+      inputRange:  [SHEET_MIN, SHEET_DEFAULT, SHEET_MAX],
+      outputRange: [
+        SHEET_MIN     - DRAG_HANDLE_H - sheetPadBottom,
+        SHEET_DEFAULT - DRAG_HANDLE_H - sheetPadBottom,
+        SHEET_MAX     - DRAG_HANDLE_H - sheetPadBottom,
+      ],
+      extrapolate: 'clamp',
+    })
+  ).current;
+
+  // ── Entrance animation ────────────────────────────────────────────────────
+  useEffect(() => {
+    Animated.spring(sheetHeightAnim, {
+      toValue:         SHEET_DEFAULT,
+      tension:         80,
+      friction:        9,
+      useNativeDriver: false,   // height is a layout prop — JS driver required
+    }).start(() => { currentHeightRef.current = SHEET_DEFAULT; });
+  }, []);
+
+  // ── PanResponder (drag handle only) ──────────────────────────────────────
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder:  (_, gs) => Math.abs(gs.dy) > 4,
+      onPanResponderGrant: () => {
+        sheetHeightAnim.stopAnimation((val) => {
+          currentHeightRef.current = val;
+          startHeightRef.current   = val;
+        });
+      },
+      onPanResponderMove: (_, gs) => {
+        const next = Math.max(SHEET_MIN, Math.min(SHEET_MAX,
+          startHeightRef.current - gs.dy));
+        sheetHeightAnim.setValue(next);
+      },
+      onPanResponderRelease: (_, gs) => {
+        const h    = startHeightRef.current - gs.dy;
+        const mid1 = (SHEET_MIN + SHEET_DEFAULT) / 2;
+        const mid2 = (SHEET_DEFAULT + SHEET_MAX) / 2;
+        let target;
+        if      (gs.vy < -0.5) target = h > SHEET_DEFAULT ? SHEET_MAX : SHEET_DEFAULT;
+        else if (gs.vy >  0.5) target = h < SHEET_DEFAULT ? SHEET_MIN : SHEET_DEFAULT;
+        else                   target = h < mid1 ? SHEET_MIN : h < mid2 ? SHEET_DEFAULT : SHEET_MAX;
+        Animated.spring(sheetHeightAnim, {
+          toValue: target, tension: 120, friction: 14, useNativeDriver: false,
+        }).start(() => { currentHeightRef.current = target; });
+      },
+    })
+  ).current;
 
   // ── Load delivery ───────────────────────────────────────────────────────────
   const loadDelivery = useCallback(async () => {
@@ -160,12 +253,12 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
 
       if (d?.id) {
         socketService.joinDelivery?.(d.id);
-        // ── Uncomment when Shield is ready to launch ──────────────────────────
+        // ── Uncomment when Shield is ready to launch ────────────────────────
         // try {
         //   const sRes = await shieldAPI.getSession({ deliveryId: d.id });
         //   setShieldActive(!!sRes?.data?.session);
         // } catch {}
-        // ─────────────────────────────────────────────────────────────────────
+        // ───────────────────────────────────────────────────────────────────
       }
     } catch (err) {
       console.error('[DeliveryTracking] load error:', err?.message);
@@ -177,7 +270,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
   // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     loadDelivery();
-    Animated.spring(sheetA, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }).start();
 
     const handleStatus = (data) => {
       if (data.deliveryId && data.deliveryId !== deliveryId) return;
@@ -261,24 +353,21 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
   };
 
   // ── Derived values ──────────────────────────────────────────────────────────
-  const status         = delivery?.status ?? 'PENDING';
-  const statusCfg      = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
-  const pickupLat      = delivery?.pickupLat;
-  const pickupLng      = delivery?.pickupLng;
-  const dropoffLat     = delivery?.dropoffLat;
-  const dropoffLng     = delivery?.dropoffLng;
-  const canCancel      = ['PENDING', 'ASSIGNED'].includes(status);
-  const isActiveTrip   = ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(status);
-  const backBtnTop     = insets.top + 14;
-  const sheetPadBottom = insets.bottom + 12;
+  const status       = delivery?.status ?? 'PENDING';
+  const statusCfg    = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
+  const pickupLat    = delivery?.pickupLat;
+  const pickupLng    = delivery?.pickupLng;
+  const dropoffLat   = delivery?.dropoffLat;
+  const dropoffLng   = delivery?.dropoffLng;
+  const canCancel    = ['PENDING', 'ASSIGNED'].includes(status);
+  const isActiveTrip = ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(status);
+  const backBtnTop   = insets.top + 14;
 
   const mapRegion = partnerLocation
     ? { ...partnerLocation, latitudeDelta: 0.03, longitudeDelta: 0.03 }
     : pickupLat
     ? { latitude: pickupLat, longitude: pickupLng, latitudeDelta: 0.05, longitudeDelta: 0.05 }
     : undefined;
-
-  const sheetTranslate = sheetA.interpolate({ inputRange: [0, 1], outputRange: [300, 0] });
 
   // ── Loading state ───────────────────────────────────────────────────────────
   if (loading) {
@@ -377,113 +466,130 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      {/* ── Status pill ── */}
-      <View style={[s.statusPill, {
+      {/* ── Status pill — bottom driven by memoized JS interpolation.
+           Replaces the old hardcoded `bottom: height * 0.46` magic number.
+           Now tracks the sheet top edge at every snap position. ── */}
+      <Animated.View style={[s.statusPill, {
         backgroundColor: statusCfg.color + '18',
         borderColor:     statusCfg.color + '50',
-        bottom:          height * 0.46,
+        bottom:          statusPillBottom,
       }]}>
         <Ionicons name={statusCfg.icon} size={13} color={statusCfg.color} />
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
-      </View>
+      </Animated.View>
 
-      {/* ── Bottom sheet ── */}
+      {/* ── Bottom sheet — height animated with JS driver only ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
-        transform:       [{ translateY: sheetTranslate }],
+        height:          sheetHeightAnim,
+        bottom:          TAB_BAR_HEIGHT,
       }]}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: sheetPadBottom }}
-        >
-          {/* Fee strip */}
-          <View style={[s.feeStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <View style={s.feeItem}>
-              <Text style={[s.feeLabel, { color: theme.hint }]}>FEE</Text>
-              <Text style={[s.feeValue, { color: COURIER_ACCENT }]}>
-                ₦{Number(delivery.estimatedFee ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-              </Text>
+        {/* Drag handle — PanResponder lives here only */}
+        <View style={s.dragHandleWrap} {...panResponder.panHandlers}>
+          <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
+        </View>
+
+        {/* ── Bounded scroll area: Animated.View with interpolated height gives
+             the ScrollView a concrete pixel boundary at every snap position.
+             Mirrors RideTrackingScreen / ActiveRideScreen exactly. ── */}
+        <Animated.View style={{ height: scrollHeightAnim, overflow: 'hidden' }}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={s.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Fee strip */}
+            <View style={[s.feeStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={s.feeItem}>
+                <Text style={[s.feeLabel, { color: theme.hint }]}>FEE</Text>
+                <Text style={[s.feeValue, { color: COURIER_ACCENT }]}>
+                  ₦{Number(delivery.estimatedFee ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                </Text>
+              </View>
+              <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
+              <View style={s.feeItem}>
+                <Text style={[s.feeLabel, { color: theme.hint }]}>DISTANCE</Text>
+                <Text style={[s.feeValue, { color: theme.foreground }]}>
+                  {delivery.distance?.toFixed(1) ?? '—'} km
+                </Text>
+              </View>
+              <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
+              <View style={s.feeItem}>
+                <Text style={[s.feeLabel, { color: theme.hint }]}>PAYMENT</Text>
+                <Text style={[s.feeValue, { color: theme.foreground }]}>CASH</Text>
+              </View>
             </View>
-            <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
-            <View style={s.feeItem}>
-              <Text style={[s.feeLabel, { color: theme.hint }]}>DISTANCE</Text>
-              <Text style={[s.feeValue, { color: theme.foreground }]}>
-                {delivery.distance?.toFixed(1) ?? '—'} km
-              </Text>
-            </View>
-            <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
-            <View style={s.feeItem}>
-              <Text style={[s.feeLabel, { color: theme.hint }]}>PAYMENT</Text>
-              <Text style={[s.feeValue, { color: theme.foreground }]}>CASH</Text>
-            </View>
-          </View>
 
-          <PartnerInfoCard    delivery={delivery} theme={theme} />
-          <DeliveryDetailCard delivery={delivery} theme={theme} />
+            <PartnerInfoCard    delivery={delivery} theme={theme} />
+            <DeliveryDetailCard delivery={delivery} theme={theme} />
 
-          {/* ── Uncomment when Shield is ready to launch ──────────────────────
-          {isActiveTrip && (
-            <TouchableOpacity
-              style={[s.shieldBtn, {
-                backgroundColor: shieldActive ? '#4CAF5020' : '#4CAF5010',
-                borderColor:     shieldActive ? '#4CAF50'   : '#4CAF5050',
-              }]}
-              onPress={() => navigation.navigate('Shield', { deliveryId: delivery.id })}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="shield-checkmark" size={16} color="#4CAF50" />
-              <Text style={s.shieldBtnTxt}>
-                {shieldActive ? '🛡️ SHIELD Active — Tap to manage' : 'Activate SHIELD Safety'}
-              </Text>
-              <Ionicons name="chevron-forward" size={14} color="#4CAF50" />
-            </TouchableOpacity>
-          )}
-          ─────────────────────────────────────────────────────────────────── */}
+            {/* ── Uncomment when Shield is ready to launch ──────────────────────
+            {isActiveTrip && (
+              <TouchableOpacity
+                style={[s.shieldBtn, {
+                  backgroundColor: shieldActive ? '#4CAF5020' : '#4CAF5010',
+                  borderColor:     shieldActive ? '#4CAF50'   : '#4CAF5050',
+                }]}
+                onPress={() => navigation.navigate('Shield', { deliveryId: delivery.id })}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="shield-checkmark" size={16} color="#4CAF50" />
+                <Text style={s.shieldBtnTxt}>
+                  {shieldActive ? '🛡️ SHIELD Active — Tap to manage' : 'Activate SHIELD Safety'}
+                </Text>
+                <Ionicons name="chevron-forward" size={14} color="#4CAF50" />
+              </TouchableOpacity>
+            )}
+            ─────────────────────────────────────────────────────────────────── */}
 
-          {/* Cancel button */}
-          {canCancel && (
-            <TouchableOpacity
-              style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
-              onPress={handleCancel}
-              disabled={cancelling}
-              activeOpacity={0.8}
-            >
-              {cancelling ? (
-                <ActivityIndicator color="#E05555" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="close-circle-outline" size={16} color="#E05555" />
-                  <Text style={s.cancelTxt}>Cancel Delivery</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+            {/* Cancel button */}
+            {canCancel && (
+              <TouchableOpacity
+                style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
+                onPress={handleCancel}
+                disabled={cancelling}
+                activeOpacity={0.8}
+              >
+                {cancelling ? (
+                  <ActivityIndicator color="#E05555" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="close-circle-outline" size={16} color="#E05555" />
+                    <Text style={s.cancelTxt}>Cancel Delivery</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
 
-          {/* Post-delivery button */}
-          {(status === 'DELIVERED' || status === 'CANCELLED') && (
-            <TouchableOpacity
-              style={[s.homeBtn, { backgroundColor: COURIER_ACCENT }]}
-              onPress={() => {
-                if (status === 'DELIVERED') {
-                  navigation.navigate('RateDelivery', { deliveryId, partner: delivery?.partner });
-                } else {
-                  navigation.navigate('Home');
-                }
-              }}
-              activeOpacity={0.88}
-            >
-              <Ionicons
-                name={status === 'DELIVERED' ? 'star-outline' : 'home-outline'}
-                size={18}
-                color="#FFF"
-              />
-              <Text style={s.homeBtnTxt}>
-                {status === 'DELIVERED' ? 'Rate Your Partner' : 'Back to Home'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </ScrollView>
+            {/* Post-delivery button */}
+            {(status === 'DELIVERED' || status === 'CANCELLED') && (
+              <TouchableOpacity
+                style={[s.homeBtn, { backgroundColor: COURIER_ACCENT }]}
+                onPress={() => {
+                  if (status === 'DELIVERED') {
+                    navigation.navigate('RateDelivery', { deliveryId, partner: delivery?.partner });
+                  } else {
+                    navigation.navigate('Home');
+                  }
+                }}
+                activeOpacity={0.88}
+              >
+                <Ionicons
+                  name={status === 'DELIVERED' ? 'star-outline' : 'home-outline'}
+                  size={18}
+                  color="#FFF"
+                />
+                <Text style={s.homeBtnTxt}>
+                  {status === 'DELIVERED' ? 'Rate Your Partner' : 'Back to Home'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Bottom spacer */}
+            <View style={{ height: 16 }} />
+          </ScrollView>
+        </Animated.View>
       </Animated.View>
     </View>
   );
@@ -506,20 +612,21 @@ const s = StyleSheet.create({
   statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
 
-  // Bottom sheet — maxHeight keeps map visible, ScrollView handles overflow
+  // Sheet: animated height (JS driver), positioned above tab bar
   sheet: {
     position:             'absolute',
-    bottom:               0,
     left:                 0,
     right:                0,
     borderTopLeftRadius:  28,
     borderTopRightRadius: 28,
     borderTopWidth:       1,
-    paddingHorizontal:    20,
-    paddingTop:           20,
-    maxHeight:            height * 0.55,
     overflow:             'hidden',
   },
+
+  dragHandleWrap: { width: '100%', paddingVertical: 12, alignItems: 'center' },
+  dragHandle:     { width: 44, height: 4, borderRadius: 2 },
+
+  scrollContent: { paddingHorizontal: 20 },
 
   // Fee strip
   feeStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
@@ -537,6 +644,6 @@ const s = StyleSheet.create({
   cancelTxt: { fontSize: 14, fontWeight: '700', color: '#E05555' },
 
   // Home / rate
-  homeBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8, backgroundColor: COURIER_ACCENT },
+  homeBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8 },
   homeBtnTxt: { fontSize: 15, fontWeight: '800', color: '#FFF' },
 });

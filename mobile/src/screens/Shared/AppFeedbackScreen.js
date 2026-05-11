@@ -11,7 +11,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { userAPI } from '../../services/api';
 import Constants from 'expo-constants';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const CATEGORIES = [
   { id: 'general',      label: 'General',       icon: 'chatbubble-outline'       },
@@ -29,11 +29,18 @@ export default function AppFeedbackScreen({ navigation }) {
   const insets           = useSafeAreaInsets();
   const fadeA            = useRef(new Animated.Value(0)).current;
 
-  const [rating,   setRating]   = useState(0);
-  const [hovered,  setHovered]  = useState(0);
-  const [category, setCategory] = useState('general');
-  const [comment,  setComment]  = useState('');
-  const [loading,  setLoading]  = useState(false);
+  // ── Bounded scroll height (mirrors ProfileScreen) ──────────────────────────
+  // This screen uses an absolutely-positioned back button instead of a fixed
+  // header bar, so we only subtract the status bar area + tab bar.
+  const TAB_H        = 54;
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+  const SCROLL_H     = height - insets.top - TAB_H - insets.bottom - EXTRA_BOTTOM;
+
+  const [rating,    setRating]    = useState(0);
+  const [hovered,   setHovered]   = useState(0);
+  const [category,  setCategory]  = useState('general');
+  const [comment,   setComment]   = useState('');
+  const [loading,   setLoading]   = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   // Per-star scale animations
@@ -60,26 +67,24 @@ export default function AppFeedbackScreen({ navigation }) {
       Alert.alert('Rating required', 'Please tap a star to rate the app.');
       return;
     }
-
     setLoading(true);
     try {
       await userAPI.submitFeedback({
         rating,
         comment:    comment.trim() || null,
         category:   category.trim(),
-        platform:   (Platform.OS ?? 'android').toLowerCase(),  
+        platform:   (Platform.OS ?? 'android').toLowerCase(),
         appVersion: Constants.expoConfig?.version
                 ?? Constants.manifest?.version
-                ?? '1.0.0',                                    
+                ?? '1.0.0',
       });
       setSubmitted(true);
     } catch (err) {
-    
-    const msg =
+      const msg =
         err?.message ??
         err?.errors?.[0]?.msg ??
         'Could not submit feedback. Please try again.';
-    Alert.alert('Error', msg);
+      Alert.alert('Error', msg);
     } finally {
       setLoading(false);
     }
@@ -117,7 +122,7 @@ export default function AppFeedbackScreen({ navigation }) {
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
-      {/* Back button */}
+      {/* Absolutely-positioned back button — sits above the scroll area */}
       <TouchableOpacity
         style={[s.backBtn, { top: insets.top + 14, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
         onPress={() => navigation.goBack()}
@@ -126,127 +131,128 @@ export default function AppFeedbackScreen({ navigation }) {
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      <ScrollView
-        contentContainerStyle={[s.scroll, { paddingTop: insets.top + 70, paddingBottom: insets.bottom + 32 }]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Animated.View style={{ opacity: fadeA }}>
+      {/* ── Bounded scroll container (key: explicit pixel height) ── */}
+      <View style={{ height: SCROLL_H }}>
+        <ScrollView
+          contentContainerStyle={[s.scroll, { paddingTop: insets.top + 70, paddingBottom: 32 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          bounces
+          overScrollMode="always"
+        >
+          <Animated.View style={{ opacity: fadeA }}>
 
-          {/* Hero */}
-          <View style={s.hero}>
-            <View style={[s.heroIcon, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '30' }]}>
-              <Ionicons name="star-outline" size={32} color={theme.accent} />
-            </View>
-            <Text style={[s.heroTitle, { color: theme.foreground }]}>Rate the App</Text>
-            <Text style={[s.heroSub, { color: theme.hint }]}>
-              How's your experience with Diakite? Your honest opinion matters.
-            </Text>
-          </View>
-
-          {/* Stars */}
-          <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <Text style={[s.cardLabel, { color: theme.hint }]}>YOUR RATING</Text>
-            <View style={s.starsRow}>
-              {[1, 2, 3, 4, 5].map(star => (
-                <TouchableOpacity
-                  key={star}
-                  onPress={() => handleStarPress(star)}
-                  onPressIn={() => setHovered(star)}
-                  onPressOut={() => setHovered(0)}
-                  activeOpacity={0.8}
-                >
-                  <Animated.View style={{ transform: [{ scale: starScales[star - 1] }] }}>
-                    <Ionicons
-                      name={star <= activeRating ? 'star' : 'star-outline'}
-                      size={40}
-                      color={star <= activeRating ? '#F5A623' : theme.border}
-                    />
-                  </Animated.View>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {activeRating > 0 && (
-              <Text style={[s.starLabel, { color: theme.accent }]}>
-                {STAR_LABELS[activeRating - 1]}
+            {/* Hero */}
+            <View style={s.hero}>
+              <View style={[s.heroIcon, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '30' }]}>
+                <Ionicons name="star-outline" size={32} color={theme.accent} />
+              </View>
+              <Text style={[s.heroTitle, { color: theme.foreground }]}>Rate the App</Text>
+              <Text style={[s.heroSub, { color: theme.hint }]}>
+                How's your experience with Diakite? Your honest opinion matters.
               </Text>
-            )}
-          </View>
-
-          {/* Category */}
-          <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <Text style={[s.cardLabel, { color: theme.hint }]}>CATEGORY</Text>
-            <View style={s.categoryGrid}>
-              {CATEGORIES.map(cat => {
-                const active = category === cat.id;
-                return (
-                  <TouchableOpacity
-                    key={cat.id}
-                    onPress={() => setCategory(cat.id)}
-                    style={[
-                      s.catChip,
-                      {
-                        backgroundColor: active ? theme.accent + '18' : theme.background,
-                        borderColor:     active ? theme.accent         : theme.border,
-                      },
-                    ]}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={cat.icon}
-                      size={15}
-                      color={active ? theme.accent : theme.hint}
-                    />
-                    <Text style={[s.catTxt, { color: active ? theme.accent : theme.hint }]}>
-                      {cat.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
             </View>
-          </View>
 
-          {/* Comment */}
-          <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <Text style={[s.cardLabel, { color: theme.hint }]}>COMMENTS (OPTIONAL)</Text>
-            <TextInput
-              style={[s.textInput, { color: theme.foreground, borderColor: theme.border }]}
-              placeholder="Tell us more about your experience…"
-              placeholderTextColor={theme.hint}
-              value={comment}
-              onChangeText={setComment}
-              multiline
-              numberOfLines={5}
-              maxLength={500}
-              textAlignVertical="top"
-            />
-            <Text style={[s.charCount, { color: theme.hint }]}>{comment.length}/500</Text>
-          </View>
+            {/* Stars */}
+            <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <Text style={[s.cardLabel, { color: theme.hint }]}>YOUR RATING</Text>
+              <View style={s.starsRow}>
+                {[1, 2, 3, 4, 5].map(star => (
+                  <TouchableOpacity
+                    key={star}
+                    onPress={() => handleStarPress(star)}
+                    onPressIn={() => setHovered(star)}
+                    onPressOut={() => setHovered(0)}
+                    activeOpacity={0.8}
+                  >
+                    <Animated.View style={{ transform: [{ scale: starScales[star - 1] }] }}>
+                      <Ionicons
+                        name={star <= activeRating ? 'star' : 'star-outline'}
+                        size={40}
+                        color={star <= activeRating ? '#F5A623' : theme.border}
+                      />
+                    </Animated.View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {activeRating > 0 && (
+                <Text style={[s.starLabel, { color: theme.accent }]}>
+                  {STAR_LABELS[activeRating - 1]}
+                </Text>
+              )}
+            </View>
 
-          {/* Submit */}
-          <TouchableOpacity
-            style={[s.submitBtn, { backgroundColor: theme.accent, opacity: loading ? 0.7 : 1 }]}
-            onPress={handleSubmit}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading
-              ? <ActivityIndicator color={theme.accentFg ?? '#111'} />
-              : (
-                <>
-                  <Ionicons name="send-outline" size={18} color={theme.accentFg ?? '#111'} />
-                  <Text style={[s.submitTxt, { color: theme.accentFg ?? '#111' }]}>Submit Feedback</Text>
-                </>
-              )
-            }
-          </TouchableOpacity>
+            {/* Category */}
+            <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <Text style={[s.cardLabel, { color: theme.hint }]}>CATEGORY</Text>
+              <View style={s.categoryGrid}>
+                {CATEGORIES.map(cat => {
+                  const active = category === cat.id;
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      onPress={() => setCategory(cat.id)}
+                      style={[
+                        s.catChip,
+                        {
+                          backgroundColor: active ? theme.accent + '18' : theme.background,
+                          borderColor:     active ? theme.accent         : theme.border,
+                        },
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name={cat.icon} size={15} color={active ? theme.accent : theme.hint} />
+                      <Text style={[s.catTxt, { color: active ? theme.accent : theme.hint }]}>
+                        {cat.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
 
-          <Text style={[s.privacy, { color: theme.hint }]}>
-            Your feedback is anonymous and used only to improve Diakite.
-          </Text>
+            {/* Comment */}
+            <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <Text style={[s.cardLabel, { color: theme.hint }]}>COMMENTS (OPTIONAL)</Text>
+              <TextInput
+                style={[s.textInput, { color: theme.foreground, borderColor: theme.border }]}
+                placeholder="Tell us more about your experience…"
+                placeholderTextColor={theme.hint}
+                value={comment}
+                onChangeText={setComment}
+                multiline
+                numberOfLines={5}
+                maxLength={500}
+                textAlignVertical="top"
+              />
+              <Text style={[s.charCount, { color: theme.hint }]}>{comment.length}/500</Text>
+            </View>
 
-        </Animated.View>
-      </ScrollView>
+            {/* Submit */}
+            <TouchableOpacity
+              style={[s.submitBtn, { backgroundColor: theme.accent, opacity: loading ? 0.7 : 1 }]}
+              onPress={handleSubmit}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading
+                ? <ActivityIndicator color={theme.accentFg ?? '#111'} />
+                : (
+                  <>
+                    <Ionicons name="send-outline" size={18} color={theme.accentFg ?? '#111'} />
+                    <Text style={[s.submitTxt, { color: theme.accentFg ?? '#111' }]}>Submit Feedback</Text>
+                  </>
+                )
+              }
+            </TouchableOpacity>
+
+            <Text style={[s.privacy, { color: theme.hint }]}>
+              Your feedback is anonymous and used only to improve Diakite.
+            </Text>
+
+          </Animated.View>
+        </ScrollView>
+      </View>
     </View>
   );
 }
@@ -262,7 +268,7 @@ const s = StyleSheet.create({
     width: 42, height: 42, borderRadius: 13, borderWidth: 1,
     justifyContent: 'center', alignItems: 'center',
   },
-  scroll:    { paddingHorizontal: 24 },
+  scroll: { paddingHorizontal: 24 },
 
   // Hero
   hero:      { alignItems: 'center', paddingBottom: 24 },

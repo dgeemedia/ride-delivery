@@ -644,7 +644,7 @@ export default function HomeScreen({ navigation }) {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={s.serviceScrollContent}
-              style={{ marginBottom: 0 }}   // set 0 for zero gap, or 2-4 for a tiny breath
+              style={{ marginBottom: 4 }}   // set 0 for zero gap, or 2-4 for a tiny breath
             >
               {serviceCards.map(item => (
                 <ServiceIcon key={item.id} item={item} theme={theme} darkMode={darkMode} />

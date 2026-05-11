@@ -1,19 +1,21 @@
 // mobile/src/screens/Driver/EarningsScreen.js
-// FIX: Moved useAnimatedScrollHandler to the top level to avoid conditional hook call.
+// FIX: Moved useAnimatedScrollHandler to top level (no conditional hook call).
+// FIX: Added proper bounded scroll area — SafeAreaView root + measured header
+//      height → explicit SCROLL_H container, matching the ProfileScreen pattern.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Animated, Dimensions, StatusBar,
+  ActivityIndicator, Animated, Dimensions, StatusBar, Platform,
 } from 'react-native';
 import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
-import { Ionicons }    from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme }    from '../../context/ThemeContext';
-import { useScrollY }  from '../../context/ScrollContext';
+import { Ionicons }     from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme }     from '../../context/ThemeContext';
+import { useScrollY }   from '../../context/ScrollContext';
 import { driverAPI, walletAPI } from '../../services/api';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const DA     = '#FFB800';
 const GREEN  = '#5DAA72';
 const RED    = '#E05555';
@@ -141,6 +143,7 @@ const tr = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function EarningsScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const insets          = useSafeAreaInsets();
   const scrollY         = useScrollY();
 
   const [period,        setPeriod]        = useState('week');
@@ -149,16 +152,27 @@ export default function EarningsScreen({ navigation }) {
   const [transactions,  setTransactions]  = useState([]);
   const [activeTab,     setActiveTab]     = useState('rides');
   const [loading,       setLoading]       = useState(true);
+  // KEY: track header height so SCROLL_H is always accurate
+  const [headerH,       setHeaderH]       = useState(80);
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(18)).current;
 
-  // 🟢 Scroll handler defined unconditionally at top level
+  // ── Scroll handler defined unconditionally at top level ──────────────────
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       scrollY.value = event.contentOffset.y;
     },
   });
+
+  // ── KEY: compute exact scroll area height ────────────────────────────────
+  // screen height − safe-area top (handled by SafeAreaView edges=['top'])
+  //              − measured header height
+  //              − safe-area bottom (we add it as paddingBottom inside scroll)
+  // No tab bar subtracted here because EarningsScreen lives in a tab navigator;
+  // if it's standalone (canGoBack), the tab bar is absent — same formula works.
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+  const SCROLL_H     = height - insets.top - headerH - insets.bottom - EXTRA_BOTTOM;
 
   const fetchAll = useCallback(async (p = period) => {
     setLoading(true);
@@ -186,192 +200,207 @@ export default function EarningsScreen({ navigation }) {
   const rides = earnings?.rides ?? [];
 
   return (
-    <View style={[s.root, { backgroundColor: theme.background }]}>
+    // KEY: SafeAreaView with edges=['top','left','right'] — bottom handled
+    // by paddingBottom inside scroll so content clears the home indicator.
+    <SafeAreaView
+      style={[s.root, { backgroundColor: theme.background }]}
+      edges={['top', 'left', 'right']}
+    >
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.orb, { backgroundColor: DA }]} />
 
-      {/* ── Header ── */}
-      <SafeAreaView edges={['top', 'left', 'right']}>
-        <View style={[s.header, { borderBottomColor: theme.border }]}>
-          {navigation?.canGoBack?.() && (
-            <TouchableOpacity
-              style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-              onPress={() => navigation.goBack()}
-            >
-              <Ionicons name="arrow-back" size={18} color={theme.foreground} />
-            </TouchableOpacity>
-          )}
-          <View style={{ flex: 1 }}>
-            <Text style={[s.eyebrow, { color: DA + '80' }]}>DRIVER EARNINGS</Text>
-            <Text style={[s.title,   { color: theme.foreground }]}>My Wallet</Text>
-          </View>
-          <View style={s.headerBtns}>
-            <TouchableOpacity
-              style={[s.headerActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-              onPress={() => navigation.navigate('WalletTopUp')}
-              activeOpacity={0.88}
-            >
-              <Ionicons name="add-circle-outline" size={15} color={theme.foreground} />
-              <Text style={[s.headerActionTxt, { color: theme.foreground }]}>Top Up</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.headerActionBtn, { backgroundColor: DA }]}
-              onPress={() => navigation.navigate('Withdrawal')}
-              activeOpacity={0.88}
-            >
-              <Ionicons name="arrow-up-circle-outline" size={15} color="#080C18" />
-              <Text style={[s.headerActionTxt, { color: '#080C18' }]}>Withdraw</Text>
-            </TouchableOpacity>
-          </View>
+      {/* ── Header — measure actual rendered height for SCROLL_H accuracy ── */}
+      <View
+        style={[s.header, { borderBottomColor: theme.border }]}
+        onLayout={e => setHeaderH(e.nativeEvent.layout.height)}
+      >
+        {navigation?.canGoBack?.() && (
+          <TouchableOpacity
+            style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={18} color={theme.foreground} />
+          </TouchableOpacity>
+        )}
+        <View style={{ flex: 1 }}>
+          <Text style={[s.eyebrow, { color: DA + '80' }]}>DRIVER EARNINGS</Text>
+          <Text style={[s.title,   { color: theme.foreground }]}>My Wallet</Text>
         </View>
-      </SafeAreaView>
+        <View style={s.headerBtns}>
+          <TouchableOpacity
+            style={[s.headerActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+            onPress={() => navigation.navigate('WalletTopUp')}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="add-circle-outline" size={15} color={theme.foreground} />
+            <Text style={[s.headerActionTxt, { color: theme.foreground }]}>Top Up</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.headerActionBtn, { backgroundColor: DA }]}
+            onPress={() => navigation.navigate('Withdrawal')}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="arrow-up-circle-outline" size={15} color="#080C18" />
+            <Text style={[s.headerActionTxt, { color: '#080C18' }]}>Withdraw</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
+      {/* KEY: bounded container — explicit pixel height gives AnimatedRN.ScrollView
+            a concrete parent boundary, identical to ProfileScreen's SCROLL_H pattern.
+            Without this, Reanimated's ScrollView has no reference height and
+            can't calculate the scroll area on Android. */}
       {loading ? (
-        <View style={s.loadingWrap}>
+        <View style={[s.loadingWrap, { height: SCROLL_H }]}>
           <ActivityIndicator color={DA} size="large" />
         </View>
       ) : (
-        <AnimatedRN.ScrollView
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          onScroll={scrollHandler}   // ← using the pre-defined handler
-          scrollEventThrottle={16}
-          overScrollMode="never"
-        >
-          <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
-            {/* ── Stats ── */}
-            <StatStrip earnings={earnings} walletBalance={walletBalance} theme={theme} />
+        <View style={{ height: SCROLL_H }}>
+          <AnimatedRN.ScrollView
+            contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 24 }]}
+            showsVerticalScrollIndicator={false}
+            onScroll={scrollHandler}
+            scrollEventThrottle={16}
+            overScrollMode="never"
+          >
+            <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
 
-            {/* ── Wallet actions row ── */}
-            <View style={s.walletActions}>
-              <TouchableOpacity
-                style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
-                onPress={() => navigation.navigate('WalletTopUp')}
-                activeOpacity={0.85}
-              >
-                <View style={[s.walletActionIcon, { backgroundColor: GREEN + '20' }]}>
-                  <Ionicons name="add-circle-outline" size={20} color={GREEN} />
-                </View>
-                <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Top Up</Text>
-                <Text style={[s.walletActionSub, { color: theme.hint }]}>Add money</Text>
-              </TouchableOpacity>
+              {/* ── Stats ── */}
+              <StatStrip earnings={earnings} walletBalance={walletBalance} theme={theme} />
 
-              <TouchableOpacity
-                style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
-                onPress={() => navigation.navigate('Withdrawal')}
-                activeOpacity={0.85}
-              >
-                <View style={[s.walletActionIcon, { backgroundColor: DA + '20' }]}>
-                  <Ionicons name="arrow-up-circle-outline" size={20} color={DA} />
-                </View>
-                <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Withdraw</Text>
-                <Text style={[s.walletActionSub, { color: theme.hint }]}>To bank</Text>
-              </TouchableOpacity>
+              {/* ── Wallet actions row ── */}
+              <View style={s.walletActions}>
+                <TouchableOpacity
+                  style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
+                  onPress={() => navigation.navigate('WalletTopUp')}
+                  activeOpacity={0.85}
+                >
+                  <View style={[s.walletActionIcon, { backgroundColor: GREEN + '20' }]}>
+                    <Ionicons name="add-circle-outline" size={20} color={GREEN} />
+                  </View>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Top Up</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>Add money</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
-                onPress={() => navigation.navigate('DriverHistory')}
-                activeOpacity={0.85}
-              >
-                <View style={[s.walletActionIcon, { backgroundColor: PURPLE + '20' }]}>
-                  <Ionicons name="time-outline" size={20} color={PURPLE} />
-                </View>
-                <Text style={[s.walletActionLbl, { color: theme.foreground }]}>History</Text>
-                <Text style={[s.walletActionSub, { color: theme.hint }]}>All rides</Text>
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity
+                  style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
+                  onPress={() => navigation.navigate('Withdrawal')}
+                  activeOpacity={0.85}
+                >
+                  <View style={[s.walletActionIcon, { backgroundColor: DA + '20' }]}>
+                    <Ionicons name="arrow-up-circle-outline" size={20} color={DA} />
+                  </View>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Withdraw</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>To bank</Text>
+                </TouchableOpacity>
 
-            {/* ── Breakdown card ── */}
-            <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Text style={[s.sectionEyebrow, { color: theme.hint }]}>EARNINGS BREAKDOWN</Text>
-              {[
-                ['Gross Earnings',     earnings?.totalEarnings,  DA],
-                ['Platform Fee (20%)', earnings?.platformFee,    RED],
-                ['Net Earnings',       earnings?.netEarnings,    GREEN],
-                ['Avg per Ride',       earnings?.averagePerRide, theme.foreground],
-              ].map(([lbl, val, col]) => (
-                <View key={lbl} style={[s.breakRow, { borderBottomColor: theme.border }]}>
-                  <Text style={[s.breakLbl, { color: theme.hint }]}>{lbl}</Text>
-                  <Text style={[s.breakVal, { color: col }]}>
-                    ₦{Number(val ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
-                  </Text>
-                </View>
-              ))}
-            </View>
+                <TouchableOpacity
+                  style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
+                  onPress={() => navigation.navigate('DriverHistory')}
+                  activeOpacity={0.85}
+                >
+                  <View style={[s.walletActionIcon, { backgroundColor: PURPLE + '20' }]}>
+                    <Ionicons name="time-outline" size={20} color={PURPLE} />
+                  </View>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>History</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>All rides</Text>
+                </TouchableOpacity>
+              </View>
 
-            {/* ── Period filter ── */}
-            <View style={s.periodRow}>
-              {PERIODS.map(p => {
-                const active = period === p.key;
-                return (
+              {/* ── Breakdown card ── */}
+              <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                <Text style={[s.sectionEyebrow, { color: theme.hint }]}>EARNINGS BREAKDOWN</Text>
+                {[
+                  ['Gross Earnings',     earnings?.totalEarnings,  DA],
+                  ['Platform Fee (20%)', earnings?.platformFee,    RED],
+                  ['Net Earnings',       earnings?.netEarnings,    GREEN],
+                  ['Avg per Ride',       earnings?.averagePerRide, theme.foreground],
+                ].map(([lbl, val, col]) => (
+                  <View key={lbl} style={[s.breakRow, { borderBottomColor: theme.border }]}>
+                    <Text style={[s.breakLbl, { color: theme.hint }]}>{lbl}</Text>
+                    <Text style={[s.breakVal, { color: col }]}>
+                      ₦{Number(val ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* ── Period filter ── */}
+              <View style={s.periodRow}>
+                {PERIODS.map(p => {
+                  const active = period === p.key;
+                  return (
+                    <TouchableOpacity
+                      key={p.key}
+                      style={[
+                        s.periodBtn,
+                        active
+                          ? { backgroundColor: DA }
+                          : { backgroundColor: theme.backgroundAlt, borderColor: theme.border },
+                      ]}
+                      onPress={() => setPeriod(p.key)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[s.periodTxt, { color: active ? '#080C18' : theme.hint }]}>{p.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* ── Tab switcher ── */}
+              <View style={[s.tabRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                {[['rides', 'Ride History'], ['transactions', 'Wallet Txns']].map(([key, lbl]) => (
                   <TouchableOpacity
-                    key={p.key}
+                    key={key}
                     style={[
-                      s.periodBtn,
-                      active
-                        ? { backgroundColor: DA }
-                        : { backgroundColor: theme.backgroundAlt, borderColor: theme.border },
+                      s.tabBtn,
+                      activeTab === key && { backgroundColor: DA + '20', borderBottomColor: DA, borderBottomWidth: 2 },
                     ]}
-                    onPress={() => setPeriod(p.key)}
+                    onPress={() => setActiveTab(key)}
                     activeOpacity={0.8}
                   >
-                    <Text style={[s.periodTxt, { color: active ? '#080C18' : theme.hint }]}>{p.label}</Text>
+                    <Text style={[s.tabTxt, { color: activeTab === key ? DA : theme.hint }]}>{lbl}</Text>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
+                ))}
+              </View>
 
-            {/* ── Tab switcher ── */}
-            <View style={[s.tabRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              {[['rides', 'Ride History'], ['transactions', 'Wallet Txns']].map(([key, lbl]) => (
-                <TouchableOpacity
-                  key={key}
-                  style={[
-                    s.tabBtn,
-                    activeTab === key && { backgroundColor: DA + '20', borderBottomColor: DA, borderBottomWidth: 2 },
-                  ]}
-                  onPress={() => setActiveTab(key)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[s.tabTxt, { color: activeTab === key ? DA : theme.hint }]}>{lbl}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+              {/* ── Content list ── */}
+              <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                {activeTab === 'rides' ? (
+                  rides.length === 0 ? (
+                    <View style={s.empty}>
+                      <Ionicons name="car-outline" size={32} color={theme.hint} />
+                      <Text style={[s.emptyTxt, { color: theme.hint }]}>No rides for this period</Text>
+                    </View>
+                  ) : (
+                    rides.map((item, i) => (
+                      <EarningRow key={item.id ?? i} item={item} theme={theme} last={i === rides.length - 1} />
+                    ))
+                  )
+                ) : (
+                  transactions.length === 0 ? (
+                    <View style={s.empty}>
+                      <Ionicons name="wallet-outline" size={32} color={theme.hint} />
+                      <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
+                    </View>
+                  ) : (
+                    transactions.map((item, i) => (
+                      <TxRow key={item.id ?? i} item={item} theme={theme} last={i === transactions.length - 1} />
+                    ))
+                  )
+                )}
+              </View>
 
-            {/* ── Content list ── */}
-            <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              {activeTab === 'rides' ? (
-                rides.length === 0 ? (
-                  <View style={s.empty}>
-                    <Ionicons name="car-outline" size={32} color={theme.hint} />
-                    <Text style={[s.emptyTxt, { color: theme.hint }]}>No rides for this period</Text>
-                  </View>
-                ) : (
-                  rides.map((item, i) => (
-                    <EarningRow key={item.id ?? i} item={item} theme={theme} last={i === rides.length - 1} />
-                  ))
-                )
-              ) : (
-                transactions.length === 0 ? (
-                  <View style={s.empty}>
-                    <Ionicons name="wallet-outline" size={32} color={theme.hint} />
-                    <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
-                  </View>
-                ) : (
-                  transactions.map((item, i) => (
-                    <TxRow key={item.id ?? i} item={item} theme={theme} last={i === transactions.length - 1} />
-                  ))
-                )
-              )}
-            </View>
-          </Animated.View>
-        </AnimatedRN.ScrollView>
+            </Animated.View>
+          </AnimatedRN.ScrollView>
+        </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
+  // KEY: flex:1 on root — SafeAreaView needs this to fill the screen
   root:    { flex: 1 },
   orb:     { position: 'absolute', width: width * 1.1, height: width * 1.1, borderRadius: width * 0.55, top: -width * 0.7, left: -width * 0.3, opacity: 0.04 },
 
@@ -383,8 +412,10 @@ const s = StyleSheet.create({
   headerActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 11, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8 },
   headerActionTxt: { fontSize: 12, fontWeight: '800' },
 
-  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scroll:      { paddingHorizontal: 20, paddingBottom: 100 },
+  loadingWrap: { justifyContent: 'center', alignItems: 'center' },
+
+  // KEY: paddingBottom set dynamically with insets.bottom — no hard-coded 100
+  scroll:      { paddingHorizontal: 20 },
 
   walletActions:    { flexDirection: 'row', gap: 10, marginBottom: 14 },
   walletActionBtn:  { flex: 1, borderRadius: 16, borderWidth: 1, padding: 14, alignItems: 'center', gap: 6 },

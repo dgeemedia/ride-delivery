@@ -3,10 +3,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   StatusBar, Dimensions, Animated, ActivityIndicator,
-  Alert, RefreshControl,
+  Alert, RefreshControl, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
-import { SafeAreaView }      from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
 import { rideAPI }           from '../../services/api';
 
@@ -136,11 +136,11 @@ const dc = StyleSheet.create({
   pills:       { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 });
 
-// ─── ConfirmSheet ─────────────────────────────────────────────────────────────
+// ─── ConfirmSheet — fully scrollable bottom sheet ─────────────────────────────
 const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, theme }) => {
   const [requesting, setRequesting] = useState(false);
-  const slideA = useRef(new Animated.Value(height)).current;
-  const accentFg = theme.accentFg ?? '#111111';
+  const slideA  = useRef(new Animated.Value(height)).current;
+  const insets  = useSafeAreaInsets();
 
   const hasFloor      = driver.preferredFloorPrice > 0;
   const effectiveFare = hasFloor
@@ -190,72 +190,113 @@ const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, t
 
   return (
     <View style={cs.overlay}>
+      {/* Dimmed backdrop — tap to dismiss */}
       <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={close} activeOpacity={1} />
-      <Animated.View style={[cs.sheet, { backgroundColor: theme.background, borderColor: theme.border, transform: [{ translateY: slideA }] }]}>
+
+      <Animated.View
+        style={[
+          cs.sheet,
+          {
+            backgroundColor: theme.background,
+            borderColor: theme.border,
+            // Max height keeps sheet from covering whole screen; content scrolls inside
+            maxHeight: height * 0.88,
+            paddingBottom: insets.bottom + 8,
+            transform: [{ translateY: slideA }],
+          },
+        ]}
+      >
+        {/* Handle */}
         <View style={[cs.handle, { backgroundColor: theme.border }]} />
 
-        <Text style={[cs.sheetTitle, { color: theme.foreground }]}>Confirm Driver</Text>
-
-        <View style={[cs.miniCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-          <View style={[cs.miniAvatar, { backgroundColor: DA + '18' }]}>
-            <Text style={[cs.miniAvatarTxt, { color: DA }]}>
-              {driver.firstName?.[0]}{driver.lastName?.[0]}
-            </Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[cs.miniName, { color: theme.foreground }]}>
-              {driver.firstName} {driver.lastName}
-            </Text>
-            <Text style={[cs.miniVehicle, { color: theme.hint }]}>
-              {driver.vehicleColor} {driver.vehicleMake} • {driver.vehiclePlate}
-            </Text>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <StarRating rating={driver.rating} theme={theme} />
-            <Text style={[cs.miniEta, { color: theme.hint }]}>~{driver.etaMinutes} min away</Text>
-          </View>
+        {/* Title row */}
+        <View style={cs.titleRow}>
+          <Text style={[cs.sheetTitle, { color: theme.foreground }]}>Confirm Driver</Text>
+          <TouchableOpacity onPress={close} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="close-circle" size={24} color={theme.hint} />
+          </TouchableOpacity>
         </View>
 
-        <View style={[cs.fareCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-          <FareRow label="Platform estimate"  value={`₦${(platformFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}`} />
+        {/* ── Scrollable body ── */}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={cs.scrollContent}
+        >
+          {/* Driver mini card */}
+          <View style={[cs.miniCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+            <View style={[cs.miniAvatar, { backgroundColor: DA + '18' }]}>
+              <Text style={[cs.miniAvatarTxt, { color: DA }]}>
+                {driver.firstName?.[0]}{driver.lastName?.[0]}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[cs.miniName, { color: theme.foreground }]}>
+                {driver.firstName} {driver.lastName}
+              </Text>
+              <Text style={[cs.miniVehicle, { color: theme.hint }]}>
+                {driver.vehicleColor} {driver.vehicleMake} • {driver.vehiclePlate}
+              </Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <StarRating rating={driver.rating} theme={theme} />
+              <Text style={[cs.miniEta, { color: theme.hint }]}>~{driver.etaMinutes} min away</Text>
+            </View>
+          </View>
+
+          {/* Fare breakdown */}
+          <View style={[cs.fareCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+            <FareRow label="Platform estimate"  value={`₦${(platformFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}`} />
+            {floorActive && (
+              <FareRow
+                label={`Driver floor (+${markupPct}%)`}
+                value={`₦${effectiveFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
+                color={DA}
+              />
+            )}
+            <FareRow label="Booking fee (non-refundable)" value={`₦${bookingFee}`} />
+            <View style={[cs.fareDivider, { backgroundColor: theme.border }]} />
+            <FareRow label="Estimated total" value={`₦${effectiveFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`} bold color={floorActive ? DA : GREEN} />
+          </View>
+
+          {/* Floor price note */}
           {floorActive && (
-            <FareRow
-              label={`Driver floor (+${markupPct}%)`}
-              value={`₦${effectiveFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
-              color={DA}
-            />
+            <View style={[cs.floorNote, { backgroundColor: DA + '10', borderColor: DA + '30' }]}>
+              <Ionicons name="information-circle-outline" size={14} color={DA} />
+              <Text style={[cs.floorNoteTxt, { color: DA }]}>
+                This driver's floor price is above the standard estimate. The final fare will be recalculated using actual trip time — it may be higher in heavy traffic.
+              </Text>
+            </View>
           )}
-          <FareRow label="Booking fee (non-refundable)" value={`₦${bookingFee}`} />
-          <View style={[cs.fareDivider, { backgroundColor: theme.border }]} />
-          <FareRow label="Estimated total" value={`₦${effectiveFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`} bold color={floorActive ? DA : GREEN} />
-        </View>
 
-        {floorActive && (
-          <View style={[cs.floorNote, { backgroundColor: DA + '10', borderColor: DA + '30' }]}>
-            <Ionicons name="information-circle-outline" size={14} color={DA} />
-            <Text style={[cs.floorNoteTxt, { color: DA }]}>
-              This driver's floor price is above the standard estimate. The final fare will be recalculated using actual trip time — it may be higher in heavy traffic.
-            </Text>
+          {/* Route card */}
+          <View style={[cs.routeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+            <View style={cs.routeRow}>
+              <View style={[cs.routeDot, { backgroundColor: DA }]} />
+              <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
+                {routeParams.pickupAddress}
+              </Text>
+            </View>
+            <View style={[cs.routeLine, { backgroundColor: theme.border }]} />
+            <View style={cs.routeRow}>
+              <View style={[cs.routeDot, { backgroundColor: RED }]} />
+              <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
+                {routeParams.dropoffAddress}
+              </Text>
+            </View>
           </View>
-        )}
 
-        <View style={[cs.routeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-          <View style={cs.routeRow}>
-            <View style={[cs.routeDot, { backgroundColor: DA }]} />
-            <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={1}>
-              {routeParams.pickupAddress}
-            </Text>
+          {/* Vehicle pills summary */}
+          <View style={cs.pillsRow}>
+            <Pill icon={VEHICLE_ICON[driver.vehicleType] ?? 'car-outline'} label={driver.vehicleType} color={PURPLE} theme={theme} />
+            <Pill icon="navigate-outline" label={`${driver.distanceKm} km`}   color={theme.hint} theme={theme} />
+            <Pill icon="time-outline"     label={`~${driver.etaMinutes} min`} color={theme.hint} theme={theme} />
+            <Pill icon="star-outline"     label={`${driver.totalRides} rides`} color={theme.hint} theme={theme} />
           </View>
-          <View style={[cs.routeLine, { backgroundColor: theme.border }]} />
-          <View style={cs.routeRow}>
-            <View style={[cs.routeDot, { backgroundColor: RED }]} />
-            <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={1}>
-              {routeParams.dropoffAddress}
-            </Text>
-          </View>
-        </View>
+        </ScrollView>
 
-        <View style={cs.actions}>
+        {/* ── Sticky action bar — always visible ── */}
+        <View style={[cs.actions, { borderTopColor: theme.border }]}>
           <TouchableOpacity
             style={[cs.cancelBtn, { borderColor: theme.border }]}
             onPress={close}
@@ -286,39 +327,50 @@ const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, t
 };
 
 const cs = StyleSheet.create({
-  overlay:    { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
-  sheet:      { borderTopLeftRadius: 30, borderTopRightRadius: 30, borderTopWidth: 1, padding: 24, paddingTop: 14, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.25, shadowRadius: 14, elevation: 18 },
-  handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  sheetTitle: { fontSize: 20, fontWeight: '900', marginBottom: 16 },
-  miniCard:       { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 14 },
-  miniAvatar:     { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  miniAvatarTxt:  { fontSize: 16, fontWeight: '800' },
-  miniName:       { fontSize: 14, fontWeight: '800', marginBottom: 2 },
-  miniVehicle:    { fontSize: 11, fontWeight: '500' },
-  miniEta:        { fontSize: 11, marginTop: 3 },
-  fareCard:    { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 12 },
-  fareRow:     { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  fareLabel:   { fontSize: 13 },
-  fareValue:   { fontSize: 13 },
-  fareDivider: { height: 1, marginVertical: 6 },
+  overlay:      { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
+  sheet:        {
+    borderTopLeftRadius: 30, borderTopRightRadius: 30,
+    borderTopWidth: 1,
+    paddingTop: 14,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.25, shadowRadius: 14, elevation: 18,
+  },
+  handle:       { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  titleRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 14 },
+  sheetTitle:   { fontSize: 20, fontWeight: '900' },
+  scrollContent:{ paddingHorizontal: 24, paddingBottom: 8 },
+  miniCard:     { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 14 },
+  miniAvatar:   { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+  miniAvatarTxt:{ fontSize: 16, fontWeight: '800' },
+  miniName:     { fontSize: 14, fontWeight: '800', marginBottom: 2 },
+  miniVehicle:  { fontSize: 11, fontWeight: '500' },
+  miniEta:      { fontSize: 11, marginTop: 3 },
+  fareCard:     { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 12 },
+  fareRow:      { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  fareLabel:    { fontSize: 13 },
+  fareValue:    { fontSize: 13 },
+  fareDivider:  { height: 1, marginVertical: 6 },
   floorNote:    { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 12 },
   floorNoteTxt: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '500' },
-  routeCard: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 18 },
-  routeRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  routeDot:  { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
-  routeLine: { width: 2, height: 18, marginLeft: 4, marginVertical: 4 },
-  routeAddr: { flex: 1, fontSize: 13, fontWeight: '600' },
-  actions:    { flexDirection: 'row', gap: 12 },
-  cancelBtn:  { flex: 1, height: 54, borderRadius: 14, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
-  cancelTxt:  { fontSize: 15, fontWeight: '700' },
-  confirmBtn: { flex: 2, height: 54, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  confirmTxt: { fontSize: 15, fontWeight: '900', color: '#080C18' },
+  routeCard:    { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 12 },
+  routeRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  routeDot:     { width: 10, height: 10, borderRadius: 5, flexShrink: 0, marginTop: 3 },
+  routeLine:    { width: 2, height: 18, marginLeft: 4, marginVertical: 4 },
+  routeAddr:    { flex: 1, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  pillsRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  // Sticky bottom bar
+  actions:      { flexDirection: 'row', gap: 12, paddingHorizontal: 24, paddingTop: 14, borderTopWidth: 1 },
+  cancelBtn:    { flex: 1, height: 54, borderRadius: 14, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
+  cancelTxt:    { fontSize: 15, fontWeight: '700' },
+  confirmBtn:   { flex: 2, height: 54, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  confirmTxt:   { fontSize: 15, fontWeight: '900', color: '#080C18' },
 });
 
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function NearbyDriversScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
-  const params = route.params ?? {};
+  const insets          = useSafeAreaInsets();
+  const params          = route.params ?? {};
 
   const [drivers,        setDrivers]        = useState([]);
   const [platformFare,   setPlatformFare]   = useState(null);
@@ -365,21 +417,24 @@ export default function NearbyDriversScreen({ route, navigation }) {
 
   const onRefresh = () => { setRefreshing(true); load(true); };
 
-  const handleDriverSelected = (driver) => setSelectedDriver(driver);
-
-  const handleRideRequested = (ride) => {
+  const handleDriverSelected  = (driver) => setSelectedDriver(driver);
+  const handleRideRequested   = (ride) => {
     setSelectedDriver(null);
     navigation.replace('RideTracking', { rideId: ride?.id, ride });
   };
 
-  const surgeActive  = drivers.some(d => d.surgeMultiplier > 1);
-  const surgeLabel   = drivers.find(d => d.surgeLabel)?.surgeLabel;
+  const surgeActive = drivers.some(d => d.surgeMultiplier > 1);
+  const surgeLabel  = drivers.find(d => d.surgeLabel)?.surgeLabel;
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
 
-      <SafeAreaView edges={['top', 'left', 'right']}>
+      {/* ── Fixed header (safe-area aware) ── */}
+      <SafeAreaView edges={['top', 'left', 'right']} style={{ backgroundColor: theme.background }}>
         <View style={[s.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
@@ -411,6 +466,7 @@ export default function NearbyDriversScreen({ route, navigation }) {
         )}
       </SafeAreaView>
 
+      {/* ── Route strip (sticky below header) ── */}
       <View style={[s.routeStrip, { backgroundColor: theme.backgroundAlt, borderBottomColor: theme.border }]}>
         <View style={s.routeItem}>
           <View style={[s.routeDot, { backgroundColor: DA }]} />
@@ -432,6 +488,7 @@ export default function NearbyDriversScreen({ route, navigation }) {
         )}
       </View>
 
+      {/* ── Scrollable content ── */}
       {loading ? (
         <View style={s.center}>
           <ActivityIndicator color={DA} size="large" />
@@ -450,7 +507,10 @@ export default function NearbyDriversScreen({ route, navigation }) {
                 theme={theme}
               />
             )}
-            contentContainerStyle={s.list}
+            contentContainerStyle={[
+              s.list,
+              { paddingBottom: insets.bottom + 32 },
+            ]}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={DA} />
@@ -489,6 +549,7 @@ export default function NearbyDriversScreen({ route, navigation }) {
         </Animated.View>
       )}
 
+      {/* ── ConfirmSheet overlay ── */}
       {selectedDriver && (
         <ConfirmSheet
           driver={selectedDriver}
@@ -504,29 +565,29 @@ export default function NearbyDriversScreen({ route, navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:   { flex: 1 },
-  header:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
-  backBtn:    { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  refreshBtn: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle:{ fontSize: 17, fontWeight: '900' },
-  headerSub:  { fontSize: 12, marginTop: 1 },
+  root:        { flex: 1 },
+  header:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
+  backBtn:     { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  refreshBtn:  { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '900' },
+  headerSub:   { fontSize: 12, marginTop: 1 },
   surgeBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, marginHorizontal: 16, marginTop: 10, marginBottom: 4, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   surgeTxt:    { fontSize: 12, fontWeight: '700', flex: 1 },
-  routeStrip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
-  routeItem:  { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  routeDot:   { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  routeText:  { fontSize: 12, fontWeight: '600', flex: 1 },
-  fareChip:   { fontSize: 13, fontWeight: '900', marginLeft: 8 },
-  list:       { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 120 },
-  listHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  listCount:  { fontSize: 12, fontWeight: '700' },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
-  legendTxt:  { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
-  center:     { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  loadingTxt: { fontSize: 13, fontWeight: '500', marginTop: 8 },
-  empty:      { alignItems: 'center', paddingTop: 80, gap: 12 },
-  emptyTitle: { fontSize: 18, fontWeight: '800' },
-  emptySub:   { fontSize: 13, textAlign: 'center', maxWidth: 240 },
-  retryBtn:   { marginTop: 8, borderRadius: 14, paddingHorizontal: 28, paddingVertical: 12 },
-  retryTxt:   { fontSize: 14, fontWeight: '800', color: '#080C18' },
+  routeStrip:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
+  routeItem:   { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  routeDot:    { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  routeText:   { fontSize: 12, fontWeight: '600', flex: 1 },
+  fareChip:    { fontSize: 13, fontWeight: '900', marginLeft: 8 },
+  list:        { paddingHorizontal: 16, paddingTop: 14 },
+  listHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  listCount:   { fontSize: 12, fontWeight: '700' },
+  legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
+  legendTxt:   { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
+  loadingTxt:  { fontSize: 13, fontWeight: '500', marginTop: 8 },
+  empty:       { alignItems: 'center', paddingTop: 80, gap: 12 },
+  emptyTitle:  { fontSize: 18, fontWeight: '800' },
+  emptySub:    { fontSize: 13, textAlign: 'center', maxWidth: 240 },
+  retryBtn:    { marginTop: 8, borderRadius: 14, paddingHorizontal: 28, paddingVertical: 12 },
+  retryTxt:    { fontSize: 14, fontWeight: '800', color: '#080C18' },
 });
