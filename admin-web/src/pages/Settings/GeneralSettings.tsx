@@ -337,52 +337,106 @@ const PlatformSection: React.FC = () => {
       )}
 
       <div className="mt-5 max-w-2xl border border-orange-200 bg-orange-50 rounded-lg p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-gray-900">Maintenance Mode</p>
-            <p className="text-xs text-gray-500 mt-0.5">Returns 503 on all customer/driver routes. Admin routes stay live.</p>
+  <div className="flex items-center justify-between">
+    <div>
+      <p className="text-sm font-semibold text-gray-900">Maintenance Mode</p>
+      <p className="text-xs text-gray-500 mt-0.5">
+        Returns 503 on all customer/driver routes. Admin routes stay live.
+      </p>
+    </div>
+    <button
+      onClick={() => setForm(f => ({ ...f, maintenance: !f.maintenance }))}
+      className={`flex items-center gap-2 text-sm font-medium transition-colors ${
+        form.maintenance ? 'text-orange-600' : 'text-gray-400'
+      }`}
+    >
+      {form.maintenance
+        ? <><ToggleRight className="h-8 w-8" /><span>ON</span></>
+        : <><ToggleLeft  className="h-8 w-8" /><span>OFF</span></>}
+    </button>
+  </div>
+
+  {statusLabel && (
+    <div className="inline-flex items-center gap-1.5 text-xs font-semibold bg-orange-100 text-orange-700 px-3 py-1 rounded-full">
+      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+      {statusLabel}
+    </div>
+  )}
+
+  <details className="mt-2" open={!!form.maintenanceStartsAt && !!form.maintenanceEndsAt}>
+    <summary className="cursor-pointer text-sm font-medium text-gray-500 hover:text-gray-700 select-none">
+      ⏱ Schedule maintenance window
+    </summary>
+    <div className="mt-3 space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Start date + time */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Start</label>
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={form.maintenanceStartsAt?.slice(0,10) ?? ''}
+              onChange={e => {
+                const time = form.maintenanceStartsAt?.slice(11,16) || '00:00';
+                setForm(f => ({ ...f, maintenanceStartsAt: e.target.value ? `${e.target.value}T${time}` : '' }));
+              }}
+              className="flex-1 px-3 py-2 rounded-lg border border-orange-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+            />
+            <input
+              type="time"
+              value={form.maintenanceStartsAt?.slice(11,16) ?? ''}
+              onChange={e => {
+                const date = form.maintenanceStartsAt?.slice(0,10) || '';
+                if (!date) return;
+                setForm(f => ({ ...f, maintenanceStartsAt: `${date}T${e.target.value}` }));
+              }}
+              className="w-28 px-3 py-2 rounded-lg border border-orange-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+            />
           </div>
-          <button onClick={() => setForm(f => ({ ...f, maintenance: !f.maintenance }))}
-            className={`flex items-center gap-2 text-sm font-medium transition-colors ${form.maintenance ? 'text-orange-600' : 'text-gray-400'}`}>
-            {form.maintenance
-              ? <><ToggleRight className="h-8 w-8" /><span>ON</span></>
-              : <><ToggleLeft  className="h-8 w-8" /><span>OFF</span></>}
-          </button>
         </div>
-        {statusLabel && (
-          <div className="inline-flex items-center gap-1.5 text-xs font-semibold bg-orange-100 text-orange-700 px-3 py-1 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />{statusLabel}
+
+        {/* End date + time */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">End</label>
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={form.maintenanceEndsAt?.slice(0,10) ?? ''}
+              onChange={e => {
+                const time = form.maintenanceEndsAt?.slice(11,16) || '00:00';
+                setForm(f => ({ ...f, maintenanceEndsAt: e.target.value ? `${e.target.value}T${time}` : '' }));
+              }}
+              className="flex-1 px-3 py-2 rounded-lg border border-orange-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+            />
+            <input
+              type="time"
+              value={form.maintenanceEndsAt?.slice(11,16) ?? ''}
+              onChange={e => {
+                const date = form.maintenanceEndsAt?.slice(0,10) || '';
+                if (!date) return;
+                setForm(f => ({ ...f, maintenanceEndsAt: `${date}T${e.target.value}` }));
+              }}
+              className="w-28 px-3 py-2 rounded-lg border border-orange-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+            />
           </div>
-        )}
-        {form.maintenance && (
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Message shown to users</label>
-              <textarea rows={3}
-                className="w-full px-3 py-2 rounded-lg border border-orange-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-                placeholder="e.g. Scheduled maintenance from 2:00 AM – 5:00 AM WAT. We apologise for the inconvenience."
-                value={form.maintenanceMessage}
-                onChange={e => setForm(f => ({ ...f, maintenanceMessage: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Start date &amp; time <span className="text-gray-400">(optional)</span></label>
-                <input type="datetime-local" value={form.maintenanceStartsAt}
-                  onChange={e => setForm(f => ({ ...f, maintenanceStartsAt: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-orange-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white" />
-                <p className="text-xs text-gray-400 mt-1">Users see a warning banner before this time.</p>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">End date &amp; time <span className="text-gray-400">(optional)</span></label>
-                <input type="datetime-local" value={form.maintenanceEndsAt}
-                  onChange={e => setForm(f => ({ ...f, maintenanceEndsAt: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-orange-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white" />
-                <p className="text-xs text-gray-400 mt-1">Maintenance auto-expires at this time.</p>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
+
+      {(form.maintenance || form.maintenanceStartsAt || form.maintenanceEndsAt) && (
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Message shown to users</label>
+          <textarea
+            rows={3}
+            className="w-full px-3 py-2 rounded-lg border border-orange-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+            placeholder="e.g. Scheduled maintenance from 2:00 AM – 5:00 AM WAT. We apologise for the inconvenience."
+            value={form.maintenanceMessage}
+            onChange={e => setForm(f => ({ ...f, maintenanceMessage: e.target.value }))}
+          />
+        </div>
+      )}
+    </div>
+  </details>
+</div>
 
       <div className="mt-5">
         <Button loading={loading || fetching} onClick={handleSave}>
