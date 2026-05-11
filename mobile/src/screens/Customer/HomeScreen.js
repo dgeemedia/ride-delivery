@@ -28,6 +28,7 @@ import {
   RidesIcon,
   SendIcon,
   DriversIcon,
+  CouriersIcon,
   SupportIcon,
 } from '../../components/ServiceIcons';
 
@@ -46,7 +47,7 @@ const TAB_H         = Platform.OS === 'android'
   : TAB_CONTENT_H;
 
 // ── Service card data ─────────────────────────────────────────────────────────
-const buildServices = (nav, maint, warn) => [
+const buildServices = (nav, maint, warn, userCoords) => [
   {
     id: 'ride',
     IconComponent: RidesIcon,
@@ -65,13 +66,27 @@ const buildServices = (nav, maint, warn) => [
     id: 'nearby',
     IconComponent: DriversIcon,
     label: 'Drivers',
-    sub: 'Browse nearby',
+    sub: 'By route',
     onPress: () => {
       if (maint.isOn) { warn(); return; }
       nav.navigate('NearbyDrivers', {
-        pickupAddress: '', pickupLat: 6.5244, pickupLng: 3.3792,
+        pickupAddress: '', pickupLat: userCoords?.lat ?? 6.5244, pickupLng: userCoords?.lng ?? 3.3792,
         dropoffAddress: '', dropoffLat: 6.4281, dropoffLng: 3.4219,
         vehicleType: 'CAR',
+      });
+    },
+  },
+  {
+    id: 'couriers',
+    IconComponent: CouriersIcon,
+    label: 'Couriers',
+    sub: 'Near you',
+    onPress: () => {
+      if (maint.isOn) { warn(); return; }
+      nav.navigate('NearbyPartners', {
+        pickupLat:     userCoords?.lat ?? 6.5244,
+        pickupLng:     userCoords?.lng ?? 3.3792,
+        pickupAddress: userCoords?.address ?? '',
       });
     },
   },
@@ -79,7 +94,7 @@ const buildServices = (nav, maint, warn) => [
     id: 'support',
     IconComponent: SupportIcon,
     label: 'Support',
-    sub: "We're here to help",
+    sub: "We're here",
     onPress: () => { if (maint.isOn) { warn(); return; } nav.navigate('Support'); },
   },
 ];
@@ -137,16 +152,18 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
   };
 
   const MENU_ITEMS = [
-    { icon: 'home-outline',          label: 'Home',           dest: null },
-    { icon: 'car-outline',           label: 'Book a Ride',    dest: 'RequestRide' },
-    { icon: 'cube-outline',          label: 'Send a Package', dest: 'RequestDelivery' },
-    { icon: 'people-outline',        label: 'Nearby Drivers', dest: 'NearbyDrivers',
+    { icon: 'home-outline',          label: 'Home',             dest: null },
+    { icon: 'car-outline',           label: 'Book a Ride',      dest: 'RequestRide' },
+    { icon: 'cube-outline',          label: 'Send a Package',   dest: 'RequestDelivery' },
+    { icon: 'people-outline',        label: 'Nearby Drivers',   dest: 'NearbyDrivers',
       params: { pickupAddress: '', pickupLat: 6.5244, pickupLng: 3.3792, dropoffAddress: '', dropoffLat: 6.4281, dropoffLng: 3.4219, vehicleType: 'CAR' } },
-    { icon: 'time-outline',          label: 'My History',     dest: 'HistoryTab' },
-    { icon: 'wallet-outline',        label: 'Wallet',         dest: 'WalletTab' },
-    { icon: 'notifications-outline', label: 'Notifications',  dest: 'Notifications' },
-    { icon: 'headset-outline',       label: 'Support',        dest: 'Support' },
-    { icon: 'person-outline',        label: 'Profile',        dest: 'ProfileTab' },
+    { icon: 'bicycle-outline',       label: 'Nearby Couriers',  dest: 'NearbyPartners',
+      params: { pickupLat: 6.5244, pickupLng: 3.3792, pickupAddress: '' } },
+    { icon: 'time-outline',          label: 'My History',       dest: 'HistoryTab' },
+    { icon: 'wallet-outline',        label: 'Wallet',           dest: 'WalletTab' },
+    { icon: 'notifications-outline', label: 'Notifications',    dest: 'Notifications' },
+    { icon: 'headset-outline',       label: 'Support',          dest: 'Support' },
+    { icon: 'person-outline',        label: 'Profile',          dest: 'ProfileTab' },
   ];
 
   if (!visible) return null;
@@ -235,14 +252,15 @@ const ServiceIcon = ({ item, theme, darkMode }) => (
 );
 
 const si = StyleSheet.create({
-  wrap:    { alignItems: 'center', flex: 1 },
+  wrap:    { alignItems: 'center', width: 72 },
   iconBox: {
     width: 64, height: 64, borderRadius: 20,
     justifyContent: 'center', alignItems: 'center',
-    marginBottom: 7, overflow: 'hidden',
+    marginBottom: 2,                // reduced from 7 for a tighter fit
+    overflow: 'hidden',
   },
-  label: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
-  sub:   { fontSize: 10, fontWeight: '500' },
+  label: { fontSize: 12, fontWeight: '700', marginBottom: 2, textAlign: 'center' },
+  sub:   { fontSize: 10, fontWeight: '500', textAlign: 'center' },
 });
 
 // ── RecentItem ────────────────────────────────────────────────────────────────
@@ -289,6 +307,8 @@ export default function HomeScreen({ navigation }) {
   const [maintenance,     setMaintenance]     = useState({ isOn: false, isScheduled: false, message: '', endsAt: null });
   const [historyLoading,  setHistoryLoading]  = useState(true);
   const [sheetExpanded,   setSheetExpanded]   = useState(false);
+  // Store user's current coords so Couriers card passes them along
+  const [userCoords,      setUserCoords]      = useState(null);
 
   const fadeA       = useRef(new Animated.Value(0)).current;
   const sheetTransY = useRef(new Animated.Value(COLLAPSED_Y)).current;
@@ -388,6 +408,18 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+  // Grab user location once for the Couriers card
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await import('expo-location').then(m => m.requestForegroundPermissionsAsync());
+        if (status !== 'granted') return;
+        const loc = await import('expo-location').then(m => m.getCurrentPositionAsync({ accuracy: 3 }));
+        setUserCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+      } catch { /* silent */ }
+    })();
+  }, []);
+
   const showMaintenanceAlert = () => {
     const endsMsg = maintenance.endsAt
       ? `\n\nExpected back: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}`
@@ -439,7 +471,7 @@ export default function HomeScreen({ navigation }) {
     .slice(0, 6);
 
   const hasMaintBanner = maintenance.isOn || maintenance.isScheduled;
-  const serviceCards   = buildServices(navigation, maintenance, showMaintenanceAlert);
+  const serviceCards   = buildServices(navigation, maintenance, showMaintenanceAlert, userCoords);
 
   const hour  = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -475,8 +507,8 @@ export default function HomeScreen({ navigation }) {
           style={StyleSheet.absoluteFill}
           provider={PROVIDER_GOOGLE}
           initialRegion={{
-            latitude: 6.5244,
-            longitude: 3.3792,
+            latitude: userCoords?.lat ?? 6.5244,
+            longitude: userCoords?.lng ?? 3.3792,
             latitudeDelta: 0.03,
             longitudeDelta: 0.03,
           }}
@@ -569,7 +601,7 @@ export default function HomeScreen({ navigation }) {
           )}
         </View>
 
-        {/* ── Bounded inner container — gives ScrollView a proper flex parent ── */}
+        {/* ── Bounded inner container ── */}
         <View style={s.sheetInner}>
 
           {/* Greeting */}
@@ -606,32 +638,39 @@ export default function HomeScreen({ navigation }) {
             />
           )}
 
-          {/* ── Service icon row ── */}
-          <View style={s.serviceRow}>
-            {serviceCards.map(item => (
-              <ServiceIcon key={item.id} item={item} theme={theme} darkMode={darkMode} />
-            ))}
-          </View>
+          {/* Service Icons + Search Bar — grouped together */}
+          <View style={{ paddingHorizontal: H_PAD }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.serviceScrollContent}
+              style={{ marginBottom: 0 }}   // set 0 for zero gap, or 2-4 for a tiny breath
+            >
+              {serviceCards.map(item => (
+                <ServiceIcon key={item.id} item={item} theme={theme} darkMode={darkMode} />
+              ))}
+            </ScrollView>
 
-          {/* Where to? search bar */}
-          <TouchableOpacity
-            style={[s.searchBar, { backgroundColor: inputBg, borderColor: inputBorder }]}
-            onPress={() => {
-              if (maintenance.isOn) { showMaintenanceAlert(); return; }
-              navigation.navigate('RequestRide');
-            }}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="search-outline" size={18} color={hintColor} />
-            <Text style={[s.searchHint, { color: hintColor }]}>Where to?</Text>
-            <View style={[s.laterPill, {
-              backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
-              borderColor: inputBorder,
-            }]}>
-              <Ionicons name="calendar-outline" size={13} color={hintColor} />
-              <Text style={[s.laterTxt, { color: hintColor }]}>Later</Text>
-            </View>
-          </TouchableOpacity>
+            {/* Where to? search bar */}
+            <TouchableOpacity
+              style={[s.searchBar, { backgroundColor: inputBg, borderColor: inputBorder }]}
+              onPress={() => {
+                if (maintenance.isOn) { showMaintenanceAlert(); return; }
+                navigation.navigate('RequestRide');
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="search-outline" size={18} color={hintColor} />
+              <Text style={[s.searchHint, { color: hintColor }]}>Where to?</Text>
+              <View style={[s.laterPill, {
+                backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
+                borderColor: inputBorder,
+              }]}>
+                <Ionicons name="calendar-outline" size={13} color={hintColor} />
+                <Text style={[s.laterTxt, { color: hintColor }]}>Later</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
 
           {/* Section label */}
           {!sheetExpanded && recentAddresses.length > 0 && (
@@ -641,7 +680,7 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* ── Scrollable recent list — flex:1 fills remaining bounded height ── */}
+          {/* ── Scrollable recent list ── */}
           <ScrollView
             style={s.scrollArea}
             showsVerticalScrollIndicator={false}
@@ -673,7 +712,7 @@ export default function HomeScreen({ navigation }) {
             )}
           </ScrollView>
 
-        </View>{/* end sheetInner */}
+        </View>
       </Animated.View>
     </View>
   );
@@ -727,7 +766,6 @@ const s = StyleSheet.create({
     shadowOpacity: 0.14, shadowRadius: 14, elevation: 22,
   },
 
-  // Handle area — PanResponder only, no flex
   handleWrap: {
     alignItems: 'center',
     paddingTop: 10,
@@ -737,16 +775,11 @@ const s = StyleSheet.create({
   handle:        { width: 38, height: 4, borderRadius: 2 },
   expandedTitle: { marginTop: 6, fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
 
-  // ── KEY ADDITION: bounded container below the handle ──────────────────────
-  // flex:1 means it fills exactly the remaining sheet height after the handle,
-  // giving ScrollView a real parent height to work against — same pattern as
-  // DriverDashboardScreen's sheetScroll inside its fixed-height sheet.
   sheetInner: {
     flex: 1,
     overflow: 'hidden',
   },
 
-  // ScrollView itself — flex:1 fills remaining height after static elements
   scrollArea: {
     flex: 1,
   },
@@ -766,14 +799,16 @@ const s = StyleSheet.create({
     backgroundColor: '#E05555', borderWidth: 1.5,
   },
 
-  serviceRow: {
-    flexDirection: 'row', paddingHorizontal: H_PAD,
-    marginBottom: 18, gap: 4,
+  // ── Service row — horizontal scroll (now style for outer ScrollView) ─────
+  serviceScrollContent: {
+    gap: 8,
+    paddingRight: 4,
   },
 
+  // Search bar — removed marginHorizontal (parent handles padding)
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginHorizontal: H_PAD, borderRadius: 14, borderWidth: 1,
+    borderRadius: 14, borderWidth: 1,
     paddingHorizontal: 14, paddingVertical: 13, marginBottom: 8,
   },
   searchHint: { flex: 1, fontSize: 15, fontWeight: '600' },

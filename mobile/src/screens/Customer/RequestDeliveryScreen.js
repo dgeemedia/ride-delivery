@@ -577,9 +577,12 @@ export default function RequestDeliveryScreen({ navigation }) {
     try {
       const res  = await deliveryAPI.getNearbyPartners({ pickupLat: pickupCoords.lat, pickupLng: pickupCoords.lng, radiusKm: 15 });
       const list = res?.data?.partners ?? res?.partners ?? [];
-      setPartners(list.length > 0 ? list : generateMockPartners(pickupCoords));
-    } catch { setPartners(generateMockPartners(pickupCoords)); }
-    finally { setLoadingPartners(false); }
+      setPartners(list.filter(p => !String(p.partnerId).startsWith('mock-')));
+    } catch {
+      setPartners([]);
+    } finally {
+      setLoadingPartners(false);
+    }
     Animated.timing(fadeA, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
       setStep(2); Animated.timing(fadeA, { toValue: 1, duration: 300, useNativeDriver: true }).start();
     });

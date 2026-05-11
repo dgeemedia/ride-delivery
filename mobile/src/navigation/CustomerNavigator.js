@@ -16,6 +16,7 @@ import HomeScreen              from '../screens/Customer/HomeScreen';
 import RequestRideScreen       from '../screens/Customer/RequestRideScreen';
 import RequestDeliveryScreen   from '../screens/Customer/RequestDeliveryScreen';
 import NearbyDriversScreen     from '../screens/Customer/NearbyDriversScreen';
+import NearbyPartnersScreen    from '../screens/Customer/NearbyPartnersScreen'; // ← NEW
 import RideTrackingScreen      from '../screens/Customer/RideTrackingScreen';
 import DeliveryTrackingScreen  from '../screens/Customer/DeliveryTrackingScreen';
 import HistoryScreen           from '../screens/Customer/HistoryScreen';
@@ -39,13 +40,14 @@ import LegalScreen             from '../screens/Shared/LegalScreen';
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// ── Stack navigators (unchanged) ──────────────────────────────────────────────
+// ── Stack navigators ──────────────────────────────────────────────────────────
 const HomeStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="Home"             component={HomeScreen}            />
     <Stack.Screen name="RequestRide"      component={RequestRideScreen}     />
     <Stack.Screen name="RequestDelivery"  component={RequestDeliveryScreen} />
     <Stack.Screen name="NearbyDrivers"    component={NearbyDriversScreen}   />
+    <Stack.Screen name="NearbyPartners"   component={NearbyPartnersScreen}  />
     <Stack.Screen name="RideTracking"     component={RideTrackingScreen}    />
     <Stack.Screen name="DeliveryTracking" component={DeliveryTrackingScreen}/>
     <Stack.Screen name="RateRide"         component={RateRideScreen}        options={{ presentation: 'modal' }} />
@@ -114,7 +116,7 @@ const GlassTabBar = ({ mode }) => {
   return <View style={style} />;
 };
 
-// ── WalletBadge — floating balance pill above the Wallet icon ─────────────────
+// ── WalletBadge ───────────────────────────────────────────────────────────────
 const WalletBadge = ({ balance, focused, darkMode }) => {
   const scaleA = useRef(new Animated.Value(0)).current;
 
@@ -126,7 +128,6 @@ const WalletBadge = ({ balance, focused, darkMode }) => {
 
   if (balance === null) return null;
 
-  // Format: ₦12.5k or ₦1.2k etc.
   const fmt = (n) => {
     if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 1_000)     return `₦${(n / 1_000).toFixed(1)}k`;
@@ -160,10 +161,9 @@ const CustomerNavigator = () => {
 
   const [walletBalance, setWalletBalance] = useState(null);
 
-  // Fetch wallet balance once on mount; refresh on WalletTab focus via navigation listener
   useEffect(() => {
     fetchBalance();
-    const interval = setInterval(fetchBalance, 60_000); // refresh every 60s
+    const interval = setInterval(fetchBalance, 60_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -173,7 +173,7 @@ const CustomerNavigator = () => {
       const bal = res?.data?.balance ?? res?.balance ?? null;
       if (bal !== null) setWalletBalance(Number(bal));
     } catch {
-      // Silently fail — badge just stays hidden
+      // Silent — badge stays hidden
     }
   };
 
@@ -196,7 +196,6 @@ const CustomerNavigator = () => {
               ProfileTab: focused ? 'person' : 'person-outline',
             };
 
-            // Wallet tab gets the special badge treatment
             if (route.name === 'WalletTab') {
               return (
                 <View style={tb.walletWrap}>
@@ -246,7 +245,6 @@ const CustomerNavigator = () => {
           tabBarBackground: () => <GlassTabBar mode={mode} />,
         })}
 
-        // Refresh balance when user navigates back to WalletTab
         screenListeners={({ route }) => ({
           focus: () => {
             if (route.name === 'WalletTab') fetchBalance();
