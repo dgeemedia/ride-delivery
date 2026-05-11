@@ -360,7 +360,6 @@ export default function RideTrackingScreen({ route, navigation }) {
         provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={mapRegion}
-        customMapStyle={DARK_MAP_STYLE}
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass={false}

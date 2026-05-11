@@ -659,7 +659,6 @@ export default function RequestRideScreen({ navigation }) {
         provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={mapRegion}
-        customMapStyle={DARK_MAP_STYLE}
         showsUserLocation={!isPickingLocation}
         showsMyLocationButton={false}
         showsCompass={false}
@@ -1088,7 +1087,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, borderRadius: 16, height: 52,
   },
-  confirmBarBtnTxt: { fontSize: 15, fontWeight: '800'},
+  confirmBarBtnTxt: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
 
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,

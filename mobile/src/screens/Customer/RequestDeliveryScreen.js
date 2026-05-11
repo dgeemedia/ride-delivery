@@ -633,7 +633,6 @@ export default function RequestDeliveryScreen({ navigation }) {
         provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={mapRegion}
-        customMapStyle={DARK_MAP_STYLE}
         showsUserLocation={!isPickingLocation}
         showsMyLocationButton={false}
         showsCompass={false}
@@ -1142,7 +1141,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, borderRadius: 16, height: 52,
   },
-  confirmBarBtnTxt: { fontSize: 15, fontWeight: '800' },
+  confirmBarBtnTxt: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
 
   // ── Keyboard-aware wrapper ────────────────────────────────────────────────
   // Fills the screen; pointerEvents="box-none" keeps the map touchable while
