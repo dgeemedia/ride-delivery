@@ -34,13 +34,15 @@ export default function SubmitTicketScreen({ navigation }) {
   const fadeA           = useRef(new Animated.Value(0)).current;
   const messageRef      = useRef(null);
 
-  const [category, setCategory] = useState('');
-  const [priority, setPriority] = useState('medium');
-  const [subject,  setSubject]  = useState('');
-  const [message,  setMessage]  = useState('');
-  const [loading,  setLoading]  = useState(false);
-  // KEY: measure real header height for accurate scroll boundary
-  const [headerH,  setHeaderH]  = useState(56);
+  const [category,       setCategory]       = useState('');
+  const [priority,       setPriority]       = useState('medium');
+  const [subject,        setSubject]        = useState('');
+  const [message,        setMessage]        = useState('');
+  const [loading,        setLoading]        = useState(false);
+  // FIX 1: track whether the user has explicitly tapped Submit so we can
+  // show the validation hint even when they haven't typed anything yet.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [headerH,        setHeaderH]        = useState(56);
 
   useEffect(() => {
     Animated.timing(fadeA, { toValue: 1, duration: 400, useNativeDriver: true }).start();
@@ -49,9 +51,17 @@ export default function SubmitTicketScreen({ navigation }) {
   const canSubmit = category && subject.trim().length >= 5 && message.trim().length >= 10;
 
   const handleSubmit = async () => {
-    if (!canSubmit || loading) return;
+    // FIX 1: always mark that the user attempted a submit so the validation
+    // hint becomes visible even if no field has been touched yet.
+    if (!canSubmit) {
+      setSubmitAttempted(true);
+      return;
+    }
+    if (loading) return;
+
     setLoading(true);
     try {
+      // FIX 4: use the plural endpoint to match getMyTickets / getTicketById.
       await supportAPI.submitTicket({
         category,
         priority,
@@ -64,41 +74,43 @@ export default function SubmitTicketScreen({ navigation }) {
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message ?? 'Failed to submit ticket. Please try again.');
+      // FIX 2: the axios response interceptor in api.js already unwraps
+      // error.response.data, so `err` IS the data object.
+      // The old path  err?.response?.data?.message  was always undefined.
+      Alert.alert(
+        'Error',
+        err?.message ?? err?.error ?? 'Failed to submit ticket. Please try again.',
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // ── KEY: compute exact scroll area height ─────────────────────────────────
-  // Mirrors ProfileScreen's SCROLL_H formula exactly.
-  // SafeAreaView top is handled by the header's paddingTop,
-  // so we only subtract headerH (which already includes insets.top)
-  // and leave insets.bottom for paddingBottom inside the scroll.
   const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
   const SCROLL_H     = height - headerH - insets.bottom - EXTRA_BOTTOM;
+  const kvoOffset    = headerH;
 
-  // ── KEY: KVO offset = full header height (safe-area top + content) ───────
-  // Because the header is NOT inside the KAV, the KAV only needs to know
-  // how much of the screen above it to ignore. That's the header's rendered height.
-  const kvoOffset = headerH;
+  // FIX 1: show the hint whenever canSubmit is false AND either the user
+  // has already interacted with a field OR they tapped the button.
+  const showValidationHint =
+    !canSubmit && (submitAttempted || subject.length > 0 || message.length > 0 || category);
 
   return (
-    // Root View — NOT a KAV. The KAV wraps only the scroll area below the header.
-    // This prevents the absolutely-positioned back button bug where KAV shrinking
-    // would clip the bottom of the scroll area off the touch-event tree.
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
-      <View style={[s.ambientGlow, { backgroundColor: theme.accent }]} />
 
-      {/* ── Sticky header — replaces the absolute back button ───────────────
-           onLayout measures its actual pixel height so SCROLL_H is always exact,
-           even if font scaling or safe-area size changes between devices.       */}
+      {/* FIX 3: pointerEvents="none" so the ambient glow never absorbs taps. */}
+      <View
+        style={[s.ambientGlow, { backgroundColor: theme.accent }]}
+        pointerEvents="none"
+      />
+
+      {/* ── Sticky header ─────────────────────────────────────────────────── */}
       <View
         style={[s.header, {
-          paddingTop:      insets.top + 10,
+          paddingTop:        insets.top + 10,
           borderBottomColor: theme.border,
-          backgroundColor: theme.background,
+          backgroundColor:   theme.background,
         }]}
         onLayout={e => setHeaderH(e.nativeEvent.layout.height)}
       >
@@ -111,22 +123,15 @@ export default function SubmitTicketScreen({ navigation }) {
           <Ionicons name="arrow-back" size={20} color={theme.foreground} />
         </TouchableOpacity>
         <Text style={[s.headerTitle, { color: theme.foreground }]}>Submit a Ticket</Text>
-        {/* Spacer keeps title centred */}
         <View style={s.headerSpacer} />
       </View>
 
-      {/* ── KEY: KAV wraps ONLY the bounded scroll container ────────────────
-           behavior="padding" on iOS pushes the scroll area up when keyboard
-           opens. behavior="height" on Android shrinks it. kvoOffset tells KAV
-           how tall the header above it is so it doesn't over-compensate.
-           The scroll area itself has a concrete pixel height (SCROLL_H) so
-           ScrollView always knows exactly how tall it can be.               */}
+      {/* ── KAV wraps only the scroll container ───────────────────────────── */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={kvoOffset}
       >
-        {/* KEY: bounded pixel-height container — same pattern as ProfileScreen */}
         <View style={{ flex: 1 }}>
           <ScrollView
             contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
@@ -207,13 +212,12 @@ export default function SubmitTicketScreen({ navigation }) {
                   onChangeText={setSubject}
                   maxLength={200}
                   returnKeyType="next"
-                  // KEY: focus message field when user hits Next on keyboard
                   onSubmitEditing={() => messageRef.current?.focus()}
                   blurOnSubmit={false}
                 />
               </View>
               <Text style={[s.charCount, { color: subject.trim().length >= 5 ? theme.accent : theme.hint }]}>
-                {subject.length}/200{subject.trim().length < 5 && subject.length > 0 ? ' · min 5 chars' : ''}
+                {subject.length}/200{subject.trim().length < 5 && subject.length > 0 ? ' • min 5 chars' : ''}
               </Text>
 
               {/* Message */}
@@ -236,15 +240,10 @@ export default function SubmitTicketScreen({ navigation }) {
                 />
               </View>
               <Text style={[s.charCount, { color: message.trim().length >= 10 ? theme.accent : theme.hint }]}>
-                {message.length}/2000{message.trim().length < 10 && message.length > 0 ? ' · min 10 chars' : ''}
+                {message.length}/2000{message.trim().length < 10 && message.length > 0 ? ' • min 10 chars' : ''}
               </Text>
 
-              {/* ── Submit button ──────────────────────────────────────────────
-                   FIX: removed `disabled` prop — it was making the button
-                   completely non-interactive on Android when KAV shrunk the
-                   layout. Instead we handle the guard inside handleSubmit()
-                   and show visual feedback via opacity + color only.
-                   This means the button is always in the touch tree.         */}
+              {/* Submit button — never disabled so it always stays in the touch tree */}
               <TouchableOpacity
                 style={[s.submitBtn, {
                   backgroundColor: canSubmit ? theme.accent : theme.backgroundAlt,
@@ -273,8 +272,9 @@ export default function SubmitTicketScreen({ navigation }) {
                 )}
               </TouchableOpacity>
 
-              {/* Validation hint — shown only when user has typed but can't submit yet */}
-              {!canSubmit && (subject.length > 0 || message.length > 0 || category) && (
+              {/* FIX 1: validation hint — visible as soon as the user taps Submit
+                   OR after they've started filling in any field. */}
+              {showValidationHint && (
                 <View style={[s.validationHint, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                   <Ionicons name="information-circle-outline" size={14} color={theme.hint} />
                   <Text style={[s.validationTxt, { color: theme.hint }]}>
@@ -313,7 +313,6 @@ const s = StyleSheet.create({
     alignSelf: 'center', opacity: 0.05,
   },
 
-  // ── Sticky header (replaces absolute back button) ──────────────────────────
   header: {
     flexDirection: 'row', alignItems: 'flex-end',
     paddingHorizontal: 16, paddingBottom: 12,
@@ -321,9 +320,8 @@ const s = StyleSheet.create({
   },
   backBtn:      { width: 38, height: 38, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   headerTitle:  { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
-  headerSpacer: { width: 38 }, // mirrors backBtn width to keep title centred
+  headerSpacer: { width: 38 },
 
-  // ── Scroll content ─────────────────────────────────────────────────────────
   scroll: { paddingHorizontal: 24, paddingTop: 24 },
 
   hero:      { alignItems: 'center', paddingBottom: 24 },
@@ -350,7 +348,6 @@ const s = StyleSheet.create({
   submitBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 16, borderWidth: 1.5, paddingVertical: 16, marginBottom: 12 },
   submitLabel: { fontSize: 15, fontWeight: '800' },
 
-  // Validation hint shown inline instead of relying on disabled state
   validationHint: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 16 },
   validationTxt:  { flex: 1, fontSize: 12 },
 
