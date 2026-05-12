@@ -72,7 +72,7 @@ function collectDescriptors(children) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared Leaflet HTML builder
+// Shared Leaflet HTML builder — light CartoDB tiles
 // ─────────────────────────────────────────────────────────────────────────────
 function buildHTML({ initialRegion, showsUserLocation, markers, polylines }) {
   const lat  = initialRegion?.latitude  ?? 6.5244;
@@ -88,22 +88,23 @@ function buildHTML({ initialRegion, showsUserLocation, markers, polylines }) {
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html,body,#map { width:100%; height:100%; background:#1a1a1a; }
+  html,body,#map { width:100%; height:100%; background:#f5f5f5; }
   .leaflet-control-zoom,.leaflet-control-attribution { display:none; }
   .osm-dot {
     width:14px; height:14px; border-radius:50%;
-    border:2px solid rgba(255,255,255,0.8);
-    box-shadow:0 2px 8px rgba(0,0,0,0.6);
+    border:2px solid rgba(0,0,0,0.15);
+    box-shadow:0 2px 8px rgba(0,0,0,0.25);
   }
   .user-dot {
     width:12px; height:12px; border-radius:50%;
     background:#4285F4; border:3px solid white;
+    box-shadow:0 1px 4px rgba(0,0,0,0.3);
     animation:pulse 2s infinite;
   }
   @keyframes pulse {
-    0%   { box-shadow:0 0 0 0   rgba(66,133,244,0.6); }
-    70%  { box-shadow:0 0 0 10px rgba(66,133,244,0);   }
-    100% { box-shadow:0 0 0 0   rgba(66,133,244,0);    }
+    0%   { box-shadow:0 0 0 0   rgba(66,133,244,0.5); }
+    70%  { box-shadow:0 0 0 10px rgba(66,133,244,0);  }
+    100% { box-shadow:0 0 0 0   rgba(66,133,244,0);   }
   }
 </style>
 </head>
@@ -117,7 +118,8 @@ function buildHTML({ initialRegion, showsUserLocation, markers, polylines }) {
     zoomControl:false, attributionControl:false,
   });
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+  // ── Light CartoDB tiles ──────────────────────────────────────────────────
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{
     maxZoom:19, subdomains:'abcd',
   }).addTo(map);
 
@@ -344,7 +346,7 @@ const NativeMapView = forwardRef(function NativeMapView(
 
 const nativeStyles = StyleSheet.create({
   container:   { overflow: 'hidden' },
-  placeholder: { backgroundColor: '#1a1a1a' },
+  placeholder: { backgroundColor: '#f5f5f5' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

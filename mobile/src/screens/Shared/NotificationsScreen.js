@@ -3,13 +3,15 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   StatusBar, Animated, ActivityIndicator, Alert,
-  RefreshControl, Platform,
+  RefreshControl, Platform, Dimensions,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
-import { SafeAreaView }      from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
 import { useAuth }           from '../../context/AuthContext';
 import { notificationAPI }   from '../../services/api';
+
+const { width, height } = Dimensions.get('window');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type → icon / color / navigation config
@@ -33,9 +35,9 @@ const TYPE_CONFIG = {
   payment_received:  { icon: 'cash-outline',             color: '#5DAA72', label: 'Payment Received',  nav: null },
   payment_refunded:  { icon: 'refresh-circle-outline',   color: '#A78BFA', label: 'Payment Refunded',  nav: null },
   // Wallet
-  wallet_credited:   { icon: 'arrow-down-circle-outline',color: '#5DAA72', label: 'Wallet Credited',   nav: null },
-  wallet_debited:    { icon: 'arrow-up-circle-outline',  color: '#E05555', label: 'Wallet Debited',    nav: null },
-  wallet_withdrawal: { icon: 'cash-outline',             color: '#FFB800', label: 'Withdrawal',        nav: null },
+  wallet_credited:   { icon: 'arrow-down-circle-outline', color: '#5DAA72', label: 'Wallet Credited',  nav: null },
+  wallet_debited:    { icon: 'arrow-up-circle-outline',   color: '#E05555', label: 'Wallet Debited',   nav: null },
+  wallet_withdrawal: { icon: 'cash-outline',              color: '#FFB800', label: 'Withdrawal',       nav: null },
   // Account
   account_welcome:   { icon: 'happy-outline',            color: '#34D399', label: 'Welcome!',          nav: null },
   account_verified:  { icon: 'shield-checkmark-outline', color: '#5DAA72', label: 'Email Verified',    nav: null },
@@ -59,10 +61,10 @@ const relativeTime = (dateStr) => {
   const now  = Date.now();
   const then = new Date(dateStr).getTime();
   const diff = Math.floor((now - then) / 1000);
-  if (diff < 60)    return 'Just now';
-  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800)return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 60)     return 'Just now';
+  if (diff < 3600)   return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400)  return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
   return new Date(dateStr).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
 };
 
@@ -70,8 +72,8 @@ const relativeTime = (dateStr) => {
 // NotificationCard
 // ─────────────────────────────────────────────────────────────────────────────
 const NotificationCard = ({ item, onPress, onDelete, theme }) => {
-  const cfg       = getConfig(item.type);
-  const slideX    = useRef(new Animated.Value(0)).current;
+  const cfg     = getConfig(item.type);
+  const slideX  = useRef(new Animated.Value(0)).current;
   const [expanded, setExpanded] = useState(false);
 
   const handlePress = () => {
@@ -86,9 +88,9 @@ const NotificationCard = ({ item, onPress, onDelete, theme }) => {
           nc.card,
           {
             backgroundColor: item.isRead ? theme.backgroundAlt : cfg.color + '0D',
-            borderColor:      item.isRead ? theme.border        : cfg.color + '40',
-            borderLeftColor:  cfg.color,
-            borderLeftWidth:  3,
+            borderColor:     item.isRead ? theme.border        : cfg.color + '40',
+            borderLeftColor: cfg.color,
+            borderLeftWidth: 3,
           },
         ]}
         onPress={handlePress}
@@ -105,7 +107,10 @@ const NotificationCard = ({ item, onPress, onDelete, theme }) => {
 
         <View style={{ flex: 1 }}>
           <View style={nc.titleRow}>
-            <Text style={[nc.title, { color: theme.foreground, fontWeight: item.isRead ? '600' : '800' }]} numberOfLines={1}>
+            <Text
+              style={[nc.title, { color: theme.foreground, fontWeight: item.isRead ? '600' : '800' }]}
+              numberOfLines={1}
+            >
               {item.title}
             </Text>
             <Text style={[nc.time, { color: theme.hint }]}>{relativeTime(item.createdAt)}</Text>
@@ -165,24 +170,25 @@ const NotificationCard = ({ item, onPress, onDelete, theme }) => {
     </Animated.View>
   );
 };
+
 const nc = StyleSheet.create({
-  card:       { flexDirection: 'row', alignItems: 'flex-start', borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 10, gap: 12 },
-  unreadDot:  { position: 'absolute', top: 14, right: 42, width: 7, height: 7, borderRadius: 4 },
-  iconWrap:   { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0, marginTop: 2 },
-  titleRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, gap: 8 },
-  title:      { fontSize: 13, flex: 1 },
-  time:       { fontSize: 10, fontWeight: '600', flexShrink: 0 },
-  message:    { fontSize: 12, lineHeight: 18, marginBottom: 8 },
-  dataBox:    { borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 8, gap: 5 },
-  dataRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  dataKey:    { fontSize: 11 },
-  dataVal:    { fontSize: 11, fontWeight: '700' },
-  footer:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  typePill:   { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  typeLabel:  { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
-  navHint:    { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  navHintTxt: { fontSize: 10 },
-  deleteBtn:  { padding: 4, marginTop: 2, flexShrink: 0 },
+  card:      { flexDirection: 'row', alignItems: 'flex-start', borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 10, gap: 12 },
+  unreadDot: { position: 'absolute', top: 14, right: 42, width: 7, height: 7, borderRadius: 4 },
+  iconWrap:  { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0, marginTop: 2 },
+  titleRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, gap: 8 },
+  title:     { fontSize: 13, flex: 1 },
+  time:      { fontSize: 10, fontWeight: '600', flexShrink: 0 },
+  message:   { fontSize: 12, lineHeight: 18, marginBottom: 8 },
+  dataBox:   { borderRadius: 10, borderWidth: 1, padding: 10, marginBottom: 8, gap: 5 },
+  dataRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dataKey:   { fontSize: 11 },
+  dataVal:   { fontSize: 11, fontWeight: '700' },
+  footer:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  typePill:  { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  typeLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  navHint:   { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  navHintTxt:{ fontSize: 10 },
+  deleteBtn: { padding: 4, marginTop: 2, flexShrink: 0 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,6 +197,7 @@ const nc = StyleSheet.create({
 export default function NotificationsScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const { user }        = useAuth();
+  const insets          = useSafeAreaInsets();
 
   const [notifications, setNotifications] = useState([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
@@ -201,7 +208,17 @@ export default function NotificationsScreen({ navigation }) {
   const [loadingMore,   setLoadingMore]   = useState(false);
   const [filter,        setFilter]        = useState('all'); // 'all' | 'unread'
 
+  // KEY: measure the combined height of the sticky header + filter row so
+  // SCROLL_H is always pixel-perfect — same pattern as ProfileScreen /
+  // SupportScreen.
+  const [topH, setTopH] = useState(120);
+
   const fadeA = useRef(new Animated.Value(0)).current;
+
+  // KEY: bounded scroll area height — ProfileScreen/SupportScreen formula.
+  // topH already includes insets.top (via paddingTop inside the header).
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+  const SCROLL_H     = height - topH - insets.bottom - EXTRA_BOTTOM;
 
   const load = useCallback(async (reset = false) => {
     const p = reset ? 1 : page;
@@ -238,7 +255,6 @@ export default function NotificationsScreen({ navigation }) {
   const onRefresh = () => { setRefreshing(true); load(true); };
 
   const handlePress = async (item) => {
-    // Mark as read
     if (!item.isRead) {
       try {
         await notificationAPI.markAsRead(item.id);
@@ -249,37 +265,29 @@ export default function NotificationsScreen({ navigation }) {
       } catch {}
     }
 
-    // Navigate to relevant screen based on type
-    const cfg = getConfig(item.type);
+    const cfg  = getConfig(item.type);
     if (!cfg.nav) return;
 
     const data = item.data ?? {};
-
     const role = user?.role;
 
     switch (cfg.nav) {
       case 'RideTracking':
         if (data.rideId) {
-          if (role === 'DRIVER') {
-            navigation.navigate('ActiveRide', { rideId: data.rideId });
-          } else {
-            navigation.navigate('RideTracking', { rideId: data.rideId });
-          }
+          if (role === 'DRIVER') navigation.navigate('ActiveRide', { rideId: data.rideId });
+          else                   navigation.navigate('RideTracking', { rideId: data.rideId });
         }
         break;
       case 'DeliveryTracking':
         if (data.deliveryId) {
-          if (role === 'DELIVERY_PARTNER') {
-            navigation.navigate('ActiveDelivery', { deliveryId: data.deliveryId });
-          } else {
-            navigation.navigate('DeliveryTracking', { deliveryId: data.deliveryId });
-          }
+          if (role === 'DELIVERY_PARTNER') navigation.navigate('ActiveDelivery', { deliveryId: data.deliveryId });
+          else                             navigation.navigate('DeliveryTracking', { deliveryId: data.deliveryId });
         }
         break;
       case 'History':
-        if (role === 'DRIVER') navigation.navigate('DriverHistory');
+        if      (role === 'DRIVER')           navigation.navigate('DriverHistory');
         else if (role === 'DELIVERY_PARTNER') navigation.navigate('PartnerHistory');
-        else navigation.navigate('History');
+        else                                  navigation.navigate('HistoryTab', { screen: 'HistoryHome', });
         break;
       default:
         break;
@@ -316,8 +324,8 @@ export default function NotificationsScreen({ navigation }) {
               setNotifications([]);
               setUnreadCount(0);
             } catch {}
-          }
-        }
+          },
+        },
       ]
     );
   };
@@ -326,26 +334,39 @@ export default function NotificationsScreen({ navigation }) {
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      <SafeAreaView edges={['top', 'left', 'right']}>
-        {/* Header */}
-        <View style={[s.header, { borderBottomColor: theme.border }]}>
+      {/* KEY: single onLayout wrapper measures header + filter row together.
+           This gives us one accurate topH value for SCROLL_H — no SafeAreaView
+           needed because paddingTop inside the header already absorbs insets.top. */}
+      <View onLayout={e => setTopH(e.nativeEvent.layout.height)}>
+
+        {/* ── Sticky header ──────────────────────────────────────────────── */}
+        <View style={[s.header, {
+          paddingTop:        insets.top + 14,
+          borderBottomColor: theme.border,
+          backgroundColor:   theme.background,
+        }]}>
           <TouchableOpacity
             style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
             onPress={() => navigation.goBack()}
+            activeOpacity={0.85}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Ionicons name="arrow-back" size={18} color={theme.foreground} />
           </TouchableOpacity>
+
           <View style={{ flex: 1 }}>
             <Text style={[s.headerTitle, { color: theme.foreground }]}>Notifications</Text>
             {unreadCount > 0 && (
               <Text style={[s.headerSub, { color: theme.hint }]}>{unreadCount} unread</Text>
             )}
           </View>
+
           <View style={s.headerActions}>
             {unreadCount > 0 && (
               <TouchableOpacity
                 style={[s.actionBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
                 onPress={handleMarkAllRead}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons name="checkmark-done-outline" size={16} color={theme.foreground} />
               </TouchableOpacity>
@@ -354,6 +375,7 @@ export default function NotificationsScreen({ navigation }) {
               <TouchableOpacity
                 style={[s.actionBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
                 onPress={handleClearAll}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons name="trash-outline" size={16} color="#E05555" />
               </TouchableOpacity>
@@ -361,82 +383,123 @@ export default function NotificationsScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Filter tabs */}
-        <View style={[s.filterRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+        {/* ── Filter tabs ─────────────────────────────────────────────────── */}
+        <View style={[s.filterRow, {
+          backgroundColor: theme.background,
+          borderBottomColor: theme.border,
+        }]}>
           {[
             { key: 'all',    label: 'All' },
             { key: 'unread', label: `Unread${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
-          ].map(f => (
-            <TouchableOpacity
-              key={f.key}
-              style={[s.filterBtn, filter === f.key && { backgroundColor: theme.accent }]}
-              onPress={() => setFilter(f.key)}
-            >
-              <Text style={[s.filterTxt, { color: filter === f.key ? theme.accentFg : theme.hint }]}>
-                {f.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          ].map(f => {
+            const active = filter === f.key;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                style={[s.filterChip, {
+                  borderColor:     active ? theme.accent : theme.border,
+                  backgroundColor: active ? theme.accent + '15' : 'transparent',
+                }]}
+                onPress={() => setFilter(f.key)}
+                activeOpacity={0.75}
+              >
+                <Text style={[s.filterTxt, { color: active ? theme.accent : theme.hint }]}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      </SafeAreaView>
 
+      </View>{/* end measured top section */}
+
+      {/* ── KEY: bounded scroll container — same pattern as ProfileScreen ── */}
       {loading ? (
-        <View style={s.center}>
+        <View style={[s.center, { height: SCROLL_H }]}>
           <ActivityIndicator color={theme.accent} size="large" />
         </View>
       ) : (
-        <Animated.View style={[{ flex: 1 }, { opacity: fadeA }]}>
-          <FlatList
-            data={notifications}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <NotificationCard
-                item={item}
-                onPress={handlePress}
-                onDelete={handleDelete}
-                theme={theme}
-              />
-            )}
-            contentContainerStyle={s.list}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} />
-            }
-            onEndReached={() => { if (page <= totalPages && !loadingMore) load(); }}
-            onEndReachedThreshold={0.4}
-            ListFooterComponent={
-              loadingMore ? <ActivityIndicator color={theme.accent} style={{ marginVertical: 16 }} /> : null
-            }
-            ListEmptyComponent={
-              <View style={s.empty}>
-                <Ionicons name="notifications-off-outline" size={48} color={theme.hint} />
-                <Text style={[s.emptyTitle, { color: theme.foreground }]}>No notifications yet</Text>
-                <Text style={[s.emptySub, { color: theme.hint }]}>
-                  {filter === 'unread' ? 'You have no unread notifications.' : "You're all caught up!"}
-                </Text>
-              </View>
-            }
-          />
-        </Animated.View>
+        <View style={{ height: SCROLL_H }}>
+          <Animated.View style={{ flex: 1, opacity: fadeA }}>
+            <FlatList
+              data={notifications}
+              keyExtractor={item => item.id}
+              style={{ flex: 1 }}
+              renderItem={({ item }) => (
+                <NotificationCard
+                  item={item}
+                  onPress={handlePress}
+                  onDelete={handleDelete}
+                  theme={theme}
+                />
+              )}
+              contentContainerStyle={[s.list, { paddingBottom: insets.bottom + 24 }]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor={theme.accent}
+                  colors={[theme.accent]}
+                />
+              }
+              onEndReached={() => {
+                if (page <= totalPages && !loadingMore) load();
+              }}
+              onEndReachedThreshold={0.4}
+              ListFooterComponent={
+                loadingMore
+                  ? <ActivityIndicator color={theme.accent} style={{ marginVertical: 16 }} />
+                  : null
+              }
+              ListEmptyComponent={
+                <View style={s.empty}>
+                  <View style={[s.emptyIcon, { backgroundColor: theme.accent + '12' }]}>
+                    <Ionicons name="notifications-off-outline" size={28} color={theme.accent} />
+                  </View>
+                  <Text style={[s.emptyTitle, { color: theme.foreground }]}>No notifications yet</Text>
+                  <Text style={[s.emptySub, { color: theme.hint }]}>
+                    {filter === 'unread'
+                      ? 'You have no unread notifications.'
+                      : "You're all caught up!"}
+                  </Text>
+                </View>
+              }
+            />
+          </Animated.View>
+        </View>
       )}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:          { flex: 1 },
-  center:        { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header:        { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
+  root:    { flex: 1 },
+  center:  { justifyContent: 'center', alignItems: 'center' },
+
+  // ── Sticky header ──────────────────────────────────────────────────────────
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,
+  },
   backBtn:       { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   headerTitle:   { fontSize: 17, fontWeight: '900' },
   headerSub:     { fontSize: 11, marginTop: 1 },
   headerActions: { flexDirection: 'row', gap: 8 },
   actionBtn:     { width: 36, height: 36, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  filterRow:     { flexDirection: 'row', borderWidth: 0, borderBottomWidth: 1, paddingHorizontal: 20, paddingVertical: 10, gap: 8 },
-  filterBtn:     { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 7 },
-  filterTxt:     { fontSize: 12, fontWeight: '700' },
-  list:          { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 60 },
-  empty:         { alignItems: 'center', paddingTop: 80, gap: 12 },
-  emptyTitle:    { fontSize: 18, fontWeight: '800' },
-  emptySub:      { fontSize: 13, textAlign: 'center', maxWidth: 240 },
+
+  // ── Filter tabs ────────────────────────────────────────────────────────────
+  filterRow:  { flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 12, gap: 8, borderBottomWidth: 1 },
+  filterChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
+  filterTxt:  { fontSize: 12, fontWeight: '700' },
+
+  // ── List ──────────────────────────────────────────────────────────────────
+  list: { paddingHorizontal: 16, paddingTop: 12 },
+
+  // ── Empty state ───────────────────────────────────────────────────────────
+  empty:      { alignItems: 'center', paddingTop: 60 },
+  emptyIcon:  { width: 64, height: 64, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', marginBottom: 8 },
+  emptySub:   { fontSize: 13, textAlign: 'center', lineHeight: 19, paddingHorizontal: 20 },
 });

@@ -1,29 +1,20 @@
-// mobile/src/screens/Shared/WithdrawalScreen.js  [PATCHED]
-// Changes vs original:
-//   1. Added missing `formatNGN` definition (was used but never declared)
-//   2. Fixed submit handler to call walletAPI.withdraw() instead of
-//      driverAPI/partnerAPI.requestPayout() — all users now use the
-//      unified wallet withdrawal endpoint which goes through admin approval
-//   3. Minimum withdrawal updated to ₦500 (matches backend)
-//   4. Bounded ScrollView height using ProfileScreen pattern for correct scrolling
+// mobile/src/screens/Shared/WithdrawalScreen.js
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, StatusBar, Animated, ActivityIndicator,
   Alert, Keyboard, Platform, Dimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../../context/ThemeContext';
-import { useAuth } from '../../context/AuthContext';
+import { useTheme }          from '../../context/ThemeContext';
+import { useAuth }           from '../../context/AuthContext';
 import { walletAPI, driverAPI, partnerAPI } from '../../services/api';
 
 const { height } = Dimensions.get('window');
 
-// ── FIX: formatNGN was used throughout but never defined ─────────────────────
 const formatNGN = (n) =>
   Number(n).toLocaleString('en-NG', { maximumFractionDigits: 0 });
-// ─────────────────────────────────────────────────────────────────────────────
 
 const BANKS = [
   { name: 'Access Bank',             code: '044'    },
@@ -51,9 +42,10 @@ const BANKS = [
   { name: 'Zenith Bank',             code: '057'    },
 ];
 
-const BankPicker = ({ selected, onSelect, theme, accent }) => {
+const BankPicker = ({ selected, onSelect, theme }) => {
   const [open, setOpen] = useState(false);
-  const bank = BANKS.find(b => b.code === selected);
+  const bank   = BANKS.find(b => b.code === selected);
+  const accent = theme.accent;
 
   return (
     <View>
@@ -83,7 +75,7 @@ const BankPicker = ({ selected, onSelect, theme, accent }) => {
             >
               <Text style={[bp.optionTxt, {
                 color:      b.code === selected ? accent : theme.foreground,
-                fontWeight: b.code === selected ? '800' : '500',
+                fontWeight: b.code === selected ? '800'  : '500',
               }]}>
                 {b.name}
               </Text>
@@ -97,11 +89,11 @@ const BankPicker = ({ selected, onSelect, theme, accent }) => {
 };
 
 const bp = StyleSheet.create({
-  btn:       { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 14 },
-  btnTxt:    { fontSize: 14, fontWeight: '600' },
-  dropdown:  { maxHeight: 220, borderRadius: 12, borderWidth: 1, marginTop: 4, marginBottom: 8 },
-  option:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1 },
-  optionTxt: { fontSize: 14 },
+  btn:      { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 14 },
+  btnTxt:   { fontSize: 14, fontWeight: '600' },
+  dropdown: { maxHeight: 220, borderRadius: 12, borderWidth: 1, marginTop: 4, marginBottom: 8 },
+  option:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1 },
+  optionTxt:{ fontSize: 14 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,14 +102,21 @@ export default function WithdrawalScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const { user }        = useAuth();
   const insets          = useSafeAreaInsets();
-  const accent          = theme.accent;
+
+  // FIX: derive all selected-state colors from theme tokens so every accent
+  // variant (onyx dark → white accent / onyx light → black accent, etc.)
+  // renders readable text automatically.
+  //   accent    → button / chip background when active
+  //   accentFg  → text ON TOP of accent background
+  const accent   = theme.accent;
+  const accentFg = theme.accentFg ?? '#FFFFFF';
 
   // ── Bounded scroll height (mirrors ProfileScreen) ──────────────────────────
-  const TAB_H        = 54;
-  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
-  const HEADER_INNER_H = 64; // header inner content (title + subtitle + step dots)
-  const HEADER_H     = insets.top + HEADER_INNER_H;
-  const SCROLL_H     = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
+  const TAB_H          = 54;
+  const EXTRA_BOTTOM   = Platform.OS === 'android' ? 16 : 0;
+  const HEADER_INNER_H = 64;
+  const HEADER_H       = insets.top + HEADER_INNER_H;
+  const SCROLL_H       = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
 
   const [walletBalance, setWalletBalance] = useState(null);
   const [amount,        setAmount]        = useState('');
@@ -169,7 +168,6 @@ export default function WithdrawalScreen({ navigation }) {
 
   const amtNum  = parseFloat(amount) || 0;
   const balance = walletBalance ?? 0;
-
   const MIN_WITHDRAWAL = 500;
 
   const handleStep1 = () => {
@@ -190,12 +188,11 @@ export default function WithdrawalScreen({ navigation }) {
   const handleStep2 = () => {
     Keyboard.dismiss();
     if (accountNumber.length !== 10) { shake(); Alert.alert('Invalid account', 'Enter 10-digit account number'); return; }
-    if (!bankCode)                   { shake(); Alert.alert('Select bank', 'Please select your bank');           return; }
-    if (!accountName)                { shake(); Alert.alert('Verify account', 'Account verification failed');    return; }
+    if (!bankCode)                   { shake(); Alert.alert('Select bank',     'Please select your bank');        return; }
+    if (!accountName)                { shake(); Alert.alert('Verify account',  'Account verification failed');   return; }
     setStep(3);
   };
 
-  // ── FIX: use unified walletAPI.withdraw → goes through admin approval ───────
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
@@ -206,33 +203,39 @@ export default function WithdrawalScreen({ navigation }) {
         [{ text: 'Done', onPress: () => navigation.goBack() }]
       );
     } catch (err) {
-      Alert.alert('Request Failed', err?.response?.data?.message ?? 'Could not submit withdrawal');
+      // FIX: axios interceptor already unwraps error.response.data
+      Alert.alert('Request Failed', err?.message ?? err?.error ?? 'Could not submit withdrawal');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const isDarkMode   = mode === 'dark';
-  const btnBgColor   = isDarkMode ? '#FFFFFF' : accent;
-  const btnTextColor = isDarkMode ? '#000000' : '#FFFFFF';
+  // ── Helpers for active-state readability ───────────────────────────────────
+  // Any button whose background becomes `accent` needs its text to be `accentFg`.
+  // These two helpers keep every call-site clean and consistent.
+  const activeStyle   = { backgroundColor: accent,    borderColor: accent    };
+  const inactiveStyle = { backgroundColor: theme.backgroundAlt, borderColor: theme.border };
+  const activeTxtColor   = accentFg;
+  const inactiveTxtColor = theme.foreground;
+
+  const step1Ready = amtNum >= MIN_WITHDRAWAL && amtNum <= balance;
+  const step2Ready = !!accountName && !!bankCode;
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      {/* ── Sticky header (mirrors ProfileScreen pattern) ── */}
-      <View style={[
-        s.header,
-        {
-          paddingTop:        insets.top,
-          height:            HEADER_H,
-          backgroundColor:   theme.background,
-          borderBottomColor: theme.border,
-        },
-      ]}>
+      {/* ── Sticky header ──────────────────────────────────────────────────── */}
+      <View style={[s.header, {
+        paddingTop:        insets.top,
+        height:            HEADER_H,
+        backgroundColor:   theme.background,
+        borderBottomColor: theme.border,
+      }]}>
         <TouchableOpacity
           style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
           onPress={() => step > 1 ? setStep(p => p - 1) : navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
@@ -252,7 +255,7 @@ export default function WithdrawalScreen({ navigation }) {
         </View>
       </View>
 
-      {/* ── Bounded scroll container (key: explicit pixel height) ── */}
+      {/* ── Bounded scroll container ────────────────────────────────────────── */}
       <View style={{ height: SCROLL_H }}>
         <ScrollView
           contentContainerStyle={s.scroll}
@@ -269,11 +272,14 @@ export default function WithdrawalScreen({ navigation }) {
             )}
           </View>
 
-          {/* STEP 1 */}
+          {/* ── STEP 1 ── */}
           {step === 1 && (
             <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
               <Text style={[s.sectionLabel, { color: theme.hint }]}>WITHDRAWAL AMOUNT</Text>
-              <View style={[s.inputCard, { backgroundColor: theme.backgroundAlt, borderColor: amtNum > 0 ? accent + '70' : theme.border }]}>
+              <View style={[s.inputCard, {
+                backgroundColor: theme.backgroundAlt,
+                borderColor: amtNum > 0 ? accent + '70' : theme.border,
+              }]}>
                 <Text style={[s.currency, { color: accent }]}>₦</Text>
                 <TextInput
                   style={[s.input, { color: theme.foreground }]}
@@ -287,21 +293,25 @@ export default function WithdrawalScreen({ navigation }) {
                 />
               </View>
 
+              {/* FIX: quick-amount chips use accentFg for text when selected,
+                   so black-accent (light onyx) → white text, and
+                   white-accent (dark onyx) → black text.                    */}
               <View style={s.quickRow}>
-                {[1000, 2000, 5000, 10000].map(q => (
-                  <TouchableOpacity
-                    key={q}
-                    style={[s.quickBtn, {
-                      backgroundColor: amtNum === q ? accent : theme.backgroundAlt,
-                      borderColor:     amtNum === q ? accent : theme.border,
-                    }]}
-                    onPress={() => setAmount(String(q))}
-                  >
-                    <Text style={[s.quickTxt, { color: amtNum === q ? '#080C18' : theme.foreground }]}>
-                      ₦{formatNGN(q)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {[1000, 2000, 5000, 10000].map(q => {
+                  const isActive = amtNum === q;
+                  return (
+                    <TouchableOpacity
+                      key={q}
+                      style={[s.quickBtn, isActive ? activeStyle : inactiveStyle]}
+                      onPress={() => setAmount(String(q))}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[s.quickTxt, { color: isActive ? activeTxtColor : inactiveTxtColor }]}>
+                        ₦{formatNGN(q)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               <View style={[s.noteBox, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
@@ -310,26 +320,35 @@ export default function WithdrawalScreen({ navigation }) {
                 <View style={s.noteRow}><Ionicons name="cash-outline"             size={13} color={accent}     /><Text style={[s.noteTxt, { color: theme.hint }]}>Min ₦{formatNGN(MIN_WITHDRAWAL)} • No fee</Text></View>
               </View>
 
+              {/* FIX: Continue button uses accentFg when active */}
               <TouchableOpacity
-                style={[s.nextBtn, { backgroundColor: amtNum >= MIN_WITHDRAWAL && amtNum <= balance ? accent : theme.border }]}
+                style={[s.nextBtn, { backgroundColor: step1Ready ? accent : theme.border }]}
                 onPress={handleStep1}
-                disabled={amtNum < MIN_WITHDRAWAL || amtNum > balance}
+                disabled={!step1Ready}
+                activeOpacity={0.88}
               >
-                <Text style={[s.nextBtnTxt, { color: amtNum >= MIN_WITHDRAWAL && amtNum <= balance ? '#080C18' : theme.hint }]}>
+                <Text style={[s.nextBtnTxt, { color: step1Ready ? accentFg : theme.hint }]}>
                   Continue →
                 </Text>
               </TouchableOpacity>
             </Animated.View>
           )}
 
-          {/* STEP 2 */}
+          {/* ── STEP 2 ── */}
           {step === 2 && (
             <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
               <Text style={[s.sectionLabel, { color: theme.hint }]}>SELECT BANK</Text>
-              <BankPicker selected={bankCode} onSelect={setBankCode} theme={theme} accent={accent} />
+              <BankPicker selected={bankCode} onSelect={setBankCode} theme={theme} />
 
               <Text style={[s.sectionLabel, { color: theme.hint }]}>ACCOUNT NUMBER</Text>
-              <View style={[s.fieldCard, { backgroundColor: theme.backgroundAlt, borderColor: accountName ? '#5DAA7260' : accountNumber.length === 10 ? '#E0555560' : theme.border }]}>
+              <View style={[s.fieldCard, {
+                backgroundColor: theme.backgroundAlt,
+                borderColor: accountName
+                  ? '#5DAA7260'
+                  : accountNumber.length === 10
+                  ? '#E0555560'
+                  : theme.border,
+              }]}>
                 <Ionicons name="card-outline" size={16} color={theme.hint} />
                 <TextInput
                   style={[s.field, { color: theme.foreground }]}
@@ -341,7 +360,7 @@ export default function WithdrawalScreen({ navigation }) {
                   maxLength={10}
                 />
                 {verifying && <ActivityIndicator size="small" color={accent} />}
-                {!verifying && accountName                              && <Ionicons name="checkmark-circle" size={18} color="#5DAA72" />}
+                {!verifying && accountName                               && <Ionicons name="checkmark-circle" size={18} color="#5DAA72" />}
                 {!verifying && !accountName && accountNumber.length === 10 && <Ionicons name="close-circle"    size={18} color="#E05555" />}
               </View>
 
@@ -352,29 +371,31 @@ export default function WithdrawalScreen({ navigation }) {
                 </View>
               )}
 
+              {/* FIX: Review button uses accentFg when active */}
               <TouchableOpacity
-                style={[s.nextBtn, { backgroundColor: accountName && bankCode ? accent : theme.border, marginTop: 24 }]}
+                style={[s.nextBtn, { backgroundColor: step2Ready ? accent : theme.border, marginTop: 24 }]}
                 onPress={handleStep2}
-                disabled={!accountName || !bankCode}
+                disabled={!step2Ready}
+                activeOpacity={0.88}
               >
-                <Text style={[s.nextBtnTxt, { color: accountName && bankCode ? '#080C18' : theme.hint }]}>
+                <Text style={[s.nextBtnTxt, { color: step2Ready ? accentFg : theme.hint }]}>
                   Review →
                 </Text>
               </TouchableOpacity>
             </Animated.View>
           )}
 
-          {/* STEP 3 */}
+          {/* ── STEP 3 ── */}
           {step === 3 && (
             <View>
               <View style={[s.confirmCard, { backgroundColor: theme.backgroundAlt, borderColor: accent + '30' }]}>
                 <Text style={[s.confirmTitle, { color: theme.foreground }]}>Review Your Withdrawal</Text>
                 {[
-                  { label: 'Amount',       value: `₦${formatNGN(amtNum)}`,                              color: accent },
+                  { label: 'Amount',       value: `₦${formatNGN(amtNum)}`,                               color: accent    },
                   { label: 'Bank',         value: BANKS.find(b => b.code === bankCode)?.name ?? bankCode, color: undefined },
-                  { label: 'Account No.', value: accountNumber,                                          color: undefined },
-                  { label: 'Account Name',value: accountName,                                            color: undefined },
-                  { label: 'Processing',  value: '1–2 business days',                                   color: undefined },
+                  { label: 'Account No.', value: accountNumber,                                           color: undefined },
+                  { label: 'Account Name',value: accountName,                                             color: undefined },
+                  { label: 'Processing',  value: '1–2 business days',                                    color: undefined },
                 ].map(({ label, value, color }) => (
                   <View key={label} style={[s.confirmRow, { borderBottomColor: theme.border }]}>
                     <Text style={[s.confirmLbl, { color: theme.hint }]}>{label}</Text>
@@ -383,25 +404,27 @@ export default function WithdrawalScreen({ navigation }) {
                 ))}
               </View>
 
-              <View style={[s.adminNote, { backgroundColor: '#A78BFA0D', borderColor: '#A78BFA30' }]}>
-                <Ionicons name="information-circle-outline" size={16} color={theme.accent} />
+              <View style={[s.adminNote, { backgroundColor: accent + '0D', borderColor: accent + '30' }]}>
+                <Ionicons name="information-circle-outline" size={16} color={accent} />
                 <Text style={[s.adminNoteTxt, { color: theme.hint }]}>
                   Your request will be reviewed by our admin team and processed within 1–2 business days.
                 </Text>
               </View>
 
+              {/* FIX: Submit button uses accent + accentFg — works for all
+                   theme variants without any mode === 'dark' branching.    */}
               <TouchableOpacity
-                style={[s.nextBtn, { backgroundColor: btnBgColor, opacity: submitting ? 0.75 : 1 }]}
+                style={[s.nextBtn, { backgroundColor: accent, opacity: submitting ? 0.75 : 1 }]}
                 onPress={handleSubmit}
                 disabled={submitting}
                 activeOpacity={0.88}
               >
                 {submitting ? (
-                  <ActivityIndicator color={btnTextColor} size="small" />
+                  <ActivityIndicator color={accentFg} size="small" />
                 ) : (
                   <>
-                    <Ionicons name="checkmark-circle" size={20} color={btnTextColor} />
-                    <Text style={[s.nextBtnTxt, { color: btnTextColor }]}>Submit Withdrawal</Text>
+                    <Ionicons name="checkmark-circle" size={20} color={accentFg} />
+                    <Text style={[s.nextBtnTxt, { color: accentFg }]}>Submit Withdrawal</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -415,8 +438,8 @@ export default function WithdrawalScreen({ navigation }) {
               <View style={[s.historyCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                 {payoutHistory.slice(0, 5).map((p, i) => (
                   <View key={p.id ?? i} style={[s.histRow, { borderBottomColor: theme.border, borderBottomWidth: i < 4 ? 1 : 0 }]}>
-                    <View style={[s.histIcon, { backgroundColor: theme.accent + '18' }]}>
-                      <Ionicons name="cash-outline" size={14} color={theme.accent} />
+                    <View style={[s.histIcon, { backgroundColor: accent + '18' }]}>
+                      <Ionicons name="cash-outline" size={14} color={accent} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[s.histBank, { color: theme.foreground }]}>{BANKS.find(b => b.code === p.bankCode)?.name ?? p.bankCode}</Text>
@@ -440,15 +463,17 @@ export default function WithdrawalScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:   { flex: 1 },
-  // ── Sticky header (matches ProfileScreen layout) ──
-  header: { flexDirection: 'row', alignItems: 'flex-end', gap: 14, paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1 },
-  backBtn:      { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle:  { fontSize: 17, fontWeight: '900' },
-  headerSub:    { fontSize: 11, marginTop: 1 },
-  stepRow:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  stepDot:      { height: 8, borderRadius: 4 },
-  // ── Scroll content ──
+  root: { flex: 1 },
+
+  // ── Sticky header ──────────────────────────────────────────────────────────
+  header:      { flexDirection: 'row', alignItems: 'flex-end', gap: 14, paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1 },
+  backBtn:     { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '900' },
+  headerSub:   { fontSize: 11, marginTop: 1 },
+  stepRow:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  stepDot:     { height: 8, borderRadius: 4 },
+
+  // ── Scroll content ─────────────────────────────────────────────────────────
   scroll:       { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 },
   balanceCard:  { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 24, alignItems: 'center' },
   balanceLbl:   { fontSize: 10, fontWeight: '800', letterSpacing: 2, marginBottom: 6 },

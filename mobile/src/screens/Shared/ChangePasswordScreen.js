@@ -3,11 +3,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Alert, KeyboardAvoidingView, Platform, ScrollView,
-  Animated, StatusBar, ActivityIndicator,
+  Animated, StatusBar, ActivityIndicator, Dimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../../context/ThemeContext';
-import { userAPI } from '../../services/api';
+import { Ionicons }          from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme }          from '../../context/ThemeContext';
+import { userAPI }           from '../../services/api';
+
+const { height } = Dimensions.get('window');
 
 // ── Password input ────────────────────────────────────────────────────────────
 const PwdInput = ({ label, iconName, value, onChangeText }) => {
@@ -54,10 +57,10 @@ const PwdInput = ({ label, iconName, value, onChangeText }) => {
 // ── Strength bar ──────────────────────────────────────────────────────────────
 function getStrength(pwd) {
   let score = 0;
-  if (pwd.length >= 8)              score++;
-  if (/[A-Z]/.test(pwd))            score++;
-  if (/[0-9]/.test(pwd))            score++;
-  if (/[^A-Za-z0-9]/.test(pwd))     score++;
+  if (pwd.length >= 8)          score++;
+  if (/[A-Z]/.test(pwd))        score++;
+  if (/[0-9]/.test(pwd))        score++;
+  if (/[^A-Za-z0-9]/.test(pwd)) score++;
   return score; // 0–4
 }
 
@@ -99,12 +102,18 @@ const r = StyleSheet.create({
 
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 export default function ChangePasswordScreen({ navigation }) {
-  const { theme, mode }   = useTheme();
-  const [current,  setCurrent]  = useState('');
-  const [next,     setNext]     = useState('');
-  const [confirm,  setConfirm]  = useState('');
-  const [loading,  setLoading]  = useState(false);
-  const [success,  setSuccess]  = useState(false);
+  const { theme, mode } = useTheme();
+  const insets          = useSafeAreaInsets();
+
+  const [current, setCurrent] = useState('');
+  const [next,    setNext]    = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  // KEY: measured header height drives kvoOffset for KeyboardAvoidingView
+  // — same pattern as SubmitTicketScreen.
+  const [headerH, setHeaderH] = useState(56);
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(18)).current;
@@ -117,15 +126,15 @@ export default function ChangePasswordScreen({ navigation }) {
   }, []);
 
   const rules = [
-    { met: next.length >= 8,              text: 'At least 8 characters' },
-    { met: /[A-Z]/.test(next),            text: 'One uppercase letter'  },
-    { met: /[0-9]/.test(next),            text: 'One number'            },
-    { met: /[^A-Za-z0-9]/.test(next),     text: 'One special character' },
+    { met: next.length >= 8,          text: 'At least 8 characters' },
+    { met: /[A-Z]/.test(next),        text: 'One uppercase letter'  },
+    { met: /[0-9]/.test(next),        text: 'One number'            },
+    { met: /[^A-Za-z0-9]/.test(next), text: 'One special character' },
   ];
 
-  const allRulesMet = rules.every(r => r.met);
+  const allRulesMet    = rules.every(r => r.met);
   const passwordsMatch = next === confirm && next.length > 0;
-  const canSubmit = current.length > 0 && allRulesMet && passwordsMatch;
+  const canSubmit      = current.length > 0 && allRulesMet && passwordsMatch;
 
   const handleChange = async () => {
     if (!canSubmit) return;
@@ -133,38 +142,68 @@ export default function ChangePasswordScreen({ navigation }) {
     try {
       await userAPI.updatePassword({ currentPassword: current, newPassword: next });
       setSuccess(true);
-      setTimeout(() => {
-        navigation.goBack();
-      }, 1600);
+      setTimeout(() => navigation.goBack(), 1600);
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.message ?? 'Could not update password.');
+      // FIX: axios interceptor in api.js already unwraps error.response.data,
+      // so `e` IS the data object — e?.message is the correct path.
+      Alert.alert('Error', e?.message ?? e?.error ?? 'Could not update password.');
     } finally {
       setLoading(false);
     }
   };
 
+  // KEY: KVO offset = full header height (includes insets.top via paddingTop).
+  // Mirrors SubmitTicketScreen's kvoOffset so the keyboard never clips the
+  // scroll area on either platform.
+  const kvoOffset = headerH;
+
   return (
+    // Root View — NOT a KAV. The KAV wraps only the scroll area below the
+    // header, same pattern as SubmitTicketScreen, so the header never jumps.
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      {/* Header */}
-      <View style={[s.header, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={18} color={theme.muted} />
+      {/* ── Sticky header — measured for accurate kvoOffset ──────────────── */}
+      <View
+        style={[s.header, {
+          paddingTop:        insets.top + 10,
+          backgroundColor:   theme.background,
+          borderBottomColor: theme.border,
+        }]}
+        onLayout={e => setHeaderH(e.nativeEvent.layout.height)}
+      >
+        <TouchableOpacity
+          style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.85}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
         <Text style={[s.headerTitle, { color: theme.foreground }]}>Change Password</Text>
-        <View style={{ width: 38 }} />
+        {/* Spacer mirrors backBtn width to keep title centred */}
+        <View style={s.headerSpacer} />
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {/* ── KAV wraps ONLY the scroll container below the header ─────────── */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={kvoOffset}
+      >
+        <ScrollView
+          contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
 
             {/* Icon */}
             <View style={[s.iconWrap, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '25' }]}>
               <Ionicons name="lock-closed-outline" size={28} color={theme.accent} />
             </View>
-            <Text style={[s.intro, { color: theme.muted }]}>
+            <Text style={[s.intro, { color: theme.hint }]}>
               Choose a strong password you don't use elsewhere.
             </Text>
 
@@ -174,9 +213,9 @@ export default function ChangePasswordScreen({ navigation }) {
 
             {/* New password */}
             <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 4 }]}>NEW PASSWORD</Text>
-            <PwdInput label="New Password" iconName="key-outline" value={next} onChangeText={setNext} />
+            <PwdInput label="New Password"            iconName="key-outline" value={next}    onChangeText={setNext}    />
             <StrengthBar password={next} theme={theme} />
-            <PwdInput label="Confirm New Password" iconName="key-outline" value={confirm} onChangeText={setConfirm} />
+            <PwdInput label="Confirm New Password"    iconName="key-outline" value={confirm} onChangeText={setConfirm} />
 
             {/* Match indicator */}
             {confirm.length > 0 && (
@@ -227,28 +266,41 @@ export default function ChangePasswordScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:         { flex: 1 },
-  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 56 : 40, paddingBottom: 14, borderBottomWidth: 1 },
-  backBtn:      { width: 38, height: 38, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle:  { fontSize: 16, fontWeight: '700' },
-  scroll:       { paddingHorizontal: 24, paddingBottom: 56, paddingTop: 28 },
+  root: { flex: 1 },
+
+  // ── Sticky header ──────────────────────────────────────────────────────────
+  header: {
+    flexDirection: 'row', alignItems: 'flex-end',
+    paddingHorizontal: 16, paddingBottom: 12,
+    borderBottomWidth: 1,
+  },
+  backBtn:      { width: 38, height: 38, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  headerTitle:  { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700' },
+  headerSpacer: { width: 38 },
+
+  // ── Scroll content ────────────────────────────────────────────────────────
+  scroll: { paddingHorizontal: 24, paddingTop: 28 },
 
   iconWrap:     { width: 66, height: 66, borderRadius: 20, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginBottom: 18 },
   intro:        { fontSize: 13, lineHeight: 20, marginBottom: 28 },
   sectionLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 10 },
 
-  inputBox:     { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1.5, marginBottom: 12, height: 60, paddingHorizontal: 14 },
-  inputIcon:    { marginRight: 10 },
-  floatLabel:   { position: 'absolute', left: 0 },
-  inputText:    { fontSize: 15, paddingTop: 18, paddingBottom: 4, fontWeight: '400' },
-  eyeBtn:       { padding: 6, marginLeft: 4 },
+  inputBox:   { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1.5, marginBottom: 12, height: 60, paddingHorizontal: 14 },
+  inputIcon:  { marginRight: 10 },
+  floatLabel: { position: 'absolute', left: 0 },
+  inputText:  { fontSize: 15, paddingTop: 18, paddingBottom: 4, fontWeight: '400' },
+  eyeBtn:     { padding: 6, marginLeft: 4 },
 
-  matchRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -4, marginBottom: 16 },
-  matchTxt:     { fontSize: 12, fontWeight: '600' },
+  matchRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -4, marginBottom: 16 },
+  matchTxt: { fontSize: 12, fontWeight: '600' },
 
-  rulesCard:    { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 24 },
-  rulesTitle:   { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 10 },
+  rulesCard:  { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 24 },
+  rulesTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 10 },
 
-  submitBtn:    { borderRadius: 13, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 14, elevation: 8 },
-  submitTxt:    { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  submitBtn: {
+    borderRadius: 13, height: 54, flexDirection: 'row',
+    justifyContent: 'center', alignItems: 'center', gap: 10,
+    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 14, elevation: 8,
+  },
+  submitTxt: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 });
