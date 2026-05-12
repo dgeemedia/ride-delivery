@@ -94,7 +94,7 @@ export default function DriverHistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const scrollY         = useScrollY();
 
-  // All hooks at top level
+  // All hooks at top level — scrollHandler must not be called inside render
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => { scrollY.value = event.contentOffset.y; },
   });
@@ -172,7 +172,7 @@ export default function DriverHistoryScreen({ navigation }) {
         <View style={[s.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-            onPress={goHome}   // ← navigates to Dashboard, not Earnings
+            onPress={goHome}
             activeOpacity={0.8}
           >
             <Ionicons name="arrow-back" size={18} color={theme.foreground} />
@@ -213,21 +213,36 @@ export default function DriverHistoryScreen({ navigation }) {
           <ActivityIndicator color={GREEN} size="large" />
         </View>
       ) : (
-        <AnimatedRN.ScrollView
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
-          overScrollMode="never"
-          onMomentumScrollEnd={({ nativeEvent }) => {
-            const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-            if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 60) {
-              loadMore();
+        <Animated.View style={[{ flex: 1 }, { opacity: fadeA, transform: [{ translateY: slideA }] }]}>
+          <AnimatedRN.FlatList
+            data={rides}
+            keyExtractor={(item, i) => item.id ?? String(i)}
+            renderItem={({ item }) => (
+              <RideCard item={item} theme={theme} onPress={handleRidePress} />
+            )}
+            contentContainerStyle={s.list}
+            showsVerticalScrollIndicator={false}
+            scrollEventThrottle={16}
+            onScroll={scrollHandler}
+            overScrollMode="never"
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.4}
+            ListFooterComponent={
+              loading && rides.length > 0
+                ? <ActivityIndicator color={GREEN} style={{ marginVertical: 16 }} />
+                : hasMore && !loading
+                  ? (
+                    <TouchableOpacity
+                      style={[s.loadMoreBtn, { borderColor: theme.border }]}
+                      onPress={loadMore}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[s.loadMoreTxt, { color: theme.hint }]}>Load more</Text>
+                    </TouchableOpacity>
+                  )
+                  : null
             }
-          }}
-        >
-          <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
-            {rides.length === 0 ? (
+            ListEmptyComponent={
               <View style={s.empty}>
                 <Ionicons name="car-outline" size={40} color={theme.hint} />
                 <Text style={[s.emptyTitle, { color: theme.foreground }]}>No rides yet</Text>
@@ -237,26 +252,9 @@ export default function DriverHistoryScreen({ navigation }) {
                     : 'Your ride history will appear here.'}
                 </Text>
               </View>
-            ) : (
-              rides.map((item, i) => (
-                <RideCard key={item.id ?? i} item={item} theme={theme} onPress={handleRidePress} />
-              ))
-            )}
-
-            {hasMore && !loading && (
-              <TouchableOpacity
-                style={[s.loadMoreBtn, { borderColor: theme.border }]}
-                onPress={loadMore}
-                activeOpacity={0.8}
-              >
-                <Text style={[s.loadMoreTxt, { color: theme.hint }]}>Load more</Text>
-              </TouchableOpacity>
-            )}
-            {loading && rides.length > 0 && (
-              <ActivityIndicator color={GREEN} style={{ marginVertical: 16 }} />
-            )}
-          </Animated.View>
-        </AnimatedRN.ScrollView>
+            }
+          />
+        </Animated.View>
       )}
     </View>
   );
@@ -272,7 +270,7 @@ const s = StyleSheet.create({
   filterPill:  { borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 7 },
   filterTxt:   { fontSize: 12, fontWeight: '700' },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scroll:      { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 100 },
+  list:        { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 100 },
   empty:       { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyTitle:  { fontSize: 16, fontWeight: '800' },
   emptySub:    { fontSize: 13, textAlign: 'center', maxWidth: 240 },

@@ -316,7 +316,6 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
         provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={mapRegion}
-        customMapStyle={DARK_MAP_STYLE}
         showsUserLocation={false}
         showsCompass={false}
         toolbarEnabled={false}

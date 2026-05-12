@@ -172,6 +172,11 @@ export default function PartnerHistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const scrollY         = useScrollY();
 
+  // Reanimated scroll handler — feeds shared scrollY for tab-bar hiding
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => { scrollY.value = event.contentOffset.y; },
+  });
+
   const [deliveries, setDeliveries] = useState([]);
   const [page,       setPage]       = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -256,16 +261,27 @@ export default function PartnerHistoryScreen({ navigation }) {
             renderItem={({ item }) => <DeliveryCard item={item} theme={theme} />}
             contentContainerStyle={s.list}
             showsVerticalScrollIndicator={false}
-            onScroll={useAnimatedScrollHandler({
-              onScroll: (event) => {
-                scrollY.value = event.contentOffset.y;
-              },
-            })}
             scrollEventThrottle={16}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor={TEAL} />}
-            onEndReached={() => { if (!loadingMore && page <= totalPages) { setLoadingMore(true); load().finally(() => setLoadingMore(false)); } }}
+            onScroll={scrollHandler}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => { setRefreshing(true); load(true); }}
+                tintColor={TEAL}
+              />
+            }
+            onEndReached={() => {
+              if (!loadingMore && page <= totalPages) {
+                setLoadingMore(true);
+                load().finally(() => setLoadingMore(false));
+              }
+            }}
             onEndReachedThreshold={0.4}
-            ListFooterComponent={loadingMore ? <ActivityIndicator color={TEAL} style={{ marginVertical: 16 }} /> : null}
+            ListFooterComponent={
+              loadingMore
+                ? <ActivityIndicator color={TEAL} style={{ marginVertical: 16 }} />
+                : null
+            }
             ListEmptyComponent={
               <View style={s.empty}>
                 <Ionicons name="cube-outline" size={48} color={theme.hint} />

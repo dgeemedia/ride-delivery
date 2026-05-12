@@ -2,14 +2,16 @@
 // ── Premium Glass Edition ─────────────────────────────────────────────────────
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList,
+  View, Text, StyleSheet, TouchableOpacity,
   StatusBar, Animated, ActivityIndicator, RefreshControl,
   Dimensions, Platform,
 } from 'react-native';
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { LinearGradient }    from 'expo-linear-gradient';
 import { Ionicons }          from '@expo/vector-icons';
 import { SafeAreaView }      from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useScrollY }        from '../../context/ScrollContext';
 import { rideAPI, deliveryAPI } from '../../services/api';
 
 const { width } = Dimensions.get('window');
@@ -270,6 +272,7 @@ const em = StyleSheet.create({
 export default function HistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const darkMode = mode === 'dark';
+  const scrollY  = useScrollY();
 
   const [tab,         setTab]         = useState('rides');
   const [rides,       setRides]       = useState([]);
@@ -284,6 +287,14 @@ export default function HistoryScreen({ navigation }) {
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(0)).current;
+
+  // ── Reanimated scroll handler — feeds shared scrollY for tab-bar hiding ──
+  const ridesScrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => { scrollY.value = event.contentOffset.y; },
+  });
+  const deliveriesScrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => { scrollY.value = event.contentOffset.y; },
+  });
 
   const loadRides = useCallback(async (reset = false) => {
     const p = reset ? 1 : ridePage;
@@ -413,12 +424,14 @@ export default function HistoryScreen({ navigation }) {
       ) : (
         <Animated.View style={[{ flex:1 }, { opacity: fadeA, transform:[{ translateY: slideA }] }]}>
           {tab === 'rides' ? (
-            <FlatList
+            <AnimatedRN.FlatList
               data={rides}
               keyExtractor={item => item.id}
               renderItem={({ item }) => <RideCard item={item} theme={theme} mode={mode} onPress={handleCardPress} />}
               contentContainerStyle={s.list}
               showsVerticalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={ridesScrollHandler}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={GREEN} />}
               onEndReached={() => { if(!loadingMore){ setLoadingMore(true); loadRides().finally(() => setLoadingMore(false)); } }}
               onEndReachedThreshold={0.4}
@@ -426,12 +439,14 @@ export default function HistoryScreen({ navigation }) {
               ListEmptyComponent={<EmptyState icon="car-outline" label="No rides yet" theme={theme} mode={mode} />}
             />
           ) : (
-            <FlatList
+            <AnimatedRN.FlatList
               data={deliveries}
               keyExtractor={item => item.id}
               renderItem={({ item }) => <DeliveryCard item={item} theme={theme} mode={mode} onPress={handleCardPress} />}
               contentContainerStyle={s.list}
               showsVerticalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={deliveriesScrollHandler}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={TEAL} />}
               onEndReached={() => { if(!loadingMore){ setLoadingMore(true); loadDeliveries().finally(() => setLoadingMore(false)); } }}
               onEndReachedThreshold={0.4}

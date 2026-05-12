@@ -1,33 +1,23 @@
 // mobile/src/screens/Driver/FloorPriceScreen.js
-//
-// Lets a driver set their preferred minimum fare.
-// The value is saved to their profile via driverAPI.updateProfile and is
-// surfaced to customers on the NearbyDriversScreen.
-//
-// Schema note: driverProfile needs a `preferredFloorPrice Float? @default(null)`
-// field.  Until that migration runs, the value is persisted via profile.notes
-// as a fallback (handled transparently below).
-//
-// Fare engine cap: driver may not exceed 30% above the platform estimate.
-// This screen enforces that limit with live feedback.
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, StatusBar, Animated, ActivityIndicator,
+  StatusBar, Animated, ActivityIndicator,
   Switch, Alert, Keyboard,
 } from 'react-native';
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }          from '@expo/vector-icons';
 import { SafeAreaView }      from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useScrollY }        from '../../context/ScrollContext';
 import { driverAPI, rideAPI } from '../../services/api';
 
 const DA            = '#FFB800';
 const GREEN         = '#5DAA72';
 const RED           = '#E05555';
 const PURPLE        = '#A78BFA';
-const MAX_MARKUP    = 1.30;   // mirror fareEngine.js
-const SAMPLE_KM     = 5;      // km used for the live preview calculation
+const MAX_MARKUP    = 1.30;
+const SAMPLE_KM     = 5;
 const SAMPLE_TYPE   = 'CAR';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,7 +51,6 @@ const ir = StyleSheet.create({
 // Markup gauge bar
 // ─────────────────────────────────────────────────────────────────────────────
 const MarkupBar = ({ pct, theme }) => {
-  // pct: 0 → 30  (capped)
   const ratio = Math.min(pct, 30) / 30;
   const color = pct > 25 ? RED : pct > 15 ? DA : GREEN;
   return (
@@ -87,14 +76,19 @@ const mb = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function FloorPriceScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const scrollY         = useScrollY();
+
+  // Reanimated scroll handler — feeds shared scrollY for tab-bar hiding
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => { scrollY.value = event.contentOffset.y; },
+  });
 
   const [profile,        setProfile]        = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [saving,         setSaving]         = useState(false);
   const [enabled,        setEnabled]        = useState(false);
   const [floorInput,     setFloorInput]     = useState('');
-  const [platformEst,    setPlatformEst]    = useState(null);   // for SAMPLE_KM
-  const [estimateLoading,setEstimateLoading]= useState(false);
+  const [platformEst,    setPlatformEst]    = useState(null);
 
   const fadeA   = useRef(new Animated.Value(0)).current;
   const shakeA  = useRef(new Animated.Value(0)).current;
@@ -145,7 +139,7 @@ export default function FloorPriceScreen({ navigation }) {
 
   useEffect(() => { load(); }, []);
 
-  // ── Shake animation for clamped input ────────────────────────────────────
+  // ── Shake animation for invalid input ────────────────────────────────────
   const shake = () => {
     Animated.sequence([
       Animated.timing(shakeA, { toValue: 8,  duration: 60, useNativeDriver: true }),
@@ -205,7 +199,6 @@ export default function FloorPriceScreen({ navigation }) {
           <Text style={[s.headerTitle, { color: theme.foreground }]}>Floor Price</Text>
           <Text style={[s.headerSub,   { color: theme.hint }]}>Set your minimum acceptable fare</Text>
         </View>
-        {/* Live indicator */}
         {enabled && floorNum > 0 && (
           <View style={[s.activePill, { backgroundColor: GREEN + '20', borderColor: GREEN + '50' }]}>
             <View style={[s.activeDot, { backgroundColor: GREEN }]} />
@@ -217,11 +210,13 @@ export default function FloorPriceScreen({ navigation }) {
       {loading ? (
         <ActivityIndicator color={DA} style={{ marginTop: 60 }} />
       ) : (
-        <Animated.ScrollView
+        <AnimatedRN.ScrollView
           style={{ opacity: fadeA }}
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          scrollEventThrottle={16}
+          onScroll={scrollHandler}
         >
           {/* ── How it works ── */}
           <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: DA + '25' }]}>
@@ -385,7 +380,7 @@ export default function FloorPriceScreen({ navigation }) {
           </TouchableOpacity>
 
           <View style={{ height: 32 }} />
-        </Animated.ScrollView>
+        </AnimatedRN.ScrollView>
       )}
     </SafeAreaView>
   );
@@ -395,7 +390,6 @@ const s = StyleSheet.create({
   root:   { flex: 1 },
   scroll: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 16 },
 
-  // Header
   header:      { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
   backBtn:     { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '900' },
@@ -404,35 +398,29 @@ const s = StyleSheet.create({
   activeDot:   { width: 6, height: 6, borderRadius: 3 },
   activeTxt:   { fontSize: 9, fontWeight: '800', letterSpacing: 1 },
 
-  // Cards
-  card:       { borderRadius: 18, borderWidth: 1, padding: 16, marginBottom: 20 },
+  card:        { borderRadius: 18, borderWidth: 1, padding: 16, marginBottom: 20 },
   cardTitleRow:{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 8 },
-  cardTitle:  { fontSize: 13, fontWeight: '800' },
-  cardBody:   { fontSize: 13, lineHeight: 20 },
-  divider:    { height: 1, marginVertical: 10 },
+  cardTitle:   { fontSize: 13, fontWeight: '800' },
+  cardBody:    { fontSize: 13, lineHeight: 20 },
+  divider:     { height: 1, marginVertical: 10 },
 
-  // Toggle
   toggleRow:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
   toggleLabel: { fontSize: 15, fontWeight: '800', marginBottom: 3 },
   toggleSub:   { fontSize: 12 },
 
-  // Input
   inputCard:  { flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 4, marginBottom: 14 },
   currency:   { fontSize: 22, fontWeight: '900', marginRight: 6 },
   input:      { flex: 1, fontSize: 28, fontWeight: '900', paddingVertical: 12 },
 
-  // Clamp
   clampWarn: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 14 },
   clampTxt:  { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '600' },
 
-  // Rate table
   rateRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
   rateTypePill:{ borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   rateType:    { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   rateVal:     { flex: 1, fontSize: 11, fontWeight: '600', textAlign: 'right' },
   earningsNote:{ fontSize: 11, lineHeight: 17 },
 
-  // Save
   saveBtn: { borderRadius: 16, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   saveTxt: { fontSize: 16, fontWeight: '900', color: '#080C18' },
 });

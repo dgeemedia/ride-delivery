@@ -2,12 +2,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, StatusBar, Animated, ActivityIndicator,
+  StatusBar, Animated, ActivityIndicator,
   Switch, Alert, Keyboard,
 } from 'react-native';
+import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }          from '@expo/vector-icons';
 import { SafeAreaView }      from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useScrollY }        from '../../context/ScrollContext';
 import { partnerAPI, deliveryAPI } from '../../services/api';
 
 const COURIER_ACCENT = '#34D399';
@@ -85,6 +87,12 @@ const mb = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function CourierFloorPriceScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const scrollY         = useScrollY();
+
+  // Reanimated scroll handler — feeds shared scrollY for tab-bar hiding
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => { scrollY.value = event.contentOffset.y; },
+  });
 
   const [profile,     setProfile]     = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -193,11 +201,13 @@ export default function CourierFloorPriceScreen({ navigation }) {
       {loading ? (
         <ActivityIndicator color={COURIER_ACCENT} style={{ marginTop: 60 }} />
       ) : (
-        <Animated.ScrollView
+        <AnimatedRN.ScrollView
           style={{ opacity: fadeA }}
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          scrollEventThrottle={16}
+          onScroll={scrollHandler}
         >
           {/* How it works */}
           <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '25' }]}>
@@ -340,7 +350,7 @@ export default function CourierFloorPriceScreen({ navigation }) {
             }
           </TouchableOpacity>
           <View style={{ height: 32 }} />
-        </Animated.ScrollView>
+        </AnimatedRN.ScrollView>
       )}
     </SafeAreaView>
   );
