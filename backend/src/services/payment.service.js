@@ -26,10 +26,6 @@ const flutterwaveAPI = axios.create({
 // PAYSTACK
 // ─────────────────────────────────────────────
 
-/**
- * Initialize a Paystack transaction
- * Returns { authorization_url, access_code, reference }
- */
 exports.paystackInitialize = async ({ email, amount, metadata = {}, callbackUrl }) => {
   try {
     const { data } = await paystackAPI.post('/transaction/initialize', {
@@ -48,10 +44,6 @@ exports.paystackInitialize = async ({ email, amount, metadata = {}, callbackUrl 
   }
 };
 
-/**
- * Verify a Paystack transaction by reference
- * Returns full transaction object
- */
 exports.paystackVerify = async (reference) => {
   try {
     const { data } = await paystackAPI.get(`/transaction/verify/${reference}`);
@@ -68,9 +60,6 @@ exports.paystackVerify = async (reference) => {
   }
 };
 
-/**
- * Create a Paystack refund
- */
 exports.paystackRefund = async (transactionReference, amount) => {
   try {
     const body = { transaction: transactionReference };
@@ -86,9 +75,6 @@ exports.paystackRefund = async (transactionReference, amount) => {
   }
 };
 
-/**
- * Create a Paystack transfer recipient (for driver payouts)
- */
 exports.paystackCreateRecipient = async ({ name, accountNumber, bankCode }) => {
   try {
     const { data } = await paystackAPI.post('/transferrecipient', {
@@ -107,9 +93,6 @@ exports.paystackCreateRecipient = async ({ name, accountNumber, bankCode }) => {
   }
 };
 
-/**
- * Send a Paystack transfer (driver payout)
- */
 exports.paystackTransfer = async ({ amount, recipientCode, reason, metadata = {} }) => {
   try {
     const { data } = await paystackAPI.post('/transfer', {
@@ -128,9 +111,6 @@ exports.paystackTransfer = async ({ amount, recipientCode, reason, metadata = {}
   }
 };
 
-/**
- * List Nigerian banks (for payout setup)
- */
 exports.paystackListBanks = async () => {
   try {
     const { data } = await paystackAPI.get('/bank?currency=NGN&country=nigeria');
@@ -142,9 +122,6 @@ exports.paystackListBanks = async () => {
   }
 };
 
-/**
- * Verify a Nigerian bank account number
- */
 exports.paystackVerifyAccount = async (accountNumber, bankCode) => {
   try {
     const { data } = await paystackAPI.get(
@@ -158,10 +135,6 @@ exports.paystackVerifyAccount = async (accountNumber, bankCode) => {
   }
 };
 
-/**
- * Create a Paystack transfer recipient (for withdrawal payouts)
- * Alias-compatible with the name used in wallet.controller.js
- */
 exports.paystackCreateTransferRecipient = async ({ name, accountNumber, bankCode }) => {
   try {
     const { data } = await paystackAPI.post('/transferrecipient', {
@@ -179,10 +152,6 @@ exports.paystackCreateTransferRecipient = async ({ name, accountNumber, bankCode
   }
 };
 
-/**
- * Initiate a Paystack transfer (for withdrawal payouts)
- * amount must be in kobo (caller multiplies by 100)
- */
 exports.paystackInitiateTransfer = async ({ amount, recipient, reason, reference }) => {
   try {
     const { data } = await paystackAPI.post('/transfer', {
@@ -199,11 +168,7 @@ exports.paystackInitiateTransfer = async ({ amount, recipient, reason, reference
     throw new AppError('Paystack transfer initiation failed: ' + error.message, 500);
   }
 };
- 
-/**
- * Verify a Paystack transaction by reference
- * (alias used by verifyTopUp in wallet.controller.js)
- */
+
 exports.paystackVerifyTransaction = async (reference) => {
   return exports.paystackVerify(reference);
 };
@@ -212,44 +177,42 @@ exports.paystackVerifyTransaction = async (reference) => {
 // FLUTTERWAVE (fallback / alternative)
 // ─────────────────────────────────────────────
 
-/**
- * Initialize a Flutterwave payment
- * Returns { payment_link } — redirect user to this URL
- */
 exports.flutterwaveInitialize = async ({
-  email,
-  phone,
-  name,
-  amount,
-  txRef,
-  metadata = {},
-  redirectUrl
+  email, phone, name, amount, txRef, metadata = {}, redirectUrl
 }) => {
   try {
+    const redirect = redirectUrl
+      || process.env.FLUTTERWAVE_REDIRECT_URL
+      || 'https://webhook.site/your-test-uuid';   // ← dev fallback
+
     const { data } = await flutterwaveAPI.post('/payments', {
-      tx_ref: txRef || `FLW-${Date.now()}`,
+      tx_ref:       txRef || `FLW-${Date.now()}`,
       amount,
-      currency: 'NGN',
-      redirect_url: redirectUrl || process.env.FLUTTERWAVE_REDIRECT_URL,
-      customer: { email, phone_number: phone, name },
+      currency:     'NGN',
+      redirect_url: redirect,
+      customer: {
+        email,
+        phonenumber: phone || '',   // ← FLW field is 'phonenumber' not 'phone_number'
+        name,
+      },
       customizations: {
         title: 'Ride & Delivery Payment',
-        logo: process.env.APP_LOGO_URL
+        logo:  process.env.APP_LOGO_URL || '',
       },
-      meta: metadata
+      meta: metadata,
     });
 
     if (data.status !== 'success') throw new AppError(data.message, 400);
-    return data.data; // { link }
+    return data.data;
   } catch (error) {
+    // Surface the actual FLW error message instead of swallowing it
+    const flwMsg = error?.response?.data?.message || error.message;
+    console.error('[FLW] flutterwaveInitialize error:', flwMsg, error?.response?.data);
     if (error instanceof AppError) throw error;
-    throw new AppError('Flutterwave initialization failed: ' + error.message, 500);
+    throw new AppError('Flutterwave initialization failed: ' + flwMsg, 500);
   }
 };
 
-/**
- * Verify a Flutterwave transaction by ID
- */
 exports.flutterwaveVerify = async (transactionId) => {
   try {
     const { data } = await flutterwaveAPI.get(`/transactions/${transactionId}/verify`);

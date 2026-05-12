@@ -262,17 +262,19 @@ exports.verifyTopUp = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.flutterwaveTopup = async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
-
   const { amount } = req.body;
   const { email, phone, firstName, lastName, id: userId } = req.user;
+  
   if (amount < 100) throw new AppError('Minimum top-up amount is ₦100', 400);
 
-  const txRef      = `WALLET-FLW-${userId}-${Date.now()}`;
+  const txRef = `WALLET-FLW-${userId}-${Date.now()}`;
   const transaction = await paymentService.flutterwaveInitialize({
-    email, phone, name: `${firstName} ${lastName}`,
-    amount, txRef, metadata: { userId, purpose: 'wallet_topup' },
+    email,
+    phone:    phone || '',          // ← guard: phone may not be on req.user
+    name:     `${firstName} ${lastName}`,
+    amount,
+    txRef,
+    metadata: { userId, purpose: 'wallet_topup' },
   });
 
   res.status(200).json({ success: true, data: { paymentLink: transaction.link, txRef } });
