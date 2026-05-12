@@ -1,8 +1,8 @@
 // mobile/src/components/ServiceIcons.js
-// ── Custom SVG service icons — drop-in for HomeScreen service row ─────────────
+// ── Custom SVG service icons + Auth screen hero illustrations ─────────────────
 import React from 'react';
 import Svg, {
-  Path, Circle, Rect, Line, Ellipse, G, Defs, LinearGradient, Stop,
+  Path, Circle, Rect, Line, Ellipse, G, Defs, ClipPath, Text as SvgText,
 } from 'react-native-svg';
 
 const SIZE = 52;
@@ -168,7 +168,6 @@ export const CouriersIcon = ({ size = SIZE }) => (
     <Circle cx="30" cy="88" r="20" fill="none" stroke="#2EBFA5" strokeWidth="4" />
     <Circle cx="30" cy="88" r="13" fill="none" stroke="#2EBFA5" strokeWidth="1.5" opacity="0.35" />
     <Circle cx="30" cy="88" r="4"  fill="#2EBFA5" opacity="0.7" />
-    {/* Spokes */}
     <Line x1="30" y1="68" x2="30" y2="88" stroke="#2EBFA5" strokeWidth="1.2" opacity="0.5" />
     <Line x1="30" y1="88" x2="30" y2="108" stroke="#2EBFA5" strokeWidth="1.2" opacity="0.5" />
     <Line x1="10" y1="88" x2="30" y2="88" stroke="#2EBFA5" strokeWidth="1.2" opacity="0.5" />
@@ -182,7 +181,6 @@ export const CouriersIcon = ({ size = SIZE }) => (
     <Circle cx="90" cy="88" r="20" fill="none" stroke="#2EBFA5" strokeWidth="4" />
     <Circle cx="90" cy="88" r="13" fill="none" stroke="#2EBFA5" strokeWidth="1.5" opacity="0.35" />
     <Circle cx="90" cy="88" r="4"  fill="#2EBFA5" opacity="0.7" />
-    {/* Spokes */}
     <Line x1="90" y1="68" x2="90" y2="88" stroke="#2EBFA5" strokeWidth="1.2" opacity="0.5" />
     <Line x1="90" y1="88" x2="90" y2="108" stroke="#2EBFA5" strokeWidth="1.2" opacity="0.5" />
     <Line x1="70" y1="88" x2="90" y2="88" stroke="#2EBFA5" strokeWidth="1.2" opacity="0.5" />
@@ -193,40 +191,27 @@ export const CouriersIcon = ({ size = SIZE }) => (
     <Line x1="90" y1="88" x2="76" y2="102" stroke="#2EBFA5" strokeWidth="1.2" opacity="0.5" />
 
     {/* ── Frame ── */}
-    {/* Seat tube + seat */}
     <Line x1="52" y1="64" x2="52" y2="88" stroke="#1C1C1E" strokeWidth="5" strokeLinecap="round" />
     <Rect x="44" y="62" width="16" height="5" rx="2.5" fill="#2C2C2E" />
-    {/* Top tube */}
     <Line x1="52" y1="68" x2="84" y2="68" stroke="#1C1C1E" strokeWidth="4.5" strokeLinecap="round" />
-    {/* Down tube */}
     <Line x1="84" y1="68" x2="52" y2="88" stroke="#1C1C1E" strokeWidth="4.5" strokeLinecap="round" />
-    {/* Chain stay */}
     <Line x1="52" y1="88" x2="30" y2="88" stroke="#1C1C1E" strokeWidth="4" strokeLinecap="round" />
-    {/* Seat stay */}
     <Line x1="30" y1="88" x2="52" y2="68" stroke="#1C1C1E" strokeWidth="3" strokeLinecap="round" opacity="0.7" />
-    {/* Fork */}
     <Line x1="84" y1="68" x2="90" y2="88" stroke="#1C1C1E" strokeWidth="4.5" strokeLinecap="round" />
-    {/* Handlebar stem */}
     <Line x1="84" y1="68" x2="84" y2="58" stroke="#1C1C1E" strokeWidth="4" strokeLinecap="round" />
     <Line x1="78" y1="58" x2="90" y2="58" stroke="#1C1C1E" strokeWidth="3.5" strokeLinecap="round" />
 
     {/* ── Rider body ── */}
-    {/* Torso - leaning forward */}
     <Path d="M52 67 Q60 52 74 50" stroke="#2C2C2E" strokeWidth="8" strokeLinecap="round" fill="none" />
-    {/* Arm to handlebar */}
     <Line x1="74" y1="50" x2="83" y2="58" stroke="#2C2C2E" strokeWidth="5" strokeLinecap="round" />
-    {/* Helmet / head */}
     <Circle cx="68" cy="44" r="10" fill="#1C1C1E" />
     <Path d="M60 44 Q60 34 68 32 Q76 34 76 44" fill="#2EBFA5" opacity="0.85" />
-    {/* Visor */}
     <Path d="M62 44 Q68 46 74 44" stroke="#FFFFFF" strokeWidth="1.5" fill="none" opacity="0.6" />
 
-    {/* ── Delivery bag on back ── */}
+    {/* ── Delivery bag ── */}
     <Rect x="40" y="56" width="14" height="12" rx="3" fill="#2C2C2E" />
     <Rect x="42" y="58" width="10" height="8" rx="2" fill="#3A3A3C" />
-    {/* Bag strap */}
     <Line x1="47" y1="56" x2="52" y2="67" stroke="#444444" strokeWidth="2" strokeLinecap="round" />
-    {/* Bag logo — teal dot */}
     <Circle cx="47" cy="62" r="2.5" fill="#2EBFA5" opacity="0.8" />
 
     {/* ── Pedals ── */}
@@ -234,12 +219,12 @@ export const CouriersIcon = ({ size = SIZE }) => (
     <Line x1="45" y1="92" x2="52" y2="88" stroke="#3A3A3C" strokeWidth="3" strokeLinecap="round" />
     <Line x1="52" y1="88" x2="59" y2="84" stroke="#3A3A3C" strokeWidth="3" strokeLinecap="round" />
 
-    {/* ── Speed lines (left, behind rider) ── */}
+    {/* ── Speed lines ── */}
     <Line x1="5"  y1="60" x2="24" y2="60" stroke="#2EBFA5" strokeWidth="2.5" strokeLinecap="round" opacity="0.70" />
     <Line x1="4"  y1="68" x2="20" y2="68" stroke="#2EBFA5" strokeWidth="1.8" strokeLinecap="round" opacity="0.45" />
     <Line x1="6"  y1="76" x2="19" y2="76" stroke="#2EBFA5" strokeWidth="1.2" strokeLinecap="round" opacity="0.25" />
 
-    {/* ── Location pulse rings (top right) ── */}
+    {/* ── Location pulse ── */}
     <Circle cx="102" cy="28" r="14" fill="none" stroke="#2EBFA5" strokeWidth="1" opacity="0.20" />
     <Circle cx="102" cy="28" r="9"  fill="none" stroke="#2EBFA5" strokeWidth="1.2" opacity="0.35" />
     <Circle cx="102" cy="28" r="4"  fill="#2EBFA5" opacity="0.80" />
@@ -289,3 +274,235 @@ export const SupportIcon = ({ size = SIZE }) => (
     <Circle cx="103" cy="16" r="1.5" fill="#34C759" opacity="0.25" />
   </Svg>
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. LOGIN HERO — city map with route path, car, and destination pin
+//    Usage: <LoginHeroIllustration width={screenWidth - 64} />
+// ─────────────────────────────────────────────────────────────────────────────
+export const LoginHeroIllustration = ({ width = 280, height = 170 }) => {
+  const vw  = 280;
+  const vh  = 170;
+  return (
+    <Svg width={width} height={height} viewBox={`0 0 ${vw} ${vh}`}>
+      <Defs>
+        <ClipPath id="loginClip">
+          <Rect x="0" y="0" width={vw} height={vh} rx="16" />
+        </ClipPath>
+      </Defs>
+      <G clipPath="url(#loginClip)">
+
+        {/* ── Perspective road grid ── */}
+        <Line x1="140" y1="170" x2="20"  y2="55"  stroke="#B4B2A9" strokeWidth="0.6" opacity="0.22" />
+        <Line x1="140" y1="170" x2="80"  y2="55"  stroke="#B4B2A9" strokeWidth="0.6" opacity="0.22" />
+        <Line x1="140" y1="170" x2="140" y2="55"  stroke="#B4B2A9" strokeWidth="0.6" opacity="0.22" />
+        <Line x1="140" y1="170" x2="200" y2="55"  stroke="#B4B2A9" strokeWidth="0.6" opacity="0.22" />
+        <Line x1="140" y1="170" x2="260" y2="55"  stroke="#B4B2A9" strokeWidth="0.6" opacity="0.22" />
+        <Line x1="0"   y1="125" x2="280" y2="125" stroke="#B4B2A9" strokeWidth="0.6" opacity="0.18" />
+        <Line x1="0"   y1="100" x2="280" y2="100" stroke="#B4B2A9" strokeWidth="0.6" opacity="0.13" />
+        <Line x1="0"   y1="80"  x2="280" y2="80"  stroke="#B4B2A9" strokeWidth="0.6" opacity="0.08" />
+
+        {/* ── City silhouette (left) ── */}
+        <Rect x="8"  y="92"  width="18" height="33" rx="1" fill="#D3D1C7" opacity="0.40" />
+        <Rect x="13" y="85"  width="8"  height="10" rx="1" fill="#D3D1C7" opacity="0.30" />
+        <Rect x="30" y="82"  width="22" height="43" rx="1" fill="#D3D1C7" opacity="0.38" />
+        <Rect x="36" y="75"  width="10" height="10" rx="1" fill="#D3D1C7" opacity="0.28" />
+        <Rect x="56" y="95"  width="14" height="30" rx="1" fill="#D3D1C7" opacity="0.32" />
+
+        {/* ── City silhouette (right) ── */}
+        <Rect x="210" y="88"  width="22" height="37" rx="1" fill="#D3D1C7" opacity="0.38" />
+        <Rect x="216" y="80"  width="10" height="12" rx="1" fill="#D3D1C7" opacity="0.28" />
+        <Rect x="236" y="97"  width="18" height="28" rx="1" fill="#D3D1C7" opacity="0.33" />
+        <Rect x="257" y="102" width="16" height="23" rx="1" fill="#D3D1C7" opacity="0.28" />
+
+        {/* ── Dashed route path ── */}
+        <Path
+          d="M 58 152 Q 88 134 108 106 Q 124 84 140 68"
+          stroke="#534AB7"
+          strokeWidth="2.8"
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray="6,4"
+          opacity="0.75"
+        />
+
+        {/* ── Origin dot ── */}
+        <Circle cx="58"  cy="152" r="9" fill="#534AB7" opacity="0.18" />
+        <Circle cx="58"  cy="152" r="5" fill="#534AB7" opacity="0.90" />
+        <Circle cx="58"  cy="152" r="2" fill="#FFFFFF" />
+
+        {/* ── Destination pin ── */}
+        <Path
+          d="M140 40 C130 40 122 48 122 57 C122 69 140 80 140 80 C140 80 158 69 158 57 C158 48 150 40 140 40 Z"
+          fill="#534AB7"
+        />
+        <Circle cx="140" cy="57" r="7" fill="#FFFFFF" />
+        <Circle cx="140" cy="57" r="3.5" fill="#534AB7" />
+        <Ellipse cx="140" cy="82" rx="9" ry="2.5" fill="#534AB7" opacity="0.18" />
+
+        {/* ── Car (along the route) ── */}
+        <G>
+          {/* body */}
+          <Rect x="90" y="107" width="32" height="12" rx="4" fill="#2C2C2A" />
+          {/* cabin */}
+          <Path d="M96 107 Q98 101 102 100 L110 100 Q114 101 116 107 Z" fill="#3C3489" />
+          {/* windows */}
+          <Rect x="97"  y="101" width="7"  height="4" rx="1" fill="#7F77DD" opacity="0.7" />
+          <Rect x="112" y="101" width="4"  height="4" rx="1" fill="#7F77DD" opacity="0.7" />
+          {/* wheels */}
+          <Circle cx="97"  cy="119" r="4.5" fill="#1a1a18" />
+          <Circle cx="97"  cy="119" r="2.5" fill="#444441" />
+          <Circle cx="115" cy="119" r="4.5" fill="#1a1a18" />
+          <Circle cx="115" cy="119" r="2.5" fill="#444441" />
+          {/* tail light / headlight */}
+          <Rect x="90" y="109" width="3" height="3" rx="1" fill="#F09595" opacity="0.9" />
+          <Rect x="119" y="109" width="3" height="3" rx="1" fill="#FAC775" opacity="0.9" />
+          {/* speed lines */}
+          <Line x1="72" y1="108" x2="88" y2="108" stroke="#534AB7" strokeWidth="1.8" strokeLinecap="round" opacity="0.65" />
+          <Line x1="70" y1="112" x2="87" y2="112" stroke="#534AB7" strokeWidth="1.2" strokeLinecap="round" opacity="0.40" />
+        </G>
+
+        {/* ── Pulse rings (top-right) ── */}
+        <Circle cx="232" cy="34" r="22" fill="none" stroke="#534AB7" strokeWidth="1" opacity="0.14" />
+        <Circle cx="232" cy="34" r="14" fill="none" stroke="#534AB7" strokeWidth="1" opacity="0.24" />
+        <Circle cx="232" cy="34" r="7"  fill="#534AB7" opacity="0.32" />
+        <Circle cx="232" cy="34" r="3.5" fill="#534AB7" opacity="0.90" />
+        <Circle cx="232" cy="34" r="1.5" fill="#FFFFFF" />
+
+        {/* ── Accent dots ── */}
+        <Circle cx="200" cy="52" r="2"   fill="#AFA9EC" opacity="0.55" />
+        <Circle cx="214" cy="43" r="1.4" fill="#AFA9EC" opacity="0.38" />
+        <Circle cx="55"  cy="65" r="1.8" fill="#FAC775" opacity="0.50" />
+        <Circle cx="42"  cy="74" r="1.2" fill="#FAC775" opacity="0.32" />
+        <Circle cx="268" cy="110" r="1.5" fill="#5DCAA5" opacity="0.40" />
+      </G>
+    </Svg>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. REGISTER HERO — three role cards side-by-side (Rider / Driver / Courier)
+//    Usage: <RegisterHeroIllustration width={screenWidth - 64} />
+// ─────────────────────────────────────────────────────────────────────────────
+export const RegisterHeroIllustration = ({ width = 280, height = 160, selectedRole = 'DRIVER' }) => {
+  const vw = 280;
+  const vh = 160;
+
+  const riderSel   = selectedRole === 'CUSTOMER';
+  const driverSel  = selectedRole === 'DRIVER';
+  const courierSel = selectedRole === 'DELIVERY_PARTNER';
+
+  return (
+    <Svg width={width} height={height} viewBox={`0 0 ${vw} ${vh}`}>
+      <Defs>
+        <ClipPath id="regClip">
+          <Rect x="0" y="0" width={vw} height={vh} rx="16" />
+        </ClipPath>
+      </Defs>
+      <G clipPath="url(#regClip)">
+
+        {/* ── Background grid dots ── */}
+        {[40, 80, 120, 160, 200, 240].map(x => (
+          <Circle key={x} cx={x} cy="22" r="1.2" fill="#B4B2A9" opacity="0.35" />
+        ))}
+        <Circle cx="40"  cy="58" r="1.2" fill="#B4B2A9" opacity="0.25" />
+        <Circle cx="240" cy="58" r="1.2" fill="#B4B2A9" opacity="0.25" />
+
+        {/* ── Step indicator ── */}
+        <Circle cx="126" cy="14" r="4"  fill="#D3D1C7" />
+        <Rect   x="134" y="11"  width="12" height="7" rx="3.5" fill="#534AB7" />
+        <Circle cx="154" cy="14" r="4"  fill="#D3D1C7" />
+
+        {/* ── RIDER card ── */}
+        <Rect x="12" y="34" width="74" height="104" rx="12"
+          fill={riderSel ? '#EEEDFE' : '#F1EFE8'}
+          stroke={riderSel ? '#7F77DD' : '#D3D1C7'}
+          strokeWidth={riderSel ? '1.5' : '0.8'} />
+        {riderSel && <Rect x="12" y="34" width="74" height="4" rx="2" fill="#7F77DD" opacity="0.6" />}
+        {/* Person figure */}
+        <Circle cx="49" cy="68" r="11" fill="#534AB7" opacity="0.13" />
+        <Circle cx="49" cy="63" r="6"  fill="#534AB7" opacity="0.80" />
+        <Path d="M37 82 Q37 73 49 73 Q61 73 61 82" fill="#534AB7" opacity="0.60" />
+        {/* Text bars */}
+        <Rect x="22" y="92"  width="52" height="4" rx="2" fill="#7F77DD" opacity="0.45" />
+        <Rect x="28" y="100" width="40" height="3" rx="1.5" fill="#AFA9EC" opacity="0.45" />
+        {/* Radio / check */}
+        {riderSel ? (
+          <G>
+            <Circle cx="49" cy="120" r="7" fill="#534AB7" />
+            <Path d="M44.5 120 L47.5 123 L54 116" stroke="#FFFFFF" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </G>
+        ) : (
+          <Circle cx="49" cy="120" r="5" fill="none" stroke="#AFA9EC" strokeWidth="1.5" />
+        )}
+        <SvgText x="49" y="145" textAnchor="middle" fontSize="9" fontWeight="500" fill={riderSel ? '#3C3489' : '#888780'} fontFamily="system-ui">Rider</SvgText>
+
+        {/* ── DRIVER card (center, elevated) ── */}
+        <Rect x="103" y="22" width="74" height="116" rx="12"
+          fill={driverSel ? '#EAF3DE' : '#F1EFE8'}
+          stroke={driverSel ? '#639922' : '#D3D1C7'}
+          strokeWidth={driverSel ? '1.5' : '0.8'} />
+        {driverSel && <Rect x="103" y="22" width="74" height="4" rx="2" fill="#639922" opacity="0.65" />}
+        {/* Car icon */}
+        <Circle cx="140" cy="64" r="13" fill="#3B6D11" opacity="0.11" />
+        <Rect x="126" y="60" width="28" height="10" rx="3" fill="#3B6D11" opacity="0.80" />
+        <Path d="M130 60 Q132 54 135 53 L145 53 Q148 54 150 60 Z" fill="#639922" opacity="0.80" />
+        <Circle cx="131" cy="70" r="3.5" fill="#173404" />
+        <Circle cx="131" cy="70" r="2"   fill="#444441" />
+        <Circle cx="149" cy="70" r="3.5" fill="#173404" />
+        <Circle cx="149" cy="70" r="2"   fill="#444441" />
+        {/* Text bars */}
+        <Rect x="117" y="82"  width="46" height="4" rx="2" fill="#639922" opacity="0.50" />
+        <Rect x="123" y="90"  width="34" height="3" rx="1.5" fill="#97C459" opacity="0.50" />
+        {/* Radio / check */}
+        {driverSel ? (
+          <G>
+            <Circle cx="140" cy="112" r="7" fill="#3B6D11" />
+            <Path d="M135.5 112 L138.5 115 L145 108" stroke="#FFFFFF" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </G>
+        ) : (
+          <Circle cx="140" cy="112" r="5" fill="none" stroke="#97C459" strokeWidth="1.5" />
+        )}
+        <SvgText x="140" y="133" textAnchor="middle" fontSize="9" fontWeight="500" fill={driverSel ? '#173404' : '#888780'} fontFamily="system-ui">Driver</SvgText>
+
+        {/* ── COURIER card ── */}
+        <Rect x="194" y="34" width="74" height="104" rx="12"
+          fill={courierSel ? '#FAEEDA' : '#F1EFE8'}
+          stroke={courierSel ? '#EF9F27' : '#D3D1C7'}
+          strokeWidth={courierSel ? '1.5' : '0.8'} />
+        {courierSel && <Rect x="194" y="34" width="74" height="4" rx="2" fill="#EF9F27" opacity="0.6" />}
+        {/* Bicycle */}
+        <Circle cx="220" cy="80" r="9"  fill="none" stroke="#BA7517" strokeWidth="2" opacity="0.75" />
+        <Circle cx="244" cy="80" r="9"  fill="none" stroke="#BA7517" strokeWidth="2" opacity="0.75" />
+        <Line x1="220" y1="80" x2="232" y2="69" stroke="#633806" strokeWidth="2" strokeLinecap="round" />
+        <Line x1="232" y1="69" x2="244" y2="80" stroke="#633806" strokeWidth="2" strokeLinecap="round" />
+        <Line x1="232" y1="69" x2="220" y2="80" stroke="#633806" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
+        <Line x1="232" y1="69" x2="232" y2="62" stroke="#633806" strokeWidth="2" strokeLinecap="round" />
+        <Line x1="228" y1="62" x2="236" y2="62" stroke="#633806" strokeWidth="2" strokeLinecap="round" />
+        <Circle cx="232" cy="80" r="3" fill="#BA7517" opacity="0.7" />
+        {/* Text bars */}
+        <Rect x="204" y="97"  width="52" height="4" rx="2" fill="#EF9F27" opacity="0.45" />
+        <Rect x="210" y="105" width="40" height="3" rx="1.5" fill="#FAC775" opacity="0.50" />
+        {/* Radio / check */}
+        {courierSel ? (
+          <G>
+            <Circle cx="231" cy="120" r="7" fill="#854F0B" />
+            <Path d="M226.5 120 L229.5 123 L236 116" stroke="#FFFFFF" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </G>
+        ) : (
+          <Circle cx="231" cy="120" r="5" fill="none" stroke="#FAC775" strokeWidth="1.5" />
+        )}
+        <SvgText x="231" y="141" textAnchor="middle" fontSize="9" fontWeight="500" fill={courierSel ? '#412402' : '#888780'} fontFamily="system-ui">Courier</SvgText>
+
+        {/* ── Connector lines between cards ── */}
+        <Line x1="86"  y1="86" x2="103" y2="86" stroke="#B4B2A9" strokeWidth="0.8" strokeDasharray="3,3" opacity="0.55" />
+        <Line x1="177" y1="80" x2="194" y2="80" stroke="#B4B2A9" strokeWidth="0.8" strokeDasharray="3,3" opacity="0.55" />
+
+        {/* ── Accent sparkles ── */}
+        <Circle cx="264" cy="42"  r="2"   fill="#AFA9EC" opacity="0.50" />
+        <Circle cx="274" cy="32"  r="1.4" fill="#97C459" opacity="0.38" />
+        <Circle cx="16"  cy="150" r="1.8" fill="#FAC775" opacity="0.45" />
+        <Circle cx="262" cy="148" r="1.4" fill="#5DCAA5" opacity="0.42" />
+      </G>
+    </Svg>
+  );
+};
