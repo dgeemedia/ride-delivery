@@ -5,7 +5,7 @@ import {
   Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
   PanResponder, Linking,
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../../components/SmartMapView';
+import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
@@ -27,18 +27,6 @@ const SHEET_MAX     = Math.round(height * 0.82);
 // These are subtracted from the animated sheet height to give the ScrollView
 // a concrete pixel boundary — same bounded-container pattern as ActiveRideScreen.
 const DRAG_HANDLE_H = 28;
-
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.fill',   stylers: [{ color: '#746855' }] },
-  { featureType: 'road',               elementType: 'geometry',         stylers: [{ color: '#2b2b2b' }] },
-  { featureType: 'road.highway',       elementType: 'geometry',         stylers: [{ color: '#2c2c2c' }] },
-  { featureType: 'road.highway',       elementType: 'labels.text.fill', stylers: [{ color: '#C9A96E' }] },
-  { featureType: 'water',              elementType: 'geometry',         stylers: [{ color: '#0d1b2a' }] },
-  { featureType: 'poi',                elementType: 'labels',           stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit',            elementType: 'labels',           stylers: [{ visibility: 'off' }] },
-];
 
 const STATUS_CONFIG = {
   REQUESTED:   { label: 'Finding your driver...',  color: '#4E8DBD', icon: 'time-outline'             },
@@ -357,7 +345,6 @@ export default function RideTrackingScreen({ route, navigation }) {
       {/* ── MAP ── */}
       <MapView
         ref={mapRef}
-        provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={mapRegion}
         showsUserLocation

@@ -5,7 +5,7 @@ import {
   Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
   PanResponder, Linking,
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../../components/SmartMapView';
+import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
@@ -40,17 +40,6 @@ const callPhone = (phone) => {
     })
     .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
 };
-
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.fill',   stylers: [{ color: '#746855' }] },
-  { featureType: 'road',               elementType: 'geometry',         stylers: [{ color: '#2b2b2b' }] },
-  { featureType: 'road.highway',       elementType: 'geometry',         stylers: [{ color: '#2c2c2c' }] },
-  { featureType: 'road.highway',       elementType: 'labels.text.fill', stylers: [{ color: COURIER_ACCENT }] },
-  { featureType: 'water',              elementType: 'geometry',         stylers: [{ color: '#0d1b2a' }] },
-  { featureType: 'poi',                elementType: 'labels',           stylers: [{ visibility: 'off' }] },
-];
 
 const STATUS_CONFIG = {
   PENDING:    { label: 'Finding a delivery partner...',  color: '#4E8DBD',      icon: 'time-outline'              },
@@ -419,7 +408,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
       {/* ── MAP ── */}
       <MapView
         ref={mapRef}
-        provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={mapRegion}
         showsUserLocation

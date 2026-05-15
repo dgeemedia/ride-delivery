@@ -6,14 +6,13 @@ import {
   StatusBar, Platform, KeyboardAvoidingView, Alert,
   FlatList, Image, Modal, SafeAreaView,
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../../components/SmartMapView';
+import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }    from '../../context/ThemeContext';
 import { deliveryAPI } from '../../services/api';
 import socketService   from '../../services/socket';
-import { GOOGLE_MAPS_API_KEY } from '../../config/constants';
 
 const { width, height } = Dimensions.get('window');
 
@@ -41,19 +40,6 @@ const haversineKm = (lat1, lng1, lat2, lng2) => {
       Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
-
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry',                       stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.stroke',             stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.fill',               stylers: [{ color: '#746855' }] },
-  { featureType: 'road',       elementType: 'geometry',           stylers: [{ color: '#2b2b2b' }] },
-  { featureType: 'road',       elementType: 'geometry.stroke',    stylers: [{ color: '#212121' }] },
-  { featureType: 'road.highway', elementType: 'geometry',         stylers: [{ color: '#2c2c2c' }] },
-  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#C9A96E' }] },
-  { featureType: 'water',      elementType: 'geometry',           stylers: [{ color: '#0d1b2a' }] },
-  { featureType: 'poi',        elementType: 'labels',             stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit',    elementType: 'labels',             stylers: [{ visibility: 'off' }] },
-];
 
 const VEHICLE_ICONS = {
   BIKE: 'bicycle-outline', MOTORCYCLE: 'bicycle-outline',
@@ -472,50 +458,73 @@ export default function RequestDeliveryScreen({ navigation }) {
     } catch { setter(`${lat.toFixed(5)}, ${lng.toFixed(5)}`); }
   }, []);
 
-  const searchPlaces = useCallback(async (text) => {
-    setSearchQuery(text);
-    if (text.length < 3) { setSearchResults([]); setSearchLoading(false); return; }
-    clearTimeout(searchTimer.current);
-    setSearchLoading(true);
-    searchTimer.current = setTimeout(async () => {
-      try {
-        const locationBias = pickupCoords
-          ? `&location=${pickupCoords.lat},${pickupCoords.lng}&radius=50000`
-          : '&components=country:ng';
-        const url  = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&key=${GOOGLE_MAPS_API_KEY}${locationBias}&language=en`;
-        const res  = await fetch(url);
-        const data = await res.json();
-        setSearchResults(data.predictions ?? []);
-      } catch { setSearchResults([]); } finally { setSearchLoading(false); }
-    }, 350);
-  }, [pickupCoords]);
+  // ✅ REPLACE WITH THIS
+const searchPlaces = useCallback(async (text) => {
+  setSearchQuery(text);
+  if (text.length < 3) { setSearchResults([]); setSearchLoading(false); return; }
+  clearTimeout(searchTimer.current);
+  setSearchLoading(true);
+  searchTimer.current = setTimeout(async () => {
+    try {
+      const bias = pickupCoords
+        ? `&lat=${pickupCoords.lat}&lon=${pickupCoords.lng}`
+        : '&bbox=2.68,6.35,3.70,6.70';
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(text)}&limit=8&lang=en${bias}`;
+      const res  = await fetch(url, { headers: { 'User-Agent': 'DiakiteApp/1.0' } });
+      const data = await res.json();
+      setSearchResults((data.features ?? []).map(f => ({
+        place_id: `${f.geometry.coordinates[0]}_${f.geometry.coordinates[1]}`,
+        description: [
+          f.properties.name,
+          f.properties.street,
+          f.properties.city,
+          f.properties.state,
+          f.properties.country,
+        ].filter(Boolean).join(', '),
+        structured_formatting: {
+          main_text:      f.properties.name ?? f.properties.street ?? '',
+          secondary_text: [f.properties.city, f.properties.state, f.properties.country]
+                            .filter(Boolean).join(', '),
+        },
+        _lat: f.geometry.coordinates[1],
+        _lng: f.geometry.coordinates[0],
+      })));
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, 400);
+}, [pickupCoords]);
 
   const selectPlace = useCallback(async (place) => {
-    try {
-      const url  = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&key=${GOOGLE_MAPS_API_KEY}&fields=geometry,formatted_address`;
-      const res  = await fetch(url);
-      const data = await res.json();
-      const loc  = data.result?.geometry?.location;
-      if (!loc) { Alert.alert('Error', 'Could not get location details. Please try again.'); return; }
-      const coords  = { lat: loc.lat, lng: loc.lng };
-      const address = data.result.formatted_address ?? place.description;
-      if (searchModal === 'pickup') {
-        setPickupCoords(coords); setPickupAddress(address);
-        mapRef.current?.animateToRegion({ latitude: coords.lat, longitude: coords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 500);
-      } else {
-        setDropoffCoords(coords); setDropoffAddress(address);
-        if (pickupCoords) {
-          setTimeout(() => {
-            mapRef.current?.fitToCoordinates(
-              [{ latitude: pickupCoords.lat, longitude: pickupCoords.lng }, { latitude: coords.lat, longitude: coords.lng }],
-              { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true }
-            );
-          }, 300);
-        }
-      }
-    } catch { Alert.alert('Error', 'Could not load location. Please try again.'); }
-    finally { setSearchModal(null); setSearchQuery(''); setSearchResults([]); }
-  }, [searchModal, pickupCoords]);
+  // Photon already gave us coordinates — no second network call needed
+  const coords  = { lat: place._lat, lng: place._lng };
+  const address = place.description;
+  if (searchModal === 'pickup') {
+    setPickupCoords(coords);
+    setPickupAddress(address);
+    mapRef.current?.animateToRegion({
+      latitude: coords.lat, longitude: coords.lng,
+      latitudeDelta: 0.012, longitudeDelta: 0.012,
+    }, 500);
+  } else {
+    setDropoffCoords(coords);
+    setDropoffAddress(address);
+    if (pickupCoords) {
+      setTimeout(() => {
+        mapRef.current?.fitToCoordinates(
+          [{ latitude: pickupCoords.lat, longitude: pickupCoords.lng },
+           { latitude: coords.lat,       longitude: coords.lng }],
+          { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true }
+        );
+      }, 300);
+    }
+  }
+  setSearchModal(null);
+  setSearchQuery('');
+  setSearchResults([]);
+}, [searchModal, pickupCoords]);
 
   const openSearchModal  = useCallback((type) => { setSearchModal(type); setSearchQuery(''); setSearchResults([]); setSearchLoading(false); }, []);
   const closeSearchModal = useCallback(() => { clearTimeout(searchTimer.current); setSearchModal(null); setSearchQuery(''); setSearchResults([]); setSearchLoading(false); }, []);
@@ -630,7 +639,6 @@ export default function RequestDeliveryScreen({ navigation }) {
       {/* ── FULL-SCREEN MAP ── */}
       <MapView
         ref={mapRef}
-        provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={mapRegion}
         showsUserLocation={!isPickingLocation}

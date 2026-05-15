@@ -1,15 +1,4 @@
 // mobile/src/screens/Customer/RateRideScreen.js
-//
-// Shown after a ride completes. Customer rates the driver 1–5 stars with an
-// optional comment. Navigated to from:
-//   • RideTrackingScreen  → once status becomes COMPLETED
-//   • HistoryScreen       → tapping "Rate" on an un-rated completed ride
-//
-// Route params:
-//   rideId  (string)  — required
-//   driver  (object)  — { firstName, lastName, profileImage, vehicleType,
-//                         vehicleMake, vehicleModel, vehicleColor, vehiclePlate }
-//   onRated (fn?)     — optional callback so HistoryScreen can refresh
 
 import React, { useState, useRef, useEffect } from 'react';
 import {

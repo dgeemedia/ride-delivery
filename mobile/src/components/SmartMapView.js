@@ -1,30 +1,4 @@
 // mobile/src/components/SmartMapView.js
-/**
- * SmartMapView.js
- * ─────────────────────────────────────────────────────────────────────────────
- * Wraps both react-native-maps (Google) and OsmMapView (Leaflet fallback).
- *
- * Strategy:
- *   1. Try Google Maps (react-native-maps with PROVIDER_GOOGLE)
- *   2. If it fails to render within GOOGLE_TIMEOUT ms, or throws an error,
- *      silently swap to OsmMapView (Leaflet + OpenStreetMap — no API key)
- *
- * You can also force the fallback via:
- *   <SmartMapView forceOsm ... />
- *   or set FORCE_OSM_MAP=true in your constants file.
- *
- * The ref, all props, and all children (Marker, Polyline) are forwarded
- * identically to whichever provider is active.
- *
- * ─── Drop-in replacement ─────────────────────────────────────────────────────
- * Before:
- *   import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
- *
- * After:
- *   import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from './SmartMapView';
- *
- * Everything else in your screen files stays the same.
- */
 
 import React, {
   forwardRef,
@@ -59,7 +33,7 @@ import OsmMapView, {
 const GOOGLE_TIMEOUT = 8000; // ms
 
 // Set to true during development to always use the OSM fallback.
-const FORCE_OSM_MAP = false;
+const FORCE_OSM_MAP = true;
 
 // ─── SmartMapView ──────────────────────────────────────────────────────────────
 const SmartMapView = forwardRef(function SmartMapView(

@@ -1,16 +1,4 @@
 // mobile/src/components/OsmMapView.js
-/**
- * OsmMapView.js
- * ─────────────────────────────────────────────────────────────────────────────
- * Interactive Leaflet + OpenStreetMap map. No API key required.
- *
- * Platform support:
- *   • iOS / Android  → react-native-webview (WebView)
- *   • Web            → <iframe srcdoc>  (no WebView dependency)
- *
- * Drop-in replacement for react-native-maps:
- *   import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from './OsmMapView';
- */
 
 import React, {
   forwardRef,
