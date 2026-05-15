@@ -1,4 +1,10 @@
 // mobile/src/screens/Partner/PartnerEarningsScreen.js
+// Aligned with EarningsScreen (Driver):
+//   • SafeAreaView root with edges={['top','left','right']}
+//   • Same header: eyebrow "PARTNER EARNINGS" + title "My Wallet" + Top Up & Withdraw buttons
+//   • Same StatStrip: Wallet | Net Earned | Deliveries
+//   • Same wallet actions row: Top Up, Withdraw, History (→ TransactionHistory)
+//   • All Partner-specific logic preserved (deliveries, 15% fee, refresh, load more, etc.)
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -7,10 +13,10 @@ import {
   RefreshControl, Platform,
 } from 'react-native';
 import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
-import { Ionicons }             from '@expo/vector-icons';
-import { useSafeAreaInsets }    from 'react-native-safe-area-context';
-import { useTheme }             from '../../context/ThemeContext';
-import { useScrollY }           from '../../context/ScrollContext';
+import { Ionicons }                          from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets }   from 'react-native-safe-area-context';
+import { useTheme }                          from '../../context/ThemeContext';
+import { useScrollY }                        from '../../context/ScrollContext';
 import { partnerAPI, walletAPI, deliveryAPI } from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
@@ -49,9 +55,41 @@ const filterByPeriod = (list, period) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-components
+// StatStrip — mirrors Driver's layout: Wallet | Net Earned | Deliveries
 // ─────────────────────────────────────────────────────────────────────────────
+const StatStrip = ({ earnings, walletBalance, totalDeliveries, theme }) => (
+  <View style={[ss.card, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '30' }]}>
+    <View style={ss.item}>
+      <Text style={[ss.lbl, { color: theme.hint }]}>WALLET</Text>
+      <Text style={[ss.val, { color: GREEN }]}>
+        ₦{Number(walletBalance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+      </Text>
+    </View>
+    <View style={[ss.div, { backgroundColor: theme.border }]} />
+    <View style={ss.item}>
+      <Text style={[ss.lbl, { color: theme.hint }]}>NET EARNED</Text>
+      <Text style={[ss.val, { color: COURIER_ACCENT }]}>
+        ₦{Number(earnings?.netEarnings ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+      </Text>
+    </View>
+    <View style={[ss.div, { backgroundColor: theme.border }]} />
+    <View style={ss.item}>
+      <Text style={[ss.lbl, { color: theme.hint }]}>DELIVERIES</Text>
+      <Text style={[ss.val, { color: theme.foreground }]}>{totalDeliveries}</Text>
+    </View>
+  </View>
+);
+const ss = StyleSheet.create({
+  card: { flexDirection: 'row', borderRadius: 20, borderWidth: 1, padding: 20, marginBottom: 14 },
+  item: { flex: 1, alignItems: 'center', gap: 5 },
+  lbl:  { fontSize: 9, fontWeight: '700', letterSpacing: 2 },
+  val:  { fontSize: 18, fontWeight: '900' },
+  div:  { width: 1, height: 36 },
+});
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SummaryTile
+// ─────────────────────────────────────────────────────────────────────────────
 const SummaryTile = ({ label, value, icon, color, theme }) => (
   <View style={[st.tile, { backgroundColor: theme.backgroundAlt, borderColor: color + '25' }]}>
     <View style={[st.iconWrap, { backgroundColor: color + '18' }]}>
@@ -68,6 +106,9 @@ const st = StyleSheet.create({
   label:    { fontSize: 10, fontWeight: '700', textAlign: 'center', letterSpacing: 0.3 },
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TxRow
+// ─────────────────────────────────────────────────────────────────────────────
 const TxRow = ({ tx, theme }) => {
   const cfg     = TX_CONFIG[tx.type] ?? TX_CONFIG.CREDIT;
   const sign    = tx.type === 'CREDIT' || tx.type === 'REFUND' ? '+' : '-';
@@ -108,6 +149,9 @@ const tr = StyleSheet.create({
   status:   { fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DeliveryRow
+// ─────────────────────────────────────────────────────────────────────────────
 const DeliveryRow = ({ delivery, theme }) => {
   const gross = Number(
     delivery.grossFee ??
@@ -120,7 +164,6 @@ const DeliveryRow = ({ delivery, theme }) => {
     delivery.payment?.driverEarnings ??
     0
   );
-
   const rawDate = delivery.deliveredAt ?? delivery.requestedAt ?? delivery.createdAt;
   const dateStr = rawDate
     ? new Date(rawDate).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
@@ -167,11 +210,7 @@ export default function PartnerEarningsScreen({ navigation }) {
   const scrollY         = useScrollY();
   const insets          = useSafeAreaInsets();
 
-  const TAB_H          = 54;
-  const EXTRA_BOTTOM   = Platform.OS === 'android' ? 16 : 0;
-  const HEADER_INNER_H = 68;
-  const HEADER_H       = insets.top + HEADER_INNER_H;
-  const SCROLL_H       = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
 
   const [period,       setPeriod]       = useState('week');
   const [earnings,     setEarnings]     = useState(null);
@@ -184,13 +223,16 @@ export default function PartnerEarningsScreen({ navigation }) {
   const [txPage,       setTxPage]       = useState(1);
   const [txLoading,    setTxLoading]    = useState(false);
   const [txTotal,      setTxTotal]      = useState(0);
+  const [headerH,      setHeaderH]      = useState(80);
 
-  const fadeA    = useRef(new Animated.Value(0)).current;
-  const balanceA = useRef(new Animated.Value(0)).current;
+  const fadeA  = useRef(new Animated.Value(0)).current;
+  const slideA = useRef(new Animated.Value(18)).current;
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => { scrollY.value = event.contentOffset.y; },
   });
+
+  const SCROLL_H = height - insets.top - headerH - insets.bottom - EXTRA_BOTTOM;
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -218,8 +260,10 @@ export default function PartnerEarningsScreen({ navigation }) {
     finally {
       setLoading(false);
       setRefreshing(false);
-      Animated.timing(fadeA,    { toValue: 1, duration: 500, useNativeDriver: true }).start();
-      Animated.timing(balanceA, { toValue: 1, duration: 800, useNativeDriver: false }).start();
+      Animated.parallel([
+        Animated.timing(fadeA,  { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.timing(slideA, { toValue: 0, duration: 500, useNativeDriver: true }),
+      ]).start();
     }
   }, [period]);
 
@@ -240,321 +284,333 @@ export default function PartnerEarningsScreen({ navigation }) {
   const onRefresh = () => { setRefreshing(true); load(true); };
 
   const walletBalance   = Number(wallet?.balance ?? 0);
+  const totalDeliveries = deliveries.length || Number(earnings?.totalDeliveries ?? 0);
   const totalEarnings   = Number(earnings?.totalEarnings   ?? 0);
   const netEarnings     = Number(earnings?.netEarnings     ?? 0);
   const platformFee     = Number(earnings?.platformFee     ?? 0);
-  const totalDeliveries = deliveries.length || Number(earnings?.totalDeliveries ?? 0);
   const avgPerDelivery  = Number(earnings?.averagePerDelivery ?? 0);
 
+  const darkMode    = mode === 'dark';
+  const inputBg     = darkMode ? 'rgba(255,255,255,0.07)' : '#F2F2F7';
+  const inputBorder = darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)';
+
   return (
-    <View style={[s.root, { backgroundColor: theme.background }]}>
+    <SafeAreaView
+      style={[s.root, { backgroundColor: theme.background }]}
+      edges={['top', 'left', 'right']}
+    >
       <StatusBar
-        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        barStyle={darkMode ? 'light-content' : 'dark-content'}
         backgroundColor={theme.background}
       />
 
-      {/* ── Sticky header ── */}
-      <View style={[
-        s.header,
-        {
-          paddingTop:        insets.top,
-          height:            HEADER_H,
-          backgroundColor:   theme.background,
-          borderBottomColor: theme.border,
-        },
-      ]}>
-        <TouchableOpacity
-          style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={18} color={theme.foreground} />
-        </TouchableOpacity>
+      {/* ── Header — mirrors Driver EarningsScreen exactly ── */}
+      <View
+        style={[s.header, { borderBottomColor: theme.border }]}
+        onLayout={e => setHeaderH(e.nativeEvent.layout.height)}
+      >
+        {navigation?.canGoBack?.() && (
+          <TouchableOpacity
+            style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={18} color={theme.foreground} />
+          </TouchableOpacity>
+        )}
         <View style={{ flex: 1 }}>
-          <Text style={[s.headerTitle, { color: theme.foreground }]}>Earnings & Wallet</Text>
-          <Text style={[s.headerSub,   { color: theme.hint }]}>Track your income and payouts</Text>
+          <Text style={[s.eyebrow, { color: COURIER_ACCENT + '99' }]}>PARTNER EARNINGS</Text>
+          <Text style={[s.title,   { color: theme.foreground }]}>My Wallet</Text>
         </View>
-        <TouchableOpacity
-          style={[s.payoutBtn, { backgroundColor: COURIER_ACCENT }]}
-          onPress={() => navigation.navigate('Withdrawal')}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="cash-outline" size={15} color="#080C18" />
-          <Text style={s.payoutBtnTxt}>Payout</Text>
-        </TouchableOpacity>
+        <View style={s.headerBtns}>
+          <TouchableOpacity
+            style={[s.headerActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+            onPress={() => navigation.navigate('WalletTopUp')}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="add-circle-outline" size={15} color={theme.foreground} />
+            <Text style={[s.headerActionTxt, { color: theme.foreground }]}>Top Up</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.headerActionBtn, { backgroundColor: COURIER_ACCENT }]}
+            onPress={() => navigation.navigate('Withdrawal')}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="arrow-up-circle-outline" size={15} color="#080C18" />
+            <Text style={[s.headerActionTxt, { color: '#080C18' }]}>Withdraw</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
-        <View style={s.center}>
+        <View style={[s.loadingWrap, { height: SCROLL_H }]}>
           <ActivityIndicator color={COURIER_ACCENT} size="large" />
         </View>
       ) : (
-        <Animated.View style={{ height: SCROLL_H, opacity: fadeA }}>
+        <View style={{ height: SCROLL_H }}>
           <AnimatedRN.ScrollView
-            contentContainerStyle={s.scroll}
+            contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 24 }]}
             showsVerticalScrollIndicator={false}
             onScroll={scrollHandler}
             scrollEventThrottle={16}
+            overScrollMode="never"
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COURIER_ACCENT} />
             }
           >
-            {/* ── Wallet balance card ── */}
-            <View style={[s.balanceCard, { backgroundColor: COURIER_ACCENT }]}>
-              <View style={s.balanceCardInner}>
-                <Text style={s.balanceLabel}>WALLET BALANCE</Text>
-                <Text style={s.balanceAmount}>
-                  ₦{walletBalance.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
-                <Text style={s.balanceSub}>Available for withdrawal</Text>
-              </View>
-              <View style={s.balanceActions}>
+            <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
+
+              {/* ── StatStrip ── */}
+              <StatStrip
+                earnings={earnings}
+                walletBalance={walletBalance}
+                totalDeliveries={totalDeliveries}
+                theme={theme}
+              />
+
+              {/* ── Wallet actions row — mirrors Driver ── */}
+              <View style={s.walletActions}>
                 <TouchableOpacity
-                  style={[s.balanceAction, { backgroundColor: 'rgba(0,0,0,0.15)' }]}
+                  style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '30' }]}
+                  onPress={() => navigation.navigate('WalletTopUp')}
+                  activeOpacity={0.85}
+                >
+                  <View style={[s.walletActionIcon, { backgroundColor: GREEN + '20' }]}>
+                    <Ionicons name="add-circle-outline" size={20} color={GREEN} />
+                  </View>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Top Up</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>Add money</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '30' }]}
                   onPress={() => navigation.navigate('Withdrawal')}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                 >
-                  <Ionicons name="arrow-up-outline" size={18} color="#fff" />
-                  <Text style={s.balanceActionTxt}>Withdraw</Text>
+                  <View style={[s.walletActionIcon, { backgroundColor: COURIER_ACCENT + '20' }]}>
+                    <Ionicons name="arrow-up-circle-outline" size={20} color={COURIER_ACCENT} />
+                  </View>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Withdraw</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>To bank</Text>
                 </TouchableOpacity>
 
-                {/* CHANGED: was setActiveTab('transactions') — now navigates to full history */}
                 <TouchableOpacity
-                  style={[s.balanceAction, { backgroundColor: 'rgba(0,0,0,0.15)' }]}
+                  style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '30' }]}
                   onPress={() => navigation.navigate('TransactionHistory')}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                 >
-                  <Ionicons name="time-outline" size={18} color="#fff" />
-                  <Text style={s.balanceActionTxt}>History</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* ── Period filter ── */}
-            <View style={[s.periodRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              {PERIODS.map(p => (
-                <TouchableOpacity
-                  key={p.key}
-                  style={[s.periodBtn, period === p.key && { backgroundColor: COURIER_ACCENT }]}
-                  onPress={() => setPeriod(p.key)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[s.periodTxt, { color: period === p.key ? '#080C18' : theme.hint }]}>
-                    {p.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* ── Summary tiles ── */}
-            <View style={s.tilesRow}>
-              <SummaryTile
-                label="Gross Earnings"
-                value={`₦${totalEarnings.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
-                icon="trending-up-outline"
-                color={COURIER_ACCENT}
-                theme={theme}
-              />
-              <SummaryTile
-                label="Net Earnings"
-                value={`₦${netEarnings.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
-                icon="wallet-outline"
-                color={GREEN}
-                theme={theme}
-              />
-            </View>
-            <View style={[s.tilesRow, { marginTop: 10 }]}>
-              <SummaryTile
-                label="Platform Fee"
-                value={`₦${platformFee.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`}
-                icon="pie-chart-outline"
-                color={PURPLE}
-                theme={theme}
-              />
-              <SummaryTile
-                label="Deliveries"
-                value={totalDeliveries}
-                icon="cube-outline"
-                color={GOLD}
-                theme={theme}
-              />
-            </View>
-
-            {/* ── Avg per delivery ── */}
-            {totalDeliveries > 0 && (
-              <View style={[s.avgCard, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '30' }]}>
-                <Ionicons name="analytics-outline" size={16} color={COURIER_ACCENT} />
-                <Text style={[s.avgTxt, { color: theme.hint }]}>
-                  Average per delivery:{' '}
-                  <Text style={{ color: COURIER_ACCENT, fontWeight: '800' }}>
-                    ₦{avgPerDelivery.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-                  </Text>
-                </Text>
-              </View>
-            )}
-
-            {/* ── Platform breakdown note ── */}
-            <View style={[s.noteCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <View style={s.noteRow}>
-                <View style={[s.noteDot, { backgroundColor: COURIER_ACCENT }]} />
-                <Text style={[s.noteTxt, { color: theme.hint }]}>
-                  Platform takes{' '}
-                  <Text style={{ color: COURIER_ACCENT, fontWeight: '700' }}>15% commission</Text>{' '}
-                  + booking fee per delivery
-                </Text>
-              </View>
-              <View style={s.noteRow}>
-                <View style={[s.noteDot, { backgroundColor: GREEN }]} />
-                <Text style={[s.noteTxt, { color: theme.hint }]}>
-                  Net earnings = gross − 15% commission − booking fee
-                </Text>
-              </View>
-              <View style={s.noteRow}>
-                <View style={[s.noteDot, { backgroundColor: GOLD }]} />
-                <Text style={[s.noteTxt, { color: theme.hint }]}>
-                  Minimum withdrawal:{' '}
-                  <Text style={{ color: GOLD, fontWeight: '700' }}>₦500</Text>
-                </Text>
-              </View>
-            </View>
-
-            {/* ── Tab switcher ── */}
-            <View style={[s.tabRow, { borderBottomColor: theme.border }]}>
-              {[
-                { key: 'deliveries',   label: `Deliveries (${deliveries.length})`    },
-                { key: 'transactions', label: `Transactions (${transactions.length})` },
-              ].map(t => (
-                <TouchableOpacity
-                  key={t.key}
-                  style={[
-                    s.tabBtn,
-                    activeTab === t.key && { borderBottomColor: COURIER_ACCENT, borderBottomWidth: 2 },
-                  ]}
-                  onPress={() => setActiveTab(t.key)}
-                >
-                  <Text style={[s.tabTxt, { color: activeTab === t.key ? COURIER_ACCENT : theme.hint }]}>
-                    {t.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* ── Deliveries list ── */}
-            {activeTab === 'deliveries' && (
-              <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-                {deliveries.length > 0 ? (
-                  deliveries.map((d, i) => (
-                    <DeliveryRow key={d.id ?? i} delivery={d} theme={theme} />
-                  ))
-                ) : (
-                  <View style={s.empty}>
-                    <Ionicons name="cube-outline" size={36} color={theme.hint} />
-                    <Text style={[s.emptyTxt, { color: theme.hint }]}>No deliveries for this period</Text>
+                  <View style={[s.walletActionIcon, { backgroundColor: PURPLE + '20' }]}>
+                    <Ionicons name="time-outline" size={20} color={PURPLE} />
                   </View>
-                )}
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>History</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>& Export</Text>
+                </TouchableOpacity>
               </View>
-            )}
 
-            {/* ── Transactions list ── */}
-            {activeTab === 'transactions' && (
-              <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-                {transactions.length > 0 ? (
-                  <>
-                    {transactions.map((tx, i) => (
-                      <TxRow key={tx.id ?? i} tx={tx} theme={theme} />
-                    ))}
+              {/* ── Breakdown card — mirrors Driver ── */}
+              <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                <Text style={[s.sectionEyebrow, { color: theme.hint }]}>EARNINGS BREAKDOWN</Text>
+                {[
+                  ['Gross Earnings',     earnings?.totalEarnings,   COURIER_ACCENT],
+                  ['Platform Fee (15%)', earnings?.platformFee,     RED],
+                  ['Net Earnings',       earnings?.netEarnings,     GREEN],
+                  ['Avg per Delivery',   earnings?.averagePerDelivery, theme.foreground],
+                ].map(([lbl, val, col]) => (
+                  <View key={lbl} style={[s.breakRow, { borderBottomColor: theme.border }]}>
+                    <Text style={[s.breakLbl, { color: theme.hint }]}>{lbl}</Text>
+                    <Text style={[s.breakVal, { color: col }]}>
+                      ₦{Number(val ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                    </Text>
+                  </View>
+                ))}
+              </View>
 
-                    {/* Load more */}
-                    {transactions.length < txTotal && (
-                      <TouchableOpacity
-                        style={[s.loadMore, { borderColor: COURIER_ACCENT + '40' }]}
-                        onPress={loadMoreTx}
-                        disabled={txLoading}
-                      >
-                        {txLoading
-                          ? <ActivityIndicator color={COURIER_ACCENT} size="small" />
-                          : <Text style={[s.loadMoreTxt, { color: COURIER_ACCENT }]}>Load more</Text>
-                        }
-                      </TouchableOpacity>
-                    )}
-
-                    {/* ADDED: Full history CTA — matches Driver/Customer pattern */}
+              {/* ── Period filter ── */}
+              <View style={s.periodRow}>
+                {PERIODS.map(p => {
+                  const active = period === p.key;
+                  return (
                     <TouchableOpacity
-                      style={[s.historyLink, { borderTopColor: theme.border }]}
-                      onPress={() => navigation.navigate('TransactionHistory')}
-                      activeOpacity={0.75}
+                      key={p.key}
+                      style={[
+                        s.periodBtn,
+                        active
+                          ? { backgroundColor: COURIER_ACCENT }
+                          : { backgroundColor: theme.backgroundAlt, borderColor: theme.border },
+                      ]}
+                      onPress={() => setPeriod(p.key)}
+                      activeOpacity={0.8}
                     >
-                      <Ionicons name="calendar-outline" size={13} color={COURIER_ACCENT} />
-                      <Text style={[s.historyLinkTxt, { color: COURIER_ACCENT }]}>
-                        Full history • date filter • PDF export
-                      </Text>
-                      <Ionicons name="chevron-forward" size={12} color={COURIER_ACCENT} />
+                      <Text style={[s.periodTxt, { color: active ? '#080C18' : theme.hint }]}>{p.label}</Text>
                     </TouchableOpacity>
-                  </>
+                  );
+                })}
+              </View>
+
+              {/* ── Tab switcher ── */}
+              <View style={[s.tabRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                {[
+                  ['deliveries',   `Deliveries (${deliveries.length})`    ],
+                  ['transactions', `Wallet Txns (${transactions.length})` ],
+                ].map(([key, lbl]) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={[
+                      s.tabBtn,
+                      activeTab === key && { backgroundColor: COURIER_ACCENT + '20', borderBottomColor: COURIER_ACCENT, borderBottomWidth: 2 },
+                    ]}
+                    onPress={() => setActiveTab(key)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[s.tabTxt, { color: activeTab === key ? COURIER_ACCENT : theme.hint }]}>{lbl}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* ── Content list ── */}
+              <View style={[s.listCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                {activeTab === 'deliveries' ? (
+                  deliveries.length === 0 ? (
+                    <View style={s.empty}>
+                      <Ionicons name="cube-outline" size={32} color={theme.hint} />
+                      <Text style={[s.emptyTxt, { color: theme.hint }]}>No deliveries for this period</Text>
+                    </View>
+                  ) : (
+                    deliveries.map((d, i) => (
+                      <DeliveryRow key={d.id ?? i} delivery={d} theme={theme} />
+                    ))
+                  )
                 ) : (
-                  <View style={s.empty}>
-                    <Ionicons name="receipt-outline" size={36} color={theme.hint} />
-                    <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
-                  </View>
+                  transactions.length === 0 ? (
+                    <View style={s.empty}>
+                      <Ionicons name="wallet-outline" size={32} color={theme.hint} />
+                      <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
+                    </View>
+                  ) : (
+                    <>
+                      {transactions.map((tx, i) => (
+                        <TxRow key={tx.id ?? i} tx={tx} theme={theme} />
+                      ))}
+
+                      {/* Load more */}
+                      {transactions.length < txTotal && (
+                        <TouchableOpacity
+                          style={[s.loadMore, { borderColor: COURIER_ACCENT + '40' }]}
+                          onPress={loadMoreTx}
+                          disabled={txLoading}
+                        >
+                          {txLoading
+                            ? <ActivityIndicator color={COURIER_ACCENT} size="small" />
+                            : <Text style={[s.loadMoreTxt, { color: COURIER_ACCENT }]}>Load more</Text>
+                          }
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Full history CTA */}
+                      <TouchableOpacity
+                        style={[s.historyLink, { borderTopColor: theme.border }]}
+                        onPress={() => navigation.navigate('TransactionHistory')}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons name="calendar-outline" size={13} color={COURIER_ACCENT} />
+                        <Text style={[s.historyLinkTxt, { color: COURIER_ACCENT }]}>
+                          Full history · date filter · PDF export
+                        </Text>
+                        <Ionicons name="chevron-forward" size={12} color={COURIER_ACCENT} />
+                      </TouchableOpacity>
+                    </>
+                  )
                 )}
               </View>
-            )}
 
-            <View style={{ height: 40 }} />
+              {/* ── Platform note ── */}
+              <View style={[s.noteCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                <View style={s.noteRow}>
+                  <View style={[s.noteDot, { backgroundColor: COURIER_ACCENT }]} />
+                  <Text style={[s.noteTxt, { color: theme.hint }]}>
+                    Platform takes{' '}
+                    <Text style={{ color: COURIER_ACCENT, fontWeight: '700' }}>15% commission</Text>{' '}
+                    + booking fee per delivery
+                  </Text>
+                </View>
+                <View style={s.noteRow}>
+                  <View style={[s.noteDot, { backgroundColor: GREEN }]} />
+                  <Text style={[s.noteTxt, { color: theme.hint }]}>
+                    Net earnings = gross − 15% commission − booking fee
+                  </Text>
+                </View>
+                <View style={s.noteRow}>
+                  <View style={[s.noteDot, { backgroundColor: GOLD }]} />
+                  <Text style={[s.noteTxt, { color: theme.hint }]}>
+                    Minimum withdrawal:{' '}
+                    <Text style={{ color: GOLD, fontWeight: '700' }}>₦500</Text>
+                  </Text>
+                </View>
+              </View>
+
+            </Animated.View>
           </AnimatedRN.ScrollView>
-        </Animated.View>
+        </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
+// ── Styles — mirrors Driver EarningsScreen ────────────────────────────────────
 const s = StyleSheet.create({
-  root:   { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20 },
+  root:    { flex: 1 },
 
-  header:      { flexDirection: 'row', alignItems: 'flex-end', gap: 12, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
-  backBtn:     { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '900' },
-  headerSub:   { fontSize: 11, marginTop: 1 },
-  payoutBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9 },
-  payoutBtnTxt:{ fontSize: 13, fontWeight: '800', color: '#080C18' },
+  // Header
+  header:          { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
+  backBtn:         { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  eyebrow:         { fontSize: 9, fontWeight: '800', letterSpacing: 3, marginBottom: 2 },
+  title:           { fontSize: 22, fontWeight: '900', letterSpacing: -0.3 },
+  headerBtns:      { flexDirection: 'row', gap: 8 },
+  headerActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 11, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8 },
+  headerActionTxt: { fontSize: 12, fontWeight: '800' },
 
-  balanceCard:      { borderRadius: 24, padding: 24, marginBottom: 16, overflow: 'hidden' },
-  balanceCardInner: { marginBottom: 20 },
-  balanceLabel:     { fontSize: 10, fontWeight: '800', letterSpacing: 2, color: 'rgba(0,0,0,0.5)', marginBottom: 8 },
-  balanceAmount:    { fontSize: 38, fontWeight: '900', color: '#080C18', letterSpacing: -1, marginBottom: 4 },
-  balanceSub:       { fontSize: 12, color: 'rgba(0,0,0,0.5)', fontWeight: '600' },
-  balanceActions:   { flexDirection: 'row', gap: 10 },
-  balanceAction:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12, paddingVertical: 10 },
-  balanceActionTxt: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  loadingWrap: { justifyContent: 'center', alignItems: 'center' },
+  scroll:      { paddingHorizontal: 20, paddingTop: 16 },
 
-  periodRow: { flexDirection: 'row', borderRadius: 14, borderWidth: 1, padding: 4, marginBottom: 16 },
-  periodBtn: { flex: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center' },
+  // Wallet actions
+  walletActions:    { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  walletActionBtn:  { flex: 1, borderRadius: 16, borderWidth: 1, padding: 14, alignItems: 'center', gap: 6 },
+  walletActionIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  walletActionLbl:  { fontSize: 13, fontWeight: '700' },
+  walletActionSub:  { fontSize: 10 },
+
+  // Breakdown
+  breakdownCard:  { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4, marginBottom: 16 },
+  sectionEyebrow: { fontSize: 9, fontWeight: '700', letterSpacing: 2.5, marginBottom: 10 },
+  breakRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 11, borderBottomWidth: 1 },
+  breakLbl:       { fontSize: 13, fontWeight: '500' },
+  breakVal:       { fontSize: 14, fontWeight: '800' },
+
+  // Period
+  periodRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  periodBtn: { flex: 1, borderRadius: 10, borderWidth: 1, paddingVertical: 9, alignItems: 'center' },
   periodTxt: { fontSize: 12, fontWeight: '700' },
 
-  tilesRow: { flexDirection: 'row', gap: 10 },
+  // Tabs
+  tabRow: { flexDirection: 'row', borderRadius: 12, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
+  tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
+  tabTxt: { fontSize: 12, fontWeight: '700' },
 
-  avgCard: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 12, marginBottom: 4 },
-  avgTxt:  { flex: 1, fontSize: 13 },
+  // List
+  listCard: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4, marginBottom: 16 },
+  empty:    { alignItems: 'center', paddingVertical: 28, gap: 10 },
+  emptyTxt: { fontSize: 13 },
 
-  noteCard: { borderRadius: 14, borderWidth: 1, padding: 14, marginTop: 12, marginBottom: 16, gap: 8 },
-  noteRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  noteDot:  { width: 7, height: 7, borderRadius: 4, marginTop: 5, flexShrink: 0 },
-  noteTxt:  { flex: 1, fontSize: 12, lineHeight: 18 },
-
-  tabRow: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: 0 },
-  tabBtn: { flex: 1, paddingVertical: 13, alignItems: 'center' },
-  tabTxt: { fontSize: 13, fontWeight: '700' },
-
-  listCard: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, marginBottom: 16, marginTop: 2 },
-
+  // Load more
   loadMore:    { alignItems: 'center', paddingVertical: 14, borderTopWidth: 1 },
   loadMoreTxt: { fontSize: 13, fontWeight: '700' },
 
-  empty:    { alignItems: 'center', paddingVertical: 32, gap: 10 },
-  emptyTxt: { fontSize: 13 },
-
-  // ADDED: history CTA styles
+  // History CTA
   historyLink:    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 13, borderTopWidth: 1, marginTop: 4 },
   historyLinkTxt: { flex: 1, fontSize: 11, fontWeight: '600' },
+
+  // Platform note
+  noteCard: { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 16, gap: 8 },
+  noteRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  noteDot:  { width: 7, height: 7, borderRadius: 4, marginTop: 5, flexShrink: 0 },
+  noteTxt:  { flex: 1, fontSize: 12, lineHeight: 18 },
 });

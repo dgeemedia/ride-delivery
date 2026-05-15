@@ -219,7 +219,7 @@ export default function PartnerHistoryScreen({ navigation }) {
         <View style={[s.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-            onPress={() => navigation.goBack()}
+            onPress={() => navigation.navigate('DashboardTab')}  // ← was navigation.goBack()
           >
             <Ionicons name="arrow-back" size={18} color={theme.foreground} />
           </TouchableOpacity>

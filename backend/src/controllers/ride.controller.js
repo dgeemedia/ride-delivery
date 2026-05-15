@@ -749,4 +749,9 @@ exports.requestSpecificDriver = async (req, res) => {
   });
 };
 
+exports.getPlatformRates = async (req, res) => {
+  const { rates, delivery } = await getSettings();
+  res.status(200).json({ success: true, data: { rates, delivery } });
+};
+
 module.exports = exports;

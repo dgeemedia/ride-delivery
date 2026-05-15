@@ -10,7 +10,7 @@ import { Ionicons }          from '@expo/vector-icons';
 import { SafeAreaView }      from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
 import { useScrollY }        from '../../context/ScrollContext';
-import { partnerAPI, deliveryAPI } from '../../services/api';
+import { partnerAPI, rideAPI } from '../../services/api';
 
 const COURIER_ACCENT = '#34D399';
 const GREEN          = '#5DAA72';
@@ -20,18 +20,27 @@ const SAMPLE_KM      = 5;
 const SAMPLE_WEIGHT  = 2;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Delivery fee engine (mirrors backend calculateDeliveryFee)
+// Fallback delivery rates (used only if API call fails)
 // ─────────────────────────────────────────────────────────────────────────────
-const DELIVERY_RATES = {
-  BIKE:       { base: 400,  perKm: 80,  perKg: 30, bookingFee: 50,  min: 400  },
-  MOTORCYCLE: { base: 400,  perKm: 80,  perKg: 30, bookingFee: 50,  min: 400  },
-  CAR:        { base: 700,  perKm: 120, perKg: 50, bookingFee: 100, min: 700  },
-  VAN:        { base: 1200, perKm: 180, perKg: 80, bookingFee: 150, min: 1200 },
+const FALLBACK_DELIVERY = {
+  baseFee:        500,
+  perKm:          80,
+  weightFeePerKg: 50,
 };
 
-const calcDeliveryFee = (km, vehicleType = 'BIKE', kg = 0) => {
-  const r = DELIVERY_RATES[vehicleType] ?? DELIVERY_RATES.BIKE;
-  const fee = Math.max(r.min, r.base + km * r.perKm + kg * r.perKg) + r.bookingFee;
+// Per-vehicle booking fees (not in delivery settings, come from ride rates)
+const FALLBACK_BOOKING_FEES = {
+  BIKE:       50,
+  MOTORCYCLE: 50,
+  CAR:        100,
+  VAN:        150,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fee calculator — uses live rates from backend
+// ─────────────────────────────────────────────────────────────────────────────
+const calcDeliveryFee = (km, kg = 0, deliveryRates = FALLBACK_DELIVERY) => {
+  const fee = deliveryRates.baseFee + km * deliveryRates.perKm + kg * deliveryRates.weightFeePerKg;
   return Math.round(fee / 50) * 50;
 };
 
@@ -89,32 +98,78 @@ export default function CourierFloorPriceScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const scrollY         = useScrollY();
 
-  // Reanimated scroll handler — feeds shared scrollY for tab-bar hiding
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => { scrollY.value = event.contentOffset.y; },
   });
 
-  const [profile,     setProfile]     = useState(null);
-  const [loading,     setLoading]     = useState(true);
-  const [saving,      setSaving]      = useState(false);
-  const [enabled,     setEnabled]     = useState(false);
-  const [floorInput,  setFloorInput]  = useState('');
-  const [platformEst, setPlatformEst] = useState(null);
+  const [profile,        setProfile]        = useState(null);
+  const [loading,        setLoading]        = useState(true);
+  const [saving,         setSaving]         = useState(false);
+  const [enabled,        setEnabled]        = useState(false);
+  const [floorInput,     setFloorInput]     = useState('');
+  const [platformEst,    setPlatformEst]    = useState(null);
+  const [deliveryRates,  setDeliveryRates]  = useState(FALLBACK_DELIVERY);
+  const [bookingFees,    setBookingFees]    = useState(FALLBACK_BOOKING_FEES);
+  const [commissionRate, setCommissionRate] = useState(0.15);
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const shakeA = useRef(new Animated.Value(0)).current;
 
+  const vehicleType = profile?.vehicleType ?? 'BIKE';
+  const bookingFee  = bookingFees[vehicleType] ?? 50;
+
   const load = useCallback(async () => {
     try {
-      const profileRes = await partnerAPI.getProfile();
-      const p = profileRes?.data?.profile;
-      setProfile(p);
-      const saved = p?.preferredFloorPrice ?? 0;
-      if (saved > 0) { setEnabled(true); setFloorInput(String(saved)); }
+      const [profileRes, ratesRes] = await Promise.allSettled([
+        partnerAPI.getProfile(),
+        rideAPI.getPlatformRates(),
+      ]);
 
-      const vehicleType = p?.vehicleType ?? 'BIKE';
-      const est = calcDeliveryFee(SAMPLE_KM, vehicleType, SAMPLE_WEIGHT);
-      setPlatformEst(est);
+      let resolvedVehicleType = 'BIKE';
+
+      if (profileRes.status === 'fulfilled') {
+        const p = profileRes.value?.data?.profile ?? profileRes.value?.data;
+        setProfile(p);
+        resolvedVehicleType = p?.vehicleType ?? 'BIKE';
+        const saved = p?.preferredFloorPrice ?? 0;
+        if (saved > 0) { setEnabled(true); setFloorInput(String(saved)); }
+      }
+
+      // Apply live admin-set rates
+      if (ratesRes.status === 'fulfilled') {
+        const { rates, delivery } = ratesRes.value?.data ?? {};
+
+        if (delivery) {
+          setDeliveryRates({
+            baseFee:        delivery.baseFee        ?? FALLBACK_DELIVERY.baseFee,
+            perKm:          delivery.perKm          ?? FALLBACK_DELIVERY.perKm,
+            weightFeePerKg: delivery.weightFeePerKg ?? FALLBACK_DELIVERY.weightFeePerKg,
+          });
+          if (delivery.platformCommission) setCommissionRate(delivery.platformCommission);
+        }
+
+        // Extract booking fees per vehicle type from ride rates
+        if (rates) {
+          setBookingFees({
+            BIKE:       rates.BIKE?.bookingFee       ?? 50,
+            MOTORCYCLE: rates.MOTORCYCLE?.bookingFee ?? 50,
+            CAR:        rates.CAR?.bookingFee        ?? 100,
+            VAN:        rates.VAN?.bookingFee        ?? 150,
+          });
+        }
+
+        // Compute platform estimate from live rates
+        const dr = delivery ?? FALLBACK_DELIVERY;
+        const est = calcDeliveryFee(SAMPLE_KM, SAMPLE_WEIGHT, {
+          baseFee:        dr.baseFee        ?? FALLBACK_DELIVERY.baseFee,
+          perKm:          dr.perKm          ?? FALLBACK_DELIVERY.perKm,
+          weightFeePerKg: dr.weightFeePerKg ?? FALLBACK_DELIVERY.weightFeePerKg,
+        });
+        setPlatformEst(est);
+      } else {
+        // Fallback estimate
+        setPlatformEst(calcDeliveryFee(SAMPLE_KM, SAMPLE_WEIGHT, FALLBACK_DELIVERY));
+      }
     } catch {}
     finally {
       setLoading(false);
@@ -133,17 +188,14 @@ export default function CourierFloorPriceScreen({ navigation }) {
     ]).start();
   };
 
-  const floorNum      = parseFloat(floorInput) || 0;
-  const markupPct     = platformEst ? Math.max(0, ((floorNum - platformEst) / platformEst) * 100) : 0;
-  const isClamped     = floorNum > 0 && platformEst && floorNum > platformEst * MAX_MARKUP;
-  const clampedMax    = platformEst ? Math.round((platformEst * MAX_MARKUP) / 50) * 50 : 0;
-  const effectiveFloor= isClamped ? clampedMax : floorNum;
-  const vehicleType   = profile?.vehicleType ?? 'BIKE';
-  const rate          = DELIVERY_RATES[vehicleType] ?? DELIVERY_RATES.BIKE;
-  const partnerEarnings = effectiveFloor > 0
-    ? Math.round((effectiveFloor - rate.bookingFee) * 0.85)
-    : platformEst
-    ? Math.round((platformEst - rate.bookingFee) * 0.85)
+  const floorNum        = parseFloat(floorInput) || 0;
+  const markupPct       = platformEst ? Math.max(0, ((floorNum - platformEst) / platformEst) * 100) : 0;
+  const isClamped       = floorNum > 0 && platformEst && floorNum > platformEst * MAX_MARKUP;
+  const clampedMax      = platformEst ? Math.round((platformEst * MAX_MARKUP) / 50) * 50 : 0;
+  const effectiveFloor  = isClamped ? clampedMax : floorNum;
+  const baseFareForCalc = effectiveFloor > 0 ? effectiveFloor : (platformEst ?? 0);
+  const partnerEarnings = baseFareForCalc > 0
+    ? Math.round((baseFareForCalc - bookingFee) * (1 - commissionRate))
     : null;
 
   const handleSave = async () => {
@@ -168,7 +220,7 @@ export default function CourierFloorPriceScreen({ navigation }) {
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message ?? 'Failed to save. Please try again.');
+      Alert.alert('Error', err?.message ?? 'Failed to save. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -220,7 +272,7 @@ export default function CourierFloorPriceScreen({ navigation }) {
               <Text style={{ color: theme.foreground, fontWeight: '700' }}>your floor</Text> or the{' '}
               <Text style={{ color: theme.foreground, fontWeight: '700' }}>platform estimate</Text> applies.
               Maximum markup is <Text style={{ color: COURIER_ACCENT, fontWeight: '800' }}>+30%</Text> above platform rate.
-              Platform takes <Text style={{ color: COURIER_ACCENT, fontWeight: '800' }}>15% commission</Text> + booking fee.
+              Platform takes <Text style={{ color: COURIER_ACCENT, fontWeight: '800' }}>{Math.round(commissionRate * 100)}% commission</Text> + booking fee.
             </Text>
           </View>
 
@@ -288,7 +340,7 @@ export default function CourierFloorPriceScreen({ navigation }) {
           {/* Preview */}
           {platformEst && (
             <>
-              <SectionLabel text={`EARNINGS PREVIEW • ${SAMPLE_KM}KM ${vehicleType} • ${SAMPLE_WEIGHT}KG PACKAGE`} theme={theme} />
+              <SectionLabel text={`EARNINGS PREVIEW • ${SAMPLE_KM}KM ${vehicleType} • ${SAMPLE_WEIGHT}KG`} theme={theme} />
               <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                 <InfoRow icon="calculator-outline" label="Platform estimate"  value={`₦${platformEst.toLocaleString('en-NG')}`} valueColor={theme.foreground} theme={theme} />
                 {enabled && effectiveFloor > platformEst && (
@@ -303,32 +355,32 @@ export default function CourierFloorPriceScreen({ navigation }) {
                   theme={theme}
                 />
                 <Text style={[s.earningsNote, { color: theme.hint }]}>
-                  After 15% platform commission + ₦{rate.bookingFee} booking fee.
+                  After {Math.round(commissionRate * 100)}% platform commission + ₦{bookingFee} booking fee.
                 </Text>
               </View>
             </>
           )}
 
-          {/* Rate table */}
-          <SectionLabel text="PLATFORM DELIVERY RATES" theme={theme} />
+          {/* Rate table — live from admin settings */}
+          <SectionLabel text="PLATFORM DELIVERY RATES (ADMIN-SET)" theme={theme} />
           <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            {Object.entries(DELIVERY_RATES).map(([type, r], i, arr) => (
-              <View key={type}>
-                <View style={[s.rateRow, { opacity: type === vehicleType ? 1 : 0.45 }]}>
-                  <View style={[s.rateTypePill, {
-                    backgroundColor: type === vehicleType ? COURIER_ACCENT + '20' : theme.border + '60',
-                  }]}>
-                    <Text style={[s.rateType, { color: type === vehicleType ? COURIER_ACCENT : theme.hint }]}>{type}</Text>
-                  </View>
-                  <Text style={[s.rateVal, { color: theme.foreground }]}>₦{r.base}</Text>
-                  <Text style={[s.rateVal, { color: theme.foreground }]}>₦{r.perKm}/km</Text>
-                  <Text style={[s.rateVal, { color: theme.foreground }]}>₦{r.perKg}/kg</Text>
+            {[
+              { label: 'Base fee',         value: `₦${deliveryRates.baseFee}` },
+              { label: 'Per kilometre',    value: `₦${deliveryRates.perKm}/km` },
+              { label: 'Per kg (weight)',  value: `₦${deliveryRates.weightFeePerKg}/kg` },
+              { label: 'Booking fee',      value: `₦${bookingFee} (${vehicleType})` },
+              { label: 'Commission',       value: `${Math.round(commissionRate * 100)}%` },
+            ].map((row, i, arr) => (
+              <View key={row.label}>
+                <View style={s.rateRow}>
+                  <Text style={[s.rateLabel, { color: theme.hint }]}>{row.label}</Text>
+                  <Text style={[s.rateVal, { color: theme.foreground }]}>{row.value}</Text>
                 </View>
                 {i < arr.length - 1 && <View style={[s.divider, { backgroundColor: theme.border }]} />}
               </View>
             ))}
             <Text style={[s.earningsNote, { color: theme.hint, marginTop: 8 }]}>
-              Booking fee: ₦50–₦150 (non-refundable). Platform takes 15% commission.
+              Rates are set by admin and updated in real time.
             </Text>
           </View>
 
@@ -379,10 +431,11 @@ const s = StyleSheet.create({
   input:       { flex: 1, fontSize: 28, fontWeight: '900', paddingVertical: 12 },
   clampWarn:   { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 14 },
   clampTxt:    { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '600' },
-  rateRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
+  rateRow:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  rateLabel:   { flex: 1, fontSize: 12, fontWeight: '500' },
   rateTypePill:{ borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   rateType:    { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  rateVal:     { flex: 1, fontSize: 11, fontWeight: '600', textAlign: 'right' },
+  rateVal:     { fontSize: 12, fontWeight: '700', textAlign: 'right' },
   earningsNote:{ fontSize: 11, lineHeight: 17 },
   saveBtn:     { borderRadius: 16, height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   saveTxt:     { fontSize: 16, fontWeight: '900', color: '#080C18' },

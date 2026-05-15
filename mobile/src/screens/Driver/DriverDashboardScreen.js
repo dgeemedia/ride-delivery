@@ -390,7 +390,7 @@ export default function DriverDashboardScreen({ navigation }) {
     }
   };
 
-  const goToEarnings  = () => navigation.getParent()?.navigate('EarningsTab');
+  const goToEarnings  = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'EarningsHome' });
   const goToTopUp     = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'WalletTopUp' });
   const goToWithdraw  = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal' });
   const goToProfile   = () => navigation.getParent()?.navigate('ProfileTab');

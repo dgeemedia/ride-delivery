@@ -113,6 +113,7 @@ export const rideAPI = {
   getNearbyDrivers:      (params)     => api.get('/rides/nearby-drivers', { params }),
   requestSpecificDriver: (data)       => api.post('/rides/request-driver', data),
   rateRide:              (id, data)   => api.post(`/rides/${id}/rate`, data),
+  getPlatformRates:      ()           => api.get('/rides/platform-rates'),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
