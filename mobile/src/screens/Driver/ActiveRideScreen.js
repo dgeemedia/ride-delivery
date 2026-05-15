@@ -5,7 +5,7 @@ import {
   Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
   Platform, PanResponder, Linking,
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
@@ -25,24 +25,8 @@ const SHEET_DEFAULT = Math.round(height * 0.52);
 const SHEET_MAX     = Math.round(height * 0.84);
 
 // ── Fixed internal layout heights ─────────────────────────────────────────────
-// DRAG_HANDLE_H  = paddingVertical (12 * 2) + handle bar (4) = 28
-// ACTION_H       = actionArea marginBottom (8) + actionBtn height (54) = 62
-// These are subtracted from the animated sheet height to give the ScrollView
-// a concrete pixel boundary — same bounded-container pattern as the dashboards.
 const DRAG_HANDLE_H = 28;
-const ACTION_H      = 8 + 54; // actionArea marginBottom + actionBtn height
-
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.fill',   stylers: [{ color: '#746855' }] },
-  { featureType: 'road',               elementType: 'geometry',         stylers: [{ color: '#2b2b2b' }] },
-  { featureType: 'road.highway',       elementType: 'geometry',         stylers: [{ color: '#2c2c2c' }] },
-  { featureType: 'road.highway',       elementType: 'labels.text.fill', stylers: [{ color: '#FFB800' }] },
-  { featureType: 'water',              elementType: 'geometry',         stylers: [{ color: '#0d1b2a' }] },
-  { featureType: 'poi',                elementType: 'labels',           stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit',            elementType: 'labels',           stylers: [{ visibility: 'off' }] },
-];
+const ACTION_H      = 8 + 54;
 
 const STATUS_CONFIG = {
   ACCEPTED:    { label: 'Head to Pickup',   color: DA,        icon: 'navigate-outline'         },
@@ -142,19 +126,10 @@ export default function ActiveRideScreen({ route, navigation }) {
 
   const mapRef = useRef(null);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // ONE Animated.Value, useNativeDriver: false throughout.
-  // sheetHeightAnim starts at 0 and springs to SHEET_DEFAULT on mount.
-  // ─────────────────────────────────────────────────────────────────────────────
   const sheetHeightAnim  = useRef(new Animated.Value(0)).current;
   const currentHeightRef = useRef(0);
   const startHeightRef   = useRef(0);
 
-  // ── Bounded scroll height: derived from animated sheet height.
-  // This is the same pattern as ProfileScreen (SCROLL_H = height - HEADER_H - TAB_H)
-  // but expressed as an Animated interpolation so it tracks the draggable sheet.
-  // DRAG_HANDLE_H + ACTION_H + sheetPadBottom are subtracted to leave the
-  // ScrollView a concrete pixel boundary at every snap point.
   const sheetPadBottom = insets.bottom + 16;
   const scrollHeightAnim = useRef(
     sheetHeightAnim.interpolate({
@@ -168,7 +143,6 @@ export default function ActiveRideScreen({ route, navigation }) {
     })
   ).current;
 
-  // ── Status pill bottom — tracks sheet height (JS driver) ──────────────────
   const statusPillBottom = useRef(
     sheetHeightAnim.interpolate({
       inputRange:  [0, SHEET_MIN, SHEET_MAX],
@@ -181,7 +155,6 @@ export default function ActiveRideScreen({ route, navigation }) {
     })
   ).current;
 
-  // ── Navigation helper ─────────────────────────────────────────────────────
   const goToDashboard = useCallback(() => navigation.popToTop(), [navigation]);
 
   // ── PanResponder — draggable sheet ─────────────────────────────────────────
@@ -221,7 +194,6 @@ export default function ActiveRideScreen({ route, navigation }) {
       const res        = rideId ? await rideAPI.getActiveRide() : null;
       const loadedRide = res?.data?.ride ?? res?.ride ?? null;
       setRide(loadedRide);
-      console.log('[ActiveRide] Loaded ride:', loadedRide?.id, 'status:', loadedRide?.status);
     } catch (err) {
       console.error('[ActiveRide] loadRide error:', err?.message);
     } finally {
@@ -232,7 +204,6 @@ export default function ActiveRideScreen({ route, navigation }) {
   useEffect(() => {
     loadRide();
 
-    // Entrance animation — JS driver only (height is a layout prop)
     Animated.spring(sheetHeightAnim, {
       toValue:         SHEET_DEFAULT,
       tension:         80,
@@ -390,7 +361,6 @@ export default function ActiveRideScreen({ route, navigation }) {
       {/* ── MAP ── */}
       <MapView
         ref={mapRef}
-        provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={mapRegion}
         showsUserLocation={false}
@@ -446,21 +416,18 @@ export default function ActiveRideScreen({ route, navigation }) {
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
       </Animated.View>
 
-      {/* ── Bottom sheet — height animated with JS driver only ── */}
+      {/* ── Bottom sheet ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
         height:          sheetHeightAnim,
         bottom:          TAB_BAR_HEIGHT,
       }]}>
-        {/* Drag handle — PanResponder lives here only */}
+        {/* Drag handle */}
         <View style={s.dragHandleArea} {...panResponder.panHandlers}>
           <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
         </View>
 
-        {/* ── Bounded scroll area: Animated.View with interpolated height gives
-             the ScrollView a concrete pixel boundary at every snap position.
-             Mirrors DriverDashboard (SHEET_SNAP) and ProfileScreen (SCROLL_H). ── */}
         <Animated.View style={{ height: scrollHeightAnim, overflow: 'hidden' }}>
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -492,7 +459,6 @@ export default function ActiveRideScreen({ route, navigation }) {
             <CustomerCard ride={ride} theme={theme} />
             <RouteCard    ride={ride} theme={theme} />
 
-            {/* Notes — hide the internal TARGETED: prefix */}
             {ride.notes && !ride.notes.startsWith('TARGETED:') && (
               <View style={[s.notesCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                 <Ionicons name="document-text-outline" size={14} color={theme.hint} />
@@ -502,7 +468,7 @@ export default function ActiveRideScreen({ route, navigation }) {
           </ScrollView>
         </Animated.View>
 
-        {/* ── Action footer: pinned below bounded scroll area, inside the sheet ── */}
+        {/* ── Action footer ── */}
         <View style={[s.actionFooter, {
           borderTopColor: theme.border,
           paddingBottom:  sheetPadBottom,
@@ -575,13 +541,10 @@ const s = StyleSheet.create({
   statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
 
-  // Sheet: animated height (JS driver), positioned above tab bar
-  sheet: { position: 'absolute', left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, overflow: 'hidden' },
-
+  sheet:          { position: 'absolute', left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, overflow: 'hidden' },
   dragHandleArea: { width: '100%', paddingVertical: 12, alignItems: 'center' },
   dragHandle:     { width: 44, height: 4, borderRadius: 2 },
-
-  scrollContent: { paddingHorizontal: 20 },
+  scrollContent:  { paddingHorizontal: 20 },
 
   fareStrip:  { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
   fareItem:   { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
@@ -592,7 +555,6 @@ const s = StyleSheet.create({
   notesCard:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 14 },
   notesTxt:   { flex: 1, fontSize: 12, lineHeight: 18 },
 
-  // Action footer — pinned below bounded scroll area, inside the sheet
   actionFooter: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 14, paddingHorizontal: 20 },
   actionBtn:    { borderRadius: 16, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
   actionBtnTxt: { fontSize: 15, fontWeight: '900', color: '#080C18' },

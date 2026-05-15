@@ -5,7 +5,7 @@ import {
   Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
   Platform, TextInput, Linking,
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
@@ -328,7 +328,6 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
 
       <MapView
         ref={mapRef}
-        provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFillObject}
         initialRegion={mapRegion}
         showsUserLocation={false}
