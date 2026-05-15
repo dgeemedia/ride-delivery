@@ -23,15 +23,6 @@ const haversineKm = (lat1, lng1, lat2, lng2) => {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-const QUICK_DESTINATIONS = [
-  { label: 'Victoria Island', icon: 'business-outline', lat: 6.4281, lng: 3.4219 },
-  { label: 'Lekki Phase 1',   icon: 'home-outline',     lat: 6.4433, lng: 3.5077 },
-  { label: 'Ikeja',           icon: 'airplane-outline', lat: 6.6018, lng: 3.3515 },
-  { label: 'Surulere',        icon: 'football-outline', lat: 6.5037, lng: 3.3577 },
-  { label: 'Eko Hotel',       icon: 'bed-outline',      lat: 6.4344, lng: 3.4212 },
-  { label: 'Ajah',            icon: 'cart-outline',     lat: 6.4698, lng: 3.5827 },
-];
-
 // ── DriverPin ──────────────────────────────────────────────────────────────────
 const DriverPin = ({ driver, selected, onPress, accentColor }) => {
   const scaleA = useRef(new Animated.Value(1)).current;
@@ -363,6 +354,8 @@ export default function RequestRideScreen({ navigation }) {
   const [fareEstimate,  setFareEstimate] = useState(null);
   const [etaMinutes,    setEtaMinutes]   = useState(null);
 
+  const [nearbyPlaces,  setNearbyPlaces]  = useState([]);
+  const [loadingNearby, setLoadingNearby] = useState(false);
   const [step,          setStep]          = useState(1);
   const [requesting,    setRequesting]    = useState(false);
   const [pendingRideId, setPendingRideId] = useState(null);
@@ -410,6 +403,44 @@ export default function RequestRideScreen({ navigation }) {
     }
   }, [pickupCoords, mapReady]);
 
+    const fetchNearbyPlaces = useCallback(async (coords) => {
+    setLoadingNearby(true);
+    try {
+      const geoResults = await Location.reverseGeocodeAsync({
+        latitude: coords.lat, longitude: coords.lng,
+      });
+      const place      = geoResults?.[0];
+      const searchTerm = place?.city ?? place?.district ?? place?.region ?? '';
+      if (!searchTerm) { setNearbyPlaces([]); return; }
+
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(searchTerm)}&lat=${coords.lat}&lon=${coords.lng}&limit=12&lang=en`;
+      const res  = await fetch(url, { headers: { 'User-Agent': 'DiakiteApp/1.0' } });
+      const data = await res.json();
+
+      const places = (data.features ?? [])
+        .filter(f =>
+          f.properties.name &&
+          Math.abs(f.geometry.coordinates[1] - coords.lat) < 0.5 &&
+          Math.abs(f.geometry.coordinates[0] - coords.lng) < 0.5
+        )
+        .slice(0, 7)
+        .map(f => ({
+          label: f.properties.name,
+          lat:   f.geometry.coordinates[1],
+          lng:   f.geometry.coordinates[0],
+        }));
+
+      setNearbyPlaces(places);
+    } catch {
+      setNearbyPlaces([]);
+    } finally {
+      setLoadingNearby(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (pickupCoords) fetchNearbyPlaces(pickupCoords);
+  }, [pickupCoords]);
   // ── Reverse geocode helper ─────────────────────────────────────────────────
   const reverseGeocode = useCallback(async (lat, lng, setter) => {
     try {
@@ -839,19 +870,28 @@ export default function RequestRideScreen({ navigation }) {
                   </View>
                 </View>
 
-                <Text style={[s.quickLabel, { color: theme.hint }]}>POPULAR DESTINATIONS</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
-                  {QUICK_DESTINATIONS.map((d) => (
-                    <TouchableOpacity key={d.label}
-                      style={[s.quickChip, { backgroundColor: theme.card, borderColor: theme.border }]}
-                      onPress={() => setQuickDestination(d)}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name={d.icon} size={13} color={accentColor} />
-                      <Text style={[s.quickChipTxt, { color: theme.foreground }]}>{d.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                {(loadingNearby || nearbyPlaces.length > 0) && (
+                  <>
+                    <Text style={[s.quickLabel, { color: theme.hint }]}>NEARBY PLACES</Text>
+                    {loadingNearby ? (
+                      <ActivityIndicator color={accentColor} style={{ marginBottom: 20, alignSelf: 'flex-start' }} size="small" />
+                    ) : (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                        {nearbyPlaces.map((d) => (
+                          <TouchableOpacity
+                            key={`${d.lat}_${d.lng}`}
+                            style={[s.quickChip, { backgroundColor: theme.card, borderColor: theme.border }]}
+                            onPress={() => setQuickDestination(d)}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="location-outline" size={13} color={accentColor} />
+                            <Text style={[s.quickChipTxt, { color: theme.foreground }]}>{d.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
+                  </>
+                )}
 
                 <TouchableOpacity
                   style={[s.primaryBtn, { backgroundColor: (pickupCoords && dropoffCoords) ? accentColor : theme.border }]}

@@ -46,19 +46,6 @@ const VEHICLE_ICONS = {
   CAR:  'car-outline',     VAN: 'bus-outline',
 };
 
-const QUICK_DESTINATIONS = [
-  { label: 'Victoria Island', icon: 'business-outline', lat: 6.4281, lng: 3.4219 },
-  { label: 'Lekki Phase 1',   icon: 'home-outline',     lat: 6.4433, lng: 3.5077 },
-  { label: 'Ikeja',           icon: 'airplane-outline', lat: 6.6018, lng: 3.3515 },
-  { label: 'Surulere',        icon: 'football-outline', lat: 6.5037, lng: 3.3577 },
-  { label: 'Eko Hotel',       icon: 'bed-outline',      lat: 6.4344, lng: 3.4212 },
-  { label: 'Ajah',            icon: 'cart-outline',     lat: 6.4698, lng: 3.5827 },
-  { label: 'Agbara (Ogun)',   icon: 'business-outline', lat: 6.5167, lng: 2.8180 },
-  { label: 'Mile 2',          icon: 'car-outline',      lat: 6.4525, lng: 3.2875 },
-  { label: 'Okokomaiko',      icon: 'home-outline',     lat: 6.4472, lng: 3.2297 },
-  { label: 'Badagry',         icon: 'water-outline',    lat: 6.4167, lng: 2.8833 },
-];
-
 const PARTNER_NAMES = [
   { firstName: 'Kunle',  lastName: 'Balogun' },
   { firstName: 'Ifeanyi',lastName: 'Eze'     },
@@ -399,6 +386,8 @@ export default function RequestDeliveryScreen({ navigation }) {
   const [feeEstimate, setFeeEstimate] = useState(null);
   const [etaMinutes,  setEtaMinutes]  = useState(null);
 
+  const [nearbyPlaces,  setNearbyPlaces]  = useState([]);
+  const [loadingNearby, setLoadingNearby] = useState(false);
   const [step,       setStep]       = useState(1);
   const [requesting, setRequesting] = useState(false);
   const [mapReady,   setMapReady]   = useState(false);
@@ -446,6 +435,45 @@ export default function RequestDeliveryScreen({ navigation }) {
     }
   }, [pickupCoords, mapReady]);
 
+    const fetchNearbyPlaces = useCallback(async (coords) => {
+    setLoadingNearby(true);
+    try {
+      const geoResults = await Location.reverseGeocodeAsync({
+        latitude: coords.lat, longitude: coords.lng,
+      });
+      const place      = geoResults?.[0];
+      const searchTerm = place?.city ?? place?.district ?? place?.region ?? '';
+      if (!searchTerm) { setNearbyPlaces([]); return; }
+
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(searchTerm)}&lat=${coords.lat}&lon=${coords.lng}&limit=12&lang=en`;
+      const res  = await fetch(url, { headers: { 'User-Agent': 'DiakiteApp/1.0' } });
+      const data = await res.json();
+
+      const places = (data.features ?? [])
+        .filter(f =>
+          f.properties.name &&
+          Math.abs(f.geometry.coordinates[1] - coords.lat) < 0.5 &&
+          Math.abs(f.geometry.coordinates[0] - coords.lng) < 0.5
+        )
+        .slice(0, 7)
+        .map(f => ({
+          label: f.properties.name,
+          lat:   f.geometry.coordinates[1],
+          lng:   f.geometry.coordinates[0],
+        }));
+
+      setNearbyPlaces(places);
+    } catch {
+      setNearbyPlaces([]);
+    } finally {
+      setLoadingNearby(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (pickupCoords) fetchNearbyPlaces(pickupCoords);
+  }, [pickupCoords]);
+  
   const reverseGeocode = useCallback(async (lat, lng, setter) => {
     try {
       const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
@@ -849,20 +877,28 @@ const searchPlaces = useCallback(async (text) => {
                 </View>
 
                 {/* Quick destinations */}
-                <Text style={[s.quickLabel, { color: theme.hint }]}>POPULAR DESTINATIONS</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
-                  {QUICK_DESTINATIONS.map((d) => (
-                    <TouchableOpacity
-                      key={d.label}
-                      style={[s.quickChip, { backgroundColor: theme.card, borderColor: theme.border }]}
-                      onPress={() => setQuickDestination(d)}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name={d.icon} size={13} color={accentColor} />
-                      <Text style={[s.quickChipTxt, { color: theme.foreground }]}>{d.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                {(loadingNearby || nearbyPlaces.length > 0) && (
+                  <>
+                    <Text style={[s.quickLabel, { color: theme.hint }]}>NEARBY PLACES</Text>
+                    {loadingNearby ? (
+                      <ActivityIndicator color={accentColor} style={{ marginBottom: 20, alignSelf: 'flex-start' }} size="small" />
+                    ) : (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                        {nearbyPlaces.map((d) => (
+                          <TouchableOpacity
+                            key={`${d.lat}_${d.lng}`}
+                            style={[s.quickChip, { backgroundColor: theme.card, borderColor: theme.border }]}
+                            onPress={() => setQuickDestination(d)}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="location-outline" size={13} color={accentColor} />
+                            <Text style={[s.quickChipTxt, { color: theme.foreground }]}>{d.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
+                  </>
+                )}
 
                 {/* Package & contact fields */}
                 <Text style={[s.sectionLabel, { color: theme.hint }]}>CONTACT & PACKAGE</Text>

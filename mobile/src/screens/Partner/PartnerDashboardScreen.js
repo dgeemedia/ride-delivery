@@ -6,7 +6,7 @@ import {
   StatusBar, Dimensions, Animated,
   ActivityIndicator, Alert, Image, ScrollView,
 } from 'react-native';
-import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView                                 from '../../components/SmartMapView';
 import { Ionicons }                            from '@expo/vector-icons';
 import { useSafeAreaInsets }                   from 'react-native-safe-area-context';
 import * as Location                           from '../../shims/Location';
@@ -449,12 +449,11 @@ export default function PartnerDashboardScreen({ navigation }) {
       <View style={s.mapContainer}>
         <MapView
           style={StyleSheet.absoluteFill}
-          provider={PROVIDER_GOOGLE}
           initialRegion={mapRegion}
           showsUserLocation
           showsMyLocationButton={false}
-          toolbarEnabled={false}
-          customMapStyle={darkMode ? DARK_MAP_STYLE : []}
+          scrollEnabled={false}
+          zoomEnabled={false}
         />
 
         {hasMaintBanner && (
@@ -693,19 +692,6 @@ export default function PartnerDashboardScreen({ navigation }) {
     </View>
   );
 }
-
-// ── Dark map style ────────────────────────────────────────────────────────────
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.fill',   stylers: [{ color: '#757575' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#212121' }] },
-  { featureType: 'road',               elementType: 'geometry',  stylers: [{ color: '#2c2c2c' }] },
-  { featureType: 'road.arterial',      elementType: 'geometry',  stylers: [{ color: '#373737' }] },
-  { featureType: 'road.highway',       elementType: 'geometry',  stylers: [{ color: '#3c3c3c' }] },
-  { featureType: 'water',              elementType: 'geometry',  stylers: [{ color: '#000000' }] },
-  { featureType: 'poi',                elementType: 'labels',    stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit',            stylers: [{ visibility: 'off' }] },
-];
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({

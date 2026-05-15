@@ -9,7 +9,8 @@ import {
   Image, Alert, Platform, Modal, SafeAreaView, ScrollView,
   TextInput, PanResponder,
 } from 'react-native';
-import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView from '../../components/SmartMapView';
+import * as Location from 'expo-location';
 import { LinearGradient }    from 'expo-linear-gradient';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -412,9 +413,9 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     (async () => {
       try {
-        const { status } = await import('expo-location').then(m => m.requestForegroundPermissionsAsync());
+        const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') return;
-        const loc = await import('expo-location').then(m => m.getCurrentPositionAsync({ accuracy: 3 }));
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         setUserCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
       } catch { /* silent */ }
     })();
@@ -505,17 +506,16 @@ export default function HomeScreen({ navigation }) {
       <View style={s.mapContainer}>
         <MapView
           style={StyleSheet.absoluteFill}
-          provider={PROVIDER_GOOGLE}
           initialRegion={{
-            latitude: userCoords?.lat ?? 6.5244,
-            longitude: userCoords?.lng ?? 3.3792,
-            latitudeDelta: 0.03,
+            latitude:      userCoords?.lat ?? 6.5244,
+            longitude:     userCoords?.lng ?? 3.3792,
+            latitudeDelta:  0.03,
             longitudeDelta: 0.03,
           }}
           showsUserLocation
           showsMyLocationButton={false}
-          toolbarEnabled={false}
-          customMapStyle={darkMode ? DARK_MAP_STYLE : []}
+          scrollEnabled={false}
+          zoomEnabled={false}
         />
 
         {hasMaintBanner && (
@@ -717,19 +717,6 @@ export default function HomeScreen({ navigation }) {
     </View>
   );
 }
-
-// ── Dark map style ────────────────────────────────────────────────────────────
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry',            stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.fill',    stylers: [{ color: '#757575' }] },
-  { elementType: 'labels.text.stroke',  stylers: [{ color: '#212121' }] },
-  { featureType: 'road',                elementType: 'geometry',           stylers: [{ color: '#2c2c2c' }] },
-  { featureType: 'road.arterial',       elementType: 'geometry',           stylers: [{ color: '#373737' }] },
-  { featureType: 'road.highway',        elementType: 'geometry',           stylers: [{ color: '#3c3c3c' }] },
-  { featureType: 'water',               elementType: 'geometry',           stylers: [{ color: '#000000' }] },
-  { featureType: 'poi',                 elementType: 'labels',             stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit',             stylers: [{ visibility: 'off' }] },
-];
 
 const s = StyleSheet.create({
   root: { flex: 1 },
