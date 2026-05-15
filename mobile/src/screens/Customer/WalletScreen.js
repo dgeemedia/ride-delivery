@@ -66,7 +66,6 @@ export default function WalletScreen({ navigation }) {
   const [filter,  setFilter]  = useState('ALL');
   const fadeA = useRef(new Animated.Value(0)).current;
 
-  // ── Bounded scroll height (mirrors ProfileScreen) ──────────────────────────
   const TAB_H        = 54;
   const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
   const HEADER_INNER_H = 50;
@@ -82,7 +81,7 @@ export default function WalletScreen({ navigation }) {
     try {
       const [wRes, tRes] = await Promise.all([
         walletAPI.getWallet(),
-        walletAPI.getTransactions(),
+        walletAPI.getTransactions({ limit: 20 }),
       ]);
       setWallet(wRes.data?.wallet);
       setTxns(tRes.data?.transactions ?? []);
@@ -100,7 +99,7 @@ export default function WalletScreen({ navigation }) {
         backgroundColor={theme.background}
       />
 
-      {/* ── Sticky header (mirrors ProfileScreen pattern) ── */}
+      {/* ── Sticky header ── */}
       <View style={[
         s.header,
         {
@@ -117,10 +116,17 @@ export default function WalletScreen({ navigation }) {
           <Ionicons name="arrow-back" size={18} color={theme.muted} />
         </TouchableOpacity>
         <Text style={[s.headerTitle, { color: theme.foreground }]}>My Wallet</Text>
-        <View style={{ width: 38 }} />
+        {/* History button */}
+        <TouchableOpacity
+          style={[s.historyBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
+          onPress={() => navigation.navigate('TransactionHistory')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="time-outline" size={16} color={theme.muted} />
+        </TouchableOpacity>
       </View>
 
-      {/* ── Bounded scroll container (key: explicit pixel height) ── */}
+      {/* ── Bounded scroll container ── */}
       <View style={{ height: SCROLL_H }}>
         <ScrollView
           contentContainerStyle={s.scroll}
@@ -201,7 +207,17 @@ export default function WalletScreen({ navigation }) {
 
             {/* Transactions */}
             <View style={[s.txCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Text style={[s.txTitle, { color: theme.hint }]}>TRANSACTIONS</Text>
+              {/* Section header with "See all" link */}
+              <View style={s.txHeader}>
+                <Text style={[s.txTitle, { color: theme.hint }]}>RECENT TRANSACTIONS</Text>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('TransactionHistory')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.txSeeAll, { color: theme.accent }]}>See all →</Text>
+                </TouchableOpacity>
+              </View>
+
               {loading ? (
                 <ActivityIndicator color={theme.accent} style={{ marginVertical: 24 }} />
               ) : filtered.length === 0 ? (
@@ -211,9 +227,23 @@ export default function WalletScreen({ navigation }) {
                   <Text style={[s.emptyHint, { color: theme.hint }]}>Top up your wallet to get started</Text>
                 </View>
               ) : (
-                filtered.map((item, i) => (
-                  <TxRow key={item.id ?? i} item={item} theme={theme} last={i === filtered.length - 1} />
-                ))
+                <>
+                  {filtered.map((item, i) => (
+                    <TxRow key={item.id ?? i} item={item} theme={theme} last={i === filtered.length - 1} />
+                  ))}
+                  {/* Full history CTA */}
+                  <TouchableOpacity
+                    style={[s.historyLink, { borderTopColor: theme.border }]}
+                    onPress={() => navigation.navigate('TransactionHistory')}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="calendar-outline" size={14} color={theme.accent} />
+                    <Text style={[s.historyLinkTxt, { color: theme.accent }]}>
+                      View full history with date filter & export
+                    </Text>
+                    <Ionicons name="chevron-forward" size={13} color={theme.accent} />
+                  </TouchableOpacity>
+                </>
               )}
             </View>
 
@@ -226,11 +256,10 @@ export default function WalletScreen({ navigation }) {
 
 const s = StyleSheet.create({
   root:               { flex: 1 },
-  // ── Sticky header (matches ProfileScreen layout) ──
   header:             { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 20, paddingBottom: 10, borderBottomWidth: 1 },
   backBtn:            { width: 38, height: 38, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   headerTitle:        { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700' },
-  // ── Scroll content ──
+  historyBtn:         { width: 38, height: 38, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   scroll:             { paddingHorizontal: 20, paddingBottom: 32, paddingTop: 20 },
   balanceCard:        { borderRadius: 18, borderWidth: 1, padding: 24, marginBottom: 18, alignItems: 'center' },
   balanceLabel:       { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 10 },
@@ -245,9 +274,13 @@ const s = StyleSheet.create({
   filterRow:          { flexDirection: 'row', gap: 8, paddingVertical: 2 },
   filterTab:          { borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7 },
   filterTxt:          { fontSize: 12, fontWeight: '700' },
-  txCard:             { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 },
-  txTitle:            { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 6 },
+  txCard:             { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 0 },
+  txHeader:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  txTitle:            { fontSize: 10, fontWeight: '700', letterSpacing: 3 },
+  txSeeAll:           { fontSize: 11, fontWeight: '700' },
   empty:              { alignItems: 'center', paddingVertical: 32 },
   emptyTxt:           { fontSize: 15, fontWeight: '600', marginBottom: 6 },
   emptyHint:          { fontSize: 13 },
+  historyLink:        { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 14, borderTopWidth: 1, marginTop: 4 },
+  historyLinkTxt:     { flex: 1, fontSize: 12, fontWeight: '600' },
 });

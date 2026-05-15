@@ -5,6 +5,7 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
+const emailService = require('../services/email.service');
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -819,6 +820,127 @@ exports.getDepositLimits = async (req, res) => {
       max: maxSetting?.value ? parseFloat(maxSetting.value) : 1_000_000,
       currency: 'NGN',
     },
+  });
+};
+
+// ─────────────────────────────────────────────
+// EMAIL TRANSACTION HISTORY
+// ─────────────────────────────────────────────
+
+exports.emailTransactionHistory = async (req, res) => {
+  const { from, to, type, email } = req.body;
+
+  if (!email || !email.includes('@')) throw new AppError('Valid email address is required', 400);
+
+  // ── Build date range ──
+  const fromDate = from ? new Date(from) : (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d; })();
+  const toDate   = to   ? new Date(to)   : new Date();
+  toDate.setHours(23, 59, 59, 999); // include full end day
+
+  const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+  if (!wallet) throw new AppError('Wallet not found', 404);
+
+  const where = {
+    walletId:  wallet.id,
+    createdAt: { gte: fromDate, lte: toDate },
+  };
+  if (type && type !== 'ALL') where.type = type.toUpperCase();
+
+  const transactions = await prisma.walletTransaction.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    take: 1000, // hard cap — PDF gets unwieldy beyond this
+  });
+
+  // ── Summary figures ──
+  const totalIn  = transactions.filter(t => t.type === 'CREDIT' || t.type === 'REFUND').reduce((s, t) => s + Number(t.amount), 0);
+  const totalOut = transactions.filter(t => t.type !== 'CREDIT' && t.type !== 'REFUND').reduce((s, t) => s + Number(t.amount), 0);
+  const fmt      = (n) => Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate  = (d) => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  // ── Build HTML for PDF ──
+  const TX_COLORS = { CREDIT: '#5DAA72', DEBIT: '#E05555', WITHDRAWAL: '#FFB800', REFUND: '#A78BFA' };
+  const TX_SIGN   = { CREDIT: '+', DEBIT: '-', WITHDRAWAL: '-', REFUND: '+' };
+
+  const rows = transactions.map(t => `
+    <tr>
+      <td>${fmtDate(t.createdAt)}</td>
+      <td>${t.description || t.type}</td>
+      <td style="color:${TX_COLORS[t.type] ?? '#333'};font-weight:700">
+        ${TX_SIGN[t.type] ?? ''}₦${fmt(t.amount)}
+      </td>
+      <td>${t.type}</td>
+      <td style="color:${t.status === 'COMPLETED' ? '#5DAA72' : '#FFB800'}">${t.status}</td>
+      <td style="font-size:10px;color:#888">${t.reference ?? '—'}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"/>
+<style>
+  body  { font-family: Arial, sans-serif; color: #111; padding: 32px; }
+  h1    { font-size: 22px; margin-bottom: 4px; }
+  .sub  { color: #666; font-size: 12px; margin-bottom: 24px; }
+  .summary { display: flex; gap: 24px; margin-bottom: 24px; }
+  .sum-box { background: #f5f5f5; border-radius: 10px; padding: 14px 20px; min-width: 130px; }
+  .sum-lbl { font-size: 10px; color: #888; font-weight: 700; letter-spacing: 1.5px; margin-bottom: 4px; }
+  .sum-val { font-size: 18px; font-weight: 900; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th    { background: #111; color: #fff; padding: 10px 8px; text-align: left; font-size: 10px; letter-spacing: 1px; }
+  td    { padding: 10px 8px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .footer { margin-top: 32px; font-size: 10px; color: #aaa; text-align: center; }
+</style></head>
+<body>
+<h1>Transaction History</h1>
+<div class="sub">
+  ${fmtDate(fromDate)} – ${fmtDate(toDate)}
+  ${type && type !== 'ALL' ? ` &nbsp;•&nbsp; Type: ${type}` : ''}
+  &nbsp;•&nbsp; ${transactions.length} transaction${transactions.length !== 1 ? 's' : ''}
+  &nbsp;•&nbsp; ${req.user.email}
+</div>
+<div class="summary">
+  <div class="sum-box">
+    <div class="sum-lbl">TOTAL IN</div>
+    <div class="sum-val" style="color:#5DAA72">+₦${fmt(totalIn)}</div>
+  </div>
+  <div class="sum-box">
+    <div class="sum-lbl">TOTAL OUT</div>
+    <div class="sum-val" style="color:#E05555">-₦${fmt(totalOut)}</div>
+  </div>
+  <div class="sum-box">
+    <div class="sum-lbl">NET</div>
+    <div class="sum-val">₦${fmt(totalIn - totalOut)}</div>
+  </div>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>DATE</th><th>DESCRIPTION</th><th>AMOUNT</th>
+      <th>TYPE</th><th>STATUS</th><th>REFERENCE</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rows || '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:32px">No transactions found</td></tr>'}
+  </tbody>
+</table>
+<div class="footer">
+  Generated ${new Date().toLocaleString('en-NG')} &nbsp;•&nbsp; Confidential — Do not distribute
+</div>
+</body></html>`;
+
+  // ── Send via your email service ──
+  // Swap this block for whichever mailer you use (Nodemailer, SendGrid, Resend, etc.)
+  const emailService = require('../services/email.service');
+  await emailService.sendEmail({
+    to:      email,
+    subject: `Your Transaction History — ${fmtDate(fromDate)} to ${fmtDate(toDate)}`,
+    html,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Transaction history sent to ${email}`,
+    data: { count: transactions.length, from: fmtDate(fromDate), to: fmtDate(toDate) },
   });
 };
 

@@ -59,6 +59,22 @@ router.get(
 );
 
 /**
+ * @route   POST /api/wallet/transactions/email
+ * @desc    Email transaction history as an HTML/PDF statement
+ * @access  Private
+ */
+router.post(
+  '/transactions/email',
+  [
+    body('email').isEmail().withMessage('Valid email address is required'),
+    body('from').optional().isISO8601().withMessage('Invalid from date'),
+    body('to').optional().isISO8601().withMessage('Invalid to date'),
+    body('type').optional().isIn(['ALL', 'CREDIT', 'DEBIT', 'WITHDRAWAL', 'REFUND']),
+  ],
+  walletController.emailTransactionHistory
+);
+
+/**
  * @route   GET /api/wallet/lookup-user
  * @desc    Look up a registered user by phone number (used in TransferScreen)
  * @access  Private

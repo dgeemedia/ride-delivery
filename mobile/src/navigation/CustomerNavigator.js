@@ -36,6 +36,7 @@ import WalletTopUpScreen       from '../screens/Shared/WalletTopUpScreen';
 import WithdrawalScreen        from '../screens/Shared/WithdrawalScreen';
 import AppFeedbackScreen       from '../screens/Shared/AppFeedbackScreen';
 import LegalScreen             from '../screens/Shared/LegalScreen';
+import TransactionHistoryScreen from '../screens/Shared/TransactionHistoryScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -80,6 +81,7 @@ const WalletStack = () => (
     <Stack.Screen name="WalletTopUp"  component={WalletTopUpScreen}  />
     <Stack.Screen name="Transfer"     component={TransferScreen}     />
     <Stack.Screen name="Withdraw"     component={WithdrawalScreen}   />
+    <Stack.Screen name="TransactionHistory"  component={TransactionHistoryScreen}   />
     <Stack.Screen name="Support"      component={SupportScreen}      />
     <Stack.Screen name="SubmitTicket" component={SubmitTicketScreen} />
     <Stack.Screen name="MyTickets"    component={MyTicketsScreen}    />

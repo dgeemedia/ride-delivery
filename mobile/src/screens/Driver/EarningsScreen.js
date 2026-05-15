@@ -1,7 +1,8 @@
 // mobile/src/screens/Driver/EarningsScreen.js
-// FIX: Moved useAnimatedScrollHandler to top level (no conditional hook call).
-// FIX: Added proper bounded scroll area — SafeAreaView root + measured header
-//      height → explicit SCROLL_H container, matching the ProfileScreen pattern.
+// Changes vs original:
+//   • "Wallet Txns" tab now has a date-filter icon → navigates to TransactionHistoryScreen
+//   • "History" wallet action button navigates to TransactionHistoryScreen (with full history)
+//   • All other logic unchanged
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -152,25 +153,17 @@ export default function EarningsScreen({ navigation }) {
   const [transactions,  setTransactions]  = useState([]);
   const [activeTab,     setActiveTab]     = useState('rides');
   const [loading,       setLoading]       = useState(true);
-  // KEY: track header height so SCROLL_H is always accurate
   const [headerH,       setHeaderH]       = useState(80);
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(18)).current;
 
-  // ── Scroll handler defined unconditionally at top level ──────────────────
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       scrollY.value = event.contentOffset.y;
     },
   });
 
-  // ── KEY: compute exact scroll area height ────────────────────────────────
-  // screen height − safe-area top (handled by SafeAreaView edges=['top'])
-  //              − measured header height
-  //              − safe-area bottom (we add it as paddingBottom inside scroll)
-  // No tab bar subtracted here because EarningsScreen lives in a tab navigator;
-  // if it's standalone (canGoBack), the tab bar is absent — same formula works.
   const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
   const SCROLL_H     = height - insets.top - headerH - insets.bottom - EXTRA_BOTTOM;
 
@@ -200,8 +193,6 @@ export default function EarningsScreen({ navigation }) {
   const rides = earnings?.rides ?? [];
 
   return (
-    // KEY: SafeAreaView with edges=['top','left','right'] — bottom handled
-    // by paddingBottom inside scroll so content clears the home indicator.
     <SafeAreaView
       style={[s.root, { backgroundColor: theme.background }]}
       edges={['top', 'left', 'right']}
@@ -209,7 +200,7 @@ export default function EarningsScreen({ navigation }) {
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={[s.orb, { backgroundColor: DA }]} />
 
-      {/* ── Header — measure actual rendered height for SCROLL_H accuracy ── */}
+      {/* ── Header ── */}
       <View
         style={[s.header, { borderBottomColor: theme.border }]}
         onLayout={e => setHeaderH(e.nativeEvent.layout.height)}
@@ -246,10 +237,6 @@ export default function EarningsScreen({ navigation }) {
         </View>
       </View>
 
-      {/* KEY: bounded container — explicit pixel height gives AnimatedRN.ScrollView
-            a concrete parent boundary, identical to ProfileScreen's SCROLL_H pattern.
-            Without this, Reanimated's ScrollView has no reference height and
-            can't calculate the scroll area on Android. */}
       {loading ? (
         <View style={[s.loadingWrap, { height: SCROLL_H }]}>
           <ActivityIndicator color={DA} size="large" />
@@ -294,16 +281,17 @@ export default function EarningsScreen({ navigation }) {
                   <Text style={[s.walletActionSub, { color: theme.hint }]}>To bank</Text>
                 </TouchableOpacity>
 
+                {/* WIRED: History → TransactionHistoryScreen */}
                 <TouchableOpacity
                   style={[s.walletActionBtn, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}
-                  onPress={() => navigation.navigate('DriverHistory')}
+                  onPress={() => navigation.navigate('TransactionHistory')}
                   activeOpacity={0.85}
                 >
                   <View style={[s.walletActionIcon, { backgroundColor: PURPLE + '20' }]}>
                     <Ionicons name="time-outline" size={20} color={PURPLE} />
                   </View>
                   <Text style={[s.walletActionLbl, { color: theme.foreground }]}>History</Text>
-                  <Text style={[s.walletActionSub, { color: theme.hint }]}>All rides</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>& Export</Text>
                 </TouchableOpacity>
               </View>
 
@@ -384,9 +372,23 @@ export default function EarningsScreen({ navigation }) {
                       <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
                     </View>
                   ) : (
-                    transactions.map((item, i) => (
-                      <TxRow key={item.id ?? i} item={item} theme={theme} last={i === transactions.length - 1} />
-                    ))
+                    <>
+                      {transactions.map((item, i) => (
+                        <TxRow key={item.id ?? i} item={item} theme={theme} last={i === transactions.length - 1} />
+                      ))}
+                      {/* WIRED: Full history CTA */}
+                      <TouchableOpacity
+                        style={[s.historyLink, { borderTopColor: theme.border }]}
+                        onPress={() => navigation.navigate('TransactionHistory')}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons name="calendar-outline" size={13} color={DA} />
+                        <Text style={[s.historyLinkTxt, { color: DA }]}>
+                          Full history · date filter · PDF export
+                        </Text>
+                        <Ionicons name="chevron-forward" size={12} color={DA} />
+                      </TouchableOpacity>
+                    </>
                   )
                 )}
               </View>
@@ -400,7 +402,6 @@ export default function EarningsScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  // KEY: flex:1 on root — SafeAreaView needs this to fill the screen
   root:    { flex: 1 },
   orb:     { position: 'absolute', width: width * 1.1, height: width * 1.1, borderRadius: width * 0.55, top: -width * 0.7, left: -width * 0.3, opacity: 0.04 },
 
@@ -413,8 +414,6 @@ const s = StyleSheet.create({
   headerActionTxt: { fontSize: 12, fontWeight: '800' },
 
   loadingWrap: { justifyContent: 'center', alignItems: 'center' },
-
-  // KEY: paddingBottom set dynamically with insets.bottom — no hard-coded 100
   scroll:      { paddingHorizontal: 20 },
 
   walletActions:    { flexDirection: 'row', gap: 10, marginBottom: 14 },
@@ -440,4 +439,7 @@ const s = StyleSheet.create({
   listCard: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4, marginBottom: 24 },
   empty:    { alignItems: 'center', paddingVertical: 28, gap: 10 },
   emptyTxt: { fontSize: 13 },
+
+  historyLink:    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 13, borderTopWidth: 1, marginTop: 4 },
+  historyLinkTxt: { flex: 1, fontSize: 11, fontWeight: '600' },
 });

@@ -204,6 +204,7 @@ export const walletAPI = {
   transfer:               (data)   => api.post('/wallet/transfer', data),
   withdraw:               (data)   => api.post('/wallet/withdraw', data),
   getDepositLimits:           ()   => api.get('/wallet/deposit-limits'),
+  emailTransactionHistory:    (data)   => api.post('/wallet/transactions/email', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -20,9 +20,6 @@ const PURPLE         = '#A78BFA';
 const RED            = '#E05555';
 const GREEN          = '#5DAA72';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Period filter tabs
-// ─────────────────────────────────────────────────────────────────────────────
 const PERIODS = [
   { key: 'today', label: 'Today' },
   { key: 'week',  label: 'Week'  },
@@ -30,9 +27,6 @@ const PERIODS = [
   { key: 'all',   label: 'All'   },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tx type config
-// ─────────────────────────────────────────────────────────────────────────────
 const TX_CONFIG = {
   CREDIT:     { icon: 'arrow-down-circle-outline', color: GREEN,  label: 'Credit'     },
   DEBIT:      { icon: 'arrow-up-circle-outline',   color: RED,    label: 'Debit'      },
@@ -40,9 +34,6 @@ const TX_CONFIG = {
   REFUND:     { icon: 'refresh-circle-outline',    color: PURPLE, label: 'Refund'     },
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 const filterByPeriod = (list, period) => {
   if (period === 'all') return list;
   const now  = new Date();
@@ -176,10 +167,8 @@ export default function PartnerEarningsScreen({ navigation }) {
   const scrollY         = useScrollY();
   const insets          = useSafeAreaInsets();
 
-  // ── Bounded scroll height (mirrors ProfileScreen / DriverDashboard) ─────────
-  const TAB_H        = 54;
-  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
-  // Header inner height: paddingVertical(14*2) + back button height(40) = 68
+  const TAB_H          = 54;
+  const EXTRA_BOTTOM   = Platform.OS === 'android' ? 16 : 0;
   const HEADER_INNER_H = 68;
   const HEADER_H       = insets.top + HEADER_INNER_H;
   const SCROLL_H       = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
@@ -200,9 +189,7 @@ export default function PartnerEarningsScreen({ navigation }) {
   const balanceA = useRef(new Animated.Value(0)).current;
 
   const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
-    },
+    onScroll: (event) => { scrollY.value = event.contentOffset.y; },
   });
 
   const load = useCallback(async (silent = false) => {
@@ -215,23 +202,17 @@ export default function PartnerEarningsScreen({ navigation }) {
         deliveryAPI.getDeliveryHistory({ period, limit: 50 }),
       ]);
 
-      if (earningsRes.status === 'fulfilled') {
-        setEarnings(earningsRes.value?.data);
-      }
-      if (walletRes.status === 'fulfilled') {
-        setWallet(walletRes.value?.data?.wallet ?? walletRes.value?.data);
-      }
-      if (txRes.status === 'fulfilled') {
+      if (earningsRes.status === 'fulfilled') setEarnings(earningsRes.value?.data);
+      if (walletRes.status   === 'fulfilled') setWallet(walletRes.value?.data?.wallet ?? walletRes.value?.data);
+      if (txRes.status       === 'fulfilled') {
         setTransactions(txRes.value?.data?.transactions ?? []);
         setTxTotal(txRes.value?.data?.pagination?.total ?? 0);
         setTxPage(1);
       }
       if (deliveriesRes.status === 'fulfilled') {
-        const all = deliveriesRes.value?.data?.deliveries ?? [];
-        setDeliveries(filterByPeriod(all, period));
+        setDeliveries(filterByPeriod(deliveriesRes.value?.data?.deliveries ?? [], period));
       } else {
-        const fallback = earningsRes.value?.data?.deliveries ?? [];
-        setDeliveries(filterByPeriod(fallback, period));
+        setDeliveries(filterByPeriod(earningsRes.value?.data?.deliveries ?? [], period));
       }
     } catch {}
     finally {
@@ -250,8 +231,7 @@ export default function PartnerEarningsScreen({ navigation }) {
     try {
       const nextPage = txPage + 1;
       const res      = await walletAPI.getTransactions({ page: nextPage, limit: 20 });
-      const newTx    = res?.data?.transactions ?? [];
-      setTransactions(prev => [...prev, ...newTx]);
+      setTransactions(prev => [...prev, ...(res?.data?.transactions ?? [])]);
       setTxPage(nextPage);
     } catch {}
     finally { setTxLoading(false); }
@@ -273,7 +253,7 @@ export default function PartnerEarningsScreen({ navigation }) {
         backgroundColor={theme.background}
       />
 
-      {/* ── Sticky header (mirrors ProfileScreen pattern) ── */}
+      {/* ── Sticky header ── */}
       <View style={[
         s.header,
         {
@@ -303,7 +283,6 @@ export default function PartnerEarningsScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* ── Bounded scroll container (key: explicit pixel height) ── */}
       {loading ? (
         <View style={s.center}>
           <ActivityIndicator color={COURIER_ACCENT} size="large" />
@@ -316,11 +295,7 @@ export default function PartnerEarningsScreen({ navigation }) {
             onScroll={scrollHandler}
             scrollEventThrottle={16}
             refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={COURIER_ACCENT}
-              />
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COURIER_ACCENT} />
             }
           >
             {/* ── Wallet balance card ── */}
@@ -341,12 +316,14 @@ export default function PartnerEarningsScreen({ navigation }) {
                   <Ionicons name="arrow-up-outline" size={18} color="#fff" />
                   <Text style={s.balanceActionTxt}>Withdraw</Text>
                 </TouchableOpacity>
+
+                {/* CHANGED: was setActiveTab('transactions') — now navigates to full history */}
                 <TouchableOpacity
                   style={[s.balanceAction, { backgroundColor: 'rgba(0,0,0,0.15)' }]}
-                  onPress={() => setActiveTab('transactions')}
+                  onPress={() => navigation.navigate('TransactionHistory')}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="list-outline" size={18} color="#fff" />
+                  <Ionicons name="time-outline" size={18} color="#fff" />
                   <Text style={s.balanceActionTxt}>History</Text>
                 </TouchableOpacity>
               </View>
@@ -485,6 +462,8 @@ export default function PartnerEarningsScreen({ navigation }) {
                     {transactions.map((tx, i) => (
                       <TxRow key={tx.id ?? i} tx={tx} theme={theme} />
                     ))}
+
+                    {/* Load more */}
                     {transactions.length < txTotal && (
                       <TouchableOpacity
                         style={[s.loadMore, { borderColor: COURIER_ACCENT + '40' }]}
@@ -497,6 +476,19 @@ export default function PartnerEarningsScreen({ navigation }) {
                         }
                       </TouchableOpacity>
                     )}
+
+                    {/* ADDED: Full history CTA — matches Driver/Customer pattern */}
+                    <TouchableOpacity
+                      style={[s.historyLink, { borderTopColor: theme.border }]}
+                      onPress={() => navigation.navigate('TransactionHistory')}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons name="calendar-outline" size={13} color={COURIER_ACCENT} />
+                      <Text style={[s.historyLinkTxt, { color: COURIER_ACCENT }]}>
+                        Full history • date filter • PDF export
+                      </Text>
+                      <Ionicons name="chevron-forward" size={12} color={COURIER_ACCENT} />
+                    </TouchableOpacity>
                   </>
                 ) : (
                   <View style={s.empty}>
@@ -520,7 +512,6 @@ const s = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20 },
 
-  // ── Sticky header (matches ProfileScreen layout) ──
   header:      { flexDirection: 'row', alignItems: 'flex-end', gap: 12, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
   backBtn:     { width: 40, height: 40, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '900' },
@@ -528,7 +519,6 @@ const s = StyleSheet.create({
   payoutBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9 },
   payoutBtnTxt:{ fontSize: 13, fontWeight: '800', color: '#080C18' },
 
-  // Balance card
   balanceCard:      { borderRadius: 24, padding: 24, marginBottom: 16, overflow: 'hidden' },
   balanceCardInner: { marginBottom: 20 },
   balanceLabel:     { fontSize: 10, fontWeight: '800', letterSpacing: 2, color: 'rgba(0,0,0,0.5)', marginBottom: 8 },
@@ -538,37 +528,33 @@ const s = StyleSheet.create({
   balanceAction:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12, paddingVertical: 10 },
   balanceActionTxt: { fontSize: 13, fontWeight: '700', color: '#fff' },
 
-  // Period filter
   periodRow: { flexDirection: 'row', borderRadius: 14, borderWidth: 1, padding: 4, marginBottom: 16 },
   periodBtn: { flex: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center' },
   periodTxt: { fontSize: 12, fontWeight: '700' },
 
-  // Tiles
   tilesRow: { flexDirection: 'row', gap: 10 },
 
-  // Avg card
   avgCard: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 12, marginBottom: 4 },
   avgTxt:  { flex: 1, fontSize: 13 },
 
-  // Note card
   noteCard: { borderRadius: 14, borderWidth: 1, padding: 14, marginTop: 12, marginBottom: 16, gap: 8 },
   noteRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   noteDot:  { width: 7, height: 7, borderRadius: 4, marginTop: 5, flexShrink: 0 },
   noteTxt:  { flex: 1, fontSize: 12, lineHeight: 18 },
 
-  // Tab switcher
   tabRow: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: 0 },
   tabBtn: { flex: 1, paddingVertical: 13, alignItems: 'center' },
   tabTxt: { fontSize: 13, fontWeight: '700' },
 
-  // List card
   listCard: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, marginBottom: 16, marginTop: 2 },
 
-  // Load more
   loadMore:    { alignItems: 'center', paddingVertical: 14, borderTopWidth: 1 },
   loadMoreTxt: { fontSize: 13, fontWeight: '700' },
 
-  // Empty
   empty:    { alignItems: 'center', paddingVertical: 32, gap: 10 },
   emptyTxt: { fontSize: 13 },
+
+  // ADDED: history CTA styles
+  historyLink:    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 13, borderTopWidth: 1, marginTop: 4 },
+  historyLinkTxt: { flex: 1, fontSize: 11, fontWeight: '600' },
 });

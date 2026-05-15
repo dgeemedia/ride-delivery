@@ -28,6 +28,7 @@ import MyTicketsScreen from '../screens/Shared/MyTicketsScreen';
 import TicketDetailScreen from '../screens/Shared/TicketDetailScreen';
 import AppFeedbackScreen from '../screens/Shared/AppFeedbackScreen';
 import LegalScreen from '../screens/Shared/LegalScreen';
+import TransactionHistoryScreen from '../screens/Shared/TransactionHistoryScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -63,6 +64,7 @@ const EarningsStack = () => (
     <Stack.Screen name="DriverHistory" component={DriverHistoryScreen}   />
     <Stack.Screen name="WalletTopUp"   component={WalletTopUpScreen}     />
     <Stack.Screen name="Withdrawal"    component={WithdrawalScreen}      />
+    <Stack.Screen name="TransactionHistory"  component={TransactionHistoryScreen}  />
     <Stack.Screen name="Support"       component={SupportScreen}         />
     <Stack.Screen name="SubmitTicket"  component={SubmitTicketScreen}    />
     <Stack.Screen name="MyTickets"     component={MyTicketsScreen}       />

@@ -4,10 +4,17 @@
 const crypto = require('crypto');
 const prisma  = require('../lib/prisma');
 const notificationService = require('./notification.service');
+const emailService        = require('./email.service');
+// TODO: import your SMS provider when ready
+// const termiiService = require('./termii.service');
+// const twilioService = require('./twilio.service');
 
 const OTP_LENGTH       = 6;
 const OTP_EXPIRY_MIN   = 10;
 const MAX_ATTEMPTS     = 3;
+
+const ENABLE_SMS   = process.env.ENABLE_SMS_DELIVERY   === 'true';
+const ENABLE_EMAIL = process.env.ENABLE_EMAIL_DELIVERY === 'true';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,7 +36,6 @@ const maskEmail = (email) => {
 // Invalidates any prior OTP for the same user + purpose, then creates a fresh one.
 // Returns the plaintext code (for delivery) and a tempToken (for client correlation).
 const createOtp = async (userId, purpose) => {
-  // Wipe stale records first to prevent accumulation
   await prisma.otpVerification.deleteMany({ where: { userId, purpose } });
 
   const code      = generateCode();
@@ -83,40 +89,33 @@ const verifyOtp = async (tempToken, code) => {
 };
 
 // ── sendOtp ───────────────────────────────────────────────────────────────────
-// Delivers the OTP to the user.
-// TODO: integrate Termii / Twilio for production SMS, and an email provider.
-// For now, we fall back to in-app notification (visible in dev/staging).
 const sendOtp = async (user, code, method = 'SMS') => {
-  const maskedContact = method === 'EMAIL'
-    ? maskEmail(user.email)
-    : maskPhone(user.phone);
-
-  // ── SMS (Termii / Twilio / etc.) ───────────────────────────────────────────
-  // TODO: uncomment and configure when your SMS provider is ready:
-  //
-  // if (method === 'SMS') {
-  //   await termiiService.send(user.phone,
-  //     `Your DuoRide code: ${code}. Valid for ${OTP_EXPIRY_MIN} mins. Don't share this.`
-  //   );
-  //   return;
-  // }
+  // ── SMS ───────────────────────────────────────────────────────────────────
+  if (method === 'SMS') {
+    if (ENABLE_SMS) {
+      await termiiService.send(
+        user.phone,
+        `Your DuoRide code: ${code}. Valid for ${OTP_EXPIRY_MIN} mins. Don't share this.`
+      );
+      return;
+    }
+  }
 
   // ── EMAIL ─────────────────────────────────────────────────────────────────
-  // TODO: uncomment when email service is ready:
-  //
-  // if (method === 'EMAIL') {
-  //   await emailService.sendOtp(user.email, code, OTP_EXPIRY_MIN);
-  //   return;
-  // }
+  if (method === 'EMAIL') {
+    if (ENABLE_EMAIL) {
+      await emailService.sendOtp(user.email, code, OTP_EXPIRY_MIN);
+      return;
+    }
+  }
 
-  // ── Fallback: in-app notification (dev / staging only) ────────────────────
+  // ── Fallback: in-app notification (active when SMS/EMAIL are disabled) ────
   await notificationService.notify({
     userId:  user.id,
     title:   '🔐 Your verification code',
     message: `Your login code is: ${code}. It expires in ${OTP_EXPIRY_MIN} minutes. Do not share this code.`,
     type:    'OTP_CODE',
     data: {
-      // Only expose the raw code in non-production environments (for testing)
       ...(process.env.NODE_ENV !== 'production' && { code }),
     },
   });
