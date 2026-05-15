@@ -18,10 +18,9 @@ module.exports = {
     userInterfaceStyle: 'dark',
 
     splash: {
-      image:           './assets/splash.png',
-      resizeMode:      'cover',
+      image:      './assets/splash.png',
+      resizeMode: 'cover',
       backgroundColor: '#FFFFFF',
-      resizeMode: 'cover'
     },
 
     assetBundlePatterns: ['**/*'],

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
-  Platform, TextInput,
+  Platform, TextInput, Linking,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons }          from '@expo/vector-icons';
@@ -23,6 +23,17 @@ const COURIER_ACCENT = '#34D399';
 const SHEET_H  = height * 0.54;
 const ACTION_H = 14 + 54 + 12; // paddingTop + actionBtn + paddingBottom
 const SCROLL_H = SHEET_H - ACTION_H - 20; // subtract sheet paddingTop
+
+const callPhone = (phone) => {
+  if (!phone) return;
+  const url = `tel:${String(phone).replace(/\s+/g, '')}`;
+  Linking.canOpenURL(url)
+    .then(ok => {
+      if (ok) Linking.openURL(url);
+      else Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
+    })
+    .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
+};
 
 const DARK_MAP_STYLE = [
   { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
@@ -56,8 +67,12 @@ const CustomerCard = ({ delivery, theme }) => {
         <Text style={[cc.name, { color: theme.foreground }]}>{c.firstName} {c.lastName}</Text>
         {c.phone && <Text style={[cc.phone, { color: theme.hint }]}>{c.phone}</Text>}
       </View>
-      <TouchableOpacity style={[cc.callBtn, { backgroundColor: COURIER_ACCENT + '18', borderColor: COURIER_ACCENT + '40' }]}>
-        <Ionicons name="call-outline" size={16} color={COURIER_ACCENT} />
+      <TouchableOpacity
+        style={[cc.callBtn, { backgroundColor: COURIER_ACCENT + '18', borderColor: COURIER_ACCENT + '40' }]}
+        onPress={() => callPhone(c.phone)}
+        activeOpacity={0.75}
+      >
+        <Ionicons name="call" size={16} color={COURIER_ACCENT} />
       </TouchableOpacity>
     </View>
   );

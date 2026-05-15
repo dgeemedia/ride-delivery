@@ -434,7 +434,7 @@ export const RegisterHeroIllustration = ({ width = 280, height = 160, selectedRo
         ) : (
           <Circle cx="49" cy="120" r="5" fill="none" stroke="#AFA9EC" strokeWidth="1.5" />
         )}
-        <SvgText x="49" y="145" textAnchor="middle" fontSize="9" fontWeight="500" fill={riderSel ? '#3C3489' : '#888780'} fontFamily="system-ui">Rider</SvgText>
+        <SvgText x="49" y="145" textAnchor="middle" fontSize="9" fontWeight="500" fill={riderSel ? '#3C3489' : '#888780'} fontFamily="system-ui">Customer</SvgText>
 
         {/* ── DRIVER card (center, elevated) ── */}
         <Rect x="103" y="22" width="74" height="116" rx="12"

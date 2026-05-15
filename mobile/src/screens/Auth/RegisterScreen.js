@@ -36,7 +36,7 @@ const formatPhone = (raw) => {
 };
 
 const ROLES = [
-  { id: 'CUSTOMER',         label: 'Rider',   sub: 'Book rides & send packages', icon: 'person-outline',      accent: '#6366F1' },
+  { id: 'CUSTOMER',         label: 'Customer',   sub: 'Book rides & send packages', icon: 'person-outline',      accent: '#6366F1' },
   { id: 'DRIVER',           label: 'Driver',  sub: 'Drive passengers and earn',  icon: 'car-sport-outline',   accent: '#10B981' },
   { id: 'DELIVERY_PARTNER', label: 'Courier', sub: 'Deliver packages daily',     icon: 'bicycle-outline',     accent: '#F59E0B' },
 ];

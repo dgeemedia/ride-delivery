@@ -110,7 +110,11 @@ export default function ChangePasswordScreen({ navigation }) {
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-
+  const [otpStep,     setOtpStep]     = useState(false);
+  const [otpCode,     setOtpCode]     = useState('');
+  const [tempToken,   setTempToken]   = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [maskedPhone, setMaskedPhone] = useState('');
   // KEY: measured header height drives kvoOffset for KeyboardAvoidingView
   // — same pattern as SubmitTicketScreen.
   const [headerH, setHeaderH] = useState(56);
@@ -140,13 +144,32 @@ export default function ChangePasswordScreen({ navigation }) {
     if (!canSubmit) return;
     setLoading(true);
     try {
-      await userAPI.updatePassword({ currentPassword: current, newPassword: next });
+      const res = await userAPI.updatePassword({ currentPassword: current, newPassword: next });
+      if (res?.requiresOtp) {
+        setTempToken(res.data.tempToken);
+        setMaskedEmail(res.data.maskedEmail ?? '');
+        setMaskedPhone(res.data.maskedPhone ?? '');
+        setOtpStep(true);
+      } else {
+        setSuccess(true);
+        setTimeout(() => navigation.goBack(), 1600);
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.message ?? e?.error ?? 'Could not update password.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpCode.trim()) return;
+    setLoading(true);
+    try {
+      await userAPI.verifyPasswordChangeOtp({ code: otpCode, tempToken, newPassword: next });
       setSuccess(true);
       setTimeout(() => navigation.goBack(), 1600);
     } catch (e) {
-      // FIX: axios interceptor in api.js already unwraps error.response.data,
-      // so `e` IS the data object — e?.message is the correct path.
-      Alert.alert('Error', e?.message ?? e?.error ?? 'Could not update password.');
+      Alert.alert('Error', e?.message ?? 'Invalid or expired code.');
     } finally {
       setLoading(false);
     }
@@ -197,6 +220,64 @@ export default function ChangePasswordScreen({ navigation }) {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
+          
+          {otpStep ? (
+          /* ── OTP verification step ── */
+          <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
+            <View style={[s.iconWrap, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '25' }]}>
+              <Ionicons name="shield-checkmark-outline" size={28} color={theme.accent} />
+            </View>
+            <Text style={[s.intro, { color: theme.foreground, fontWeight: '700', marginBottom: 6 }]}>
+              Verify it's you
+            </Text>
+            <Text style={[s.intro, { color: theme.hint }]}>
+              A code was sent to{' '}
+              {maskedEmail ? <Text style={{ color: theme.foreground }}>{maskedEmail}</Text> : null}
+              {maskedEmail && maskedPhone ? ' and ' : ''}
+              {maskedPhone ? <Text style={{ color: theme.foreground }}>{maskedPhone}</Text> : null}
+            </Text>
+
+            <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 12 }]}>VERIFICATION CODE</Text>
+            <Animated.View style={[s.inputBox, { backgroundColor: theme.backgroundAlt, borderColor: theme.accent }]}>
+              <Ionicons name="key-outline" size={16} color={theme.accent} style={s.inputIcon} />
+              <TextInput
+                style={[s.inputText, { color: theme.foreground, paddingTop: 4 }]}
+                value={otpCode}
+                onChangeText={setOtpCode}
+                keyboardType="number-pad"
+                maxLength={6}
+                placeholder="Enter 6-digit code"
+                placeholderTextColor={theme.hint}
+                autoFocus
+              />
+            </Animated.View>
+
+            <TouchableOpacity
+              style={[
+                s.submitBtn,
+                { backgroundColor: success ? '#5DAA72' : theme.accent, shadowColor: theme.accent },
+                (!otpCode.trim() || loading) && { opacity: 0.4 },
+              ]}
+              onPress={handleVerifyOtp}
+              disabled={!otpCode.trim() || loading || success}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Ionicons name={success ? 'checkmark' : 'shield-checkmark-outline'} size={18} color="#FFFFFF" />
+                  <Text style={s.submitTxt}>{success ? 'Password Updated!' : 'Confirm Change'}</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setOtpStep(false)} style={{ alignItems: 'center', marginTop: 16 }}>
+              <Text style={{ color: theme.hint, fontSize: 13 }}>← Go back</Text>
+            </TouchableOpacity>
+          </Animated.View>
+
+        ) : (
           <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
 
             {/* Icon */}
@@ -259,6 +340,7 @@ export default function ChangePasswordScreen({ navigation }) {
             </TouchableOpacity>
 
           </Animated.View>
+        )}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

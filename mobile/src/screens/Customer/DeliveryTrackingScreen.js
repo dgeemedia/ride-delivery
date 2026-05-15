@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
-  PanResponder,
+  PanResponder, Linking,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
@@ -28,6 +28,18 @@ const SHEET_MAX     = Math.round(height * 0.80);
 // ── Fixed internal layout heights ────────────────────────────────────────────
 // DRAG_HANDLE_H = paddingVertical (12 * 2) + handle bar (4) = 28
 const DRAG_HANDLE_H = 28;
+
+// ── Phone helper ──────────────────────────────────────────────────────────────
+const callPhone = (phone) => {
+  if (!phone) return;
+  const url = `tel:${String(phone).replace(/\s+/g, '')}`;
+  Linking.canOpenURL(url)
+    .then(ok => {
+      if (ok) Linking.openURL(url);
+      else Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
+    })
+    .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
+};
 
 const DARK_MAP_STYLE = [
   { elementType: 'geometry',           stylers: [{ color: '#1a1a1a' }] },
@@ -79,8 +91,12 @@ const PartnerInfoCard = ({ delivery, theme }) => {
         )}
       </View>
       {partner.phone && (
-        <TouchableOpacity style={[pi.callBtn, { backgroundColor: COURIER_ACCENT + '18', borderColor: COURIER_ACCENT + '40' }]}>
-          <Ionicons name="call-outline" size={16} color={COURIER_ACCENT} />
+        <TouchableOpacity
+          style={[pi.callBtn, { backgroundColor: COURIER_ACCENT + '18', borderColor: COURIER_ACCENT + '40' }]}
+          onPress={() => callPhone(partner.phone)}    // ← ADD this line
+          activeOpacity={0.75}
+        >
+          <Ionicons name="call" size={17} color={COURIER_ACCENT} />
         </TouchableOpacity>
       )}
     </View>

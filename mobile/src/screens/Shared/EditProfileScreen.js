@@ -5,10 +5,10 @@ import {
   Alert, KeyboardAvoidingView, Platform, ScrollView,
   Animated, StatusBar, ActivityIndicator, Image, Dimensions,
 } from 'react-native';
-import { Ionicons }      from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker  from 'expo-image-picker';
-import * as FileSystem   from 'expo-file-system/legacy';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem       from 'expo-file-system/legacy';
 
 import { useAuth }  from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -75,11 +75,24 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, editab
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Image picker helpers
+// Image picker helpers — react-native-image-crop-picker
+// cropperChooseText: 'Save' fixes the confusing "Crop" label on iOS
 // ─────────────────────────────────────────────────────────────────────────────
 async function pickFromLibrary() {
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (status !== 'granted') {
+  try {
+    const image = await ImageCropPicker.openPicker({
+      width:                  400,
+      height:                 400,
+      cropping:               true,
+      cropperCircleOverlay:   false,
+      mediaType:              'photo',
+      compressImageQuality:   0.82,
+      cropperChooseText:      'Save',    // ← replaces "Crop"
+      cropperCancelText:      'Cancel',
+    });
+    return image.path;
+  } catch (err) {
+    if (err?.code === 'E_PICKER_CANCELLED') return null;
     Alert.alert(
       'Permission Required',
       'Please enable photo library access in your device Settings to change your profile photo.',
@@ -87,21 +100,23 @@ async function pickFromLibrary() {
     );
     return null;
   }
-
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images'],
-    allowsEditing: true,
-    aspect: [1, 1],
-    quality: 0.82,
-  });
-
-  if (result.canceled || !result.assets?.[0]?.uri) return null;
-  return result.assets[0].uri;
 }
 
 async function pickFromCamera() {
-  const { status } = await ImagePicker.requestCameraPermissionsAsync();
-  if (status !== 'granted') {
+  try {
+    const image = await ImageCropPicker.openCamera({
+      width:                  400,
+      height:                 400,
+      cropping:               true,
+      cropperCircleOverlay:   false,
+      mediaType:              'photo',
+      compressImageQuality:   0.82,
+      cropperChooseText:      'Save',    // ← replaces "Crop"
+      cropperCancelText:      'Cancel',
+    });
+    return image.path;
+  } catch (err) {
+    if (err?.code === 'E_PICKER_CANCELLED') return null;
     Alert.alert(
       'Permission Required',
       'Please enable camera access in your device Settings to take a photo.',
@@ -109,16 +124,6 @@ async function pickFromCamera() {
     );
     return null;
   }
-
-  const result = await ImagePicker.launchCameraAsync({
-    mediaTypes: ['images'],
-    allowsEditing: true,
-    aspect: [1, 1],
-    quality: 0.82,
-  });
-
-  if (result.canceled || !result.assets?.[0]?.uri) return null;
-  return result.assets[0].uri;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,11 +147,9 @@ export default function EditProfileScreen({ navigation }) {
   const slideA = useRef(new Animated.Value(18)).current;
 
   // ── Header height — safe-area top + inner row ─────────────────────────────
-  const HEADER_H = insets.top + 56; // 56 = paddingBottom(14) + content row(~42)
+  const HEADER_H = insets.top + 56;
 
-  // ── KEY: bounded scroll height — screen minus header and safe-area bottom.
-  // No tab bar on this screen (it's a stack modal), so we only subtract
-  // the header and the bottom inset to avoid the home indicator overlap.
+  // ── KEY: bounded scroll height — screen minus header and safe-area bottom
   const SCROLL_H = height - HEADER_H - insets.bottom;
 
   useEffect(() => {
@@ -254,9 +257,7 @@ export default function EditProfileScreen({ navigation }) {
         <View style={{ width: 38 }} />
       </View>
 
-      {/* ── KEY: bounded container — gives KeyboardAvoidingView + ScrollView
-           a concrete pixel height to work against rather than relying on
-           flex:1 which can overflow on some layouts. ── */}
+      {/* ── KEY: bounded container ── */}
       <View style={{ height: SCROLL_H }}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -360,7 +361,7 @@ export default function EditProfileScreen({ navigation }) {
 const s = StyleSheet.create({
   root:              { flex: 1 },
 
-  // ── Header — height set inline via HEADER_H ──
+  // ── Header ──
   header:            {
     flexDirection: 'row', alignItems: 'flex-end',
     paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,

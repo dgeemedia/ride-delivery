@@ -30,6 +30,12 @@ router.put('/password', [
   body('newPassword').isLength({ min: 8 }).withMessage('Minimum 8 characters'),
 ], userController.updatePassword);
 
+router.post('/password/verify-otp', [
+  body('code').notEmpty().withMessage('Verification code is required'),
+  body('tempToken').notEmpty().withMessage('Session token is required'),
+  body('newPassword').isLength({ min: 8 }).withMessage('Minimum 8 characters'),
+], userController.verifyPasswordChangeOtp);
+
 router.post('/profile-image', [
   body('imageUrl').isURL(),
 ], userController.uploadProfileImage);

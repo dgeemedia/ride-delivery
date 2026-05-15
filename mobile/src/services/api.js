@@ -137,10 +137,12 @@ export const deliveryAPI = {
 // USER
 // ─────────────────────────────────────────────────────────────────────────────
 export const userAPI = {
-  getProfile:    ()     => api.get('/users/profile'),
-  updateProfile: (data) => api.put('/users/profile', data),
-  getStats:      ()     => api.get('/users/stats'),
-  submitFeedback: (data) => api.post('/users/feedback', data),
+  getProfile:               ()     => api.get('/users/profile'),
+  updateProfile:            (data) => api.put('/users/profile', data),
+  updatePassword:           (data) => api.put('/users/password', data),
+  verifyPasswordChangeOtp:  (data) => api.post('/users/password/verify-otp', data),
+  getStats:                 ()     => api.get('/users/stats'),
+  submitFeedback:           (data) => api.post('/users/feedback', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const bcrypt = require('bcryptjs');
 const notificationService = require('../services/notification.service');
+const otpService = require('../services/otp.service');
 
 /**
  * @desc    Get user profile
@@ -79,8 +80,69 @@ exports.updatePassword = async (req, res) => {
   const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
   if (!isPasswordValid) throw new AppError('Current password is incorrect', 400);
 
+  // ── OTP gate — flip ENABLE_PASSWORD_CHANGE_OTP=true once provider keys are in ──
+  if (process.env.ENABLE_PASSWORD_CHANGE_OTP === 'true' &&
+      process.env.ENABLE_OTP_DELIVERY        === 'true') {
+
+    const { code, tempToken } = await otpService.createOtp(user.id, 'CHANGE_PASSWORD');
+
+    // Send to both email AND SMS
+    await Promise.allSettled([
+      otpService.sendOtp(user, code, 'EMAIL'),
+      otpService.sendOtp(user, code, 'SMS'),
+    ]);
+
+    return res.status(200).json({
+      success:     true,
+      requiresOtp: true,
+      message:     'A verification code has been sent to your email and phone.',
+      data: {
+        tempToken,
+        maskedEmail: otpService.maskEmail(user.email),
+        maskedPhone: otpService.maskPhone(user.phone),
+      },
+    });
+  }
+
+  // ── OTP disabled — update directly ───────────────────────────────────────
   const hashedPassword = await bcrypt.hash(newPassword, 10);
   await prisma.user.update({ where: { id: req.user.id }, data: { password: hashedPassword } });
+
+  await notificationService.notify({
+    userId:  req.user.id,
+    title:   '🔑 Password Changed',
+    message: 'Your account password was changed. If you did not do this, contact support immediately.',
+    type:    'SECURITY_CHANGE',
+    data:    {},
+  }).catch(() => {});
+
+  res.status(200).json({ success: true, message: 'Password updated successfully' });
+};
+
+exports.verifyPasswordChangeOtp = async (req, res) => {
+  const { code, tempToken, newPassword } = req.body;
+
+  if (!code || !tempToken || !newPassword)
+    throw new AppError('Code, session token, and new password are required', 400);
+  if (newPassword.length < 8)
+    throw new AppError('New password must be at least 8 characters', 400);
+
+  const result = await otpService.verifyOtp(tempToken, String(code));
+  if (!result.valid) throw new AppError(result.reason, 400);
+
+  if (result.userId !== req.user.id)
+    throw new AppError('Session mismatch', 403);
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({ where: { id: req.user.id }, data: { password: hashedPassword } });
+
+  await notificationService.notify({
+    userId:  req.user.id,
+    title:   '🔑 Password Changed',
+    message: 'Your account password was changed. If you did not do this, contact support immediately.',
+    type:    'SECURITY_CHANGE',
+    data:    {},
+  }).catch(() => {});
 
   res.status(200).json({ success: true, message: 'Password updated successfully' });
 };

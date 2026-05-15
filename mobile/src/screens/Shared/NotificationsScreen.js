@@ -295,11 +295,24 @@ export default function NotificationsScreen({ navigation }) {
   };
 
   const handleDelete = async (id) => {
-    try {
-      await notificationAPI.deleteOne(id);
-      setNotifications(prev => prev.filter(n => n.id !== id));
-    } catch {}
-  };
+  Alert.alert(
+    'Delete Notification',
+    'Are you sure you want to delete this notification?',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await notificationAPI.deleteOne(id);
+            setNotifications(prev => prev.filter(n => n.id !== id));
+          } catch {}
+        },
+      },
+    ]
+  );
+};
 
   const handleMarkAllRead = async () => {
     try {
