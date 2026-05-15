@@ -331,9 +331,6 @@ export default function ProfileScreen({ navigation }) {
   const HEADER_INNER_H = 50;
   const HEADER_H       = insets.top + HEADER_INNER_H;
 
-  // ── KEY: bounded scroll area height — header + tab bar subtracted from screen
-  // This mirrors the DriverDashboard pattern: a fixed pixel height container
-  // gives the ScrollView a concrete boundary so it scrolls correctly.
   const SCROLL_H = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
 
   const canGoBack = navigation.canGoBack();
@@ -344,6 +341,26 @@ export default function ProfileScreen({ navigation }) {
       const parent  = navigation.getParent();
       const dashTab = role === 'CUSTOMER' ? 'HomeTab' : 'DashboardTab';
       parent?.navigate(dashTab);
+    }
+  };
+
+  // ─── Navigate to wallet / earnings ──────────────────────────────────────────
+  // Each role's wallet & earnings screen lives in its own tab stack, so we
+  // switch tabs via the parent Tab navigator instead of navigating within the
+  // ProfileStack (where those screens are not registered).
+  //
+  //  CUSTOMER         → WalletTab  → WalletScreen  (top up, transfer, withdraw)
+  //  DRIVER           → EarningsTab → EarningsScreen (wallet + ride earnings)
+  //  DELIVERY_PARTNER → EarningsTab → PartnerEarningsScreen (wallet + deliveries)
+  const handleWalletOrEarningsPress = () => {
+    const parent = navigation.getParent();
+    if (role === 'CUSTOMER') {
+      // Switch to the Wallet tab; WalletScreen is the root of WalletStack
+      parent?.navigate('WalletTab');
+    } else {
+      // Both DRIVER and DELIVERY_PARTNER share the EarningsTab name in their
+      // respective navigators (DriverNavigator / PartnerNavigator).
+      parent?.navigate('EarningsTab');
     }
   };
 
@@ -487,11 +504,6 @@ export default function ProfileScreen({ navigation }) {
         <View style={s.headerSpacer} />
       </View>
 
-      {/* ── KEY: bounded container with explicit pixel height ──────────────────
-           A View with a fixed height (not flex:1) gives the ScrollView a
-           concrete parent boundary — identical to how the driver dashboard
-           sheet (height: SHEET_SNAP) enables perfect scrolling.
-      ── */}
       <View style={{ height: SCROLL_H }}>
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -556,10 +568,11 @@ export default function ProfileScreen({ navigation }) {
                       <Text style={[s.stripLbl, { color: theme.hint }]}>Packages</Text>
                     </View>
                     <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
-                    <View style={s.stripItem}>
+                    {/* Tapping the wallet balance strip also jumps to the wallet tab */}
+                    <TouchableOpacity style={s.stripItem} onPress={handleWalletOrEarningsPress} activeOpacity={0.7}>
                       <Text style={[s.stripVal, { color: theme.foreground }]}>₦{(stats?.walletBalance ?? 0).toLocaleString()}</Text>
-                      <Text style={[s.stripLbl, { color: theme.hint }]}>Wallet</Text>
-                    </View>
+                      <Text style={[s.stripLbl, { color: theme.hint }]}>Wallet ›</Text>
+                    </TouchableOpacity>
                   </>
                 )}
                 {isProviderRole && (
@@ -576,10 +589,11 @@ export default function ProfileScreen({ navigation }) {
                       <Text style={[s.stripLbl, { color: theme.hint }]}>Rating</Text>
                     </View>
                     <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
-                    <View style={s.stripItem}>
+                    {/* Tapping earnings strip jumps to the earnings tab */}
+                    <TouchableOpacity style={s.stripItem} onPress={handleWalletOrEarningsPress} activeOpacity={0.7}>
                       <Text style={[s.stripVal, { color: theme.foreground }]}>₦{(stats?.totalEarnings ?? 0).toLocaleString()}</Text>
-                      <Text style={[s.stripLbl, { color: theme.hint }]}>Earned</Text>
-                    </View>
+                      <Text style={[s.stripLbl, { color: theme.hint }]}>Earned ›</Text>
+                    </TouchableOpacity>
                   </>
                 )}
               </View>
@@ -701,15 +715,28 @@ export default function ProfileScreen({ navigation }) {
             {/* Account */}
             <Section title="ACCOUNT" theme={theme}>
               <MenuItem icon="create-outline"        label="Edit Profile"       theme={theme} onPress={() => navigation.navigate('EditProfile')} />
+
+              {/* ── CUSTOMER: My Wallet → switches to WalletTab ── */}
               {role === 'CUSTOMER' && (
-                <MenuItem icon="wallet-outline"      label="My Wallet"          theme={theme}
+                <MenuItem
+                  icon="wallet-outline"
+                  label="My Wallet"
+                  theme={theme}
                   value={stats ? `₦${(stats.walletBalance ?? 0).toLocaleString()}` : null}
-                  onPress={() => navigation.navigate('Wallet')} />
+                  onPress={handleWalletOrEarningsPress}
+                />
               )}
+
+              {/* ── DRIVER / DELIVERY_PARTNER: Earnings & Payouts → switches to EarningsTab ── */}
               {isProviderRole && (
-                <MenuItem icon="cash-outline"        label="Earnings & Payouts" theme={theme}
-                  onPress={() => navigation.navigate(role === 'DRIVER' ? 'DriverEarnings' : 'PartnerEarnings')} />
+                <MenuItem
+                  icon="cash-outline"
+                  label="Earnings & Payouts"
+                  theme={theme}
+                  onPress={handleWalletOrEarningsPress}
+                />
               )}
+
               <MenuItem icon="notifications-outline" label="Notifications"      theme={theme} onPress={() => navigation.navigate('Notifications')} />
               <MenuItem icon="lock-closed-outline"   label="Change Password"    theme={theme} last onPress={() => navigation.navigate('ChangePassword')} />
             </Section>

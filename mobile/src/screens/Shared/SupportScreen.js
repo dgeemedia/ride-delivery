@@ -212,17 +212,17 @@ export default function SupportScreen({ navigation }) {
             <Section title="SELF-SERVICE" theme={theme}>
               <MenuItem
                 icon="help-buoy-outline"
-                label="Help Center"
+                label="FAQs"
                 theme={theme}
                 onPress={() => openLegal('help_content', 'Help Center')}
               />
-              <MenuItem
+              {/*<MenuItem
                 icon="warning-outline"
                 label="Report an Issue"
                 theme={theme}
                 last
                 onPress={() => navigation.navigate('SubmitTicket')}
-              />
+              /> */}
             </Section>
 
             {/* Legal */}
