@@ -1,25 +1,33 @@
 // admin-web/src/pages/Deliveries/DeliveryDetails.tsx
+// Map: Leaflet + OpenStreetMap (free, no API key).
+// All other logic — cancel, export, timeline, payment, package — unchanged.
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import L from 'leaflet';
 import {
   ArrowLeft, Package, User, Phone, Mail, MapPin, Clock,
   CheckCircle, XCircle, DollarSign, Star, Truck, AlertTriangle,
   Download, FileText,
 } from 'lucide-react';
 import { deliveriesAPI } from '@/services/api/deliveries';
-import { Delivery } from '@/types';
+import { Delivery }       from '@/types';
 import { Card, Button, Badge, Modal, Alert, Spinner } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
-import { useSocket } from '@/hooks/useSocket';
-import toast from 'react-hot-toast';
+import { useSocket }      from '@/hooks/useSocket';
+import toast              from 'react-hot-toast';
 
-// FIX: removed 'version' property — not in APIOptions for this loader version
-setOptions({
-  key:       import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? '',
-  libraries: ['places', 'geometry', 'routes'],
-} as any);
+// ── Leaflet default-icon fix for Vite bundling ───────────────────────────────
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerIcon   from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+// @ts-ignore
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// STATUS config — unchanged
+// ─────────────────────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, {
   label: string;
   variant: 'success' | 'warning' | 'error' | 'info' | 'default';
@@ -35,20 +43,18 @@ const STATUS_CONFIG: Record<string, {
 const isLive = (status: string) =>
   ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(status);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-components — unchanged
+// ─────────────────────────────────────────────────────────────────────────────
 const TimelineStep: React.FC<{
-  label: string;
-  at?: string | null;
-  done: boolean;
-  last?: boolean;
+  label: string; at?: string | null; done: boolean; last?: boolean;
 }> = ({ label, at, done, last }) => (
   <div className="flex gap-3">
     <div className="flex flex-col items-center">
       <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
         done ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
       }`}>
-        {done
-          ? <CheckCircle className="h-4 w-4" />
-          : <div className="w-2 h-2 rounded-full bg-gray-300" />}
+        {done ? <CheckCircle className="h-4 w-4" /> : <div className="w-2 h-2 rounded-full bg-gray-300" />}
       </div>
       {!last && <div className={`w-0.5 flex-1 my-1 ${done ? 'bg-green-200' : 'bg-gray-200'}`} />}
     </div>
@@ -60,9 +66,7 @@ const TimelineStep: React.FC<{
 );
 
 const InfoRow: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  value: React.ReactNode;
+  icon: React.ReactNode; label: string; value: React.ReactNode;
 }> = ({ icon, label, value }) => (
   <div className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0">
     <span className="text-gray-400 mt-0.5 flex-shrink-0">{icon}</span>
@@ -73,124 +77,121 @@ const InfoRow: React.FC<{
   </div>
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Leaflet map hook  (replaces useDeliveryMap / Google Maps)
+// ─────────────────────────────────────────────────────────────────────────────
 function useDeliveryMap(
   containerRef: React.RefObject<HTMLDivElement>,
   delivery: Delivery | null,
   onLocationUpdate: (fn: (lat: number, lng: number) => void) => () => void,
 ) {
-  const mapRef           = useRef<google.maps.Map | null>(null);
-  const partnerMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
-  const [mapError, setMapError] = useState('');
+  const mapRef           = useRef<L.Map | null>(null);
+  const partnerMarkerRef = useRef<L.Marker | null>(null);
 
   useEffect(() => {
     if (!delivery || !containerRef.current) return;
+    if (mapRef.current) return; // already initialised
 
-    let cancelled = false;
+    // ── Init map ──
+    const map = L.map(containerRef.current, {
+      center:  [delivery.pickupLat, delivery.pickupLng],
+      zoom:    13,
+      zoomControl: true,
+    });
+    mapRef.current = map;
 
-    (async () => {
-      try {
-        if (!import.meta.env.VITE_GOOGLE_MAPS_API_KEY) {
-          setMapError('VITE_GOOGLE_MAPS_API_KEY is not set in .env');
-          return;
-        }
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(map);
 
-        const { Map }               = await importLibrary('maps') as google.maps.MapsLibrary;
-        const { AdvancedMarkerElement } = await importLibrary('marker') as google.maps.MarkerLibrary;
-        const { DirectionsService, DirectionsRenderer, TravelMode } =
-          await importLibrary('routes') as google.maps.RoutesLibrary;
+    // ── Pickup marker (green P) ──
+    const pickupIcon = L.divIcon({
+      className: '',
+      html: `<div style="background:#22C55E;color:#fff;font-weight:700;font-size:11px;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)">P</div>`,
+      iconSize: [28, 28], iconAnchor: [14, 14],
+    });
+    L.marker([delivery.pickupLat, delivery.pickupLng], { icon: pickupIcon })
+      .addTo(map)
+      .bindPopup(`<strong>Pickup</strong><br/>${delivery.pickupAddress}`);
 
-        if (cancelled || !containerRef.current) return;
+    // ── Dropoff marker (red D) ──
+    const dropoffIcon = L.divIcon({
+      className: '',
+      html: `<div style="background:#EF4444;color:#fff;font-weight:700;font-size:11px;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)">D</div>`,
+      iconSize: [28, 28], iconAnchor: [14, 14],
+    });
+    L.marker([delivery.dropoffLat, delivery.dropoffLng], { icon: dropoffIcon })
+      .addTo(map)
+      .bindPopup(`<strong>Dropoff</strong><br/>${delivery.dropoffAddress}`);
 
-        const map = new Map(containerRef.current, {
-          center:           { lat: delivery.pickupLat, lng: delivery.pickupLng },
-          zoom:             13,
-          mapId:            'diakite-delivery-map',
-          mapTypeControl:   false,
-          streetViewControl: false,
-          fullscreenControl: true,
-        });
-        mapRef.current = map;
+    // ── Route polyline (straight line — no billing unlike Directions API) ──
+    L.polyline(
+      [[delivery.pickupLat, delivery.pickupLng], [delivery.dropoffLat, delivery.dropoffLng]],
+      { color: '#3B82F6', weight: 4, opacity: 0.75, dashArray: '8 6' }
+    ).addTo(map);
 
-        const pickupPin = document.createElement('div');
-        pickupPin.innerHTML = `<div style="background:#22C55E;color:#fff;font-weight:700;font-size:11px;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)">P</div>`;
-        new AdvancedMarkerElement({ map, position: { lat: delivery.pickupLat, lng: delivery.pickupLng }, content: pickupPin, title: 'Pickup' });
+    // ── Fit map to both points ──
+    map.fitBounds(
+      [[delivery.pickupLat, delivery.pickupLng], [delivery.dropoffLat, delivery.dropoffLng]],
+      { padding: [40, 40] }
+    );
 
-        const dropoffPin = document.createElement('div');
-        dropoffPin.innerHTML = `<div style="background:#EF4444;color:#fff;font-weight:700;font-size:11px;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)">D</div>`;
-        new AdvancedMarkerElement({ map, position: { lat: delivery.dropoffLat, lng: delivery.dropoffLng }, content: dropoffPin, title: 'Dropoff' });
+    // ── Partner marker (blue 🛵) if location known ──
+    const profile = (delivery.partner as any)?.deliveryProfile;
+    const initLat = profile?.currentLat;
+    const initLng = profile?.currentLng;
 
-        const dsvc = new DirectionsService();
-        const dRenderer = new DirectionsRenderer({
-          map,
-          suppressMarkers: true,
-          polylineOptions: { strokeColor: '#3B82F6', strokeWeight: 4, strokeOpacity: 0.8 },
-        });
-        dsvc.route(
-          {
-            origin:      { lat: delivery.pickupLat,  lng: delivery.pickupLng  },
-            destination: { lat: delivery.dropoffLat, lng: delivery.dropoffLng },
-            travelMode: TravelMode.DRIVING,
-          },
-          (
-            result: google.maps.DirectionsResult | null,
-            status: google.maps.DirectionsStatus,
-          ) => {
-            if (status === 'OK' && result) dRenderer.setDirections(result);
-          }
-        );
+    const courierIcon = L.divIcon({
+      className: '',
+      html: `<div style="background:#3B82F6;border:2px solid #fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.4);font-size:16px">🛵</div>`,
+      iconSize: [32, 32], iconAnchor: [16, 16],
+    });
 
-        const profile  = (delivery.partner as any)?.deliveryProfile;
-        const initLat  = profile?.currentLat;
-        const initLng  = profile?.currentLng;
+    if (initLat && initLng) {
+      partnerMarkerRef.current = L.marker([initLat, initLng], { icon: courierIcon })
+        .addTo(map)
+        .bindPopup(`${delivery.partner?.firstName ?? ''} ${delivery.partner?.lastName ?? ''}`.trim() || 'Courier');
+    }
 
-        if (initLat && initLng) {
-          const vehicleDiv = document.createElement('div');
-          vehicleDiv.innerHTML = `<div style="background:#3B82F6;border:2px solid #fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.4)">🛵</div>`;
-          partnerMarkerRef.current = new AdvancedMarkerElement({
-            map,
-            position: { lat: initLat, lng: initLng },
-            content:  vehicleDiv,
-            title:    `${delivery.partner?.firstName} ${delivery.partner?.lastName}`,
-            zIndex:   999,
-          });
-        }
-
-        const unsub = onLocationUpdate((lat, lng) => {
-          if (cancelled) return;
-          const pos = { lat, lng };
-          if (partnerMarkerRef.current) {
-            partnerMarkerRef.current.position = pos;
-          } else {
-            const vDiv = document.createElement('div');
-            vDiv.innerHTML = `<div style="background:#3B82F6;border:2px solid #fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.4)">🛵</div>`;
-            partnerMarkerRef.current = new AdvancedMarkerElement({ map, position: pos, content: vDiv, zIndex: 999 });
-          }
-          map.panTo(pos);
-        });
-
-        return () => unsub();
-
-      } catch (err: any) {
-        if (!cancelled) setMapError(err.message ?? 'Map failed to load');
+    // ── Subscribe to live location updates ──
+    const unsub = onLocationUpdate((lat, lng) => {
+      if (!mapRef.current) return;
+      if (partnerMarkerRef.current) {
+        partnerMarkerRef.current.setLatLng([lat, lng]);
+      } else {
+        partnerMarkerRef.current = L.marker([lat, lng], { icon: courierIcon })
+          .addTo(mapRef.current)
+          .bindPopup('Courier');
       }
-    })();
+      mapRef.current.panTo([lat, lng]);
+    });
 
-    return () => { cancelled = true; };
+    return () => {
+      unsub();
+      map.remove();
+      mapRef.current = null;
+      partnerMarkerRef.current = null;
+    };
   }, [delivery?.id]);
 
-  return { mapError };
+  // No mapError state needed — Leaflet never requires an API key
+  return { mapError: '' };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SCREEN — all logic identical to original
+// ─────────────────────────────────────────────────────────────────────────────
 const DeliveryDetails: React.FC = () => {
   const { id }   = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { on }   = useSocket();
 
-  const [delivery,      setDelivery]      = useState<Delivery | null>(null);
-  const [loading,       setLoading]       = useState(true);
-  const [showCancel,    setShowCancel]    = useState(false);
-  const [cancelReason,  setCancelReason]  = useState('');
-  const [cancelling,    setCancelling]    = useState(false);
+  const [delivery,     setDelivery]     = useState<Delivery | null>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [showCancel,   setShowCancel]   = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling,   setCancelling]   = useState(false);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
@@ -307,6 +308,7 @@ const DeliveryDetails: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* ── Page header ── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" onClick={() => navigate('/deliveries')}>
@@ -338,17 +340,14 @@ const DeliveryDetails: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Map card ── */}
       <Card padding={false}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
           <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
             <MapPin className="h-4 w-4 text-primary-500" />
             {live ? 'Live Tracking' : 'Route Map'}
           </p>
-          {!import.meta.env.VITE_GOOGLE_MAPS_API_KEY && (
-            <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
-              Add VITE_GOOGLE_MAPS_API_KEY to .env
-            </span>
-          )}
+          <span className="text-xs text-gray-400">OpenStreetMap</span>
         </div>
 
         {mapError ? (
@@ -375,13 +374,16 @@ const DeliveryDetails: React.FC = () => {
             </span>
           )}
           <span className="flex items-center gap-1.5">
-            <span className="w-6 h-0.5 bg-blue-400 inline-block" />Route
+            <span className="w-6 border-t-2 border-dashed border-blue-400 inline-block" />Route
           </span>
         </div>
       </Card>
 
+      {/* ── Detail grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-5">
+
+          {/* Customer */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
               <User className="h-4 w-4 text-primary-500" />Customer
@@ -393,6 +395,7 @@ const DeliveryDetails: React.FC = () => {
             <InfoRow icon={<MapPin className="h-4 w-4" />} label="Dropoff contact" value={delivery.dropoffContact} />
           </Card>
 
+          {/* Partner */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
               <Truck className="h-4 w-4 text-warning-500" />Delivery Partner
@@ -412,6 +415,7 @@ const DeliveryDetails: React.FC = () => {
             )}
           </Card>
 
+          {/* Package */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
               <Package className="h-4 w-4 text-indigo-500" />Package
@@ -435,6 +439,7 @@ const DeliveryDetails: React.FC = () => {
             )}
           </Card>
 
+          {/* Payment */}
           {delivery.payment && (
             <Card>
               <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -443,14 +448,15 @@ const DeliveryDetails: React.FC = () => {
               <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Amount"          value={`₦${delivery.payment.amount.toLocaleString('en-NG')}`} />
               <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Method"          value={delivery.payment.method} />
               <InfoRow icon={<CheckCircle className="h-4 w-4" />} label="Status"          value={<Badge variant={delivery.payment.status === 'COMPLETED' ? 'success' : 'warning'}>{delivery.payment.status}</Badge>} />
-              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Platform fee"   value={`₦${(delivery.payment as any).platformFee?.toLocaleString('en-NG') ?? '—'}`} />
-              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Partner earned" value={`₦${(delivery.payment as any).driverEarnings?.toLocaleString('en-NG') ?? '—'}`} />
+              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Platform fee"    value={`₦${(delivery.payment as any).platformFee?.toLocaleString('en-NG') ?? '—'}`} />
+              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Partner earned"  value={`₦${(delivery.payment as any).driverEarnings?.toLocaleString('en-NG') ?? '—'}`} />
               <InfoRow icon={<FileText className="h-4 w-4" />}    label="Transaction ID"  value={<span className="font-mono text-xs">{delivery.payment.transactionId ?? '—'}</span>} />
             </Card>
           )}
         </div>
 
         <div className="space-y-5">
+          {/* Summary */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Summary</h3>
             <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Estimated fee" value={`₦${delivery.estimatedFee.toLocaleString('en-NG')}`} />
@@ -472,6 +478,7 @@ const DeliveryDetails: React.FC = () => {
             )}
           </Card>
 
+          {/* Timeline */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
               <Clock className="h-4 w-4" />Timeline
@@ -483,7 +490,7 @@ const DeliveryDetails: React.FC = () => {
               <TimelineStep
                 label="In Transit"
                 at={(delivery as any).inTransitAt}
-                done={['IN_TRANSIT','DELIVERED'].includes(delivery.status)}
+                done={['IN_TRANSIT', 'DELIVERED'].includes(delivery.status)}
               />
               <TimelineStep
                 label="Delivered"
@@ -504,6 +511,7 @@ const DeliveryDetails: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Cancel modal ── */}
       <Modal
         isOpen={showCancel}
         onClose={() => setShowCancel(false)}

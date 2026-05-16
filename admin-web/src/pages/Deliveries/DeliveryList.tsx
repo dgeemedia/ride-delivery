@@ -1,7 +1,7 @@
 // admin-web/src/pages/Deliveries/DeliveryList.tsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin } from 'lucide-react';
+import { Search, MapPin, X } from 'lucide-react';
 import { deliveriesAPI } from '@/services/api/deliveries';
 import { Delivery } from '@/types';
 import {
@@ -27,13 +27,15 @@ const statusBadgeVariant = (status: string): 'success' | 'warning' | 'error' | '
 
 const DeliveryList: React.FC = () => {
   const navigate = useNavigate();
-  const [deliveries,    setDeliveries]    = useState<Delivery[]>([]);
-  const [loading,       setLoading]       = useState(true);
-  const [search,        setSearch]        = useState('');
-  const [statusFilter,  setStatusFilter]  = useState('');
-  const [currentPage,   setCurrentPage]   = useState(1);
-  const [totalPages,    setTotalPages]    = useState(1);
-  const [totalCount,    setTotalCount]    = useState(0);
+  const [deliveries,   setDeliveries]   = useState<Delivery[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [search,       setSearch]       = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [dateFrom,     setDateFrom]     = useState('');
+  const [dateTo,       setDateTo]       = useState('');
+  const [currentPage,  setCurrentPage]  = useState(1);
+  const [totalPages,   setTotalPages]   = useState(1);
+  const [totalCount,   setTotalCount]   = useState(0);
 
   useEffect(() => { load(); }, [currentPage, statusFilter]);
 
@@ -44,14 +46,53 @@ const DeliveryList: React.FC = () => {
         page:   currentPage,
         limit:  20,
         status: statusFilter || undefined,
+        // API type does not include a search param — only page/limit/status/partnerId/customerId
+        // dateFrom/dateTo are also not in the API type, so we omit them server-side
+        // and filter client-side below
       });
-      setDeliveries(res.data.deliveries || []);
+      const all: Delivery[] = res.data.deliveries || [];
+
+      // Client-side text filter
+      const q = search.trim().toLowerCase();
+      let filtered = q ? all.filter(d =>
+        `${d.customer?.firstName} ${d.customer?.lastName} ${d.customer?.email} ${d.partner?.firstName} ${d.partner?.lastName} ${d.partner?.email}`
+          .toLowerCase().includes(q)
+      ) : all;
+
+      // Client-side date filter
+      if (dateFrom) {
+        const from = new Date(dateFrom).getTime();
+        filtered = filtered.filter(d => {
+          const t = new Date((d as any).requestedAt ?? (d as any).createdAt).getTime();
+          return t >= from;
+        });
+      }
+      if (dateTo) {
+        // Include the full "to" day by advancing to midnight of the next day
+        const to = new Date(dateTo).getTime() + 86_400_000;
+        filtered = filtered.filter(d => {
+          const t = new Date((d as any).requestedAt ?? (d as any).createdAt).getTime();
+          return t < to;
+        });
+      }
+
+      setDeliveries(filtered);
       setTotalPages(res.data.pagination.pages);
       setTotalCount(res.data.pagination.total);
     } catch {
       toast.error('Failed to load deliveries');
     } finally { setLoading(false); }
   };
+
+  const handleSearch = () => { setCurrentPage(1); load(); };
+
+  const clearDates = () => {
+    setDateFrom('');
+    setDateTo('');
+    setCurrentPage(1);
+  };
+
+  const hasDateFilter = dateFrom || dateTo;
 
   return (
     <div className="space-y-6">
@@ -72,7 +113,7 @@ const DeliveryList: React.FC = () => {
               placeholder="Search by customer or partner name..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onKeyPress={e => { if (e.key === 'Enter') { setCurrentPage(1); load(); } }}
+              onKeyPress={e => { if (e.key === 'Enter') handleSearch(); }}
             />
           </div>
           <Select
@@ -84,11 +125,55 @@ const DeliveryList: React.FC = () => {
             ]}
           />
         </div>
-        <div className="mt-4 flex justify-end">
-          <Button onClick={() => { setCurrentPage(1); load(); }}>
-            <Search className="h-4 w-4 mr-2" />Search
-          </Button>
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={e => setDateFrom(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 text-gray-700 bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={e => setDateTo(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 text-gray-700 bg-white"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button className="flex-1" onClick={handleSearch}>
+              <Search className="h-4 w-4 mr-2" />Search
+            </Button>
+            {hasDateFilter && (
+              <Button variant="ghost" onClick={clearDates} title="Clear dates">
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
+
+        {hasDateFilter && (
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-xs text-gray-500">Filtering:</span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-primary-50 text-primary-700 px-2.5 py-1 rounded-full">
+              {dateFrom && dateTo
+                ? `${dateFrom} → ${dateTo}`
+                : dateFrom
+                ? `From ${dateFrom}`
+                : `Until ${dateTo}`}
+              <button onClick={clearDates} className="hover:text-primary-900">
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          </div>
+        )}
       </Card>
 
       <Card padding={false}>
@@ -110,7 +195,6 @@ const DeliveryList: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {/* FIX: use native <tr><td> for colSpan — TableCell doesn't support it */}
                 {deliveries.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center text-gray-400 py-12 text-sm">

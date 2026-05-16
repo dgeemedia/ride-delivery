@@ -121,14 +121,16 @@ const UserDetails: React.FC = () => {
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          {user.isSuspended ? (
-            <Button variant="success" loading={acting} onClick={handleActivate}>
-              <CheckCircle className="h-4 w-4" />Reactivate
-            </Button>
-          ) : (
-            <Button variant="danger" onClick={() => setShowSuspend(true)}>
-              <XCircle className="h-4 w-4" />Suspend
-            </Button>
+          {!['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'MODERATOR'].includes(user.role) && (
+            user.isSuspended ? (
+              <Button variant="success" loading={acting} onClick={handleActivate}>
+                <CheckCircle className="h-4 w-4" />Reactivate
+              </Button>
+            ) : (
+              <Button variant="danger" onClick={() => setShowSuspend(true)}>
+                <XCircle className="h-4 w-4" />Suspend
+              </Button>
+            )
           )}
           {isSuperAdmin && user.role !== 'SUPER_ADMIN' && (
             <Button variant="danger" onClick={() => setShowDelete(true)}>

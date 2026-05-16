@@ -1,7 +1,7 @@
 // admin-web/src/pages/Rides/RideList.tsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin } from 'lucide-react';
+import { Search, MapPin, X } from 'lucide-react';
 import { ridesAPI } from '@/services/api/rides';
 import { Ride } from '@/types';
 import {
@@ -20,10 +20,12 @@ const statusVariant = (s: string): 'success' | 'warning' | 'error' | 'info' | 'd
 
 const RideList: React.FC = () => {
   const navigate = useNavigate();
-  const [rides, setRides]             = useState<Ride[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [search, setSearch]           = useState('');
+  const [rides, setRides]               = useState<Ride[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [dateFrom, setDateFrom]         = useState('');
+  const [dateTo, setDateTo]             = useState('');
   const [currentPage, setCurrentPage]   = useState(1);
   const [totalPages, setTotalPages]     = useState(1);
   const [totalCount, setTotalCount]     = useState(0);
@@ -33,14 +35,37 @@ const RideList: React.FC = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await ridesAPI.getRides({ page: currentPage, limit: 20, status: statusFilter || undefined });
-      setRides(res.data.rides || []);
+      const res = await ridesAPI.getRides({
+        page:      currentPage,
+        limit:     20,
+        status:    statusFilter || undefined,
+        // API type uses startDate/endDate (not dateFrom/dateTo or search)
+        startDate: dateFrom     || undefined,
+        endDate:   dateTo       || undefined,
+      });
+      const all: Ride[] = res.data.rides || [];
+      // Client-side text filter — API has no free-text search param
+      const q = search.trim().toLowerCase();
+      setRides(q ? all.filter(r =>
+        `${r.customer?.firstName} ${r.customer?.lastName} ${r.customer?.email} ${r.driver?.firstName} ${r.driver?.lastName} ${r.driver?.email}`
+          .toLowerCase().includes(q)
+      ) : all);
       setTotalPages(res.data.pagination.pages);
       setTotalCount(res.data.pagination.total);
     } catch {
       toast.error('Failed to load rides');
     } finally { setLoading(false); }
   };
+
+  const handleSearch = () => { setCurrentPage(1); load(); };
+
+  const clearDates = () => {
+    setDateFrom('');
+    setDateTo('');
+    setCurrentPage(1);
+  };
+
+  const hasDateFilter = dateFrom || dateTo;
 
   return (
     <div className="space-y-6">
@@ -61,7 +86,7 @@ const RideList: React.FC = () => {
               placeholder="Search by customer or driver..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onKeyPress={e => { if (e.key === 'Enter') { setCurrentPage(1); load(); } }}
+              onKeyPress={e => { if (e.key === 'Enter') handleSearch(); }}
             />
           </div>
           <Select
@@ -73,11 +98,55 @@ const RideList: React.FC = () => {
             ]}
           />
         </div>
-        <div className="mt-4 flex justify-end">
-          <Button onClick={() => { setCurrentPage(1); load(); }}>
-            <Search className="h-4 w-4 mr-2" />Search
-          </Button>
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={e => setDateFrom(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 text-gray-700 bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={e => setDateTo(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 text-gray-700 bg-white"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button className="flex-1" onClick={handleSearch}>
+              <Search className="h-4 w-4 mr-2" />Search
+            </Button>
+            {hasDateFilter && (
+              <Button variant="ghost" onClick={clearDates} title="Clear dates">
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
+
+        {hasDateFilter && (
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-xs text-gray-500">Filtering:</span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-primary-50 text-primary-700 px-2.5 py-1 rounded-full">
+              {dateFrom && dateTo
+                ? `${dateFrom} → ${dateTo}`
+                : dateFrom
+                ? `From ${dateFrom}`
+                : `Until ${dateTo}`}
+              <button onClick={clearDates} className="hover:text-primary-900">
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          </div>
+        )}
       </Card>
 
       <Card padding={false}>
@@ -98,7 +167,6 @@ const RideList: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {/* FIX: use native <tr><td> for colSpan */}
                 {rides.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="text-center text-gray-400 py-12 text-sm">

@@ -30,7 +30,7 @@ import GeneralSettings    from '@/pages/Settings/GeneralSettings';
 import NotificationsPage  from '@/pages/Notifications/NotificationsPage';
 import PayoutManagement   from '@/pages/Wallets/PayoutManagement';
 import AppFeedbackList from '@/pages/Feedback/AppFeedbackList';
-
+import LiveDeliveries from '@/pages/Deliveries/LiveDeliveries';
 
 // Feature-flagged page imports — only used when flags are enabled
 import ShieldMonitor      from '@/pages/Shield/ShieldMonitor';
@@ -93,8 +93,9 @@ function App() {
 
           {/* Deliveries */}
           <Route path="/deliveries"     element={<ProtectedRoute><DeliveryList /></ProtectedRoute>} />
+          <Route path="/deliveries/live" element={<ProtectedRoute><LiveDeliveries /></ProtectedRoute>} />
           <Route path="/deliveries/:id" element={<ProtectedRoute><DeliveryDetails /></ProtectedRoute>} />
-
+          
           {/* wallet management */}
           <Route path="/wallets" element={<ProtectedRoute><PayoutManagement /></ProtectedRoute>} />
 
