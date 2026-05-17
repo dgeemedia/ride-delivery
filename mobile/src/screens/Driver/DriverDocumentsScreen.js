@@ -247,7 +247,7 @@ export default function DriverDocumentsScreen({ navigation }) {
               <InputField placeholder="Plate Number (e.g. ABC123XY)" value={vehiclePlate} onChangeText={setVehiclePlate} autoCapitalize="characters" theme={theme} />
 
               <TouchableOpacity style={[sx.primaryBtn, saving && sx.btnDim, { backgroundColor: theme.accent ?? '#10B981' }]} onPress={handleCreateProfile} disabled={saving} activeOpacity={0.85}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={sx.primaryBtnTxt}>Submit Application →</Text>}
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={[sx.primaryBtnTxt, { color: theme.accentFg }]}>Submit Application →</Text>}
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -362,9 +362,9 @@ export default function DriverDocumentsScreen({ navigation }) {
                     <ActivityIndicator color="#fff" />
                   ) : (
                     <>
-                      <Ionicons name="cloud-upload-outline" size={16} color="#fff" />
-                      <Text style={sx.uploadBtnTxt}>{currentUrl ? 'Replace' : 'Upload'}</Text>
-                    </>
+                    <Ionicons name="cloud-upload-outline" size={16} color={theme.accentFg} />
+                    <Text style={[sx.uploadBtnTxt, { color: theme.accentFg }]}>{currentUrl ? 'Replace' : 'Upload'}</Text>
+                  </>
                   )}
                 </TouchableOpacity>
               </View>
@@ -432,7 +432,7 @@ const sx = StyleSheet.create({
   chipTxt: { fontSize: 12, fontWeight: '700' },
 
   primaryBtn: { height: 54, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 8, shadowColor: '#10B981', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
-  primaryBtnTxt: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  primaryBtnTxt: { fontSize: 16, fontWeight: '800' },
   btnDim:        { opacity: 0.6 },
 
   statusBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 18 },
@@ -459,7 +459,7 @@ const sx = StyleSheet.create({
   placeholderTxt: { fontSize: 13 },
 
   uploadBtn: { height: 46, borderRadius: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  uploadBtnTxt: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  uploadBtnTxt: { fontSize: 14, fontWeight: '700' },
 
   footerNote: { fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 20, paddingHorizontal: 8 },
 

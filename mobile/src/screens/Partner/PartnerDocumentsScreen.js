@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
   placeholder:  { aspectRatio: 16/9, borderRadius: 10, borderWidth: 1, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   placeholderText: { fontSize: 12, marginTop: 8 },
   uploadBtn:    { borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
-  uploadBtnText:{ fontSize: 14, fontWeight: '700' },
+  uploadBtnText: { fontSize: 14, fontWeight: '700' },
   note:         { fontSize: 12, textAlign: 'center', marginTop: 16, lineHeight: 18 },
   centered:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
