@@ -558,6 +558,10 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
   const headerA   = useRef(new Animated.Value(0)).current;
   const listA     = useRef(new Animated.Value(0)).current;
 
+    // ── Socket connect guard ──────────────────────────────────────────────────
+  useEffect(() => {
+    socketService.connect().catch(() => {});
+  }, []);
   // ── Wallet ────────────────────────────────────────────────────────────────
   useEffect(() => {
     walletAPI.getWallet()
@@ -585,8 +589,8 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
         return [entry, ...prev];
       });
     };
-    socketService.on('delivery:incoming_request', handleNew);
-    return () => socketService.off('delivery:incoming_request', handleNew);
+    socketService.on('delivery:new_request', handleNew);
+    return () => socketService.off('delivery:new_request', handleNew);
   }, [makeEntry]);
 
   // ── Per-second countdown ──────────────────────────────────────────────────

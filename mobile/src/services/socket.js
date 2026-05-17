@@ -7,15 +7,20 @@ const SOCKET_URL = API_BASE_URL.replace('/api', '');
 
 class SocketService {
   socket = null;
-
-  // Listeners registered before the socket was ready are queued here
-  // and re-attached automatically once connected.
-  _pendingListeners = []; // [{ event, callback }]
-  _connectCallbacks = []; // callbacks waiting for connection
+  _pendingListeners = [];
+  _connectCallbacks = [];
+  _isOnline = false;
+  _lastLocation = null;
 
   async connect() {
-    // Already connected — nothing to do
-    if (this.socket?.connected) return;
+    // Already connected — flush any listeners queued before this call
+    if (this.socket?.connected) {
+      for (const { event, callback } of this._pendingListeners) {
+        this.socket.on(event, callback);
+      }
+      this._pendingListeners = [];
+      return;
+    }
 
     // Already connecting — wait for it
     if (this.socket && !this.socket.connected) {
@@ -32,21 +37,32 @@ class SocketService {
       transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
       reconnectionAttempts: 10,
+      timeout: 20000,
     });
 
     this.socket.on('connect', () => {
       console.log('[Socket] Connected:', this.socket.id);
 
-      // Re-attach any listeners that were registered before connect finished
+      // Flush pending listeners now that socket is connected and
+      // server has joined user:X room
       for (const { event, callback } of this._pendingListeners) {
         this.socket.on(event, callback);
       }
       this._pendingListeners = [];
 
-      // Resolve any callers awaiting connection
-      for (const cb of this._connectCallbacks) cb();
-      this._connectCallbacks = [];
+      // Resolve any callers awaiting connection — use setTimeout(0) so
+      // the server-side room joins (user:X) complete before listeners fire
+      setTimeout(() => {
+        for (const cb of this._connectCallbacks) cb();
+        this._connectCallbacks = [];
+      }, 0);
+
+      // Re-announce online status if driver was online before reconnect
+      if (this._isOnline && this._lastLocation) {
+        this.socket.emit('driver:online', this._lastLocation);
+      }
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -71,13 +87,14 @@ class SocketService {
 
   goOnline(location) {
     if (!this.socket?.connected) return;
-    this.socket.emit('driver:online', {
-      lat: location.latitude,
-      lng: location.longitude,
-    });
+    this._isOnline = true;
+    this._lastLocation = { lat: location.latitude, lng: location.longitude };
+    this.socket.emit('driver:online', this._lastLocation);
   }
 
   goOffline() {
+    this._isOnline = false;
+    this._lastLocation = null;
     if (!this.socket?.connected) return;
     this.socket.emit('driver:offline');
   }
@@ -103,24 +120,16 @@ class SocketService {
   }
 
   // ── Event listener helpers ────────────────────────────────────────────────
-  //
-  // If the socket is already connected, attach immediately.
-  // If not, queue the listener — it will be attached on connect.
-  // This eliminates the race condition where useEffect runs before
-  // the async connect() has finished.
 
   on(event, callback) {
     if (this.socket?.connected) {
       this.socket.on(event, callback);
     } else {
-      // Queue it — will be attached once connected (or re-connected)
+      // Only queue — do NOT attach to socket.io directly yet.
+      // Attaching before connected means the listener fires before
+      // the server has joined this socket to user:X room, causing
+      // missed targeted events on first connect.
       this._pendingListeners.push({ event, callback });
-
-      // Also attach to the socket object right now even if not connected,
-      // so reconnect events are caught without needing to re-queue.
-      if (this.socket) {
-        this.socket.on(event, callback);
-      }
     }
   }
 

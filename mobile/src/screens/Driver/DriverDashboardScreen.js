@@ -339,27 +339,32 @@ export default function DriverDashboardScreen({ navigation }) {
     if (!loading && profile) showDocPrompt();
   }, [loading, profile]);
 
-  useEffect(() => {
+useEffect(() => {
     const handleReq = (data) => {
-      // If the queue screen is already open, it handles new requests internally
-      // via its own socket listener — no double-navigation needed
       const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
       if (currentRoute === 'IncomingRideQueue') return;
       navigation.navigate('IncomingRideQueue', { initialRequest: data });
     };
 
     const handleCanc = (data) => {
-      // Only dismiss the queue if it's open and this specific ride
-      // was the only one — the queue handles multi-ride cancellations itself
       const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
       if (currentRoute !== 'IncomingRideQueue') {
         try { navigation.goBack(); } catch {}
       }
     };
 
-    socketService.on('ride:new_request', handleReq);
-    socketService.on('ride:cancelled',   handleCanc);
-    socketService.connect().catch((err) => console.warn('[Dashboard] socket connect:', err?.message));
+socketService.connect()
+      .then(() => {
+        socketService.on('ride:new_request', handleReq);
+        socketService.on('ride:cancelled',   handleCanc);
+      })
+      .catch((err) => {
+        console.warn('[Dashboard] socket connect:', err?.message);
+        // Still register — pending queue will attach on next connect
+        socketService.on('ride:new_request', handleReq);
+        socketService.on('ride:cancelled',   handleCanc);
+      });
+
     return () => {
       socketService.off('ride:new_request', handleReq);
       socketService.off('ride:cancelled',   handleCanc);

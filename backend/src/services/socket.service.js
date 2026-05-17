@@ -75,6 +75,20 @@ const initializeSocketHandlers = (io) => {
       });
     }
 
+    // ── AUTO-REJOIN: driver reconnect (mirrors partner logic above) ──────────
+    if (socket.userRole === 'DRIVER') {
+      prisma.driverProfile.findUnique({
+        where:  { userId: socket.userId },
+        select: { isOnline: true },
+      }).then((profile) => {
+        if (profile?.isOnline) {
+          socket.join('drivers:online');
+          logger.info(`[Socket] Driver auto-rejoined drivers:online on reconnect: ${socket.userId}`);
+        }
+      }).catch((err) => {
+        logger.error('[Socket] driver auto-rejoin error:', err.message);
+      });
+    }
     // ── DRIVER EVENTS ─────────────────────────────
 
     socket.on('driver:online', async (data) => {

@@ -1,33 +1,4 @@
 // mobile/src/screens/Driver/IncomingRideQueueScreen.js
-//
-// InDrive-style multi-request queue — full screen, scrollable, no map.
-//
-// ── What this does ────────────────────────────────────────────────────────────
-//   • All pending ride requests arrive as stacked cards covering the full screen
-//   • Driver scrolls to compare fares (highest fare floated to top)
-//   • Taps a card → expands full detail modal (route, breakdown, customer, wallet)
-//   • Accepts → navigates to ActiveRide; Declines → removes from queue
-//   • Per-card 45s countdown ring; expired cards shown dimmed with "Clear expired"
-//   • Both driver and customer see the same estimatedFare; breakdown shows split
-//
-// ── Price flow ────────────────────────────────────────────────────────────────
-//   Customer sees: effectiveFare (platform estimate × driver floorMultiplier)
-//   Driver sees:   same effectiveFare + breakdown (driverEarnings / platformFee)
-//   Platform gets: bookingFee + 20% commission on (fare − bookingFee)
-//   Everyone is happy ✓
-//
-// ── Wire-up (DriverDashboard socket handler) ──────────────────────────────────
-//   const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
-//   if (currentRoute === 'IncomingRideQueue') return;
-//   navigation.navigate('IncomingRideQueue', { initialRequest: data });
-//
-// ── Navigator (DashboardStack in DriverNavigator.js) ─────────────────────────
-//   <Stack.Screen name="IncomingRideQueue" component={IncomingRideQueueScreen}
-//     options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
-//
-// ── Dependencies ──────────────────────────────────────────────────────────────
-//   rideAPI, walletAPI, socketService, useTheme, useSafeAreaInsets
-
 import React, {
   useState, useEffect, useRef, useCallback,
 } from 'react';
@@ -552,6 +523,11 @@ export default function IncomingRideQueueScreen({ route, navigation }) {
   const actingRef = useRef(new Set());
   const headerA   = useRef(new Animated.Value(0)).current;
   const listA     = useRef(new Animated.Value(0)).current;
+
+// ── Ensure socket is connected (poor network guard) ───────────────────────
+  useEffect(() => {
+    socketService.connect().catch(() => {});
+  }, []);
 
   // ── Wallet load ───────────────────────────────────────────────────────────
   useEffect(() => {
