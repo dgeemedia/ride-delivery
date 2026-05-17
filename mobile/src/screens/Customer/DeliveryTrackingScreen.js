@@ -9,27 +9,21 @@ import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
-// ── Uncomment shieldAPI below when Shield is ready to launch ──────────────────
 import { deliveryAPI/*, shieldAPI*/ } from '../../services/api';
-// ─────────────────────────────────────────────────────────────────────────────
 import socketService              from '../../services/socket';
 
 const { height } = Dimensions.get('window');
 const COURIER_ACCENT = '#34D399';
 
-// ── Tab bar offset ────────────────────────────────────────────────────────────
 const TAB_BAR_HEIGHT = 60;
+const SHEET_MIN      = 160;
+const SHEET_DEFAULT  = Math.round(height * 0.48);
+const SHEET_MAX      = Math.round(height * 0.80);
+const DRAG_HANDLE_H  = 28;
 
-// ── Sheet snap heights ────────────────────────────────────────────────────────
-const SHEET_MIN     = 160;
-const SHEET_DEFAULT = Math.round(height * 0.48);
-const SHEET_MAX     = Math.round(height * 0.80);
+// ── Navigates to the HomeTab from any stack ───────────────────────────────────
+const goHome = (navigation) => navigation.getParent()?.navigate('HomeTab');
 
-// ── Fixed internal layout heights ────────────────────────────────────────────
-// DRAG_HANDLE_H = paddingVertical (12 * 2) + handle bar (4) = 28
-const DRAG_HANDLE_H = 28;
-
-// ── Phone helper ──────────────────────────────────────────────────────────────
 const callPhone = (phone) => {
   if (!phone) return;
   const url = `tel:${String(phone).replace(/\s+/g, '')}`;
@@ -43,10 +37,10 @@ const callPhone = (phone) => {
 
 const STATUS_CONFIG = {
   PENDING:    { label: 'Finding a delivery partner...',  color: '#4E8DBD',      icon: 'time-outline'              },
-  ASSIGNED:   { label: 'Partner is on the way',         color: COURIER_ACCENT,  icon: 'bicycle-outline'          },
+  ASSIGNED:   { label: 'Partner is on the way',         color: COURIER_ACCENT,  icon: 'bicycle-outline'           },
   PICKED_UP:  { label: 'Package has been picked up!',   color: '#FFB800',      icon: 'cube-outline'              },
   IN_TRANSIT: { label: 'Package is in transit',         color: '#A78BFA',      icon: 'navigate-outline'          },
-  DELIVERED:  { label: 'Package delivered! ✅',          color: COURIER_ACCENT,  icon: 'checkmark-circle-outline' },
+  DELIVERED:  { label: 'Package delivered! ✅',          color: COURIER_ACCENT,  icon: 'checkmark-circle-outline'  },
   CANCELLED:  { label: 'Delivery cancelled',            color: '#E05555',      icon: 'close-circle-outline'      },
 };
 
@@ -55,7 +49,6 @@ const PartnerInfoCard = ({ delivery, theme }) => {
   const partner = delivery?.partner;
   if (!partner) return null;
   const dp = partner.deliveryProfile;
-
   return (
     <View style={[pi.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
       <View style={[pi.avatar, { backgroundColor: COURIER_ACCENT + '18' }]}>
@@ -82,7 +75,7 @@ const PartnerInfoCard = ({ delivery, theme }) => {
       {partner.phone && (
         <TouchableOpacity
           style={[pi.callBtn, { backgroundColor: COURIER_ACCENT + '18', borderColor: COURIER_ACCENT + '40' }]}
-          onPress={() => callPhone(partner.phone)}    // ← ADD this line
+          onPress={() => callPhone(partner.phone)}
           activeOpacity={0.75}
         >
           <Ionicons name="call" size={17} color={COURIER_ACCENT} />
@@ -114,9 +107,7 @@ const DeliveryDetailCard = ({ delivery, theme }) => (
       <View style={[dd.dot, { backgroundColor: COURIER_ACCENT }]} />
       <View style={{ flex: 1 }}>
         <Text style={[dd.lbl, { color: theme.hint }]}>PICKUP</Text>
-        <Text style={[dd.addr, { color: theme.foreground }]} numberOfLines={1}>
-          {delivery?.pickupAddress}
-        </Text>
+        <Text style={[dd.addr, { color: theme.foreground }]} numberOfLines={1}>{delivery?.pickupAddress}</Text>
       </View>
     </View>
     <View style={[dd.routeLine, { backgroundColor: theme.border }]} />
@@ -124,9 +115,7 @@ const DeliveryDetailCard = ({ delivery, theme }) => (
       <View style={[dd.dot, { backgroundColor: '#E05555' }]} />
       <View style={{ flex: 1 }}>
         <Text style={[dd.lbl, { color: theme.hint }]}>DROP-OFF</Text>
-        <Text style={[dd.addr, { color: theme.foreground }]} numberOfLines={1}>
-          {delivery?.dropoffAddress}
-        </Text>
+        <Text style={[dd.addr, { color: theme.foreground }]} numberOfLines={1}>{delivery?.dropoffAddress}</Text>
       </View>
     </View>
   </View>
@@ -153,27 +142,14 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
   const [partnerLocation, setPartnerLocation] = useState(null);
   const [loading,         setLoading]         = useState(true);
   const [cancelling,      setCancelling]      = useState(false);
-  // ── Uncomment when Shield is ready to launch ────────────────────────────────
-  // const [shieldActive, setShieldActive] = useState(false);
-  // ────────────────────────────────────────────────────────────────────────────
 
   const mapRef          = useRef(null);
   const hasNavigatedRef = useRef(false);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // ONE Animated.Value, useNativeDriver: false throughout.
-  // Replaces the old native-driver translateY approach — height is a layout
-  // prop and requires the JS driver, same as RideTrackingScreen/ActiveRideScreen.
-  // ─────────────────────────────────────────────────────────────────────────────
   const sheetHeightAnim  = useRef(new Animated.Value(0)).current;
   const currentHeightRef = useRef(0);
   const startHeightRef   = useRef(0);
 
-  // ── Memoized interpolations — created ONCE, never recreated on re-render ──
-
-  // statusPillBottom: replaces the old hardcoded `bottom: height * 0.46`.
-  // Now tracks the sheet top edge at every snap point so the pill always
-  // floats exactly 10px above the sheet, regardless of device height.
   const statusPillBottom = useRef(
     sheetHeightAnim.interpolate({
       inputRange:  [0, SHEET_MIN, SHEET_MAX],
@@ -186,8 +162,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     })
   ).current;
 
-  // scrollHeightAnim: gives the ScrollView wrapper a concrete pixel boundary
-  // at every snap position — mirrors RideTrackingScreen / ActiveRideScreen.
   const sheetPadBottom   = insets.bottom + 20;
   const scrollHeightAnim = useRef(
     sheetHeightAnim.interpolate({
@@ -201,17 +175,12 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     })
   ).current;
 
-  // ── Entrance animation ────────────────────────────────────────────────────
   useEffect(() => {
     Animated.spring(sheetHeightAnim, {
-      toValue:         SHEET_DEFAULT,
-      tension:         80,
-      friction:        9,
-      useNativeDriver: false,   // height is a layout prop — JS driver required
+      toValue: SHEET_DEFAULT, tension: 80, friction: 9, useNativeDriver: false,
     }).start(() => { currentHeightRef.current = SHEET_DEFAULT; });
   }, []);
 
-  // ── PanResponder (drag handle only) ──────────────────────────────────────
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -223,8 +192,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         });
       },
       onPanResponderMove: (_, gs) => {
-        const next = Math.max(SHEET_MIN, Math.min(SHEET_MAX,
-          startHeightRef.current - gs.dy));
+        const next = Math.max(SHEET_MIN, Math.min(SHEET_MAX, startHeightRef.current - gs.dy));
         sheetHeightAnim.setValue(next);
       },
       onPanResponderRelease: (_, gs) => {
@@ -242,11 +210,13 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     })
   ).current;
 
-  // ── Load delivery ───────────────────────────────────────────────────────────
+  // ── Load delivery — getDeliveryById for history view, getActiveDelivery as fallback ──
   const loadDelivery = useCallback(async () => {
     try {
-      const res = await deliveryAPI.getActiveDelivery();
-      const d   = res?.data?.delivery ?? null;
+      const res = deliveryId
+        ? await deliveryAPI.getDeliveryById(deliveryId)
+        : await deliveryAPI.getActiveDelivery();
+      const d = res?.data?.delivery ?? null;
       setDelivery(d);
 
       if (d?.partner?.deliveryProfile?.currentLat) {
@@ -255,16 +225,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
           longitude: d.partner.deliveryProfile.currentLng,
         });
       }
-
-      if (d?.id) {
-        socketService.joinDelivery?.(d.id);
-        // ── Uncomment when Shield is ready to launch ────────────────────────
-        // try {
-        //   const sRes = await shieldAPI.getSession({ deliveryId: d.id });
-        //   setShieldActive(!!sRes?.data?.session);
-        // } catch {}
-        // ───────────────────────────────────────────────────────────────────
-      }
+      if (d?.id) socketService.joinDelivery?.(d.id);
     } catch (err) {
       console.error('[DeliveryTracking] load error:', err?.message);
     } finally {
@@ -272,7 +233,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     }
   }, [deliveryId]);
 
-  // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     loadDelivery();
 
@@ -281,7 +241,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
       setDelivery(prev =>
         prev ? { ...prev, status: data.status, partner: data.partner ?? prev.partner } : prev
       );
-
       if (data.status === 'DELIVERED') {
         if (hasNavigatedRef.current) return;
         hasNavigatedRef.current = true;
@@ -292,10 +251,10 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
           });
         }, 500);
       }
-
       if (data.status === 'CANCELLED') {
         Alert.alert('Delivery Cancelled', 'Your delivery was cancelled.', [
-          { text: 'OK', onPress: () => navigation.navigate('Home') },
+          // ✅ Switches to HomeTab — works from any stack
+          { text: 'OK', onPress: () => goHome(navigation) },
         ]);
       }
     };
@@ -306,58 +265,36 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
       mapRef.current?.animateToRegion({ ...loc, latitudeDelta: 0.03, longitudeDelta: 0.03 }, 800);
     };
 
-    // ── Uncomment when Shield is ready to launch ──────────────────────────────
-    // const handleShieldActivated   = () => setShieldActive(true);
-    // const handleShieldDeactivated = () => setShieldActive(false);
-    // ─────────────────────────────────────────────────────────────────────────
-
     socketService.on('delivery:status:update',  handleStatus);
     socketService.on('partner:location:update', handlePartnerLoc);
-    // ── Uncomment when Shield is ready to launch ──────────────────────────────
-    // socketService.on('shield:activated',   handleShieldActivated);
-    // socketService.on('shield:deactivated', handleShieldDeactivated);
-    // ─────────────────────────────────────────────────────────────────────────
-
     return () => {
       socketService.off('delivery:status:update',  handleStatus);
       socketService.off('partner:location:update', handlePartnerLoc);
-      // ── Uncomment when Shield is ready to launch ────────────────────────────
-      // socketService.off('shield:activated',   handleShieldActivated);
-      // socketService.off('shield:deactivated', handleShieldDeactivated);
-      // ───────────────────────────────────────────────────────────────────────
       if (deliveryId) socketService.leaveDelivery?.(deliveryId);
     };
   }, [deliveryId]);
 
   // ── Cancel handler ──────────────────────────────────────────────────────────
   const handleCancel = () => {
-    Alert.alert(
-      'Cancel Delivery?',
-      'Are you sure you want to cancel this delivery?',
-      [
-        { text: 'Keep Delivery', style: 'cancel' },
-        {
-          text: 'Cancel Delivery',
-          style: 'destructive',
-          onPress: async () => {
-            setCancelling(true);
-            try {
-              await deliveryAPI.cancelDelivery(delivery.id, {
-                reason: 'Customer cancelled from tracking screen',
-              });
-              navigation.navigate('Home');
-            } catch (err) {
-              Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the delivery.');
-            } finally {
-              setCancelling(false);
-            }
-          },
+    Alert.alert('Cancel Delivery?', 'Are you sure you want to cancel this delivery?', [
+      { text: 'Keep Delivery', style: 'cancel' },
+      {
+        text: 'Cancel Delivery', style: 'destructive',
+        onPress: async () => {
+          setCancelling(true);
+          try {
+            await deliveryAPI.cancelDelivery(delivery.id, {
+              reason: 'Customer cancelled from tracking screen',
+            });
+            goHome(navigation); // ✅ HomeTab
+          } catch (err) {
+            Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the delivery.');
+          } finally { setCancelling(false); }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  // ── Derived values ──────────────────────────────────────────────────────────
   const status       = delivery?.status ?? 'PENDING';
   const statusCfg    = STATUS_CONFIG[status] ?? STATUS_CONFIG.PENDING;
   const pickupLat    = delivery?.pickupLat;
@@ -365,7 +302,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
   const dropoffLat   = delivery?.dropoffLat;
   const dropoffLng   = delivery?.dropoffLng;
   const canCancel    = ['PENDING', 'ASSIGNED'].includes(status);
-  const isActiveTrip = ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'].includes(status);
   const backBtnTop   = insets.top + 14;
 
   const mapRegion = partnerLocation
@@ -374,7 +310,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     ? { latitude: pickupLat, longitude: pickupLng, latitudeDelta: 0.05, longitudeDelta: 0.05 }
     : undefined;
 
-  // ── Loading state ───────────────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={[s.center, { backgroundColor: theme.background }]}>
@@ -384,7 +319,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     );
   }
 
-  // ── Not found state ─────────────────────────────────────────────────────────
   if (!delivery) {
     return (
       <View style={[s.center, { backgroundColor: theme.background }]}>
@@ -392,7 +326,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         <Text style={[s.centerTxt, { color: theme.hint }]}>Delivery not found.</Text>
         <TouchableOpacity
           style={[s.goHomeBtn, { borderColor: theme.border }]}
-          onPress={() => navigation.navigate('Home')}
+          onPress={() => goHome(navigation)} // ✅ HomeTab
         >
           <Text style={[s.goHomeTxt, { color: theme.foreground }]}>Go Home</Text>
         </TouchableOpacity>
@@ -400,7 +334,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     );
   }
 
-  // ── Main render ─────────────────────────────────────────────────────────────
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -438,40 +371,33 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
               { latitude: pickupLat,  longitude: pickupLng  },
               { latitude: dropoffLat, longitude: dropoffLng },
             ]}
-            strokeColor={COURIER_ACCENT}
-            strokeWidth={3}
-            lineDashPattern={[8, 5]}
+            strokeColor={COURIER_ACCENT} strokeWidth={3} lineDashPattern={[8, 5]}
           />
         )}
         {partnerLocation && pickupLat && status === 'ASSIGNED' && (
           <Polyline
             coordinates={[partnerLocation, { latitude: pickupLat, longitude: pickupLng }]}
-            strokeColor={statusCfg.color}
-            strokeWidth={2}
-            lineDashPattern={[4, 6]}
+            strokeColor={statusCfg.color} strokeWidth={2} lineDashPattern={[4, 6]}
           />
         )}
       </MapView>
 
-      {/* ── Top gradient ── */}
       <View style={s.topGradient} pointerEvents="none" />
 
-      {/* ── Back button ── */}
+      {/* ── Back arrow — goes back to HistoryScreen (or HomeScreen if entered from there) ── */}
       <TouchableOpacity
         style={[s.backBtn, {
           top:             backBtnTop,
           backgroundColor: theme.backgroundAlt + 'EE',
           borderColor:     theme.border,
         }]}
-        onPress={() => navigation.navigate('Home')}
+        onPress={() => navigation.goBack()} // ✅ pops to previous screen in the stack
         activeOpacity={0.85}
       >
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      {/* ── Status pill — bottom driven by memoized JS interpolation.
-           Replaces the old hardcoded `bottom: height * 0.46` magic number.
-           Now tracks the sheet top edge at every snap position. ── */}
+      {/* ── Status pill ── */}
       <Animated.View style={[s.statusPill, {
         backgroundColor: statusCfg.color + '18',
         borderColor:     statusCfg.color + '50',
@@ -481,21 +407,17 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
       </Animated.View>
 
-      {/* ── Bottom sheet — height animated with JS driver only ── */}
+      {/* ── Bottom sheet ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
         height:          sheetHeightAnim,
         bottom:          TAB_BAR_HEIGHT,
       }]}>
-        {/* Drag handle — PanResponder lives here only */}
         <View style={s.dragHandleWrap} {...panResponder.panHandlers}>
           <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
         </View>
 
-        {/* ── Bounded scroll area: Animated.View with interpolated height gives
-             the ScrollView a concrete pixel boundary at every snap position.
-             Mirrors RideTrackingScreen / ActiveRideScreen exactly. ── */}
         <Animated.View style={{ height: scrollHeightAnim, overflow: 'hidden' }}>
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -527,26 +449,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
             <PartnerInfoCard    delivery={delivery} theme={theme} />
             <DeliveryDetailCard delivery={delivery} theme={theme} />
 
-            {/* ── Uncomment when Shield is ready to launch ──────────────────────
-            {isActiveTrip && (
-              <TouchableOpacity
-                style={[s.shieldBtn, {
-                  backgroundColor: shieldActive ? '#4CAF5020' : '#4CAF5010',
-                  borderColor:     shieldActive ? '#4CAF50'   : '#4CAF5050',
-                }]}
-                onPress={() => navigation.navigate('Shield', { deliveryId: delivery.id })}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="shield-checkmark" size={16} color="#4CAF50" />
-                <Text style={s.shieldBtnTxt}>
-                  {shieldActive ? '🛡️ SHIELD Active — Tap to manage' : 'Activate SHIELD Safety'}
-                </Text>
-                <Ionicons name="chevron-forward" size={14} color="#4CAF50" />
-              </TouchableOpacity>
-            )}
-            ─────────────────────────────────────────────────────────────────── */}
-
-            {/* Cancel button */}
             {canCancel && (
               <TouchableOpacity
                 style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
@@ -565,7 +467,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
               </TouchableOpacity>
             )}
 
-            {/* Post-delivery button */}
             {(status === 'DELIVERED' || status === 'CANCELLED') && (
               <TouchableOpacity
                 style={[s.homeBtn, { backgroundColor: COURIER_ACCENT }]}
@@ -573,15 +474,14 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
                   if (status === 'DELIVERED') {
                     navigation.navigate('RateDelivery', { deliveryId, partner: delivery?.partner });
                   } else {
-                    navigation.navigate('Home');
+                    goHome(navigation); // ✅ "Back to Home" → HomeTab
                   }
                 }}
                 activeOpacity={0.88}
               >
                 <Ionicons
                   name={status === 'DELIVERED' ? 'star-outline' : 'home-outline'}
-                  size={18}
-                  color="#FFF"
+                  size={18} color="#FFF"
                 />
                 <Text style={s.homeBtnTxt}>
                   {status === 'DELIVERED' ? 'Rate Your Partner' : 'Back to Home'}
@@ -589,7 +489,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
               </TouchableOpacity>
             )}
 
-            {/* Bottom spacer */}
             <View style={{ height: 16 }} />
           </ScrollView>
         </Animated.View>
@@ -599,15 +498,12 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:        { flex: 1 },
+  root:      { flex: 1 },
+  center:    { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
+  centerTxt: { fontSize: 14 },
+  goHomeBtn: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
+  goHomeTxt: { fontSize: 14, fontWeight: '600' },
 
-  // Loading / not found
-  center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
-  centerTxt:   { fontSize: 14 },
-  goHomeBtn:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
-  goHomeTxt:   { fontSize: 14, fontWeight: '600' },
-
-  // Map overlays
   topGradient:  { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
   backBtn:      { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
   partnerPin:   { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
@@ -615,38 +511,24 @@ const s = StyleSheet.create({
   statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
 
-  // Sheet: animated height (JS driver), positioned above tab bar
   sheet: {
-    position:             'absolute',
-    left:                 0,
-    right:                0,
-    borderTopLeftRadius:  28,
-    borderTopRightRadius: 28,
-    borderTopWidth:       1,
-    overflow:             'hidden',
+    position: 'absolute', left: 0, right: 0,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    borderTopWidth: 1, overflow: 'hidden',
   },
-
   dragHandleWrap: { width: '100%', paddingVertical: 12, alignItems: 'center' },
   dragHandle:     { width: 44, height: 4, borderRadius: 2 },
+  scrollContent:  { paddingHorizontal: 20 },
 
-  scrollContent: { paddingHorizontal: 20 },
-
-  // Fee strip
   feeStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 12 },
   feeItem:    { flex: 1, alignItems: 'center', paddingVertical: 11, gap: 3 },
   feeLabel:   { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
   feeValue:   { fontSize: 14, fontWeight: '900' },
   feeDivider: { width: 1 },
 
-  // Shield — styles kept for when Shield is uncommented
-  shieldBtn:    { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
-  shieldBtnTxt: { flex: 1, fontSize: 13, fontWeight: '700', color: '#4CAF50' },
-
-  // Cancel
   cancelBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, marginBottom: 8 },
   cancelTxt: { fontSize: 14, fontWeight: '700', color: '#E05555' },
 
-  // Home / rate
   homeBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8 },
   homeBtnTxt: { fontSize: 15, fontWeight: '800', color: '#FFF' },
 });

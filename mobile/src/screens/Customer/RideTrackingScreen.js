@@ -14,19 +14,11 @@ import socketService          from '../../services/socket';
 
 const { height } = Dimensions.get('window');
 
-// ── Tab bar offset ────────────────────────────────────────────────────────────
 const TAB_BAR_HEIGHT = 60;
-
-// ── Sheet snap heights ────────────────────────────────────────────────────────
-const SHEET_MIN     = 160;
-const SHEET_DEFAULT = Math.round(height * 0.50);
-const SHEET_MAX     = Math.round(height * 0.82);
-
-// ── Fixed internal layout heights ────────────────────────────────────────────
-// DRAG_HANDLE_H = paddingVertical (12 * 2) + handle bar (4) = 28
-// These are subtracted from the animated sheet height to give the ScrollView
-// a concrete pixel boundary — same bounded-container pattern as ActiveRideScreen.
-const DRAG_HANDLE_H = 28;
+const SHEET_MIN      = 160;
+const SHEET_DEFAULT  = Math.round(height * 0.50);
+const SHEET_MAX      = Math.round(height * 0.82);
+const DRAG_HANDLE_H  = 28;
 
 const STATUS_CONFIG = {
   REQUESTED:   { label: 'Finding your driver...',  color: '#4E8DBD', icon: 'time-outline'             },
@@ -37,7 +29,9 @@ const STATUS_CONFIG = {
   CANCELLED:   { label: 'Ride cancelled',          color: '#E05555', icon: 'close-circle-outline'     },
 };
 
-// ── Phone helper ──────────────────────────────────────────────────────────────
+// ── Navigates to the HomeTab from any stack ───────────────────────────────────
+const goHome = (navigation) => navigation.getParent()?.navigate('HomeTab');
+
 const callPhone = (phone) => {
   if (!phone) return;
   const url = `tel:${String(phone).replace(/\s+/g, '')}`;
@@ -145,17 +139,10 @@ export default function RideTrackingScreen({ route, navigation }) {
   const mapRef          = useRef(null);
   const hasNavigatedRef = useRef(false);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // ONE Animated.Value, useNativeDriver: false throughout.
-  // sheetHeightAnim starts at 0 and springs to SHEET_DEFAULT on mount.
-  // ─────────────────────────────────────────────────────────────────────────────
   const sheetHeightAnim  = useRef(new Animated.Value(0)).current;
   const currentHeightRef = useRef(0);
   const startHeightRef   = useRef(0);
 
-  // ── Memoized interpolations — created ONCE, never recreated on re-render ──
-  // statusPillBottom tracks the top of the sheet so the pill always floats
-  // just above it, regardless of which snap the user has dragged to.
   const statusPillBottom = useRef(
     sheetHeightAnim.interpolate({
       inputRange:  [0, SHEET_MIN, SHEET_MAX],
@@ -168,10 +155,7 @@ export default function RideTrackingScreen({ route, navigation }) {
     })
   ).current;
 
-  // ── scrollHeightAnim: concrete pixel height for the ScrollView wrapper ────
-  // Subtracts the drag handle and bottom safe area so the ScrollView always
-  // has an exact boundary — mirrors ActiveRideScreen's scrollHeightAnim.
-  const sheetPadBottom  = insets.bottom + 20;
+  const sheetPadBottom   = insets.bottom + 20;
   const scrollHeightAnim = useRef(
     sheetHeightAnim.interpolate({
       inputRange:  [SHEET_MIN, SHEET_DEFAULT, SHEET_MAX],
@@ -184,17 +168,12 @@ export default function RideTrackingScreen({ route, navigation }) {
     })
   ).current;
 
-  // ── Entrance animation ────────────────────────────────────────────────────
   useEffect(() => {
     Animated.spring(sheetHeightAnim, {
-      toValue:         SHEET_DEFAULT,
-      tension:         80,
-      friction:        9,
-      useNativeDriver: false,   // height is a layout prop — JS driver required
+      toValue: SHEET_DEFAULT, tension: 80, friction: 9, useNativeDriver: false,
     }).start(() => { currentHeightRef.current = SHEET_DEFAULT; });
   }, []);
 
-  // ── PanResponder (attached to drag handle only) ───────────────────────────
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -206,8 +185,7 @@ export default function RideTrackingScreen({ route, navigation }) {
         });
       },
       onPanResponderMove: (_, gs) => {
-        const next = Math.max(SHEET_MIN, Math.min(SHEET_MAX,
-          startHeightRef.current - gs.dy));
+        const next = Math.max(SHEET_MIN, Math.min(SHEET_MAX, startHeightRef.current - gs.dy));
         sheetHeightAnim.setValue(next);
       },
       onPanResponderRelease: (_, gs) => {
@@ -225,11 +203,13 @@ export default function RideTrackingScreen({ route, navigation }) {
     })
   ).current;
 
-  // ── Load ride ─────────────────────────────────────────────────────────────
+  // ── Load ride — getRideById for history view, getActiveRide as fallback ──
   const loadRide = useCallback(async () => {
     try {
-      const res = await rideAPI.getActiveRide();
-      const r   = res?.data?.ride ?? res?.ride ?? null;
+      const res = rideId
+        ? await rideAPI.getRideById(rideId)
+        : await rideAPI.getActiveRide();
+      const r = res?.data?.ride ?? res?.ride ?? null;
       setRide(r);
       if (r?.driver?.driverProfile?.currentLat) {
         setDriverLocation({
@@ -256,14 +236,15 @@ export default function RideTrackingScreen({ route, navigation }) {
       }
       if (data.status === 'CANCELLED') {
         Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [
-          { text: 'OK', onPress: () => navigation.navigate('Home') },
+          // ✅ Switches to HomeTab — works from any stack
+          { text: 'OK', onPress: () => goHome(navigation) },
         ]);
       }
     };
     const handleCancelled = (data) => {
       if (data.rideId !== rideId) return;
       Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [
-        { text: 'OK', onPress: () => navigation.navigate('Home') },
+        { text: 'OK', onPress: () => goHome(navigation) },
       ]);
     };
     const handleDriverLoc = (data) => {
@@ -283,7 +264,7 @@ export default function RideTrackingScreen({ route, navigation }) {
     };
   }, [rideId]);
 
-  // ── Cancel ────────────────────────────────────────────────────────────────
+  // ── Cancel ride ───────────────────────────────────────────────────────────
   const handleCancel = () => {
     Alert.alert('Cancel Ride?', 'Are you sure you want to cancel this ride?', [
       { text: 'Keep Ride', style: 'cancel' },
@@ -293,7 +274,7 @@ export default function RideTrackingScreen({ route, navigation }) {
           setCancelling(true);
           try {
             await rideAPI.cancelRide(rideId, { reason: 'Customer cancelled from tracking screen' });
-            navigation.navigate('Home');
+            goHome(navigation); // ✅ HomeTab
           } catch (err) {
             Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
           } finally { setCancelling(false); }
@@ -302,7 +283,6 @@ export default function RideTrackingScreen({ route, navigation }) {
     ]);
   };
 
-  // ── Derived ───────────────────────────────────────────────────────────────
   const status     = ride?.status ?? 'REQUESTED';
   const statusCfg  = STATUS_CONFIG[status] ?? STATUS_CONFIG.ACCEPTED;
   const pickupLat  = ride?.pickupLat;
@@ -331,7 +311,10 @@ export default function RideTrackingScreen({ route, navigation }) {
       <View style={[s.center, { backgroundColor: theme.background }]}>
         <Ionicons name="alert-circle-outline" size={40} color={theme.hint} />
         <Text style={[s.centerTxt, { color: theme.hint }]}>Ride not found.</Text>
-        <TouchableOpacity style={[s.goHomeBtn, { borderColor: theme.border }]} onPress={() => navigation.navigate('Home')}>
+        <TouchableOpacity
+          style={[s.goHomeBtn, { borderColor: theme.border }]}
+          onPress={() => goHome(navigation)} // ✅ HomeTab
+        >
           <Text style={[s.goHomeTxt, { color: theme.foreground }]}>Go Home</Text>
         </TouchableOpacity>
       </View>
@@ -388,16 +371,16 @@ export default function RideTrackingScreen({ route, navigation }) {
 
       <View style={s.topGradient} pointerEvents="none" />
 
-      {/* ── Back button ── */}
+      {/* ── Back arrow — goes back to HistoryScreen (or HomeScreen if entered from there) ── */}
       <TouchableOpacity
         style={[s.backBtn, { top: backBtnTop, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
-        onPress={() => navigation.navigate('Home')}
+        onPress={() => navigation.goBack()} // ✅ pops to previous screen in the stack
         activeOpacity={0.85}
       >
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      {/* ── Status pill — bottom driven by memoized JS interpolation ── */}
+      {/* ── Status pill ── */}
       <Animated.View style={[s.statusPill, {
         backgroundColor: statusCfg.color + '18',
         borderColor:     statusCfg.color + '50',
@@ -407,21 +390,17 @@ export default function RideTrackingScreen({ route, navigation }) {
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
       </Animated.View>
 
-      {/* ── Bottom sheet — height animated with JS driver only ── */}
+      {/* ── Bottom sheet ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
         height:          sheetHeightAnim,
         bottom:          TAB_BAR_HEIGHT,
       }]}>
-        {/* Drag handle — PanResponder lives here only */}
         <View style={s.dragHandleWrap} {...panResponder.panHandlers}>
           <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
         </View>
 
-        {/* ── Bounded scroll area: Animated.View with interpolated height gives
-             the ScrollView a concrete pixel boundary at every snap position.
-             Mirrors ActiveRideScreen's scrollHeightAnim pattern exactly. ── */}
         <Animated.View style={{ height: scrollHeightAnim, overflow: 'hidden' }}>
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -453,15 +432,6 @@ export default function RideTrackingScreen({ route, navigation }) {
             <DriverInfoCard ride={ride} theme={theme} />
             <RouteCard      ride={ride} theme={theme} />
 
-            {/* ── Uncomment when Shield is ready to launch ──────────────────────
-            {isActiveTrip && (
-              <TouchableOpacity style={[s.shieldBtn, { ... }]}
-                onPress={() => navigation.navigate('Shield', { rideId: ride.id })}>
-                ...
-              </TouchableOpacity>
-            )}
-            ─────────────────────────────────────────────────────────────────── */}
-
             {canCancel && (
               <TouchableOpacity
                 style={[s.cancelBtn, { borderColor: '#E05555' + '50' }]}
@@ -483,7 +453,7 @@ export default function RideTrackingScreen({ route, navigation }) {
                 style={[s.homeBtn, { backgroundColor: theme.accent }]}
                 onPress={() => {
                   if (status === 'COMPLETED') navigation.navigate('RateRide', { rideId, driver: ride?.driver });
-                  else                        navigation.navigate('Home');
+                  else goHome(navigation); // ✅ "Back to Home" → HomeTab
                 }}
                 activeOpacity={0.88}
               >
@@ -497,7 +467,6 @@ export default function RideTrackingScreen({ route, navigation }) {
               </TouchableOpacity>
             )}
 
-            {/* Bottom spacer so last card clears the sheet's rounded corners */}
             <View style={{ height: 16 }} />
           </ScrollView>
         </Animated.View>
@@ -520,32 +489,20 @@ const s = StyleSheet.create({
   statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
 
-  // Sheet: animated height (JS driver), positioned above tab bar
   sheet: {
-    position:             'absolute',
-    left:                 0,
-    right:                0,
-    borderTopLeftRadius:  28,
-    borderTopRightRadius: 28,
-    borderTopWidth:       1,
-    overflow:             'hidden',
+    position: 'absolute', left: 0, right: 0,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    borderTopWidth: 1, overflow: 'hidden',
   },
-
   dragHandleWrap: { width: '100%', paddingVertical: 12, alignItems: 'center' },
   dragHandle:     { width: 44, height: 4, borderRadius: 2 },
-
-  // scrollContent has no paddingBottom — the scrollHeightAnim wrapper
-  // already accounts for safe area, so content fills cleanly to the edge.
-  scrollContent: { paddingHorizontal: 20 },
+  scrollContent:  { paddingHorizontal: 20 },
 
   fareStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
   fareItem:    { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
   fareLabel:   { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
   fareValue:   { fontSize: 14, fontWeight: '900' },
   fareDivider: { width: 1 },
-
-  shieldBtn:    { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
-  shieldBtnTxt: { flex: 1, fontSize: 13, fontWeight: '700', color: '#4CAF50' },
 
   cancelBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, marginBottom: 8 },
   cancelTxt: { fontSize: 14, fontWeight: '700', color: '#E05555' },

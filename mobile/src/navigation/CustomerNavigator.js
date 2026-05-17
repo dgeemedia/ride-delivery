@@ -65,6 +65,8 @@ const HomeStack = () => (
 const HistoryStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="HistoryHome"  component={HistoryScreen}      />
+    <Stack.Screen name="RideTracking"     component={RideTrackingScreen}     />
+    <Stack.Screen name="DeliveryTracking" component={DeliveryTrackingScreen} />
     <Stack.Screen name="RateRide"     component={RateRideScreen}     options={{ presentation: 'modal' }} />
     <Stack.Screen name="RateDelivery" component={RateDeliveryScreen} options={{ presentation: 'modal' }} />
     <Stack.Screen name="Support"      component={SupportScreen}      />

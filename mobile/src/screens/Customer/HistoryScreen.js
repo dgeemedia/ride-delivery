@@ -267,6 +267,113 @@ const em = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LIST HEADER — scrolls with the FlatList (same pattern as DriverDashboard's
+// ScrollView). Includes safe-area top inset, back button, stats strip & tabs.
+// ─────────────────────────────────────────────────────────────────────────────
+const ListHeader = ({
+  theme, mode, darkMode,
+  tab, setTab,
+  rideStats, delStats,
+  loading, navigation,
+}) => (
+  <SafeAreaView edges={['top','left','right']} style={{ backgroundColor:'transparent' }}>
+    {/* ── Header row with back button ── */}
+    <View style={[lh.header, { borderBottomColor: G.border(mode) }]}>
+      {/* Back arrow → switches to HomeTab */}
+      <TouchableOpacity
+        style={[lh.backBtn, {
+          backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+          borderColor: G.border(mode),
+        }]}
+        onPress={() => navigation.getParent()?.navigate('HomeTab')}
+        activeOpacity={0.75}
+      >
+        <Ionicons name="arrow-back" size={18} color={theme.foreground} />
+      </TouchableOpacity>
+
+      <View style={{ flex:1 }}>
+        <Text style={[lh.title, { color: theme.foreground }]}>History</Text>
+        <Text style={[lh.sub, { color: theme.hint }]}>Your rides and deliveries</Text>
+      </View>
+    </View>
+
+    {/* ── Stats strip ── */}
+    {!loading && (
+      <View style={[lh.statsStrip, { borderBottomColor: G.border(mode), overflow:'hidden' }]}>
+        <LinearGradient
+          colors={darkMode
+            ? ['rgba(255,255,255,0.05)','rgba(255,255,255,0.02)']
+            : ['rgba(255,255,255,0.9)','rgba(255,255,255,0.75)']}
+          start={{ x:0, y:0 }} end={{ x:1, y:0 }}
+          style={StyleSheet.absoluteFill}
+        />
+        {tab === 'rides' ? (
+          <>
+            <StatPill value={rideStats.completed} label="Completed" color={GREEN} />
+            <View style={[lh.statDiv, { backgroundColor: G.border(mode) }]} />
+            <StatPill value={rideStats.total}     label="Total"     color={GREEN} />
+            <View style={[lh.statDiv, { backgroundColor: G.border(mode) }]} />
+            <StatPill
+              value={`₦${rideStats.spent.toLocaleString('en-NG',{ maximumFractionDigits:0 })}`}
+              label="Spent" color={GREEN}
+            />
+          </>
+        ) : (
+          <>
+            <StatPill value={delStats.delivered} label="Delivered" color={TEAL} />
+            <View style={[lh.statDiv, { backgroundColor: G.border(mode) }]} />
+            <StatPill value={delStats.total}     label="Total"     color={TEAL} />
+            <View style={[lh.statDiv, { backgroundColor: G.border(mode) }]} />
+            <StatPill
+              value={`₦${delStats.spent.toLocaleString('en-NG',{ maximumFractionDigits:0 })}`}
+              label="Spent" color={TEAL}
+            />
+          </>
+        )}
+      </View>
+    )}
+
+    {/* ── Tab row ── */}
+    <View style={[lh.tabRow, { borderBottomColor: G.border(mode) }]}>
+      {[
+        { key:'rides',      label:'Rides',      count: rideStats.total, color: GREEN },
+        { key:'deliveries', label:'Deliveries', count: delStats.total,  color: TEAL  },
+      ].map(t => (
+        <TouchableOpacity
+          key={t.key}
+          style={[lh.tabBtn, tab === t.key && { borderBottomColor: t.color, borderBottomWidth:2 }]}
+          onPress={() => setTab(t.key)}
+        >
+          <Text style={[lh.tabTxt, { color: tab === t.key ? t.color : theme.hint }]}>{t.label}</Text>
+          {t.count > 0 && (
+            <View style={[lh.tabBadge, { backgroundColor: t.color + '20' }]}>
+              <Text style={[lh.tabBadgeTxt, { color: t.color }]}>{t.count}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      ))}
+    </View>
+
+    {/* Top padding for card list */}
+    <View style={{ height: 14 }} />
+  </SafeAreaView>
+);
+
+const lh = StyleSheet.create({
+  header:     { flexDirection:'row', alignItems:'center', gap:12, paddingHorizontal:20, paddingVertical:14, borderBottomWidth:1 },
+  backBtn:    { width:36, height:36, borderRadius:11, borderWidth:1, justifyContent:'center', alignItems:'center', flexShrink:0 },
+  title:      { fontSize:24, fontWeight:'900', letterSpacing:-0.5 },
+  sub:        { fontSize:12, marginTop:2 },
+  statsStrip: { flexDirection:'row', paddingVertical:14, paddingHorizontal:20, borderBottomWidth:1, overflow:'hidden' },
+  statDiv:    { width:1, marginVertical:4 },
+  tabRow:     { flexDirection:'row', borderBottomWidth:1 },
+  tabBtn:     { flex:1, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, paddingVertical:13 },
+  tabTxt:     { fontSize:13, fontWeight:'700' },
+  tabBadge:   { borderRadius:10, paddingHorizontal:7, paddingVertical:2 },
+  tabBadgeTxt:{ fontSize:10, fontWeight:'800' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HistoryScreen({ navigation }) {
@@ -288,7 +395,7 @@ export default function HistoryScreen({ navigation }) {
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(0)).current;
 
-  // ── Reanimated scroll handler — feeds shared scrollY for tab-bar hiding ──
+  // ── Reanimated scroll handlers — feed shared scrollY for tab-bar hiding ──
   const ridesScrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => { scrollY.value = event.contentOffset.y; },
   });
@@ -336,22 +443,35 @@ export default function HistoryScreen({ navigation }) {
   const onRefresh = () => { setRefreshing(true); loadAll(true); };
 
   const handleCardPress = (item, type) => {
-    if (type === 'ride') navigation.navigate('RideTracking',{ rideId: item.id });
-    else navigation.navigate('DeliveryTracking',{ deliveryId: item.id });
+    if (type === 'ride') navigation.navigate('RideTracking', { rideId: item.id });
+    else                 navigation.navigate('DeliveryTracking', { deliveryId: item.id });
   };
 
   const rideStats = {
     total:     rides.length,
     completed: rides.filter(r => r.status === 'COMPLETED').length,
-    spent:     rides.filter(r => r.status === 'COMPLETED').reduce((s,r) => s + (r.actualFare ?? r.estimatedFare ?? 0), 0),
+    spent:     rides.filter(r => r.status === 'COMPLETED')
+                    .reduce((s,r) => s + (r.actualFare ?? r.estimatedFare ?? 0), 0),
   };
   const delStats = {
     total:     deliveries.length,
     delivered: deliveries.filter(d => d.status === 'DELIVERED').length,
-    spent:     deliveries.filter(d => d.status === 'DELIVERED').reduce((s,d) => s + (d.actualFee ?? d.estimatedFee ?? 0), 0),
+    spent:     deliveries.filter(d => d.status === 'DELIVERED')
+                         .reduce((s,d) => s + (d.actualFee ?? d.estimatedFee ?? 0), 0),
   };
 
   const accentColor = tab === 'rides' ? GREEN : TEAL;
+
+  // ── Shared ListHeaderComponent — scrolls with the list, same as
+  //    DriverDashboard's ScrollView content approach ──────────────────────────
+  const listHeader = (
+    <ListHeader
+      theme={theme} mode={mode} darkMode={darkMode}
+      tab={tab} setTab={setTab}
+      rideStats={rideStats} delStats={delStats}
+      loading={loading} navigation={navigation}
+    />
+  );
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
@@ -360,98 +480,78 @@ export default function HistoryScreen({ navigation }) {
       {/* Ambient orb */}
       <View style={[s.orb, { backgroundColor: darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }]} />
 
-      <SafeAreaView edges={['top','left','right']} style={{ backgroundColor:'transparent' }}>
-        {/* Header */}
-        <View style={[s.header, { borderBottomColor: G.border(mode) }]}>
-          <View>
-            <Text style={[s.headerTitle, { color: theme.foreground }]}>History</Text>
-            <Text style={[s.headerSub, { color: theme.hint }]}>Your rides and deliveries</Text>
-          </View>
-        </View>
-
-        {/* Stats strip */}
-        {!loading && (
-          <View style={[s.statsStrip, { borderBottomColor: G.border(mode), overflow:'hidden' }]}>
-            <LinearGradient
-              colors={darkMode ? ['rgba(255,255,255,0.05)','rgba(255,255,255,0.02)'] : ['rgba(255,255,255,0.9)','rgba(255,255,255,0.75)']}
-              start={{ x:0, y:0 }} end={{ x:1, y:0 }}
-              style={StyleSheet.absoluteFill}
-            />
-            {tab === 'rides' ? (
-              <>
-                <StatPill value={rideStats.completed} label="Completed" color={GREEN} />
-                <View style={[s.statDiv, { backgroundColor: G.border(mode) }]} />
-                <StatPill value={rideStats.total}     label="Total"     color={GREEN} />
-                <View style={[s.statDiv, { backgroundColor: G.border(mode) }]} />
-                <StatPill value={`₦${rideStats.spent.toLocaleString('en-NG',{ maximumFractionDigits:0 })}`} label="Spent" color={GREEN} />
-              </>
-            ) : (
-              <>
-                <StatPill value={delStats.delivered} label="Delivered" color={TEAL} />
-                <View style={[s.statDiv, { backgroundColor: G.border(mode) }]} />
-                <StatPill value={delStats.total}     label="Total"     color={TEAL} />
-                <View style={[s.statDiv, { backgroundColor: G.border(mode) }]} />
-                <StatPill value={`₦${delStats.spent.toLocaleString('en-NG',{ maximumFractionDigits:0 })}`} label="Spent" color={TEAL} />
-              </>
-            )}
-          </View>
-        )}
-
-        {/* Tab row */}
-        <View style={[s.tabRow, { borderBottomColor: G.border(mode) }]}>
-          {[
-            { key:'rides',      label:'Rides',      count: rideStats.total, color: GREEN },
-            { key:'deliveries', label:'Deliveries', count: delStats.total,  color: TEAL  },
-          ].map(t => (
-            <TouchableOpacity
-              key={t.key}
-              style={[s.tabBtn, tab === t.key && { borderBottomColor: t.color, borderBottomWidth:2 }]}
-              onPress={() => setTab(t.key)}
-            >
-              <Text style={[s.tabTxt, { color: tab === t.key ? t.color : theme.hint }]}>{t.label}</Text>
-              {t.count > 0 && (
-                <View style={[s.tabBadge, { backgroundColor: t.color + '20' }]}>
-                  <Text style={[s.tabBadgeTxt, { color: t.color }]}>{t.count}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </SafeAreaView>
-
       {loading ? (
-        <View style={s.center}><ActivityIndicator color={accentColor} size="large" /></View>
+        <>
+          {/* Still show the header (with back btn) while loading */}
+          {listHeader}
+          <View style={s.center}>
+            <ActivityIndicator color={accentColor} size="large" />
+          </View>
+        </>
       ) : (
         <Animated.View style={[{ flex:1 }, { opacity: fadeA, transform:[{ translateY: slideA }] }]}>
           {tab === 'rides' ? (
             <AnimatedRN.FlatList
               data={rides}
               keyExtractor={item => item.id}
-              renderItem={({ item }) => <RideCard item={item} theme={theme} mode={mode} onPress={handleCardPress} />}
+              renderItem={({ item }) => (
+                <RideCard item={item} theme={theme} mode={mode} onPress={handleCardPress} />
+              )}
+              // ── Header scrolls with the list — DriverDashboard pattern ──
+              ListHeaderComponent={listHeader}
               contentContainerStyle={s.list}
               showsVerticalScrollIndicator={false}
               scrollEventThrottle={16}
               onScroll={ridesScrollHandler}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={GREEN} />}
-              onEndReached={() => { if(!loadingMore){ setLoadingMore(true); loadRides().finally(() => setLoadingMore(false)); } }}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={GREEN} />
+              }
+              onEndReached={() => {
+                if (!loadingMore) {
+                  setLoadingMore(true);
+                  loadRides().finally(() => setLoadingMore(false));
+                }
+              }}
               onEndReachedThreshold={0.4}
-              ListFooterComponent={loadingMore ? <ActivityIndicator color={GREEN} style={{ marginVertical:16 }} /> : null}
-              ListEmptyComponent={<EmptyState icon="car-outline" label="No rides yet" theme={theme} mode={mode} />}
+              ListFooterComponent={
+                loadingMore
+                  ? <ActivityIndicator color={GREEN} style={{ marginVertical:16 }} />
+                  : null
+              }
+              ListEmptyComponent={
+                <EmptyState icon="car-outline" label="No rides yet" theme={theme} mode={mode} />
+              }
             />
           ) : (
             <AnimatedRN.FlatList
               data={deliveries}
               keyExtractor={item => item.id}
-              renderItem={({ item }) => <DeliveryCard item={item} theme={theme} mode={mode} onPress={handleCardPress} />}
+              renderItem={({ item }) => (
+                <DeliveryCard item={item} theme={theme} mode={mode} onPress={handleCardPress} />
+              )}
+              ListHeaderComponent={listHeader}
               contentContainerStyle={s.list}
               showsVerticalScrollIndicator={false}
               scrollEventThrottle={16}
               onScroll={deliveriesScrollHandler}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={TEAL} />}
-              onEndReached={() => { if(!loadingMore){ setLoadingMore(true); loadDeliveries().finally(() => setLoadingMore(false)); } }}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={TEAL} />
+              }
+              onEndReached={() => {
+                if (!loadingMore) {
+                  setLoadingMore(true);
+                  loadDeliveries().finally(() => setLoadingMore(false));
+                }
+              }}
               onEndReachedThreshold={0.4}
-              ListFooterComponent={loadingMore ? <ActivityIndicator color={TEAL} style={{ marginVertical:16 }} /> : null}
-              ListEmptyComponent={<EmptyState icon="cube-outline" label="No deliveries yet" theme={theme} mode={mode} />}
+              ListFooterComponent={
+                loadingMore
+                  ? <ActivityIndicator color={TEAL} style={{ marginVertical:16 }} />
+                  : null
+              }
+              ListEmptyComponent={
+                <EmptyState icon="cube-outline" label="No deliveries yet" theme={theme} mode={mode} />
+              }
             />
           )}
         </Animated.View>
@@ -472,18 +572,14 @@ const sp = StyleSheet.create({
 });
 
 const s = StyleSheet.create({
-  root:        { flex:1 },
-  orb:         { position:'absolute', width:width*1.2, height:width*1.2, borderRadius:width*0.6, top:-width*0.5, right:-width*0.4 },
-  center:      { flex:1, justifyContent:'center', alignItems:'center' },
-  header:      { paddingHorizontal:20, paddingVertical:14, borderBottomWidth:1 },
-  headerTitle: { fontSize:24, fontWeight:'900', letterSpacing:-0.5 },
-  headerSub:   { fontSize:12, marginTop:2 },
-  statsStrip:  { flexDirection:'row', paddingVertical:14, paddingHorizontal:20, borderBottomWidth:1, overflow:'hidden' },
-  statDiv:     { width:1, marginVertical:4 },
-  tabRow:      { flexDirection:'row', borderBottomWidth:1 },
-  tabBtn:      { flex:1, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, paddingVertical:13 },
-  tabTxt:      { fontSize:13, fontWeight:'700' },
-  tabBadge:    { borderRadius:10, paddingHorizontal:7, paddingVertical:2 },
-  tabBadgeTxt: { fontSize:10, fontWeight:'800' },
-  list:        { paddingHorizontal:16, paddingTop:14, paddingBottom: Platform.OS === 'ios' ? 110 : 90 },
+  root:   { flex:1 },
+  orb:    {
+    position:'absolute',
+    width:width*1.2, height:width*1.2, borderRadius:width*0.6,
+    top:-width*0.5, right:-width*0.4,
+  },
+  center: { flex:1, justifyContent:'center', alignItems:'center' },
+  // No paddingTop here — SafeAreaView inside ListHeaderComponent handles it.
+  // paddingHorizontal applied per card; paddingBottom clears the tab bar.
+  list:   { paddingHorizontal:16, paddingBottom: Platform.OS === 'ios' ? 110 : 90 },
 });
