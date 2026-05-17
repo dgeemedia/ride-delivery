@@ -343,8 +343,17 @@ export default function PartnerDashboardScreen({ navigation }) {
   }, [loading, profile]);
 
   useEffect(() => {
-    const handleIncomingDelivery = (data) => navigation.navigate('IncomingDelivery', { request: data });
-    const handleCancelled        = () => { try { navigation.goBack(); } catch {} };
+  const handleIncomingDelivery = (data) => {
+    const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
+    if (currentRoute === 'IncomingDeliveryQueue') return;
+    navigation.navigate('IncomingDeliveryQueue', { initialRequest: data });
+  };
+  const handleCancelled = () => {
+    const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
+    if (currentRoute !== 'IncomingDeliveryQueue') {
+      try { navigation.goBack(); } catch {}
+    }
+  };
 
     socketService.on('delivery:incoming_request', handleIncomingDelivery);
     socketService.on('delivery:cancelled',        handleCancelled);
@@ -455,7 +464,6 @@ export default function PartnerDashboardScreen({ navigation }) {
           scrollEnabled={false}
           zoomEnabled={false}
         />
-
         {hasMaintBanner && (
           <View style={{ paddingTop: insets.top }}>
             <MaintenanceBanner

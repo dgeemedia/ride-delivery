@@ -5,6 +5,7 @@
 //   2. DatePickerModal — native "no-DateTimePicker" branch uses TextInput, not <input>
 //   3. Theme contrast — accent buttons use theme.accentFg instead of hardcoded '#fff'
 //   4. (Email SMTP) — see email.service.js fix; frontend shows the server's error message
+//   5. PDF now includes the user's full name in the header and summary block
 
 import React, {
   useState, useEffect, useRef, useCallback, useMemo,
@@ -56,13 +57,11 @@ const defaultRange = () => {
 // ─────────────────────────────────────────────────────────────────────────────
 const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, label }) => {
   const [local,       setLocal]       = useState(value);
-  // FIX #2 — manual date string for the native-no-picker fallback
   const [dateString,  setDateString]  = useState(value.toISOString().split('T')[0]);
   const [dateError,   setDateError]   = useState('');
 
   if (!visible) return null;
 
-  // ── Web: native <input type="date"> is fine inside a web DOM ──────────────
   if (Platform.OS === 'web') {
     return (
       <Modal transparent animationType="fade" onRequestClose={onClose}>
@@ -88,7 +87,6 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
                 style={[dp.btnAccent, { backgroundColor: accent }]}
                 onPress={() => { onChange(local); onClose(); }}
               >
-                {/* FIX #4 — use theme.accentFg so text is legible on any accent colour */}
                 <Text style={[dp.btnTxt, { color: theme.accentFg }]}>Set Date</Text>
               </TouchableOpacity>
             </View>
@@ -98,7 +96,6 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
     );
   }
 
-  // ── Native with DateTimePicker installed ──────────────────────────────────
   if (DateTimePicker) {
     return (
       <Modal transparent animationType="slide" onRequestClose={onClose}>
@@ -121,7 +118,6 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
                 style={[dp.btnAccent, { backgroundColor: accent }]}
                 onPress={() => { onChange(local); onClose(); }}
               >
-                {/* FIX #4 */}
                 <Text style={[dp.btnTxt, { color: theme.accentFg }]}>Set Date</Text>
               </TouchableOpacity>
             </View>
@@ -131,9 +127,6 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
     );
   }
 
-  // ── FIX #2 — Native WITHOUT DateTimePicker: use TextInput (YYYY-MM-DD) ───
-  // Previously used <input> which is not a valid React Native component and
-  // caused "View config getter callback for component `input` must be a function".
   const handleManualSet = () => {
     const parsed = new Date(dateString);
     if (isNaN(parsed.getTime())) {
@@ -171,7 +164,6 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
               style={[dp.btnAccent, { backgroundColor: accent }]}
               onPress={handleManualSet}
             >
-              {/* FIX #4 */}
               <Text style={[dp.btnTxt, { color: theme.accentFg }]}>Set Date</Text>
             </TouchableOpacity>
           </View>
@@ -236,7 +228,8 @@ const tr = StyleSheet.create({
 });
 
 // ── PDF HTML builder ──────────────────────────────────────────────────────────
-const buildPdfHtml = ({ transactions, from, to, typeFilter, userEmail }) => {
+// FIX #5 — userName param added; shown in the header and account info block
+const buildPdfHtml = ({ transactions, from, to, typeFilter, userEmail, userName }) => {
   const totalCredit = transactions.filter(t => t.type === 'CREDIT' || t.type === 'REFUND').reduce((s, t) => s + Number(t.amount), 0);
   const totalDebit  = transactions.filter(t => t.type !== 'CREDIT' && t.type !== 'REFUND').reduce((s, t) => s + Number(t.amount), 0);
   const rows = transactions.map(t => {
@@ -253,11 +246,15 @@ const buildPdfHtml = ({ transactions, from, to, typeFilter, userEmail }) => {
       </tr>`;
   }).join('');
 
+  // Build the "Account" line shown under the title — name + email when both present
+  const accountLine = [userName, userEmail].filter(Boolean).join(' &nbsp;•&nbsp; ');
+
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"/>
 <style>
   body { font-family: Arial, sans-serif; color: #111; padding: 32px; }
   h1   { font-size: 22px; margin-bottom: 4px; }
+  .acct { font-size: 14px; font-weight: 700; color: #333; margin-bottom: 2px; }
   .sub { color: #666; font-size: 12px; margin-bottom: 24px; }
   .summary { display: flex; gap: 24px; margin-bottom: 24px; }
   .sum-box { background: #f5f5f5; border-radius: 10px; padding: 14px 20px; min-width: 130px; }
@@ -271,11 +268,11 @@ const buildPdfHtml = ({ transactions, from, to, typeFilter, userEmail }) => {
 </style></head>
 <body>
 <h1>Transaction History</h1>
+${accountLine ? `<div class="acct">${accountLine}</div>` : ''}
 <div class="sub">
   ${fmtDate(from)} – ${fmtDate(to)}
   ${typeFilter !== 'ALL' ? ` &nbsp;•&nbsp; Type: ${typeFilter}` : ''}
-  &nbsp;•&nbsp; ${transactions.length} transactions
-  ${userEmail ? `&nbsp;•&nbsp; ${userEmail}` : ''}
+  &nbsp;•&nbsp; ${transactions.length} transaction${transactions.length !== 1 ? 's' : ''}
 </div>
 <div class="summary">
   <div class="sum-box">
@@ -305,8 +302,10 @@ export default function TransactionHistoryScreen({ route, navigation }) {
   const { user }        = useAuth();
   const insets          = useSafeAreaInsets();
   const accent          = theme.accent;
-  // FIX #4 — text colour that always contrasts with the accent background
   const accentFg        = theme.accentFg;
+
+  // FIX #5 — derive full name once so it's easy to pass around
+  const userName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || null;
 
   const { initialFrom, initialTo } = route?.params ?? {};
   const range = defaultRange();
@@ -370,16 +369,15 @@ export default function TransactionHistoryScreen({ route, navigation }) {
     return { credit, debit, net: credit - debit };
   }, [transactions]);
 
-  // ── FIX #1 — Export to PDF (with FileSystem fallback when expo-print absent) ──
+  // ── Export to PDF ──────────────────────────────────────────────────────────
   const handleExportPdf = async () => {
     setExporting(true);
     try {
-      const html = buildPdfHtml({ transactions, from, to, typeFilter, userEmail: user?.email });
+      // FIX #5 — pass userName so it appears in the PDF header
+      const html = buildPdfHtml({ transactions, from, to, typeFilter, userEmail: user?.email, userName });
 
-      // ── Path A: expo-print available ────────────────────────────────────────
       if (Print) {
         const { uri } = await Print.printToFileAsync({ html, base64: false });
-
         if (Sharing && await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri, {
             mimeType:    'application/pdf',
@@ -392,7 +390,6 @@ export default function TransactionHistoryScreen({ route, navigation }) {
         return;
       }
 
-      // ── Path B: web — download as HTML ──────────────────────────────────────
       if (Platform.OS === 'web') {
         const blob = new Blob([html], { type: 'text/html' });
         const url  = URL.createObjectURL(blob);
@@ -404,11 +401,9 @@ export default function TransactionHistoryScreen({ route, navigation }) {
         return;
       }
 
-      // ── Path C: native without expo-print — write HTML via FileSystem ───────
       if (FileSystem) {
         const path = `${FileSystem.cacheDirectory}transactions_${isoDate(from)}_${isoDate(to)}.html`;
         await FileSystem.writeAsStringAsync(path, html, { encoding: FileSystem.EncodingType.UTF8 });
-
         if (Sharing && await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(path, {
             mimeType:    'text/html',
@@ -420,7 +415,6 @@ export default function TransactionHistoryScreen({ route, navigation }) {
         return;
       }
 
-      // ── Path D: nothing available ───────────────────────────────────────────
       Alert.alert(
         'Export not available',
         'Install expo-print and expo-file-system to enable PDF export:\n\nnpx expo install expo-print expo-file-system expo-sharing',
@@ -476,7 +470,6 @@ export default function TransactionHistoryScreen({ route, navigation }) {
             {transactions.length} of {total} transaction{total !== 1 ? 's' : ''}
           </Text>
         </View>
-        {/* Email toggle */}
         <TouchableOpacity
           style={[s.headerBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
           onPress={() => setShowEmailBox(v => !v)}
@@ -484,7 +477,6 @@ export default function TransactionHistoryScreen({ route, navigation }) {
         >
           <Ionicons name="mail-outline" size={16} color={theme.foreground} />
         </TouchableOpacity>
-        {/* Download — FIX #4: icon uses accentFg */}
         <TouchableOpacity
           style={[s.headerBtn, { backgroundColor: accent, opacity: exporting ? 0.7 : 1 }]}
           onPress={handleExportPdf}
@@ -529,7 +521,6 @@ export default function TransactionHistoryScreen({ route, navigation }) {
                 >
                   <Text style={[s.emailCancelTxt, { color: theme.hint }]}>Cancel</Text>
                 </TouchableOpacity>
-                {/* FIX #4 */}
                 <TouchableOpacity
                   style={[s.emailSendBtn, { backgroundColor: accent, opacity: emailing ? 0.7 : 1 }]}
                   onPress={handleEmailPdf}
@@ -694,7 +685,6 @@ export default function TransactionHistoryScreen({ route, navigation }) {
                 <Ionicons name="mail-outline" size={15} color={theme.hint} />
                 <Text style={[s.exportBtnTxt, { color: theme.hint }]}>Email</Text>
               </TouchableOpacity>
-              {/* FIX #4 — text + icon use accentFg */}
               <TouchableOpacity
                 style={[s.exportBtn, { backgroundColor: accent, opacity: exporting ? 0.7 : 1 }]}
                 onPress={handleExportPdf}

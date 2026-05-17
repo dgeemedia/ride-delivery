@@ -340,8 +340,23 @@ export default function DriverDashboardScreen({ navigation }) {
   }, [loading, profile]);
 
   useEffect(() => {
-    const handleReq  = (data) => navigation.navigate('IncomingRide', { request: data });
-    const handleCanc = () => { try { navigation.goBack(); } catch {} };
+    const handleReq = (data) => {
+      // If the queue screen is already open, it handles new requests internally
+      // via its own socket listener — no double-navigation needed
+      const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
+      if (currentRoute === 'IncomingRideQueue') return;
+      navigation.navigate('IncomingRideQueue', { initialRequest: data });
+    };
+
+    const handleCanc = (data) => {
+      // Only dismiss the queue if it's open and this specific ride
+      // was the only one — the queue handles multi-ride cancellations itself
+      const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
+      if (currentRoute !== 'IncomingRideQueue') {
+        try { navigation.goBack(); } catch {}
+      }
+    };
+
     socketService.on('ride:new_request', handleReq);
     socketService.on('ride:cancelled',   handleCanc);
     socketService.connect().catch((err) => console.warn('[Dashboard] socket connect:', err?.message));

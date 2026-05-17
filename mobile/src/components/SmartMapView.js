@@ -1,4 +1,11 @@
 // mobile/src/components/SmartMapView.js
+//
+// Changes from previous version:
+//   • Circle exported — mapped to OsmCircle for OSM, or react-native-maps Circle for Google
+//   • Imperative ref now forwards: startRadar, stopRadar, setDriverPins, setCircles
+//     (these call into OsmMapView's Leaflet command bridge when OSM is active;
+//      they are no-ops when Google Maps is active since Google uses React children)
+//   • FORCE_OSM_MAP = true kept (set false when Google Maps key is ready)
 
 import React, {
   forwardRef,
@@ -10,32 +17,32 @@ import React, {
 } from 'react';
 import { View, StyleSheet } from 'react-native';
 
-// Lazy-load the two map implementations to avoid hard crashes
-// when one of them is missing from the bundle.
-let GoogleMapView, GoogleMarker, GooglePolyline;
+// Lazy-load Google Maps
+let GoogleMapView, GoogleMarker, GooglePolyline, GoogleCircle;
 try {
-  const rnMaps = require('react-native-maps');
+  const rnMaps   = require('react-native-maps');
   GoogleMapView  = rnMaps.default;
   GoogleMarker   = rnMaps.Marker;
   GooglePolyline = rnMaps.Polyline;
+  GoogleCircle   = rnMaps.Circle;
 } catch {
-  // react-native-maps not installed or broken
+  // react-native-maps not installed
 }
 
 import OsmMapView, {
   Marker   as OsmMarker,
   Polyline as OsmPolyline,
+  Circle   as OsmCircle,
   PROVIDER_GOOGLE,
 } from './OsmMapView';
 
 // ─── Config ────────────────────────────────────────────────────────────────────
-// How long to wait for Google Maps to call onMapReady before giving up.
-const GOOGLE_TIMEOUT = 8000; // ms
+const GOOGLE_TIMEOUT = 8000;
+const FORCE_OSM_MAP  = true; // flip to false when Google Maps key is configured
 
-// Set to true during development to always use the OSM fallback.
-const FORCE_OSM_MAP = true;
-
-// ─── SmartMapView ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// SmartMapView
+// ─────────────────────────────────────────────────────────────────────────────
 const SmartMapView = forwardRef(function SmartMapView(
   {
     forceOsm = false,
@@ -43,7 +50,7 @@ const SmartMapView = forwardRef(function SmartMapView(
     onMapReady,
     style,
     provider,
-    customMapStyle,   // ignored by OSM (it already uses CartoDB Dark)
+    customMapStyle,
     ...rest
   },
   ref
@@ -51,23 +58,19 @@ const SmartMapView = forwardRef(function SmartMapView(
   const googleRef = useRef(null);
   const osmRef    = useRef(null);
 
-  // Start with Google if available; fall back to OSM on timeout / error
   const shouldTryGoogle =
     !forceOsm &&
     !FORCE_OSM_MAP &&
     !!GoogleMapView;
 
   const [useGoogle, setUseGoogle] = useState(shouldTryGoogle);
-  const [googleFailed, setGoogleFailed] = useState(false);
   const timeoutRef = useRef(null);
 
-  // Start the "give up on Google" timer
   useEffect(() => {
     if (!useGoogle) return;
     timeoutRef.current = setTimeout(() => {
-      console.warn('[SmartMapView] Google Maps did not call onMapReady in time — switching to OSM fallback.');
+      console.warn('[SmartMapView] Google Maps timeout — switching to OSM fallback.');
       setUseGoogle(false);
-      setGoogleFailed(true);
     }, GOOGLE_TIMEOUT);
     return () => clearTimeout(timeoutRef.current);
   }, [useGoogle]);
@@ -77,44 +80,41 @@ const SmartMapView = forwardRef(function SmartMapView(
     onMapReady?.();
   }, [onMapReady]);
 
-  const handleGoogleError = useCallback((e) => {
-    console.warn('[SmartMapView] Google Maps error:', e?.nativeEvent?.error ?? e);
+  const handleGoogleError = useCallback(() => {
     clearTimeout(timeoutRef.current);
     setUseGoogle(false);
-    setGoogleFailed(true);
   }, []);
 
-  // ── Forward imperative ref to whichever map is active ─────────────────────
+  // ── Unified imperative API ─────────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
+    // Standard react-native-maps API
     animateToRegion(region, duration) {
-      const active = useGoogle ? googleRef.current : osmRef.current;
-      active?.animateToRegion(region, duration);
+      if (useGoogle) googleRef.current?.animateToRegion(region, duration);
+      else           osmRef.current?.animateToRegion(region, duration);
     },
     fitToCoordinates(coords, options) {
-      const active = useGoogle ? googleRef.current : osmRef.current;
-      active?.fitToCoordinates(coords, options);
+      if (useGoogle) googleRef.current?.fitToCoordinates(coords, options);
+      else           osmRef.current?.fitToCoordinates(coords, options);
+    },
+
+    // OSM-only extensions (no-op on Google Maps — Google uses React children)
+    startRadar(lat, lng, color) {
+      osmRef.current?.startRadar(lat, lng, color);
+    },
+    stopRadar() {
+      osmRef.current?.stopRadar();
+    },
+    // Push driver/partner pins directly into Leaflet (bypasses React re-render)
+    // pins: Array<{ id, lat, lng, color, label }>
+    setDriverPins(pins, selectedId) {
+      osmRef.current?.setDriverPins(pins, selectedId);
+    },
+    // Push circle overlays directly into Leaflet
+    // circles: Array<{ lat, lng, radius, strokeColor, fillColor, strokeWidth }>
+    setCircles(circles) {
+      osmRef.current?.setCircles(circles);
     },
   }));
-
-  // ── Remap children: swap Marker/Polyline to the OSM versions if needed ────
-  // When using Google Maps we pass children through as-is.
-  // When using OSM we need OsmMarker / OsmPolyline.
-  //
-  // Since OsmMarker / OsmPolyline are purely declarative (they return null),
-  // and OsmMapView reads children via Children.forEach, we just pass the
-  // same JSX — the displayName check in OsmMapView finds 'OsmMarker' etc.
-  // So we need to convert GoogleMarker → OsmMarker when switching.
-  //
-  // Simplest approach: always render OsmMarker/OsmPolyline from this file,
-  // and re-export them as the unified Marker/Polyline for consumers.
-  // That way children are always OsmMarker/OsmPolyline regardless of backend.
-  // Google Maps understands coordinate/strokeColor/etc. from them too? No —
-  // Google Maps needs its own Marker/Polyline.
-  //
-  // Real solution: use two child sets in parallel (one hidden).
-  // Even simpler for our use case: the screen files import Marker/Polyline
-  // from SmartMapView, and we conditionally render the right type.
-  // We do this by providing a context flag.
 
   if (useGoogle && GoogleMapView) {
     return (
@@ -134,7 +134,6 @@ const SmartMapView = forwardRef(function SmartMapView(
     );
   }
 
-  // OSM fallback
   return (
     <OsmMapView
       ref={osmRef}
@@ -150,48 +149,19 @@ const SmartMapView = forwardRef(function SmartMapView(
 SmartMapView.displayName = 'SmartMapView';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Unified Marker / Polyline
-//
-// These components render as either:
-//   • react-native-maps Marker/Polyline  (when Google Maps is active)
-//   • OsmMarker/OsmPolyline              (when OSM is active — purely declarative)
-//
-// Because SmartMapView checks which provider is live at render time, and the
-// OsmMapView reads OsmMarker/OsmPolyline via their displayName from children,
-// the cleanest approach is to export components whose displayName is
-// 'OsmMarker' / 'OsmPolyline' — OsmMapView will pick them up, and when Google
-// Maps is rendered the same JSX nodes are passed through as children so
-// react-native-maps renders them natively.
-//
-// This works because react-native-maps doesn't care about custom displayNames;
-// it only cares that the child has the right props (coordinate, etc.).
+// Unified Marker — displayName 'OsmMarker' so OsmMapView picks it up
+// Google Maps also accepts it as a child (it reads props, not displayName)
 // ─────────────────────────────────────────────────────────────────────────────
+function Marker(props) { return null; }
+Marker.displayName = 'OsmMarker';
 
-/**
- * Unified <Marker>
- * Props: coordinate, pinColor, title, description, anchor, children, onPress
- */
-function Marker(props) {
-  // When rendered inside a GoogleMapView, react-native-maps uses the real Marker.
-  // When rendered inside OsmMapView, OsmMapView reads this via displayName.
-  // This component itself renders nothing — the parent map handles it.
-  return null;
-}
-Marker.displayName = 'OsmMarker'; // OsmMapView looks for this name
-
-/**
- * Unified <Polyline>
- * Props: coordinates, strokeColor, strokeWidth, lineDashPattern
- */
-function Polyline(props) {
-  return null;
-}
+function Polyline(props) { return null; }
 Polyline.displayName = 'OsmPolyline';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Re-exports to match the react-native-maps API surface
-// ─────────────────────────────────────────────────────────────────────────────
-export { Marker, Polyline, PROVIDER_GOOGLE };
+function Circle(props) { return null; }
+Circle.displayName = 'OsmCircle';
+
+export { Marker, Polyline, Circle, PROVIDER_GOOGLE };
 export default SmartMapView;
 
 const s = StyleSheet.create({

@@ -495,4 +495,27 @@ exports.getPayoutHistory = async (req, res) => {
   });
 };
 
+exports.setFloorMultiplier = async (req, res) => {
+  const { floorMultiplier } = req.body;
+  const multiplier = parseFloat(floorMultiplier);
+
+  if (isNaN(multiplier) || multiplier < 1.0 || multiplier > 2.0) {
+    throw new AppError('Floor multiplier must be between 1.0 and 2.0', 400);
+  }
+
+  const profile = await prisma.deliveryPartnerProfile.update({
+    where: { userId: req.user.id },
+    data:  { floorMultiplier: multiplier },
+  });
+
+  const pctAbove = Math.round((multiplier - 1) * 100);
+  res.status(200).json({
+    success: true,
+    message: pctAbove === 0
+      ? 'Floor price removed — you will accept base fee.'
+      : `Floor price set to +${pctAbove}% above base fee.`,
+    data: { floorMultiplier: profile.floorMultiplier },
+  });
+};
+
 module.exports = exports;

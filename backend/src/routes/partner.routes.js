@@ -103,4 +103,11 @@ router.post(
  */
 router.get('/payout/history', authorize('DELIVERY_PARTNER'), partnerController.getPayoutHistory);
 
+router.put(
+  '/floor-price',
+  authorize('DELIVERY_PARTNER'),
+  [body('floorMultiplier').isFloat({ min: 1.0, max: 2.0 })],
+  partnerController.setFloorMultiplier
+);
+
 module.exports = router;

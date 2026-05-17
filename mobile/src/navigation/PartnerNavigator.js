@@ -12,7 +12,7 @@ import AnimatedTabBar from '../components/AnimatedTabBar';
 import PartnerDashboardScreen from '../screens/Partner/PartnerDashboardScreen';
 import PartnerEarningsScreen from '../screens/Partner/PartnerEarningsScreen';
 import PartnerHistoryScreen from '../screens/Partner/PartnerHistoryScreen';
-import IncomingDeliveryScreen from '../screens/Partner/IncomingDeliveryScreen';
+import IncomingDeliveryQueueScreen from '../screens/Partner/IncomingDeliveryQueueScreen';
 import ActiveDeliveryScreen from '../screens/Partner/ActiveDeliveryScreen';
 import CourierFloorPriceScreen from '../screens/Partner/CourierFloorPriceScreen';
 import PartnerDocumentsScreen from '../screens/Partner/PartnerDocumentsScreen';
@@ -36,7 +36,11 @@ const Stack = createStackNavigator();
 const DashboardStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="Dashboard"        component={PartnerDashboardScreen}  />
-    <Stack.Screen name="IncomingDelivery" component={IncomingDeliveryScreen}  />
+    <Stack.Screen
+      name="IncomingDeliveryQueue"
+      component={IncomingDeliveryQueueScreen}
+      options={{ presentation: 'fullScreenModal', gestureEnabled: false }}
+    />
     <Stack.Screen name="ActiveDelivery"   component={ActiveDeliveryScreen}    />
     <Stack.Screen name="FloorPrice"       component={CourierFloorPriceScreen} />
     <Stack.Screen name="PartnerDocuments" component={PartnerDocumentsScreen}  />

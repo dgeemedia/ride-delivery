@@ -527,21 +527,25 @@ exports.getNearbyPartners = async (req, res) => {
       return scoreB - scoreA;
     })
     .slice(0, 20)
-    .map(p => ({
-      partnerId:           p.user.id,
-      firstName:           p.user.firstName,
-      lastName:            p.user.lastName,
-      profileImage:        p.user.profileImage,
-      vehicleType:         p.vehicleType,
-      vehiclePlate:        p.vehiclePlate,
-      rating:              parseFloat((p.rating || 0).toFixed(1)),
-      totalDeliveries:     p.totalDeliveries,
-      distanceKm:          p.distanceKm,
-      etaMinutes:          Math.ceil(p.distanceKm / 0.4),
-      currentLat:          p.currentLat,
-      currentLng:          p.currentLng,
-      preferredFloorPrice: p.preferredFloorPrice ?? 0,
-    }));
+    .map(p => {
+      const floorMultiplier = parseFloat(p.floorMultiplier ?? 1.0);
+      return {
+        partnerId:       p.user.id,
+        firstName:       p.user.firstName,
+        lastName:        p.user.lastName,
+        profileImage:    p.user.profileImage,
+        vehicleType:     p.vehicleType,
+        vehiclePlate:    p.vehiclePlate,
+        rating:          parseFloat((p.rating || 0).toFixed(1)),
+        totalDeliveries: p.totalDeliveries,
+        distanceKm:      p.distanceKm,
+        etaMinutes:      Math.ceil(p.distanceKm / 0.4),
+        currentLat:      p.currentLat,
+        currentLng:      p.currentLng,
+        floorMultiplier,
+        preferredFloorPrice: p.preferredFloorPrice ?? 0,
+      };
+    });
 
   res.status(200).json({ success: true, data: { partners: nearby, total: nearby.length } });
 };

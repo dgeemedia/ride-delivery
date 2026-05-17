@@ -159,6 +159,7 @@ export const driverAPI = {
   requestPayout:     (data)   => api.post('/drivers/payout/request', data),
   getPayoutHistory:  (params) => api.get('/drivers/payout/history', { params }),
   uploadDocuments:   (data)   => api.post('/drivers/documents', data),
+  setFloorMultiplier: (data) => api.put('/drivers/floor-price', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,10 +172,10 @@ export const partnerAPI = {
   getEarnings:       (params)  => api.get('/partners/earnings', { params }),
   getStats:          ()        => api.get('/partners/stats'),
   getNearbyRequests: ()        => api.get('/partners/nearby-requests'),
-  updateFloorPrice:  (price)   => api.post('/partners/profile', { preferredFloorPrice: price }),
-  uploadDocuments:   (data)    => api.post('/partners/documents', data),   // ← NEW
+  uploadDocuments:   (data)    => api.post('/partners/documents', data),
   requestPayout:     (data)    => api.post('/partners/payout/request', data),
   getPayoutHistory:  (params)  => api.get('/partners/payout/history', { params }),
+  setFloorMultiplier: (data)   => api.put('/partners/floor-price', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

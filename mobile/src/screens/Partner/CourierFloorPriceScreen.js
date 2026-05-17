@@ -205,12 +205,17 @@ export default function CourierFloorPriceScreen({ navigation }) {
       Alert.alert('Invalid Amount', 'Please enter a floor price of at least ₦100.');
       return;
     }
+    if (!platformEst && saveValue > 0) {
+      Alert.alert('Not ready', 'Platform rates are still loading. Please wait a moment.');
+      return;
+    }
     const saveValue = enabled ? effectiveFloor : 0;
     setSaving(true);
     try {
-      await partnerAPI.updateProfile({
-        vehicleType: profile?.vehicleType,
-        preferredFloorPrice: saveValue,
+      await partnerAPI.setFloorMultiplier({
+        floorMultiplier: saveValue > 0
+          ? parseFloat((saveValue / platformEst).toFixed(6))
+          : 1.0,
       });
       Alert.alert(
         saveValue > 0 ? 'Floor Price Set ✅' : 'Floor Price Disabled',

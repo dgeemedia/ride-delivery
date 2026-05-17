@@ -8,9 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { ScrollProvider } from '../context/ScrollContext';
 import AnimatedTabBar from '../components/AnimatedTabBar';
-
 import DriverDashboardScreen from '../screens/Driver/DriverDashboardScreen';
-import IncomingRideScreen from '../screens/Driver/IncomingRideScreen';
+import IncomingRideQueueScreen from '../screens/Driver/IncomingRideQueueScreen';
 import ActiveRideScreen from '../screens/Driver/ActiveRideScreen';
 import FloorPriceScreen from '../screens/Driver/FloorPriceScreen';
 import DriverHistoryScreen from '../screens/Driver/DriverHistoryScreen';
@@ -36,16 +35,7 @@ const Stack = createStackNavigator();
 const DashboardStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="DriverDashboard"  component={DriverDashboardScreen} />
-    <Stack.Screen
-      name="IncomingRide"
-      component={IncomingRideScreen}
-      options={{
-        presentation:       'transparentModal',
-        cardOverlayEnabled: true,
-        animationEnabled:   false,
-        gestureEnabled:     false,
-      }}
-    />
+    <Stack.Screen name="IncomingRideQueue" component={IncomingRideQueueScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
     <Stack.Screen name="ActiveRide"      component={ActiveRideScreen}      />
     <Stack.Screen name="FloorPrice"      component={FloorPriceScreen}      />
     <Stack.Screen name="Notifications"   component={NotificationsScreen}   />

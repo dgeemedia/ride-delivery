@@ -133,4 +133,10 @@ router.get(
   ctrl.getPayoutHistory
 );
 
+router.put('/floor-price',
+     authorize('DRIVER'),
+     [body('floorMultiplier').isFloat({ min: 1.0, max: 2.0 })],
+     ctrl.setFloorMultiplier
+);
+
 module.exports = router;

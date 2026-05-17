@@ -165,9 +165,17 @@ export default function FloorPriceScreen({ navigation }) {
       return;
     }
     const saveValue = enabled ? effectiveFloor : 0;
+    if (!platformEst && saveValue > 0) {
+      Alert.alert('Not ready', 'Platform rates are still loading. Please wait a moment.');
+      return;
+    }
     setSaving(true);
     try {
-      await driverAPI.updateProfile({ ...profile, preferredFloorPrice: saveValue });
+      await driverAPI.setFloorMultiplier({
+        floorMultiplier: saveValue > 0
+          ? parseFloat((saveValue / platformEst).toFixed(6))
+          : 1.0,
+      });
       Alert.alert(
         saveValue > 0 ? 'Floor Price Set ✅' : 'Floor Price Disabled',
         saveValue > 0

@@ -59,29 +59,32 @@ exports.getFareEstimate = async (req, res) => {
 exports.requestRide = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
-
+ 
   const {
     pickupAddress, pickupLat, pickupLng,
     dropoffAddress, dropoffLat, dropoffLng,
     vehicleType = 'CAR', notes, promoCode,
   } = req.body;
-
+ 
   const activeRide = await prisma.ride.findFirst({
     where: { customerId: req.user.id, status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } }
   });
   if (activeRide) throw new AppError('You already have an active ride', 400);
-
+ 
   const distance      = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
   const fareBreakdown = await estimateFare(distance, vehicleType.toUpperCase());
   let   finalFare     = fareBreakdown.estimatedFare;
-
+ 
+  // Promo code handling (unchanged)
   let appliedPromo = null;
   if (promoCode) {
     appliedPromo = await prisma.promoCode.findFirst({
       where: {
-        code: promoCode.toUpperCase(), isActive: true,
-        validFrom: { lte: new Date() }, validUntil: { gte: new Date() },
-        applicableFor: { in: ['rides', 'both'] }
+        code:          promoCode.toUpperCase(),
+        isActive:      true,
+        validFrom:     { lte: new Date() },
+        validUntil:    { gte: new Date() },
+        applicableFor: { in: ['rides', 'both'] },
       }
     });
     if (appliedPromo) {
@@ -93,30 +96,52 @@ exports.requestRide = async (req, res) => {
         fareBreakdown.bookingFee + 100
       );
       finalFare = Math.round(finalFare / 50) * 50;
-      await prisma.promoCode.update({ where: { id: appliedPromo.id }, data: { currentUses: { increment: 1 } } });
+      await prisma.promoCode.update({
+        where: { id: appliedPromo.id },
+        data:  { currentUses: { increment: 1 } },
+      });
     }
   }
-
+ 
+  const commissionRate  = fareBreakdown.commissionRate ?? 0.20;
+  const driverEarnings  = Math.round(finalFare * (1 - commissionRate));
+  const platformFee     = finalFare - driverEarnings;
+ 
   const ride = await prisma.ride.create({
     data: {
-      customerId: req.user.id,
+      customerId:    req.user.id,
       pickupAddress, pickupLat, pickupLng,
       dropoffAddress, dropoffLat, dropoffLng,
-      distance, estimatedFare: finalFare,
-      notes, promoCode: appliedPromo?.code || null,
-      status: 'REQUESTED',
+      distance,
+      estimatedFare: finalFare,
+      notes,
+      promoCode:     appliedPromo?.code || null,
+      status:        'REQUESTED',
     },
     include: {
-      customer: { select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true } }
+      customer: {
+        select: { id: true, firstName: true, lastName: true, phone: true, profileImage: true }
+      }
     }
   });
-
+ 
+  // ── Broadcast payload — same fare the customer sees ─────────────────────
+  // Driver and customer both see estimatedFare. The breakdown is included
+  // so the driver knows their earnings without guessing.
   broadcastToDrivers(getIO(req), 'ride:new_request', {
     rideId:          ride.id,
     pickupAddress:   ride.pickupAddress,
     dropoffAddress:  ride.dropoffAddress,
+ 
+    // The fare is identical to what the customer was shown
     estimatedFare:   ride.estimatedFare,
+ 
+    // Transparent breakdown
     bookingFee:      fareBreakdown.bookingFee,
+    driverEarnings,                              // driver's take-home
+    platformFee,                                 // platform commission
+    commissionRate,
+ 
     distance:        ride.distance,
     etaMinutes:      fareBreakdown.estimatedMinutes,
     surgeMultiplier: fareBreakdown.surgeMultiplier,
@@ -126,9 +151,10 @@ exports.requestRide = async (req, res) => {
       firstName:    ride.customer.firstName,
       lastName:     ride.customer.lastName,
       profileImage: ride.customer.profileImage,
-    }
+    },
   });
-
+ 
+  // Auto-shield (unchanged)
   try {
     const autoShield = await shieldService.shouldAutoShield(req.user.id);
     if (autoShield.should && autoShield.beneficiary) {
@@ -151,11 +177,22 @@ exports.requestRide = async (req, res) => {
   } catch (shieldErr) {
     console.error('[SHIELD] Auto-SHIELD error:', shieldErr.message);
   }
-
+ 
   res.status(201).json({
     success: true,
-    message: 'Ride requested successfully. Looking for nearby drivers...',
-    data: { ride, fareBreakdown, promoApplied: !!appliedPromo }
+    message: 'Ride requested. Looking for nearby drivers…',
+    data: {
+      ride,
+      fareBreakdown: {
+        ...fareBreakdown,
+        // Unified breakdown so the API response is transparent for both parties
+        estimatedFare: finalFare,
+        driverEarnings,
+        platformFee,
+        commissionRate,
+      },
+      promoApplied: !!appliedPromo,
+    }
   });
 };
 
@@ -553,60 +590,96 @@ exports.rateRide = async (req, res) => {
   res.status(201).json({ success: true, message: 'Rating submitted', data: { rating: newRating } });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/rides/nearby-drivers
-//
-// Ranking uses a weighted blend:
-//   score = (normalised_rating × 0.65) − (normalised_distance × 0.35)
-//
-// New drivers (rating = 0) are treated as rating = 3.0 (neutral) so they
-// aren't systematically buried below experienced drivers at similar distances.
-// ─────────────────────────────────────────────────────────────────────────────
 exports.getNearbyDrivers = async (req, res) => {
-  const { pickupLat, pickupLng, radiusKm = 10, vehicleType } = req.query;
+  const {
+    pickupLat, pickupLng,
+    dropoffLat, dropoffLng,
+    radiusKm  = 10,
+    vehicleType,
+  } = req.query;
+ 
   if (!pickupLat || !pickupLng) throw new AppError('Please provide pickup coordinates', 400);
-
+ 
   const lat    = parseFloat(pickupLat);
   const lng    = parseFloat(pickupLng);
   const radius = parseFloat(radiusKm);
-
+ 
+  // Route distance — use actual when dropoff is provided, fall back to 3 km
+  const routeKm = (dropoffLat && dropoffLng)
+    ? calculateDistance(lat, lng, parseFloat(dropoffLat), parseFloat(dropoffLng))
+    : null;
+ 
   const drivers = await prisma.driverProfile.findMany({
     where: {
-      isApproved: true, isOnline: true,
-      currentLat: { not: null }, currentLng: { not: null },
+      isApproved: true,
+      isOnline:   true,
+      currentLat: { not: null },
+      currentLng: { not: null },
       ...(vehicleType && { vehicleType: vehicleType.toUpperCase() }),
     },
     include: {
-      user: { select: { id: true, firstName: true, lastName: true, profileImage: true, phone: true } }
-    }
+      user: {
+        select: {
+          id:           true,
+          firstName:    true,
+          lastName:     true,
+          profileImage: true,
+          phone:        true,
+        },
+      },
+    },
   });
-
+ 
+  // Filter by radius and compute pickup ETA distance
   const nearby = drivers
     .map(d => ({
       ...d,
-      distanceKm: parseFloat(calculateDistance(lat, lng, d.currentLat, d.currentLng).toFixed(2)),
+      distanceToPickupKm: parseFloat(
+        calculateDistance(lat, lng, d.currentLat, d.currentLng).toFixed(2)
+      ),
     }))
-    .filter(d => d.distanceKm <= radius)
+    .filter(d => d.distanceToPickupKm <= radius)
     .sort((a, b) => {
+      // Weighted score: 65% rating, 35% proximity (same as before)
       const ratingA = (a.rating > 0 ? a.rating : 3.0) / 5;
       const ratingB = (b.rating > 0 ? b.rating : 3.0) / 5;
-      const distA   = a.distanceKm / radius;
-      const distB   = b.distanceKm / radius;
-      const scoreA  = ratingA * 0.65 - distA * 0.35;
-      const scoreB  = ratingB * 0.65 - distB * 0.35;
-      return scoreB - scoreA;
+      const distA   = a.distanceToPickupKm / radius;
+      const distB   = b.distanceToPickupKm / radius;
+      return (ratingB * 0.65 - distB * 0.35) - (ratingA * 0.65 - distA * 0.35);
     })
     .slice(0, 20);
-
+ 
+  // Compute fare per driver (respects their floorMultiplier)
   const formatted = await Promise.all(nearby.map(async (d) => {
-    const fareEst = await estimateFare(3, d.vehicleType ?? 'CAR');
+    const driverVehicle    = d.vehicleType ?? 'CAR';
+    const estimateKm       = routeKm ?? 3;         // use actual route or fallback
+    const baseFareEstimate = await estimateFare(estimateKm, driverVehicle);
+ 
+    // Driver floor price — stored as floorMultiplier on driverProfile (>= 1.0)
+    // If not yet migrated, defaults to 1.0 (no floor applied)
+    const floorMultiplier  = parseFloat(d.floorMultiplier ?? 1.0);
+    let   effectiveFare    = baseFareEstimate.estimatedFare;
+ 
+    if (floorMultiplier > 1.0) {
+      const floored = applyDriverFloor(
+        effectiveFare * floorMultiplier,  // driver's minimum price
+        effectiveFare,
+      );
+      effectiveFare = floored.adjustedFare;
+    }
+ 
+    // Earnings breakdown (same math as completeRide)
+    const commissionRate  = baseFareEstimate.commissionRate ?? 0.20;
+    const driverEarnings  = Math.round(effectiveFare * (1 - commissionRate));
+    const platformFee     = effectiveFare - driverEarnings;
+ 
     return {
       driverId:        d.user.id,
       profileId:       d.id,
       firstName:       d.user.firstName,
       lastName:        d.user.lastName,
       profileImage:    d.user.profileImage,
-      vehicleType:     d.vehicleType,
+      vehicleType:     driverVehicle,
       vehicleMake:     d.vehicleMake,
       vehicleModel:    d.vehicleModel,
       vehicleColor:    d.vehicleColor,
@@ -614,17 +687,32 @@ exports.getNearbyDrivers = async (req, res) => {
       vehicleYear:     d.vehicleYear,
       rating:          parseFloat((d.rating || 0).toFixed(1)),
       totalRides:      d.totalRides,
-      distanceKm:      d.distanceKm,
-      etaMinutes:      Math.ceil(d.distanceKm / 0.5),
+      distanceKm:      d.distanceToPickupKm,
+      etaMinutes:      Math.ceil(d.distanceToPickupKm / 0.5),
       currentLat:      d.currentLat,
       currentLng:      d.currentLng,
-      surgeMultiplier: fareEst.surgeMultiplier,
-      surgeLabel:      fareEst.surgeLabel,
-      bookingFee:      fareEst.bookingFee,
+      floorMultiplier, // so customer knows this driver has a floor
+ 
+      // ── Price (customer and driver see the same effectiveFare) ────────────
+      effectiveFare,          // what customer pays = what driver is quoted
+      driverEarnings,         // driver's cut after commission
+      platformFee,            // platform's cut
+      commissionRate,
+      surgeMultiplier: baseFareEstimate.surgeMultiplier,
+      surgeLabel:      baseFareEstimate.surgeLabel,
+      bookingFee:      baseFareEstimate.bookingFee,
+      routeKm:         estimateKm,
     };
   }));
-
-  res.status(200).json({ success: true, data: { drivers: formatted, total: formatted.length } });
+ 
+  res.status(200).json({
+    success: true,
+    data: {
+      drivers:  formatted,
+      total:    formatted.length,
+      routeKm:  routeKm ? parseFloat(routeKm.toFixed(2)) : null,
+    },
+  });
 };
 
 exports.requestSpecificDriver = async (req, res) => {
