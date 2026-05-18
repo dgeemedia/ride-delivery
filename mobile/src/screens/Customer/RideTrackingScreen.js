@@ -9,90 +9,185 @@ import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
-import { rideAPI/*, shieldAPI*/ } from '../../services/api';
-import socketService          from '../../services/socket';
+import { rideAPI }           from '../../services/api';
+import socketService         from '../../services/socket';
 
-const { height } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const TAB_BAR_HEIGHT = 60;
-const SHEET_MIN      = 160;
+const SHEET_MIN      = 180;
 const SHEET_DEFAULT  = Math.round(height * 0.50);
 const SHEET_MAX      = Math.round(height * 0.82);
 const DRAG_HANDLE_H  = 28;
 
 const STATUS_CONFIG = {
-  REQUESTED:   { label: 'Finding your driver...',  color: '#4E8DBD', icon: 'time-outline'             },
-  ACCEPTED:    { label: 'Driver is on the way',    color: '#FFB800', icon: 'car-outline'              },
-  ARRIVED:     { label: 'Driver has arrived!',     color: '#A78BFA', icon: 'location-outline'         },
-  IN_PROGRESS: { label: 'Ride in progress',        color: '#5DAA72', icon: 'navigate-outline'         },
-  COMPLETED:   { label: 'Ride completed!',         color: '#5DAA72', icon: 'checkmark-circle-outline' },
-  CANCELLED:   { label: 'Ride cancelled',          color: '#E05555', icon: 'close-circle-outline'     },
+  REQUESTED:   { label: 'Finding your driver',  sublabel: 'Matching you with the best driver nearby', color: '#4E8DBD', icon: 'time-outline',             step: 0 },
+  ACCEPTED:    { label: 'Driver on the way',    sublabel: 'Your driver is heading to pickup',          color: '#FFB800', icon: 'car-outline',              step: 1 },
+  ARRIVED:     { label: 'Driver has arrived',   sublabel: 'Look for your driver at the pickup point',  color: '#A78BFA', icon: 'location-outline',         step: 2 },
+  IN_PROGRESS: { label: 'Ride in progress',     sublabel: 'Sit back, you\'re on your way',             color: '#5DAA72', icon: 'navigate-outline',         step: 3 },
+  COMPLETED:   { label: 'Ride completed',       sublabel: 'Hope you enjoyed the ride!',                color: '#5DAA72', icon: 'checkmark-circle-outline',  step: 4 },
+  CANCELLED:   { label: 'Ride cancelled',       sublabel: 'This ride has been cancelled',              color: '#E05555', icon: 'close-circle-outline',      step: -1 },
 };
 
-// ── Navigates to the HomeTab from any stack ───────────────────────────────────
+const STEPS = ['Matched', 'En Route', 'Arrived', 'In Progress'];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 const goHome = (navigation) => navigation.getParent()?.navigate('HomeTab');
 
 const callPhone = (phone) => {
   if (!phone) return;
-  const url = `tel:${String(phone).replace(/\s+/g, '')}`;
+  const cleaned = String(phone).replace(/\s+/g, '');
+  const url     = `tel:${cleaned}`;
   Linking.canOpenURL(url)
     .then(ok => {
-      if (ok) Linking.openURL(url);
-      else Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
+      if (ok) return Linking.openURL(url);
+      Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
     })
     .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
 };
 
-// ── DriverInfoCard ─────────────────────────────────────────────────────────────
-const DriverInfoCard = ({ ride, theme }) => {
+// ── ETACountdownRing — circular timer (Uber-inspired) ─────────────────────────
+const ETACountdownRing = ({ etaMinutes, color }) => {
+  const spinA = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(spinA, { toValue: 1, duration: 3000, useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+  const rotate = spinA.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  return (
+    <View style={era.wrap}>
+      <Animated.View style={[era.ring, { borderColor: color, transform: [{ rotate }] }]} />
+      <View style={era.inner}>
+        <Text style={[era.minutes, { color }]}>{etaMinutes ?? '—'}</Text>
+        <Text style={[era.label, { color }]}>min</Text>
+      </View>
+    </View>
+  );
+};
+const era = StyleSheet.create({
+  wrap:    { width: 64, height: 64, justifyContent: 'center', alignItems: 'center' },
+  ring:    { position: 'absolute', width: 64, height: 64, borderRadius: 32, borderWidth: 2.5, borderStyle: 'dashed', borderTopColor: 'transparent' },
+  inner:   { alignItems: 'center' },
+  minutes: { fontSize: 20, fontWeight: '900', lineHeight: 22 },
+  label:   { fontSize: 9, fontWeight: '700', letterSpacing: 1 },
+});
+
+// ── StatusRail — InDrive-inspired horizontal progress strip ───────────────────
+const StatusRail = ({ step, color, theme }) => (
+  <View style={sr.wrap}>
+    {STEPS.map((s, i) => {
+      const active = i <= step;
+      return (
+        <React.Fragment key={s}>
+          <View style={sr.item}>
+            <View style={[sr.dot, {
+              backgroundColor: active ? color : theme.border,
+              borderColor:     active ? color : theme.border,
+              transform:       [{ scale: i === step ? 1.3 : 1 }],
+            }]}>
+              {active && i < step && <Ionicons name="checkmark" size={8} color="#080C18" />}
+            </View>
+            <Text style={[sr.lbl, { color: active ? color : theme.hint, fontWeight: i === step ? '800' : '500' }]}>{s}</Text>
+          </View>
+          {i < STEPS.length - 1 && (
+            <View style={[sr.line, { backgroundColor: i < step ? color : theme.border }]} />
+          )}
+        </React.Fragment>
+      );
+    })}
+  </View>
+);
+const sr = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, paddingHorizontal: 4 },
+  item: { alignItems: 'center', gap: 4 },
+  dot:  { width: 18, height: 18, borderRadius: 9, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
+  lbl:  { fontSize: 8, letterSpacing: 0.5 },
+  line: { flex: 1, height: 2, marginBottom: 14, marginHorizontal: 2 },
+});
+
+// ── DriverHeroCard — large card inspired by InDrive driver reveal ──────────────
+const DriverHeroCard = ({ ride, theme, accentColor }) => {
   const driver = ride?.driver;
   if (!driver) return null;
-  const dp     = driver.driverProfile;
-  const accent = theme.accent;
+  const dp    = driver.driverProfile;
+  const trust = dp?.totalRides ? Math.min(100, Math.round(50 + (dp.totalRides / 5))) : null;
+
   return (
-    <View style={[di.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-      <View style={[di.avatar, { backgroundColor: accent + '18' }]}>
-        <Text style={[di.avatarTxt, { color: accent }]}>
-          {driver.firstName?.[0]}{driver.lastName?.[0]}
-        </Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[di.name, { color: theme.foreground }]}>
-          {driver.firstName} {driver.lastName}
-        </Text>
-        {dp && (
-          <Text style={[di.vehicle, { color: theme.hint }]} numberOfLines={1}>
-            {dp.vehicleColor} {dp.vehicleMake} {dp.vehicleModel} • {dp.vehiclePlate}
-          </Text>
-        )}
-        {dp?.rating > 0 && (
-          <View style={di.ratingRow}>
-            <Ionicons name="star" size={11} color="#C9A96E" />
-            <Text style={[di.rating, { color: theme.hint }]}> {dp.rating.toFixed(1)}</Text>
+    <View style={[dh.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+      {/* Left: avatar + trust badge */}
+      <View style={dh.leftCol}>
+        <View style={[dh.avatarWrap, { borderColor: accentColor + '60' }]}>
+          <View style={[dh.avatar, { backgroundColor: accentColor + '22' }]}>
+            <Text style={[dh.initials, { color: accentColor }]}>
+              {driver.firstName?.[0]}{driver.lastName?.[0]}
+            </Text>
+          </View>
+        </View>
+        {trust !== null && (
+          <View style={[dh.trustBadge, { backgroundColor: '#5DAA7222', borderColor: '#5DAA7250' }]}>
+            <Text style={dh.trustTxt}>{trust}% trust</Text>
           </View>
         )}
       </View>
+
+      {/* Center: driver info */}
+      <View style={{ flex: 1 }}>
+        <Text style={[dh.name, { color: theme.foreground }]}>
+          {driver.firstName} {driver.lastName}
+        </Text>
+        {dp && (
+          <Text style={[dh.vehicle, { color: theme.hint }]} numberOfLines={1}>
+            {dp.vehicleColor} {dp.vehicleMake} {dp.vehicleModel}
+          </Text>
+        )}
+        <View style={dh.metaRow}>
+          {dp?.rating > 0 && (
+            <View style={dh.metaChip}>
+              <Ionicons name="star" size={10} color="#C9A96E" />
+              <Text style={[dh.metaTxt, { color: '#C9A96E' }]}>{dp.rating.toFixed(1)}</Text>
+            </View>
+          )}
+          {dp?.vehiclePlate && (
+            <View style={[dh.plateBadge, { backgroundColor: theme.background, borderColor: theme.border }]}>
+              <Text style={[dh.plateTxt, { color: theme.foreground }]}>{dp.vehiclePlate}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Right: call button */}
       {driver.phone && (
         <TouchableOpacity
-          style={[di.callBtn, { backgroundColor: accent + '18', borderColor: accent + '40' }]}
+          style={[dh.callBtn, { backgroundColor: accentColor, shadowColor: accentColor }]}
           onPress={() => callPhone(driver.phone)}
           activeOpacity={0.75}
         >
-          <Ionicons name="call" size={17} color={accent} />
+          <Ionicons name="call" size={18} color="#080C18" />
         </TouchableOpacity>
       )}
     </View>
   );
 };
-const di = StyleSheet.create({
-  card:      { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 14 },
-  avatar:    { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  avatarTxt: { fontSize: 15, fontWeight: '800' },
-  name:      { fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  vehicle:   { fontSize: 11, marginBottom: 3 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center' },
-  rating:    { fontSize: 11 },
-  callBtn:   { width: 38, height: 38, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+const dh = StyleSheet.create({
+  card:        { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, borderWidth: 1, padding: 14, marginBottom: 14 },
+  leftCol:     { alignItems: 'center', gap: 6 },
+  avatarWrap:  { width: 54, height: 54, borderRadius: 27, borderWidth: 2, overflow: 'hidden', padding: 2 },
+  avatar:      { flex: 1, borderRadius: 25, justifyContent: 'center', alignItems: 'center' },
+  initials:    { fontSize: 17, fontWeight: '900' },
+  trustBadge:  { borderRadius: 8, borderWidth: 1, paddingHorizontal: 5, paddingVertical: 2 },
+  trustTxt:    { fontSize: 8, fontWeight: '800', color: '#5DAA72', letterSpacing: 0.3 },
+  name:        { fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  vehicle:     { fontSize: 11, marginBottom: 6 },
+  metaRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  metaChip:    { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  metaTxt:     { fontSize: 11, fontWeight: '700' },
+  plateBadge:  { borderRadius: 6, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2 },
+  plateTxt:    { fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  callBtn:     { width: 46, height: 46, borderRadius: 15, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 6 },
 });
 
 // ── RouteCard ─────────────────────────────────────────────────────────────────
@@ -124,36 +219,30 @@ const rc = StyleSheet.create({
   addr: { fontSize: 13, fontWeight: '600', lineHeight: 18 },
 });
 
-// ── MAIN SCREEN ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 export default function RideTrackingScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
   const insets          = useSafeAreaInsets();
   const rideId          = route?.params?.rideId;
+  const accentColor     = theme.accent;
   const accentFg        = theme.accentFg ?? (mode === 'dark' ? '#111111' : '#FFFFFF');
 
   const [ride,           setRide]           = useState(null);
   const [driverLocation, setDriverLocation] = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [cancelling,     setCancelling]     = useState(false);
+  const [etaSeconds,     setEtaSeconds]     = useState(null);
 
   const mapRef          = useRef(null);
   const hasNavigatedRef = useRef(false);
+  const etaTimerRef     = useRef(null);
 
-  const sheetHeightAnim  = useRef(new Animated.Value(0)).current;
-  const currentHeightRef = useRef(0);
-  const startHeightRef   = useRef(0);
-
-  const statusPillBottom = useRef(
-    sheetHeightAnim.interpolate({
-      inputRange:  [0, SHEET_MIN, SHEET_MAX],
-      outputRange: [
-        TAB_BAR_HEIGHT + 10,
-        TAB_BAR_HEIGHT + SHEET_MIN + 10,
-        TAB_BAR_HEIGHT + SHEET_MAX + 10,
-      ],
-      extrapolate: 'clamp',
-    })
-  ).current;
+  // Draggable sheet
+  const sheetHeightAnim  = useRef(new Animated.Value(SHEET_DEFAULT)).current;
+  const currentHeightRef = useRef(SHEET_DEFAULT);
+  const startHeightRef   = useRef(SHEET_DEFAULT);
 
   const sheetPadBottom   = insets.bottom + 20;
   const scrollHeightAnim = useRef(
@@ -168,10 +257,17 @@ export default function RideTrackingScreen({ route, navigation }) {
     })
   ).current;
 
+  const statusPillBottom = useRef(
+    sheetHeightAnim.interpolate({
+      inputRange:  [0, SHEET_MIN, SHEET_MAX],
+      outputRange: [TAB_BAR_HEIGHT + 10, TAB_BAR_HEIGHT + SHEET_MIN + 10, TAB_BAR_HEIGHT + SHEET_MAX + 10],
+      extrapolate: 'clamp',
+    })
+  ).current;
+
   useEffect(() => {
-    Animated.spring(sheetHeightAnim, {
-      toValue: SHEET_DEFAULT, tension: 80, friction: 9, useNativeDriver: false,
-    }).start(() => { currentHeightRef.current = SHEET_DEFAULT; });
+    Animated.spring(sheetHeightAnim, { toValue: SHEET_DEFAULT, tension: 80, friction: 9, useNativeDriver: false })
+      .start(() => { currentHeightRef.current = SHEET_DEFAULT; });
   }, []);
 
   const panResponder = useRef(
@@ -192,24 +288,35 @@ export default function RideTrackingScreen({ route, navigation }) {
         const h    = startHeightRef.current - gs.dy;
         const mid1 = (SHEET_MIN + SHEET_DEFAULT) / 2;
         const mid2 = (SHEET_DEFAULT + SHEET_MAX) / 2;
-        let target;
-        if      (gs.vy < -0.5) target = h > SHEET_DEFAULT ? SHEET_MAX : SHEET_DEFAULT;
-        else if (gs.vy >  0.5) target = h < SHEET_DEFAULT ? SHEET_MIN : SHEET_DEFAULT;
-        else                   target = h < mid1 ? SHEET_MIN : h < mid2 ? SHEET_DEFAULT : SHEET_MAX;
-        Animated.spring(sheetHeightAnim, {
-          toValue: target, tension: 120, friction: 14, useNativeDriver: false,
-        }).start(() => { currentHeightRef.current = target; });
+        let target = h < mid1 ? SHEET_MIN : h < mid2 ? SHEET_DEFAULT : SHEET_MAX;
+        if (gs.vy < -0.5) target = h > SHEET_DEFAULT ? SHEET_MAX : SHEET_DEFAULT;
+        if (gs.vy >  0.5) target = h < SHEET_DEFAULT ? SHEET_MIN : SHEET_DEFAULT;
+        Animated.spring(sheetHeightAnim, { toValue: target, tension: 120, friction: 14, useNativeDriver: false })
+          .start(() => { currentHeightRef.current = target; });
       },
     })
   ).current;
 
-  // ── Load ride — getRideById for history view, getActiveRide as fallback ──
+  // ── ETA countdown timer ───────────────────────────────────────────────────
+  const startEtaTimer = useCallback((minutes) => {
+    clearInterval(etaTimerRef.current);
+    if (!minutes) return;
+    setEtaSeconds(minutes * 60);
+    etaTimerRef.current = setInterval(() => {
+      setEtaSeconds(s => {
+        if (s <= 1) { clearInterval(etaTimerRef.current); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+  }, []);
+
+  useEffect(() => () => clearInterval(etaTimerRef.current), []);
+
+  // ── Load ride ─────────────────────────────────────────────────────────────
   const loadRide = useCallback(async () => {
     try {
-      const res = rideId
-        ? await rideAPI.getRideById(rideId)
-        : await rideAPI.getActiveRide();
-      const r = res?.data?.ride ?? res?.ride ?? null;
+      const res = rideId ? await rideAPI.getRideById(rideId) : await rideAPI.getActiveRide();
+      const r   = res?.data?.ride ?? res?.ride ?? null;
       setRide(r);
       if (r?.driver?.driverProfile?.currentLat) {
         setDriverLocation({
@@ -217,6 +324,7 @@ export default function RideTrackingScreen({ route, navigation }) {
           longitude: r.driver.driverProfile.currentLng,
         });
       }
+      if (r?.etaMinutes) startEtaTimer(r.etaMinutes);
       if (r?.id) socketService.joinRide(r.id);
     } catch (err) {
       console.error('[RideTracking] loadRide:', err?.message);
@@ -229,6 +337,7 @@ export default function RideTrackingScreen({ route, navigation }) {
     const handleStatus = (data) => {
       if (!data.rideId || data.rideId !== rideId) return;
       setRide(prev => prev ? { ...prev, status: data.status, driver: data.driver ?? prev.driver } : prev);
+      if (data.etaMinutes) startEtaTimer(data.etaMinutes);
       if (data.status === 'COMPLETED') {
         if (hasNavigatedRef.current) return;
         hasNavigatedRef.current = true;
@@ -236,16 +345,9 @@ export default function RideTrackingScreen({ route, navigation }) {
       }
       if (data.status === 'CANCELLED') {
         Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [
-          // ✅ Switches to HomeTab — works from any stack
           { text: 'OK', onPress: () => goHome(navigation) },
         ]);
       }
-    };
-    const handleCancelled = (data) => {
-      if (data.rideId !== rideId) return;
-      Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [
-        { text: 'OK', onPress: () => goHome(navigation) },
-      ]);
     };
     const handleDriverLoc = (data) => {
       const loc = { latitude: data.lat, longitude: data.lng };
@@ -254,19 +356,21 @@ export default function RideTrackingScreen({ route, navigation }) {
     };
 
     socketService.on('ride:status:update',     handleStatus);
-    socketService.on('ride:cancelled',         handleCancelled);
+    socketService.on('ride:cancelled',         ({ rideId: id }) => {
+      if (id !== rideId) return;
+      Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [{ text: 'OK', onPress: () => goHome(navigation) }]);
+    });
     socketService.on('driver:location:update', handleDriverLoc);
     return () => {
       socketService.off('ride:status:update',     handleStatus);
-      socketService.off('ride:cancelled',         handleCancelled);
+      socketService.off('ride:cancelled',         () => {});
       socketService.off('driver:location:update', handleDriverLoc);
       if (rideId) socketService.leaveRide(rideId);
     };
   }, [rideId]);
 
-  // ── Cancel ride ───────────────────────────────────────────────────────────
   const handleCancel = () => {
-    Alert.alert('Cancel Ride?', 'Are you sure you want to cancel this ride?', [
+    Alert.alert('Cancel Ride?', 'Are you sure you want to cancel?', [
       { text: 'Keep Ride', style: 'cancel' },
       {
         text: 'Cancel Ride', style: 'destructive',
@@ -274,15 +378,16 @@ export default function RideTrackingScreen({ route, navigation }) {
           setCancelling(true);
           try {
             await rideAPI.cancelRide(rideId, { reason: 'Customer cancelled from tracking screen' });
-            goHome(navigation); // ✅ HomeTab
+            goHome(navigation);
           } catch (err) {
-            Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
+            Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel.');
           } finally { setCancelling(false); }
         },
       },
     ]);
   };
 
+  // ── Derived ───────────────────────────────────────────────────────────────
   const status     = ride?.status ?? 'REQUESTED';
   const statusCfg  = STATUS_CONFIG[status] ?? STATUS_CONFIG.ACCEPTED;
   const pickupLat  = ride?.pickupLat;
@@ -298,34 +403,33 @@ export default function RideTrackingScreen({ route, navigation }) {
     ? { latitude: pickupLat, longitude: pickupLng, latitudeDelta: 0.05, longitudeDelta: 0.05 }
     : undefined;
 
+  const etaMinutesDisplay = etaSeconds !== null ? Math.ceil(etaSeconds / 60) : ride?.etaMinutes ?? null;
+
   if (loading) {
     return (
-      <View style={[s.center, { backgroundColor: theme.background }]}>
-        <ActivityIndicator color={theme.accent} size="large" />
-        <Text style={[s.centerTxt, { color: theme.hint }]}>Loading your ride...</Text>
+      <View style={[s.center, { backgroundColor: '#080C18' }]}>
+        <ActivityIndicator color={accentColor} size="large" />
+        <Text style={[s.centerTxt, { color: '#666' }]}>Loading your ride...</Text>
       </View>
     );
   }
   if (!ride) {
     return (
-      <View style={[s.center, { backgroundColor: theme.background }]}>
-        <Ionicons name="alert-circle-outline" size={40} color={theme.hint} />
-        <Text style={[s.centerTxt, { color: theme.hint }]}>Ride not found.</Text>
-        <TouchableOpacity
-          style={[s.goHomeBtn, { borderColor: theme.border }]}
-          onPress={() => goHome(navigation)} // ✅ HomeTab
-        >
-          <Text style={[s.goHomeTxt, { color: theme.foreground }]}>Go Home</Text>
+      <View style={[s.center, { backgroundColor: '#080C18' }]}>
+        <Ionicons name="alert-circle-outline" size={40} color="#555" />
+        <Text style={[s.centerTxt, { color: '#666' }]}>Ride not found.</Text>
+        <TouchableOpacity style={[s.goHomeBtn, { borderColor: '#333' }]} onPress={() => goHome(navigation)}>
+          <Text style={[s.goHomeTxt, { color: '#ccc' }]}>Go Home</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={[s.root, { backgroundColor: theme.background }]}>
+    <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* ── MAP ── */}
+      {/* ── MAP — same SmartMapView import as RequestRideScreen ── */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -335,59 +439,70 @@ export default function RideTrackingScreen({ route, navigation }) {
         showsCompass={false}
         toolbarEnabled={false}
       >
+        {/* Driver pin — teardrop styled via OsmMapView's Leaflet bridge */}
         {driverLocation && (
-          <Marker coordinate={driverLocation} anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={[s.driverPin, { backgroundColor: statusCfg.color }]}>
-              <Ionicons name="car" size={14} color="#080C18" />
-            </View>
-          </Marker>
+          <Marker coordinate={driverLocation} anchor={{ x: 0.5, y: 1 }} pinColor={statusCfg.color} />
         )}
+        {/* Pickup landmark */}
         {pickupLat && (
-          <Marker coordinate={{ latitude: pickupLat, longitude: pickupLng }} anchor={{ x: 0.5, y: 1 }}>
-            <Ionicons name="radio-button-on" size={24} color={theme.accent} />
-          </Marker>
+          <Marker
+            coordinate={{ latitude: pickupLat, longitude: pickupLng }}
+            anchor={{ x: 0.5, y: 1 }}
+            pinColor={accentColor}
+          />
         )}
+        {/* Dropoff landmark */}
         {dropoffLat && (
-          <Marker coordinate={{ latitude: dropoffLat, longitude: dropoffLng }} anchor={{ x: 0.5, y: 1 }}>
-            <Ionicons name="location" size={28} color="#E05555" />
-          </Marker>
+          <Marker
+            coordinate={{ latitude: dropoffLat, longitude: dropoffLng }}
+            anchor={{ x: 0.5, y: 1 }}
+            pinColor="#E05555"
+          />
         )}
+        {/* Full route */}
         {pickupLat && dropoffLat && (
           <Polyline
             coordinates={[
               { latitude: pickupLat,  longitude: pickupLng  },
               { latitude: dropoffLat, longitude: dropoffLng },
             ]}
-            strokeColor={theme.accent} strokeWidth={3} lineDashPattern={[8, 5]}
+            strokeColor={accentColor} strokeWidth={3} lineDashPattern={[8, 5]}
           />
         )}
+        {/* Driver-to-pickup en-route line */}
         {driverLocation && pickupLat && ['ACCEPTED', 'ARRIVED'].includes(status) && (
           <Polyline
             coordinates={[driverLocation, { latitude: pickupLat, longitude: pickupLng }]}
-            strokeColor={statusCfg.color} strokeWidth={2} lineDashPattern={[4, 6]}
+            strokeColor={statusCfg.color} strokeWidth={2.5} lineDashPattern={[5, 7]}
           />
         )}
       </MapView>
 
+      {/* Top gradient */}
       <View style={s.topGradient} pointerEvents="none" />
 
-      {/* ── Back arrow — goes back to HistoryScreen (or HomeScreen if entered from there) ── */}
+      {/* ── Back button ── */}
       <TouchableOpacity
-        style={[s.backBtn, { top: backBtnTop, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
-        onPress={() => navigation.goBack()} // ✅ pops to previous screen in the stack
+        style={[s.backBtn, { top: backBtnTop }]}
+        onPress={() => navigation.goBack()}
         activeOpacity={0.85}
       >
-        <Ionicons name="arrow-back" size={20} color={theme.foreground} />
+        <Ionicons name="arrow-back" size={20} color="#fff" />
       </TouchableOpacity>
 
-      {/* ── Status pill ── */}
+      {/* ── Top status chip (floating, above sheet) ── */}
       <Animated.View style={[s.statusPill, {
-        backgroundColor: statusCfg.color + '18',
-        borderColor:     statusCfg.color + '50',
+        backgroundColor: statusCfg.color + '20',
+        borderColor:     statusCfg.color + '60',
         bottom:          statusPillBottom,
       }]}>
-        <Ionicons name={statusCfg.icon} size={13} color={statusCfg.color} />
+        <View style={[s.statusDot, { backgroundColor: statusCfg.color }]} />
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+        {etaMinutesDisplay !== null && ['ACCEPTED', 'ARRIVED'].includes(status) && (
+          <View style={[s.etaChip, { backgroundColor: statusCfg.color }]}>
+            <Text style={s.etaChipTxt}>{etaMinutesDisplay} min</Text>
+          </View>
+        )}
       </Animated.View>
 
       {/* ── Bottom sheet ── */}
@@ -397,22 +512,34 @@ export default function RideTrackingScreen({ route, navigation }) {
         height:          sheetHeightAnim,
         bottom:          TAB_BAR_HEIGHT,
       }]}>
+        {/* Drag handle */}
         <View style={s.dragHandleWrap} {...panResponder.panHandlers}>
           <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
         </View>
 
         <Animated.View style={{ height: scrollHeightAnim, overflow: 'hidden' }}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={s.scrollContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Fare strip */}
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
+
+            {/* ── Status rail + ETA ring header ── */}
+            <View style={s.headerRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.statusTitle, { color: theme.foreground }]}>{statusCfg.label}</Text>
+                <Text style={[s.statusSub, { color: theme.hint }]}>{statusCfg.sublabel}</Text>
+                <View style={{ marginTop: 12 }}>
+                  <StatusRail step={statusCfg.step} color={statusCfg.color} theme={theme} />
+                </View>
+              </View>
+              {['ACCEPTED', 'ARRIVED'].includes(status) && (
+                <ETACountdownRing etaMinutes={etaMinutesDisplay} color={statusCfg.color} />
+              )}
+            </View>
+
+            {/* ── Fare strip ── */}
             <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <View style={s.fareItem}>
                 <Text style={[s.fareLabel, { color: theme.hint }]}>FARE</Text>
-                <Text style={[s.fareValue, { color: theme.accent }]}>
-                  {'\u20A6'}{Number(ride.estimatedFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                <Text style={[s.fareValue, { color: accentColor }]}>
+                  ₦{Number(ride.estimatedFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
                 </Text>
               </View>
               <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
@@ -425,12 +552,25 @@ export default function RideTrackingScreen({ route, navigation }) {
               <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
               <View style={s.fareItem}>
                 <Text style={[s.fareLabel, { color: theme.hint }]}>PAYMENT</Text>
-                <Text style={[s.fareValue, { color: theme.foreground }]}>CASH</Text>
+                <Text style={[s.fareValue, { color: theme.foreground }]}>
+                  {ride.paymentMethod ?? 'CASH'}
+                </Text>
               </View>
             </View>
 
-            <DriverInfoCard ride={ride} theme={theme} />
-            <RouteCard      ride={ride} theme={theme} />
+            {/* ── Driver hero card with call button ── */}
+            <DriverHeroCard ride={ride} theme={theme} accentColor={accentColor} />
+
+            {/* ── Route card ── */}
+            <RouteCard ride={ride} theme={theme} />
+
+            {/* ── Safety chip (InDrive-style) ── */}
+            <View style={[s.safetyChip, { backgroundColor: '#5DAA7212', borderColor: '#5DAA7230' }]}>
+              <Ionicons name="shield-checkmark-outline" size={13} color="#5DAA72" />
+              <Text style={[s.safetyTxt, { color: '#5DAA72' }]}>
+                Share ride details with a trusted contact for safety
+              </Text>
+            </View>
 
             {canCancel && (
               <TouchableOpacity
@@ -450,17 +590,14 @@ export default function RideTrackingScreen({ route, navigation }) {
 
             {(status === 'COMPLETED' || status === 'CANCELLED') && (
               <TouchableOpacity
-                style={[s.homeBtn, { backgroundColor: theme.accent }]}
+                style={[s.homeBtn, { backgroundColor: accentColor }]}
                 onPress={() => {
                   if (status === 'COMPLETED') navigation.navigate('RateRide', { rideId, driver: ride?.driver });
-                  else goHome(navigation); // ✅ "Back to Home" → HomeTab
+                  else goHome(navigation);
                 }}
                 activeOpacity={0.88}
               >
-                <Ionicons
-                  name={status === 'COMPLETED' ? 'star-outline' : 'home-outline'}
-                  size={18} color={accentFg}
-                />
+                <Ionicons name={status === 'COMPLETED' ? 'star-outline' : 'home-outline'} size={18} color={accentFg} />
                 <Text style={[s.homeBtnTxt, { color: accentFg }]}>
                   {status === 'COMPLETED' ? 'Rate Your Driver' : 'Back to Home'}
                 </Text>
@@ -476,27 +613,38 @@ export default function RideTrackingScreen({ route, navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:      { flex: 1 },
+  root:      { flex: 1, backgroundColor: '#080C18' },
   center:    { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
   centerTxt: { fontSize: 14 },
   goHomeBtn: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
   goHomeTxt: { fontSize: 14, fontWeight: '600' },
 
-  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
-  backBtn:     { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
-  driverPin:   { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
+  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 130, backgroundColor: 'rgba(0,0,0,0.5)' },
+  backBtn: {
+    position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, zIndex: 99,
+    backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+    justifyContent: 'center', alignItems: 'center',
+  },
 
-  statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
+  statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 24, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8, zIndex: 10 },
+  statusDot:     { width: 7, height: 7, borderRadius: 3.5 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
+  etaChip:       { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, marginLeft: 2 },
+  etaChipTxt:    { fontSize: 10, fontWeight: '900', color: '#080C18' },
 
   sheet: {
     position: 'absolute', left: 0, right: 0,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     borderTopWidth: 1, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 24,
   },
   dragHandleWrap: { width: '100%', paddingVertical: 12, alignItems: 'center' },
   dragHandle:     { width: 44, height: 4, borderRadius: 2 },
   scrollContent:  { paddingHorizontal: 20 },
+
+  headerRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 16 },
+  statusTitle: { fontSize: 18, fontWeight: '900', letterSpacing: -0.3, marginBottom: 3 },
+  statusSub:   { fontSize: 12, fontWeight: '500', lineHeight: 17 },
 
   fareStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
   fareItem:    { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
@@ -504,9 +652,11 @@ const s = StyleSheet.create({
   fareValue:   { fontSize: 14, fontWeight: '900' },
   fareDivider: { width: 1 },
 
+  safetyChip: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 14 },
+  safetyTxt:  { flex: 1, fontSize: 11, fontWeight: '600', lineHeight: 16 },
+
   cancelBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, marginBottom: 8 },
   cancelTxt: { fontSize: 14, fontWeight: '700', color: '#E05555' },
-
-  homeBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8 },
-  homeBtnTxt: { fontSize: 15, fontWeight: '800' },
+  homeBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, paddingVertical: 15, marginBottom: 8 },
+  homeBtnTxt:{ fontSize: 15, fontWeight: '800' },
 });

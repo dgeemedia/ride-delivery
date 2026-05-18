@@ -17,6 +17,7 @@ const { width, height } = Dimensions.get('window');
 const H_PAD        = 20;
 const REQUEST_SECS = 45;
 const COMMISSION   = 0.20;
+const TAB_CONTENT_H = 54;
 
 // ── Colour helpers ────────────────────────────────────────────────────────────
 const fareColor = (fare) => {
@@ -524,10 +525,23 @@ export default function IncomingRideQueueScreen({ route, navigation }) {
   const headerA   = useRef(new Animated.Value(0)).current;
   const listA     = useRef(new Animated.Value(0)).current;
 
-// ── Ensure socket is connected (poor network guard) ───────────────────────
+// ── Ensure socket is connected + REST fallback for missed requests ────────
   useEffect(() => {
     socketService.connect().catch(() => {});
-  }, []);
+
+    // Fallback: fetch any requests missed during a disconnect
+    driverAPI.getNearbyRequests()
+      .then(res => {
+        const list = res?.data?.requests ?? [];
+        list.forEach(r => {
+          const entry = makeEntry(r);
+          setRequests(prev =>
+            prev.some(x => x.rideId === entry.rideId) ? prev : [entry, ...prev]
+          );
+        });
+      })
+      .catch(() => {}); // silently ignore if offline — socket will cover it
+  }, [makeEntry]);
 
   // ── Wallet load ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -714,7 +728,7 @@ export default function IncomingRideQueueScreen({ route, navigation }) {
         <ScrollView
           contentContainerStyle={[
             s.list,
-            { paddingBottom: insets.bottom + 24 },
+            { paddingBottom: insets.bottom + TAB_CONTENT_H + 24 },
           ]}
           showsVerticalScrollIndicator={false}
         >

@@ -14,106 +14,162 @@ import socketService         from '../../services/socket';
 import * as Location         from '../../shims/Location';
 
 const { height } = Dimensions.get('window');
-const DA = '#FFB800';
 
-// ── Tab bar height offset — ensures the sheet never hides behind the footer ──
+const DA             = '#FFB800';
 const TAB_BAR_HEIGHT = 60;
-
-// ── Draggable sheet snap heights ──────────────────────────────────────────────
-const SHEET_MIN     = 160;
-const SHEET_DEFAULT = Math.round(height * 0.52);
-const SHEET_MAX     = Math.round(height * 0.84);
-
-// ── Fixed internal layout heights ─────────────────────────────────────────────
-const DRAG_HANDLE_H = 28;
-const ACTION_H      = 8 + 54;
+const SHEET_MIN      = 180;
+const SHEET_DEFAULT  = Math.round(height * 0.52);
+const SHEET_MAX      = Math.round(height * 0.84);
+const DRAG_HANDLE_H  = 28;
+const ACTION_H       = 8 + 54;
 
 const STATUS_CONFIG = {
-  ACCEPTED:    { label: 'Head to Pickup',   color: DA,        icon: 'navigate-outline'         },
-  ARRIVED:     { label: 'Arrived',          color: '#A78BFA', icon: 'location-outline'         },
-  IN_PROGRESS: { label: 'Ride in Progress', color: '#5DAA72', icon: 'car-sport-outline'        },
-  COMPLETED:   { label: 'Completed',        color: '#5DAA72', icon: 'checkmark-circle-outline' },
-  CANCELLED:   { label: 'Cancelled',        color: '#E05555', icon: 'close-circle-outline'     },
+  ACCEPTED:    { label: 'Head to Pickup',   sublabel: 'Navigate to the pickup point', color: DA,        icon: 'navigate-outline'         },
+  ARRIVED:     { label: 'Arrived',          sublabel: 'Let the customer know you\'ve arrived', color: '#A78BFA', icon: 'location-outline'  },
+  IN_PROGRESS: { label: 'Ride in Progress', sublabel: 'Drive safely to the destination', color: '#5DAA72', icon: 'car-sport-outline'      },
+  COMPLETED:   { label: 'Completed',        sublabel: 'Great job! Ride completed successfully', color: '#5DAA72', icon: 'checkmark-circle-outline' },
+  CANCELLED:   { label: 'Cancelled',        sublabel: 'This ride has been cancelled', color: '#E05555', icon: 'close-circle-outline'      },
 };
 
-// ── Phone call helper ─────────────────────────────────────────────────────────
 const callPhone = (phone) => {
   if (!phone) return;
-  const url = `tel:${phone.replace(/\s+/g, '')}`;
+  const url = `tel:${String(phone).replace(/\s+/g, '')}`;
   Linking.canOpenURL(url)
-    .then(supported => {
-      if (supported) Linking.openURL(url);
-      else Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
+    .then(ok => {
+      if (ok) return Linking.openURL(url);
+      Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
     })
     .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
 };
 
-// ── CustomerCard ───────────────────────────────────────────────────────────────
-const CustomerCard = ({ ride, theme }) => (
-  <View style={[cc.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-    <View style={[cc.avatar, { backgroundColor: DA + '18' }]}>
-      <Text style={[cc.avatarTxt, { color: DA }]}>
-        {ride.customer?.firstName?.[0]}{ride.customer?.lastName?.[0]}
-      </Text>
-    </View>
-    <View style={{ flex: 1 }}>
-      <Text style={[cc.name, { color: theme.foreground }]}>
-        {ride.customer?.firstName} {ride.customer?.lastName}
-      </Text>
-      {ride.customer?.phone && (
-        <Text style={[cc.phone, { color: theme.hint }]}>{ride.customer.phone}</Text>
+// ── ArrivalGlow — pulsing halo shown when driver has ARRIVED ─────────────────
+const ArrivalGlow = ({ color }) => {
+  const glowA = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(glowA, { toValue: 1,   duration: 800, useNativeDriver: true }),
+      Animated.timing(glowA, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, []);
+  return (
+    <Animated.View style={[ag.ring, { borderColor: color, opacity: glowA }]} pointerEvents="none" />
+  );
+};
+const ag = StyleSheet.create({
+  ring: { position: 'absolute', width: 80, height: 80, borderRadius: 40, borderWidth: 2.5, top: -24, left: -24, right: -24, bottom: -24 },
+});
+
+// ── CustomerHeroCard ──────────────────────────────────────────────────────────
+const CustomerHeroCard = ({ ride, theme, statusColor }) => {
+  const c = ride?.customer;
+  if (!c) return null;
+
+  const totalRides = c.totalRides ?? 0;
+  const trustLevel = totalRides > 20 ? 'Frequent' : totalRides > 5 ? 'Regular' : 'New';
+  const trustColor = totalRides > 20 ? '#5DAA72' : totalRides > 5 ? DA : '#A78BFA';
+
+  return (
+    <View style={[ch.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+      {/* Avatar */}
+      <View style={{ position: 'relative' }}>
+        <View style={[ch.avatarWrap, { borderColor: statusColor + '60' }]}>
+          <View style={[ch.avatar, { backgroundColor: DA + '22' }]}>
+            <Text style={[ch.initials, { color: DA }]}>
+              {c.firstName?.[0]}{c.lastName?.[0]}
+            </Text>
+          </View>
+        </View>
+        {/* Trust badge on avatar */}
+        <View style={[ch.trustDot, { backgroundColor: trustColor }]} />
+      </View>
+
+      {/* Info */}
+      <View style={{ flex: 1 }}>
+        <Text style={[ch.name, { color: theme.foreground }]}>{c.firstName} {c.lastName}</Text>
+        {c.phone && (
+          <Text style={[ch.phone, { color: theme.hint }]}>{c.phone}</Text>
+        )}
+        <View style={ch.metaRow}>
+          <View style={[ch.trustBadge, { backgroundColor: trustColor + '18', borderColor: trustColor + '40' }]}>
+            <Text style={[ch.trustTxt, { color: trustColor }]}>{trustLevel} Rider</Text>
+          </View>
+          {totalRides > 0 && (
+            <Text style={[ch.rides, { color: theme.hint }]}>{totalRides} rides</Text>
+          )}
+        </View>
+      </View>
+
+      {/* Call button */}
+      {c.phone && (
+        <TouchableOpacity
+          style={[ch.callBtn, { backgroundColor: DA, shadowColor: DA }]}
+          onPress={() => callPhone(c.phone)}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="call" size={18} color="#080C18" />
+        </TouchableOpacity>
       )}
     </View>
-    {ride.customer?.phone && (
-      <TouchableOpacity
-        style={[cc.callBtn, { backgroundColor: DA + '18', borderColor: DA + '40' }]}
-        onPress={() => callPhone(ride.customer.phone)}
-        activeOpacity={0.75}
-      >
-        <Ionicons name="call" size={17} color={DA} />
-      </TouchableOpacity>
-    )}
-  </View>
-);
-const cc = StyleSheet.create({
-  card:      { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 14 },
-  avatar:    { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  avatarTxt: { fontSize: 15, fontWeight: '800' },
-  name:      { fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  phone:     { fontSize: 12 },
-  callBtn:   { width: 38, height: 38, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  );
+};
+const ch = StyleSheet.create({
+  card:      { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, borderWidth: 1, padding: 14, marginBottom: 14 },
+  avatarWrap:{ width: 52, height: 52, borderRadius: 26, borderWidth: 2, overflow: 'hidden', padding: 2, position: 'relative' },
+  avatar:    { flex: 1, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+  initials:  { fontSize: 17, fontWeight: '900' },
+  trustDot:  { position: 'absolute', bottom: 0, right: 0, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: '#080C18' },
+  name:      { fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  phone:     { fontSize: 11, marginBottom: 5 },
+  metaRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  trustBadge:{ borderRadius: 8, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2 },
+  trustTxt:  { fontSize: 9, fontWeight: '800', letterSpacing: 0.3 },
+  rides:     { fontSize: 10 },
+  callBtn:   { width: 46, height: 46, borderRadius: 15, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 6 },
 });
 
-// ── RouteCard ──────────────────────────────────────────────────────────────────
-const RouteCard = ({ ride, theme }) => (
-  <View style={[rc.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-    <View style={rc.row}>
-      <View style={[rc.dot, { backgroundColor: DA }]} />
-      <View style={{ flex: 1 }}>
-        <Text style={[rc.lbl, { color: theme.hint }]}>PICKUP</Text>
-        <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={2}>{ride.pickupAddress}</Text>
+// ── RouteCard ─────────────────────────────────────────────────────────────────
+const RouteCard = ({ ride, status, theme }) => {
+  const atPickup = ['ACCEPTED', 'ARRIVED'].includes(status);
+  return (
+    <View style={[rc.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+      <View style={rc.row}>
+        <View style={[rc.dot, { backgroundColor: atPickup ? DA : DA + '40' }]} />
+        <View style={{ flex: 1 }}>
+          <Text style={[rc.lbl, { color: theme.hint }]}>PICKUP</Text>
+          <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={2}>{ride.pickupAddress}</Text>
+        </View>
+        {atPickup && <View style={[rc.activeChip, { backgroundColor: DA }]}><Text style={rc.activeChipTxt}>NEXT</Text></View>}
+      </View>
+      <View style={[rc.line, { backgroundColor: theme.border }]} />
+      <View style={rc.row}>
+        <View style={[rc.dot, { backgroundColor: !atPickup ? '#E05555' : '#E05555' + '40' }]} />
+        <View style={{ flex: 1 }}>
+          <Text style={[rc.lbl, { color: theme.hint }]}>DROP-OFF</Text>
+          <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={2}>{ride.dropoffAddress}</Text>
+        </View>
+        {!atPickup && status === 'IN_PROGRESS' && (
+          <View style={[rc.activeChip, { backgroundColor: '#E05555' }]}><Text style={rc.activeChipTxt}>NEXT</Text></View>
+        )}
       </View>
     </View>
-    <View style={[rc.line, { backgroundColor: theme.border }]} />
-    <View style={rc.row}>
-      <View style={[rc.dot, { backgroundColor: '#E05555' }]} />
-      <View style={{ flex: 1 }}>
-        <Text style={[rc.lbl, { color: theme.hint }]}>DROP-OFF</Text>
-        <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={2}>{ride.dropoffAddress}</Text>
-      </View>
-    </View>
-  </View>
-);
+  );
+};
 const rc = StyleSheet.create({
-  card: { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 14 },
-  row:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  dot:  { width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0 },
-  line: { width: 1.5, height: 14, marginLeft: 4.5, marginVertical: 3 },
-  lbl:  { fontSize: 9, fontWeight: '700', letterSpacing: 1.5, marginBottom: 2 },
-  addr: { fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  card:         { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 14 },
+  row:          { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  dot:          { width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0 },
+  line:         { width: 1.5, height: 14, marginLeft: 4.5, marginVertical: 3 },
+  lbl:          { fontSize: 9, fontWeight: '700', letterSpacing: 1.5, marginBottom: 2 },
+  addr:         { fontSize: 13, fontWeight: '600', lineHeight: 18, flex: 1 },
+  activeChip:   { borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3, alignSelf: 'flex-start' },
+  activeChipTxt:{ fontSize: 9, fontWeight: '900', color: '#080C18' },
 });
 
-// ── MAIN ───────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 export default function ActiveRideScreen({ route, navigation }) {
   const { theme } = useTheme();
   const insets    = useSafeAreaInsets();
@@ -123,12 +179,13 @@ export default function ActiveRideScreen({ route, navigation }) {
   const [myLoc,   setMyLoc]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [acting,  setActing]  = useState(false);
+  const [speed,   setSpeed]   = useState(null); // km/h
 
   const mapRef = useRef(null);
 
-  const sheetHeightAnim  = useRef(new Animated.Value(0)).current;
-  const currentHeightRef = useRef(0);
-  const startHeightRef   = useRef(0);
+  const sheetHeightAnim  = useRef(new Animated.Value(SHEET_DEFAULT)).current;
+  const currentHeightRef = useRef(SHEET_DEFAULT);
+  const startHeightRef   = useRef(SHEET_DEFAULT);
 
   const sheetPadBottom = insets.bottom + 16;
   const scrollHeightAnim = useRef(
@@ -146,18 +203,13 @@ export default function ActiveRideScreen({ route, navigation }) {
   const statusPillBottom = useRef(
     sheetHeightAnim.interpolate({
       inputRange:  [0, SHEET_MIN, SHEET_MAX],
-      outputRange: [
-        TAB_BAR_HEIGHT + 12,
-        TAB_BAR_HEIGHT + SHEET_MIN + 12,
-        TAB_BAR_HEIGHT + SHEET_MAX + 12,
-      ],
+      outputRange: [TAB_BAR_HEIGHT + 12, TAB_BAR_HEIGHT + SHEET_MIN + 12, TAB_BAR_HEIGHT + SHEET_MAX + 12],
       extrapolate: 'clamp',
     })
   ).current;
 
   const goToDashboard = useCallback(() => navigation.popToTop(), [navigation]);
 
-  // ── PanResponder — draggable sheet ─────────────────────────────────────────
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder:        () => true,
@@ -169,47 +221,36 @@ export default function ActiveRideScreen({ route, navigation }) {
         });
       },
       onPanResponderMove: (_, gs) => {
-        const proposed = startHeightRef.current - gs.dy;
-        const clamped  = Math.max(SHEET_MIN, Math.min(SHEET_MAX, proposed));
-        sheetHeightAnim.setValue(clamped);
+        const next = Math.max(SHEET_MIN, Math.min(SHEET_MAX, startHeightRef.current - gs.dy));
+        sheetHeightAnim.setValue(next);
       },
       onPanResponderRelease: (_, gs) => {
         const h    = startHeightRef.current - gs.dy;
         const mid1 = (SHEET_MIN + SHEET_DEFAULT) / 2;
         const mid2 = (SHEET_DEFAULT + SHEET_MAX) / 2;
-        let target;
-        if      (gs.vy < -0.5) target = h > SHEET_DEFAULT ? SHEET_MAX : SHEET_DEFAULT;
-        else if (gs.vy >  0.5) target = h < SHEET_DEFAULT ? SHEET_MIN : SHEET_DEFAULT;
-        else                   target = h < mid1 ? SHEET_MIN : h < mid2 ? SHEET_DEFAULT : SHEET_MAX;
-        Animated.spring(sheetHeightAnim, {
-          toValue: target, tension: 120, friction: 14, useNativeDriver: false,
-        }).start(() => { currentHeightRef.current = target; });
+        let target = h < mid1 ? SHEET_MIN : h < mid2 ? SHEET_DEFAULT : SHEET_MAX;
+        if (gs.vy < -0.5) target = h > SHEET_DEFAULT ? SHEET_MAX : SHEET_DEFAULT;
+        if (gs.vy >  0.5) target = h < SHEET_DEFAULT ? SHEET_MIN : SHEET_DEFAULT;
+        Animated.spring(sheetHeightAnim, { toValue: target, tension: 120, friction: 14, useNativeDriver: false })
+          .start(() => { currentHeightRef.current = target; });
       },
     })
   ).current;
 
-  // ── Load ride from API ──────────────────────────────────────────────────────
   const loadRide = useCallback(async () => {
     try {
-      const res        = rideId ? await rideAPI.getActiveRide() : null;
+      const res        = await rideAPI.getActiveRide();
       const loadedRide = res?.data?.ride ?? res?.ride ?? null;
       setRide(loadedRide);
     } catch (err) {
       console.error('[ActiveRide] loadRide error:', err?.message);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [rideId]);
 
   useEffect(() => {
     loadRide();
-
-    Animated.spring(sheetHeightAnim, {
-      toValue:         SHEET_DEFAULT,
-      tension:         80,
-      friction:        9,
-      useNativeDriver: false,
-    }).start(() => { currentHeightRef.current = SHEET_DEFAULT; });
+    Animated.spring(sheetHeightAnim, { toValue: SHEET_DEFAULT, tension: 80, friction: 9, useNativeDriver: false })
+      .start(() => { currentHeightRef.current = SHEET_DEFAULT; });
 
     let locationWatcher = null;
     (async () => {
@@ -227,6 +268,10 @@ export default function ActiveRideScreen({ route, navigation }) {
               const loc2 = { latitude: c.latitude, longitude: c.longitude };
               setMyLoc(loc2);
               socketService.updateLocation(loc2);
+              // Speed in km/h from m/s
+              if (c.speed != null && c.speed >= 0) {
+                setSpeed(Math.round(c.speed * 3.6));
+              }
             }
           );
         }
@@ -247,7 +292,6 @@ export default function ActiveRideScreen({ route, navigation }) {
 
     socketService.on('ride:status:update', handleStatus);
     socketService.on('ride:cancelled',     handleCancelled);
-
     return () => {
       socketService.off('ride:status:update', handleStatus);
       socketService.off('ride:cancelled',     handleCancelled);
@@ -255,7 +299,6 @@ export default function ActiveRideScreen({ route, navigation }) {
     };
   }, [rideId]);
 
-  // ── Arrived ─────────────────────────────────────────────────────────────────
   const handleArrive = async () => {
     setActing(true);
     try {
@@ -266,31 +309,26 @@ export default function ActiveRideScreen({ route, navigation }) {
     } finally { setActing(false); }
   };
 
-  // ── Start ────────────────────────────────────────────────────────────────────
   const handleStart = async () => {
     setActing(true);
     try {
       const res     = await rideAPI.startRide(ride.id);
       const updated = res?.data?.ride ?? res?.ride;
       setRide(prev => ({ ...prev, status: 'IN_PROGRESS', ...(updated || {}) }));
-
       if (ride.pickupLat && ride.dropoffLat) {
-        setTimeout(() => {
-          mapRef.current?.fitToCoordinates(
-            [
-              { latitude: ride.pickupLat,  longitude: ride.pickupLng  },
-              { latitude: ride.dropoffLat, longitude: ride.dropoffLng },
-            ],
-            { edgePadding: { top: 80, right: 60, bottom: 420, left: 60 }, animated: true }
-          );
-        }, 400);
+        setTimeout(() => mapRef.current?.fitToCoordinates(
+          [
+            { latitude: ride.pickupLat,  longitude: ride.pickupLng  },
+            { latitude: ride.dropoffLat, longitude: ride.dropoffLng },
+          ],
+          { edgePadding: { top: 80, right: 60, bottom: 420, left: 60 }, animated: true }
+        ), 400);
       }
     } catch (err) {
       Alert.alert('Error', err?.response?.data?.message ?? 'Could not start ride.');
     } finally { setActing(false); }
   };
 
-  // ── Complete ─────────────────────────────────────────────────────────────────
   const handleComplete = () => {
     const doComplete = async () => {
       setActing(true);
@@ -301,7 +339,6 @@ export default function ActiveRideScreen({ route, navigation }) {
         Alert.alert('Error', err?.response?.data?.message ?? 'Could not complete ride.');
       } finally { setActing(false); }
     };
-
     if (Platform.OS === 'web') {
       if (window.confirm('Mark this ride as completed?')) doComplete();
     } else {
@@ -312,14 +349,12 @@ export default function ActiveRideScreen({ route, navigation }) {
     }
   };
 
-  // ── Derived ──────────────────────────────────────────────────────────────────
   const status    = ride?.status ?? 'ACCEPTED';
   const statusCfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.ACCEPTED;
-
-  const pickupLat  = ride?.pickupLat;
-  const pickupLng  = ride?.pickupLng;
-  const dropoffLat = ride?.dropoffLat;
-  const dropoffLng = ride?.dropoffLng;
+  const pickupLat = ride?.pickupLat;
+  const pickupLng = ride?.pickupLng;
+  const dropoffLat= ride?.dropoffLat;
+  const dropoffLng= ride?.dropoffLng;
 
   const mapRegion = myLoc
     ? { latitude: myLoc.latitude, longitude: myLoc.longitude, latitudeDelta: 0.03, longitudeDelta: 0.03 }
@@ -329,36 +364,32 @@ export default function ActiveRideScreen({ route, navigation }) {
 
   const backBtnTop = insets.top + 14;
 
-  // ── Loading ──────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={[s.center, { backgroundColor: theme.background }]}>
+      <View style={[s.center, { backgroundColor: '#080C18' }]}>
         <ActivityIndicator color={DA} size="large" />
-        <Text style={[s.centerTxt, { color: theme.hint }]}>Loading ride...</Text>
+        <Text style={[s.centerTxt, { color: '#666' }]}>Loading ride...</Text>
       </View>
     );
   }
 
   if (!ride) {
     return (
-      <View style={[s.center, { backgroundColor: theme.background }]}>
-        <Ionicons name="alert-circle-outline" size={40} color={theme.hint} />
-        <Text style={[s.centerTxt, { color: theme.hint }]}>No active ride found.</Text>
-        <TouchableOpacity
-          onPress={goToDashboard}
-          style={[s.goBackBtn, { borderColor: theme.border }]}
-        >
-          <Text style={[s.goBackTxt, { color: theme.foreground }]}>Go to Dashboard</Text>
+      <View style={[s.center, { backgroundColor: '#080C18' }]}>
+        <Ionicons name="alert-circle-outline" size={40} color="#555" />
+        <Text style={[s.centerTxt, { color: '#666' }]}>No active ride found.</Text>
+        <TouchableOpacity onPress={goToDashboard} style={[s.goBackBtn, { borderColor: '#333' }]}>
+          <Text style={[s.goBackTxt, { color: '#ccc' }]}>Go to Dashboard</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={[s.root, { backgroundColor: theme.background }]}>
+    <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* ── MAP ── */}
+      {/* ── MAP — same SmartMapView import as RequestRideScreen ── */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -367,23 +398,27 @@ export default function ActiveRideScreen({ route, navigation }) {
         showsCompass={false}
         toolbarEnabled={false}
       >
+        {/* Driver's own position */}
         {myLoc && (
-          <Marker coordinate={myLoc} anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={s.driverPin}>
-              <Ionicons name="car" size={14} color="#080C18" />
-            </View>
-          </Marker>
+          <Marker coordinate={myLoc} anchor={{ x: 0.5, y: 0.5 }} pinColor={DA} />
         )}
+        {/* Pickup */}
         {pickupLat && (
-          <Marker coordinate={{ latitude: pickupLat, longitude: pickupLng }} anchor={{ x: 0.5, y: 1 }}>
-            <Ionicons name="radio-button-on" size={24} color={DA} />
-          </Marker>
+          <Marker
+            coordinate={{ latitude: pickupLat, longitude: pickupLng }}
+            anchor={{ x: 0.5, y: 1 }}
+            pinColor={DA}
+          />
         )}
+        {/* Dropoff */}
         {dropoffLat && (
-          <Marker coordinate={{ latitude: dropoffLat, longitude: dropoffLng }} anchor={{ x: 0.5, y: 1 }}>
-            <Ionicons name="location" size={28} color="#E05555" />
-          </Marker>
+          <Marker
+            coordinate={{ latitude: dropoffLat, longitude: dropoffLng }}
+            anchor={{ x: 0.5, y: 1 }}
+            pinColor="#E05555"
+          />
         )}
+        {/* Full route */}
         {pickupLat && dropoffLat && (
           <Polyline
             coordinates={[
@@ -393,26 +428,40 @@ export default function ActiveRideScreen({ route, navigation }) {
             strokeColor={DA} strokeWidth={3} lineDashPattern={[8, 5]}
           />
         )}
+        {/* Driver-to-pickup line */}
+        {myLoc && pickupLat && ['ACCEPTED', 'ARRIVED'].includes(status) && (
+          <Polyline
+            coordinates={[myLoc, { latitude: pickupLat, longitude: pickupLng }]}
+            strokeColor={statusCfg.color} strokeWidth={2.5} lineDashPattern={[5, 7]}
+          />
+        )}
       </MapView>
 
       <View style={s.topGradient} pointerEvents="none" />
 
-      {/* ── Back button ── */}
       <TouchableOpacity
-        style={[s.backNav, { top: backBtnTop, backgroundColor: theme.backgroundAlt + 'EE', borderColor: theme.border }]}
+        style={[s.backNav, { top: backBtnTop }]}
         onPress={goToDashboard}
         activeOpacity={0.85}
       >
-        <Ionicons name="arrow-back" size={20} color={theme.foreground} />
+        <Ionicons name="arrow-back" size={20} color="#fff" />
       </TouchableOpacity>
 
-      {/* ── Status pill — tracks sheet height via JS-driver interpolation ── */}
+      {/* Speed chip — shown during IN_PROGRESS (Uber-style) */}
+      {status === 'IN_PROGRESS' && speed !== null && (
+        <View style={[s.speedChip, { top: backBtnTop, right: 20, borderColor: statusCfg.color + '40' }]}>
+          <Text style={[s.speedVal, { color: statusCfg.color }]}>{speed}</Text>
+          <Text style={[s.speedUnit, { color: statusCfg.color }]}>km/h</Text>
+        </View>
+      )}
+
+      {/* Status pill */}
       <Animated.View style={[s.statusPill, {
-        backgroundColor: statusCfg.color + '18',
-        borderColor:     statusCfg.color + '50',
+        backgroundColor: statusCfg.color + '20',
+        borderColor:     statusCfg.color + '60',
         bottom:          statusPillBottom,
       }]}>
-        <Ionicons name={statusCfg.icon} size={13} color={statusCfg.color} />
+        <View style={[s.statusDot, { backgroundColor: statusCfg.color }]} />
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
       </Animated.View>
 
@@ -423,23 +472,25 @@ export default function ActiveRideScreen({ route, navigation }) {
         height:          sheetHeightAnim,
         bottom:          TAB_BAR_HEIGHT,
       }]}>
-        {/* Drag handle */}
         <View style={s.dragHandleArea} {...panResponder.panHandlers}>
           <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
         </View>
 
         <Animated.View style={{ height: scrollHeightAnim, overflow: 'hidden' }}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={s.scrollContent}
-            keyboardShouldPersistTaps="handled"
-          >
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
+
+            {/* Status header */}
+            <View style={s.sheetHeader}>
+              <Text style={[s.statusTitle, { color: theme.foreground }]}>{statusCfg.label}</Text>
+              <Text style={[s.statusSub, { color: theme.hint }]}>{statusCfg.sublabel}</Text>
+            </View>
+
             {/* Fare strip */}
             <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <View style={s.fareItem}>
                 <Text style={[s.fareLabel, { color: theme.hint }]}>FARE</Text>
                 <Text style={[s.fareValue, { color: DA }]}>
-                  {'\u20A6'}{Number(ride.estimatedFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                  ₦{Number(ride.estimatedFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
                 </Text>
               </View>
               <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
@@ -452,12 +503,17 @@ export default function ActiveRideScreen({ route, navigation }) {
               <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
               <View style={s.fareItem}>
                 <Text style={[s.fareLabel, { color: theme.hint }]}>PAYMENT</Text>
-                <Text style={[s.fareValue, { color: theme.foreground }]}>CASH</Text>
+                <Text style={[s.fareValue, { color: theme.foreground }]}>
+                  {ride.paymentMethod ?? 'CASH'}
+                </Text>
               </View>
             </View>
 
-            <CustomerCard ride={ride} theme={theme} />
-            <RouteCard    ride={ride} theme={theme} />
+            {/* Customer hero card with call button */}
+            <CustomerHeroCard ride={ride} theme={theme} statusColor={statusCfg.color} />
+
+            {/* Route card with active step highlight */}
+            <RouteCard ride={ride} status={status} theme={theme} />
 
             {ride.notes && !ride.notes.startsWith('TARGETED:') && (
               <View style={[s.notesCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
@@ -469,47 +525,37 @@ export default function ActiveRideScreen({ route, navigation }) {
         </Animated.View>
 
         {/* ── Action footer ── */}
-        <View style={[s.actionFooter, {
-          borderTopColor: theme.border,
-          paddingBottom:  sheetPadBottom,
-        }]}>
+        <View style={[s.actionFooter, { borderTopColor: theme.border, paddingBottom: sheetPadBottom }]}>
           {status === 'ACCEPTED' && (
-            <TouchableOpacity
-              style={[s.actionBtn, { backgroundColor: DA }]}
-              onPress={handleArrive}
-              disabled={acting}
-              activeOpacity={0.88}
-            >
-              {acting
-                ? <ActivityIndicator color="#080C18" />
-                : (<><Ionicons name="location-outline" size={18} color="#080C18" /><Text style={s.actionBtnTxt}>I've Arrived at Pickup</Text></>)
-              }
+            <TouchableOpacity style={[s.actionBtn, { backgroundColor: DA }]} onPress={handleArrive} disabled={acting} activeOpacity={0.88}>
+              {acting ? <ActivityIndicator color="#080C18" /> : (
+                <>
+                  <Ionicons name="location-outline" size={18} color="#080C18" />
+                  <Text style={s.actionBtnTxt}>I've Arrived at Pickup</Text>
+                </>
+              )}
             </TouchableOpacity>
           )}
           {status === 'ARRIVED' && (
-            <TouchableOpacity
-              style={[s.actionBtn, { backgroundColor: '#A78BFA' }]}
-              onPress={handleStart}
-              disabled={acting}
-              activeOpacity={0.88}
-            >
-              {acting
-                ? <ActivityIndicator color="#080C18" />
-                : (<><Ionicons name="car-sport-outline" size={18} color="#080C18" /><Text style={s.actionBtnTxt}>Start Ride</Text></>)
-              }
-            </TouchableOpacity>
+            <View style={{ position: 'relative' }}>
+              <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#A78BFA' }]} onPress={handleStart} disabled={acting} activeOpacity={0.88}>
+                {acting ? <ActivityIndicator color="#080C18" /> : (
+                  <>
+                    <Ionicons name="car-sport-outline" size={18} color="#080C18" />
+                    <Text style={s.actionBtnTxt}>Start Ride</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           )}
           {status === 'IN_PROGRESS' && (
-            <TouchableOpacity
-              style={[s.actionBtn, { backgroundColor: '#5DAA72' }]}
-              onPress={handleComplete}
-              disabled={acting}
-              activeOpacity={0.88}
-            >
-              {acting
-                ? <ActivityIndicator color="#080C18" />
-                : (<><Ionicons name="checkmark-circle-outline" size={18} color="#080C18" /><Text style={s.actionBtnTxt}>Complete Ride</Text></>)
-              }
+            <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#5DAA72' }]} onPress={handleComplete} disabled={acting} activeOpacity={0.88}>
+              {acting ? <ActivityIndicator color="#080C18" /> : (
+                <>
+                  <Ionicons name="checkmark-circle-outline" size={18} color="#080C18" />
+                  <Text style={s.actionBtnTxt}>Complete Ride</Text>
+                </>
+              )}
             </TouchableOpacity>
           )}
           {(status === 'COMPLETED' || status === 'CANCELLED') && (
@@ -529,31 +575,49 @@ export default function ActiveRideScreen({ route, navigation }) {
 }
 
 const s = StyleSheet.create({
-  root:        { flex: 1 },
+  root:        { flex: 1, backgroundColor: '#080C18' },
   center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
   centerTxt:   { fontSize: 14 },
   goBackBtn:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 10 },
   goBackTxt:   { fontSize: 14, fontWeight: '600' },
-  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.35)' },
-  backNav:     { position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center', zIndex: 99 },
-  driverPin:   { width: 32, height: 32, borderRadius: 16, backgroundColor: DA, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#080C18' },
+  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 130, backgroundColor: 'rgba(0,0,0,0.5)' },
 
-  statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7, zIndex: 10 },
+  backNav: {
+    position: 'absolute', left: 20, width: 42, height: 42, borderRadius: 13, zIndex: 99,
+    backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+
+  speedChip: {
+    position: 'absolute', zIndex: 99,
+    backgroundColor: 'rgba(8,12,24,0.85)', borderWidth: 1,
+    borderRadius: 13, paddingHorizontal: 12, paddingVertical: 6,
+    alignItems: 'center',
+  },
+  speedVal:  { fontSize: 18, fontWeight: '900', lineHeight: 20 },
+  speedUnit: { fontSize: 8, fontWeight: '700', letterSpacing: 1 },
+
+  statusPill:    { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 24, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8, zIndex: 10 },
+  statusDot:     { width: 7, height: 7, borderRadius: 3.5 },
   statusPillTxt: { fontSize: 12, fontWeight: '700' },
 
-  sheet:          { position: 'absolute', left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, overflow: 'hidden' },
+  sheet:          { position: 'absolute', left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 24 },
   dragHandleArea: { width: '100%', paddingVertical: 12, alignItems: 'center' },
   dragHandle:     { width: 44, height: 4, borderRadius: 2 },
   scrollContent:  { paddingHorizontal: 20 },
 
-  fareStrip:  { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
-  fareItem:   { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
-  fareLabel:  { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
-  fareValue:  { fontSize: 14, fontWeight: '900' },
-  fareDivider:{ width: 1 },
+  sheetHeader: { marginBottom: 16 },
+  statusTitle: { fontSize: 18, fontWeight: '900', letterSpacing: -0.3, marginBottom: 3 },
+  statusSub:   { fontSize: 12, fontWeight: '500', lineHeight: 17 },
 
-  notesCard:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 14 },
-  notesTxt:   { flex: 1, fontSize: 12, lineHeight: 18 },
+  fareStrip:   { flexDirection: 'row', borderRadius: 14, borderWidth: 1, overflow: 'hidden', marginBottom: 14 },
+  fareItem:    { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
+  fareLabel:   { fontSize: 8, fontWeight: '700', letterSpacing: 1.5 },
+  fareValue:   { fontSize: 14, fontWeight: '900' },
+  fareDivider: { width: 1 },
+
+  notesCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 14 },
+  notesTxt:  { flex: 1, fontSize: 12, lineHeight: 18 },
 
   actionFooter: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 14, paddingHorizontal: 20 },
   actionBtn:    { borderRadius: 16, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },

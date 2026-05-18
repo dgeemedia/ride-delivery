@@ -1,29 +1,4 @@
 // mobile/src/screens/Partner/IncomingDeliveryQueueScreen.js
-//
-// InDrive-style multi-request queue for delivery partners — full screen, no map.
-//
-// ── What this does ────────────────────────────────────────────────────────────
-//   • All pending delivery requests stack as scrollable cards (full screen)
-//   • Partner scrolls to compare fees (highest fee floated to top)
-//   • Taps a card → expands full detail modal (route, package, breakdown, wallet)
-//   • Accepts → ActiveDelivery; Declines → removed from queue
-//   • Per-card 45s countdown ring; expired cards dimmed with "Clear expired"
-//   • Customer and partner see the same estimatedFee; breakdown shows split
-//
-// ── Price flow (mirrors ride queue) ──────────────────────────────────────────
-//   Customer sees:  estimatedFee (base + distance + weight)
-//   Partner sees:   same estimatedFee + breakdown (partnerEarnings / platformFee)
-//   Platform gets:  15% commission on estimatedFee
-//
-// ── Wire-up (PartnerDashboard socket handler) ─────────────────────────────────
-//   const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
-//   if (currentRoute === 'IncomingDeliveryQueue') return;
-//   navigation.navigate('IncomingDeliveryQueue', { initialRequest: data });
-//
-// ── Navigator (DashboardStack in PartnerNavigator.js) ────────────────────────
-//   <Stack.Screen name="IncomingDeliveryQueue" component={IncomingDeliveryQueueScreen}
-//     options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
-
 import React, {
   useState, useEffect, useRef, useCallback,
 } from 'react';
@@ -35,20 +10,21 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
-import { deliveryAPI, walletAPI } from '../../services/api';
+import { deliveryAPI, walletAPI, partnerAPI } from '../../services/api';
 import socketService          from '../../services/socket';
 
 const { width, height } = Dimensions.get('window');
 const H_PAD          = 20;
 const REQUEST_SECS   = 45;
-const CA             = '#34D399';   // courier accent — teal-green
-const COMMISSION     = 0.15;        // delivery platform commission
+const CA             = '#34D399';   
+const COMMISSION     = 0.15;
+const TAB_CONTENT_H   = 54;        
 
 // ── Colour helpers ────────────────────────────────────────────────────────────
 const feeColor = (fee) => {
-  if (fee >= 3000) return '#5DAA72';   // green  — high value
-  if (fee >= 1500) return CA;          // teal   — medium
-  return '#A78BFA';                    // purple — low
+  if (fee >= 3000) return '#5DAA72';   
+  if (fee >= 1500) return CA;          
+  return '#A78BFA';                    
 };
 const fmt = (n) =>
   Number(n).toLocaleString('en-NG', { maximumFractionDigits: 0 });
@@ -558,10 +534,23 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
   const headerA   = useRef(new Animated.Value(0)).current;
   const listA     = useRef(new Animated.Value(0)).current;
 
-    // ── Socket connect guard ──────────────────────────────────────────────────
+// ── Socket connect guard + REST fallback for missed requests ─────────────
   useEffect(() => {
     socketService.connect().catch(() => {});
-  }, []);
+
+    partnerAPI.getNearbyRequests()
+      .then(res => {
+        const list = res?.data?.requests ?? [];
+        list.forEach(r => {
+          const entry = makeEntry(r);
+          setRequests(prev =>
+            prev.some(x => x.deliveryId === entry.deliveryId) ? prev : [entry, ...prev]
+          );
+        });
+      })
+      .catch(() => {});
+  }, [makeEntry]);
+
   // ── Wallet ────────────────────────────────────────────────────────────────
   useEffect(() => {
     walletAPI.getWallet()
@@ -740,7 +729,7 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
       {/* ── Request list ───────────────────────────────────────────────────── */}
       <Animated.View style={[{ flex: 1 }, { opacity: listA }]}>
         <ScrollView
-          contentContainerStyle={[s.list, { paddingBottom: insets.bottom + 24 }]}
+          contentContainerStyle={[s.list, { paddingBottom: insets.bottom + TAB_CONTENT_H + 24 }]}
           showsVerticalScrollIndicator={false}
         >
           {requests.length === 0 && (

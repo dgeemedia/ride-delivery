@@ -1,12 +1,4 @@
 // mobile/src/screens/Customer/RequestRideScreen.js
-//
-// Changes from previous version:
-//   • RadarPulse JSX child REMOVED from inside <MapView>
-//   • useRadarPulse hook added — calls mapRef.current.startRadar/stopRadar imperatively
-//     Works on OSM (Leaflet CSS animation) and is a no-op on Google Maps native
-//     (Google Maps can still render CircleRadarPulse as a child if needed)
-//   • scanning useEffect drives start/stop via the hook
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Dimensions,
