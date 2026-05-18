@@ -16,6 +16,8 @@ router.get(
   [
     query('pickupLat').isFloat({ min: -90, max: 90 }),
     query('pickupLng').isFloat({ min: -180, max: 180 }),
+    query('dropoffLat').optional().isFloat({ min: -90, max: 90 }),
+    query('dropoffLng').optional().isFloat({ min: -180, max: 180 }),
     query('radiusKm').optional().isFloat({ min: 0.5, max: 50 }),
   ],
   deliveryController.getNearbyPartners

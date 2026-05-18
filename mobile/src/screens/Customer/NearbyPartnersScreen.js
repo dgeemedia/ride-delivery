@@ -4,6 +4,8 @@ import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   StatusBar, Dimensions, Animated, ActivityIndicator,
   Alert, RefreshControl, ScrollView,
+  Modal,          // ← NEW
+  PanResponder,   // ← NEW
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,7 +16,7 @@ const { width, height } = Dimensions.get('window');
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
-  brand:    '#00C896',   // primary teal-green
+  brand:    '#00C896',
   brandDim: '#00C89622',
   red:      '#FF4D4D',
   purple:   '#8B7CF8',
@@ -80,7 +82,6 @@ const PartnerCard = ({ partner, onPress, theme }) => {
   const onPressIn  = () => Animated.spring(scaleA, { toValue: 0.975, useNativeDriver: true, tension: 300, friction: 20 }).start();
   const onPressOut = () => Animated.spring(scaleA, { toValue: 1,     useNativeDriver: true, tension: 300, friction: 20 }).start();
 
-  // ETA urgency color
   const etaColor = (partner.etaMinutes ?? 99) <= 5 ? C.brand
     : (partner.etaMinutes ?? 99) <= 12 ? C.amber : theme.hint;
 
@@ -93,14 +94,11 @@ const PartnerCard = ({ partner, onPress, theme }) => {
         onPressOut={onPressOut}
         activeOpacity={1}
       >
-        {/* ── Main row ── */}
         <View style={pc.row}>
-          {/* Vehicle icon avatar */}
           <View style={[pc.avatar, { backgroundColor: C.brand + '18' }]}>
             <Ionicons name={vehicleIcon} size={22} color={C.brand} />
           </View>
 
-          {/* Info block */}
           <View style={pc.info}>
             <View style={pc.nameRow}>
               <Text style={[pc.name, { color: theme.foreground }]}>
@@ -113,14 +111,12 @@ const PartnerCard = ({ partner, onPress, theme }) => {
             </Text>
           </View>
 
-          {/* ETA / distance */}
           <View style={pc.etaBlock}>
             <Text style={[pc.etaMain, { color: etaColor }]}>~{partner.etaMinutes} min</Text>
             <Text style={[pc.distTxt, { color: theme.hint }]}>{partner.distanceKm} km</Text>
           </View>
         </View>
 
-        {/* ── Chips row ── */}
         <View style={pc.chips}>
           <Chip icon={vehicleIcon}      label={partner.vehicleType}                        color={C.purple}   theme={theme} />
           <Chip icon="navigate-outline" label={`${partner.distanceKm} km`}                 color={theme.hint} theme={theme} />
@@ -145,21 +141,55 @@ const pc = StyleSheet.create({
   chips:      { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 });
 
-// ─── ConfirmSheet ─────────────────────────────────────────────────────────────
+// ─── ConfirmSheet (NOW A MODAL – always visible, draggable) ─────────────────
 const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
   const [requesting, setRequesting] = useState(false);
-  const slideA = useRef(new Animated.Value(height)).current;
   const insets = useSafeAreaInsets();
+
+  // Animation refs (always declared)
+  const slideInY = useRef(new Animated.Value(height)).current;
+  const dragY = useRef(new Animated.Value(0)).current;
+
+  // PanResponder – independent of partner
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 5 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: Animated.event([null, { dy: dragY }], { useNativeDriver: false }),
+      onPanResponderRelease: (_, { dy }) => {
+        if (dy > 100 || dy > 0.3 * height) {
+          closeSheet();
+        } else {
+          Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
+
+  useEffect(() => {
+    if (!partner) return;
+    slideInY.setValue(height);
+    dragY.setValue(0);
+    Animated.spring(slideInY, {
+      toValue: 0,
+      tension: 70,
+      friction: 12,
+      useNativeDriver: true,
+    }).start();
+  }, [partner?.partnerId]);
+
+  // All hooks are above – safe early return now
+  if (!partner) return null;
 
   const feeEstimate = routeParams.feeEstimate ?? 0;
   const vehicleIcon = VEHICLE_ICON[partner.vehicleType] ?? 'bicycle-outline';
 
-  useEffect(() => {
-    Animated.spring(slideA, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }).start();
-  }, []);
-
-  const close = () =>
-    Animated.timing(slideA, { toValue: height, duration: 220, useNativeDriver: true }).start(onClose);
+  const closeSheet = () => {
+    Animated.parallel([
+      Animated.timing(slideInY, { toValue: height, duration: 220, useNativeDriver: true }),
+      Animated.timing(dragY, { toValue: 0, duration: 220, useNativeDriver: true }),
+    ]).start(onClose);
+  };
 
   const handleRequest = async () => {
     setRequesting(true);
@@ -187,220 +217,245 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
   };
 
   return (
-    <View style={cs.overlay}>
-      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={close} activeOpacity={1} />
-      <Animated.View style={[cs.sheet, {
-        backgroundColor: theme.background,
-        borderColor: theme.border,
-        maxHeight: height * 0.88,
-        paddingBottom: insets.bottom + 8,
-        transform: [{ translateY: slideA }],
-      }]}>
-        {/* Handle */}
-        <View style={[cs.handle, { backgroundColor: theme.hint + '44' }]} />
+    <Modal
+      visible={!!partner}
+      animationType="none"
+      transparent
+      statusBarTranslucent
+      onRequestClose={closeSheet}
+    >
+      <View style={cs.overlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={closeSheet} activeOpacity={1} />
+        <Animated.View
+          style={[
+            cs.sheet,
+            {
+              backgroundColor: theme.background,
+              borderColor: theme.border,
+              transform: [{ translateY: Animated.add(slideInY, dragY) }],
+            },
+          ]}
+        >
+          {/* Draggable handle */}
+          <View
+            {...panResponder.panHandlers}
+            style={[cs.handle, { backgroundColor: theme.hint + '44' }]}
+          />
 
-        {/* Header */}
-        <View style={cs.header}>
-          <Text style={[cs.title, { color: theme.foreground }]}>Review & Confirm</Text>
-          <TouchableOpacity onPress={close} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <View style={[cs.closeBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Ionicons name="close" size={16} color={theme.hint} />
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={cs.scroll}>
-
-          {/* ── Courier card ── */}
-          <View style={[cs.courierCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <View style={[cs.courierAvatar, { backgroundColor: C.brand + '18' }]}>
-              <Ionicons name={vehicleIcon} size={20} color={C.brand} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[cs.courierName, { color: theme.foreground }]}>
-                {partner.firstName} {partner.lastName}
-              </Text>
-              <Text style={[cs.courierVehicle, { color: theme.hint }]}>
-                {partner.vehicleType} • {partner.vehiclePlate ?? '—'}
-              </Text>
-            </View>
-            <View style={{ alignItems: 'flex-end', gap: 4 }}>
-              <StarRating rating={partner.rating ?? 0} size={12} theme={theme} />
-              <Text style={[cs.courierEta, { color: theme.hint }]}>~{partner.etaMinutes} min away</Text>
-            </View>
+          {/* Header */}
+          <View style={cs.header}>
+            <Text style={[cs.title, { color: theme.foreground }]}>Review & Confirm</Text>
+            <TouchableOpacity onPress={closeSheet} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <View style={[cs.closeBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                <Ionicons name="close" size={16} color={theme.hint} />
+              </View>
+            </TouchableOpacity>
           </View>
 
-          {/* ── Package info ── */}
-          {routeParams.packageDescription ? (
-            <View style={[cs.pkgCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <View style={cs.pkgRow}>
-                <Ionicons name="cube-outline" size={14} color={C.brand} />
-                <Text style={[cs.pkgLabel, { color: theme.hint }]}>Package</Text>
-                <Text style={[cs.pkgVal, { color: theme.foreground }]} numberOfLines={1}>
-                  {routeParams.packageDescription}
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={cs.scroll}>
+            {/* Courier card */}
+            <View style={[cs.courierCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={[cs.courierAvatar, { backgroundColor: C.brand + '18' }]}>
+                <Ionicons name={vehicleIcon} size={20} color={C.brand} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[cs.courierName, { color: theme.foreground }]}>
+                  {partner.firstName} {partner.lastName}
+                </Text>
+                <Text style={[cs.courierVehicle, { color: theme.hint }]}>
+                  {partner.vehicleType} • {partner.vehiclePlate ?? '—'}
                 </Text>
               </View>
-              {routeParams.packageWeight ? (
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                <StarRating rating={partner.rating ?? 0} size={12} theme={theme} />
+                <Text style={[cs.courierEta, { color: theme.hint }]}>~{partner.etaMinutes} min away</Text>
+              </View>
+            </View>
+
+            {/* Package info */}
+            {routeParams.packageDescription ? (
+              <View style={[cs.pkgCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                 <View style={cs.pkgRow}>
-                  <Ionicons name="scale-outline" size={14} color={C.brand} />
-                  <Text style={[cs.pkgLabel, { color: theme.hint }]}>Weight</Text>
-                  <Text style={[cs.pkgVal, { color: theme.foreground }]}>{routeParams.packageWeight} kg</Text>
-                </View>
-              ) : null}
-              {routeParams.packageNotes ? (
-                <View style={cs.pkgRow}>
-                  <Ionicons name="document-text-outline" size={14} color={C.brand} />
-                  <Text style={[cs.pkgLabel, { color: theme.hint }]}>Note</Text>
-                  <Text style={[cs.pkgVal, { color: theme.foreground }]} numberOfLines={2}>
-                    {routeParams.packageNotes}
+                  <Ionicons name="cube-outline" size={14} color={C.brand} />
+                  <Text style={[cs.pkgLabel, { color: theme.hint }]}>Package</Text>
+                  <Text style={[cs.pkgVal, { color: theme.foreground }]} numberOfLines={1}>
+                    {routeParams.packageDescription}
                   </Text>
                 </View>
-              ) : null}
-            </View>
-          ) : null}
+                {routeParams.packageWeight ? (
+                  <View style={cs.pkgRow}>
+                    <Ionicons name="scale-outline" size={14} color={C.brand} />
+                    <Text style={[cs.pkgLabel, { color: theme.hint }]}>Weight</Text>
+                    <Text style={[cs.pkgVal, { color: theme.foreground }]}>{routeParams.packageWeight} kg</Text>
+                  </View>
+                ) : null}
+                {routeParams.packageNotes ? (
+                  <View style={cs.pkgRow}>
+                    <Ionicons name="document-text-outline" size={14} color={C.brand} />
+                    <Text style={[cs.pkgLabel, { color: theme.hint }]}>Note</Text>
+                    <Text style={[cs.pkgVal, { color: theme.foreground }]} numberOfLines={2}>
+                      {routeParams.packageNotes}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
 
-          {/* ── Route ── */}
-          {routeParams.pickupAddress ? (
-            <View style={[cs.routeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <View style={cs.routeRow}>
-                <View style={[cs.routeDot, { backgroundColor: C.brand }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[cs.routeLabel, { color: theme.hint }]}>PICKUP</Text>
-                  <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
-                    {routeParams.pickupAddress}
-                  </Text>
-                  {routeParams.pickupContact ? (
-                    <Text style={[cs.routeContact, { color: theme.hint }]}>{routeParams.pickupContact}</Text>
-                  ) : null}
+            {/* Route */}
+            {routeParams.pickupAddress ? (
+              <View style={[cs.routeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                <View style={cs.routeRow}>
+                  <View style={[cs.routeDot, { backgroundColor: C.brand }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[cs.routeLabel, { color: theme.hint }]}>PICKUP</Text>
+                    <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
+                      {routeParams.pickupAddress}
+                    </Text>
+                    {routeParams.pickupContact ? (
+                      <Text style={[cs.routeContact, { color: theme.hint }]}>{routeParams.pickupContact}</Text>
+                    ) : null}
+                  </View>
+                </View>
+                <View style={[cs.routeConnector, { borderColor: theme.border }]} />
+                <View style={cs.routeRow}>
+                  <View style={[cs.routeDot, { backgroundColor: C.red }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[cs.routeLabel, { color: theme.hint }]}>DROPOFF</Text>
+                    <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
+                      {routeParams.dropoffAddress}
+                    </Text>
+                    {routeParams.dropoffContact ? (
+                      <Text style={[cs.routeContact, { color: theme.hint }]}>{routeParams.dropoffContact}</Text>
+                    ) : null}
+                  </View>
                 </View>
               </View>
-              <View style={[cs.routeConnector, { borderColor: theme.border }]} />
-              <View style={cs.routeRow}>
-                <View style={[cs.routeDot, { backgroundColor: C.red }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[cs.routeLabel, { color: theme.hint }]}>DROPOFF</Text>
-                  <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
-                    {routeParams.dropoffAddress}
-                  </Text>
-                  {routeParams.dropoffContact ? (
-                    <Text style={[cs.routeContact, { color: theme.hint }]}>{routeParams.dropoffContact}</Text>
-                  ) : null}
-                </View>
-              </View>
-            </View>
-          ) : null}
+            ) : null}
 
-          {/* ── Fee breakdown ── */}
-          {feeEstimate > 0 && (
-            <View style={[cs.feeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              {routeParams.distanceKm ? (
+            {/* Fee breakdown */}
+            {feeEstimate > 0 && (
+              <View style={[cs.feeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                {routeParams.distanceKm ? (
+                  <View style={cs.feeRow}>
+                    <Text style={[cs.feeLabel, { color: theme.hint }]}>Distance</Text>
+                    <Text style={[cs.feeVal, { color: theme.foreground }]}>{routeParams.distanceKm} km</Text>
+                  </View>
+                ) : null}
+                {routeParams.etaMinutes ? (
+                  <View style={cs.feeRow}>
+                    <Text style={[cs.feeLabel, { color: theme.hint }]}>Est. time</Text>
+                    <Text style={[cs.feeVal, { color: theme.foreground }]}>~{routeParams.etaMinutes} min</Text>
+                  </View>
+                ) : null}
+                <View style={[cs.feeSep, { backgroundColor: theme.border }]} />
                 <View style={cs.feeRow}>
-                  <Text style={[cs.feeLabel, { color: theme.hint }]}>Distance</Text>
-                  <Text style={[cs.feeVal, { color: theme.foreground }]}>{routeParams.distanceKm} km</Text>
+                  <Text style={[cs.feeLabel, { color: theme.foreground, fontWeight: '700' }]}>Estimated fee</Text>
+                  <Text style={[cs.feeTotal, { color: C.brand }]}>
+                    ₦{feeEstimate.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                  </Text>
                 </View>
-              ) : null}
-              {routeParams.etaMinutes ? (
-                <View style={cs.feeRow}>
-                  <Text style={[cs.feeLabel, { color: theme.hint }]}>Est. time</Text>
-                  <Text style={[cs.feeVal, { color: theme.foreground }]}>~{routeParams.etaMinutes} min</Text>
-                </View>
-              ) : null}
-              <View style={[cs.feeSep, { backgroundColor: theme.border }]} />
-              <View style={cs.feeRow}>
-                <Text style={[cs.feeLabel, { color: theme.foreground, fontWeight: '700' }]}>Estimated fee</Text>
-                <Text style={[cs.feeTotal, { color: C.brand }]}>
-                  ₦{feeEstimate.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-                </Text>
               </View>
+            )}
+
+            {/* Info note */}
+            <View style={[cs.note, { backgroundColor: C.brand + '10', borderColor: C.brand + '28' }]}>
+              <Ionicons name="information-circle-outline" size={14} color={C.brand} style={{ marginTop: 1 }} />
+              <Text style={[cs.noteTxt, { color: C.brand }]}>
+                Final fee may vary based on actual distance and time. Payment is cash on delivery unless otherwise agreed.
+              </Text>
             </View>
-          )}
 
-          {/* ── Info note ── */}
-          <View style={[cs.note, { backgroundColor: C.brand + '10', borderColor: C.brand + '28' }]}>
-            <Ionicons name="information-circle-outline" size={14} color={C.brand} style={{ marginTop: 1 }} />
-            <Text style={[cs.noteTxt, { color: C.brand }]}>
-              Final fee may vary based on actual distance and time. Payment is cash on delivery unless otherwise agreed.
-            </Text>
-          </View>
+            {/* Chips */}
+            <View style={cs.chipsRow}>
+              <Chip icon={vehicleIcon}      label={partner.vehicleType}                        color={C.purple}   theme={theme} />
+              <Chip icon="navigate-outline" label={`${partner.distanceKm} km`}                 color={theme.hint} theme={theme} />
+              <Chip icon="time-outline"     label={`~${partner.etaMinutes} min`}               color={theme.hint} theme={theme} />
+              <Chip icon="star-outline"     label={`${partner.totalDeliveries ?? 0} deliveries`} color={theme.hint} theme={theme} />
+            </View>
+          </ScrollView>
 
-          {/* ── Chips ── */}
-          <View style={cs.chipsRow}>
-            <Chip icon={vehicleIcon}      label={partner.vehicleType}                        color={C.purple}   theme={theme} />
-            <Chip icon="navigate-outline" label={`${partner.distanceKm} km`}                 color={theme.hint} theme={theme} />
-            <Chip icon="time-outline"     label={`~${partner.etaMinutes} min`}               color={theme.hint} theme={theme} />
-            <Chip icon="star-outline"     label={`${partner.totalDeliveries ?? 0} deliveries`} color={theme.hint} theme={theme} />
-          </View>
-        </ScrollView>
-
-        {/* ── Sticky CTA ── */}
-        <View style={[cs.cta, { borderTopColor: theme.border }]}>
-          <TouchableOpacity
-            style={[cs.back, { borderColor: theme.border }]}
-            onPress={close}
-            disabled={requesting}
-          >
-            <Text style={[cs.backTxt, { color: theme.hint }]}>Back</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[cs.confirm, { backgroundColor: C.brand, opacity: requesting ? 0.72 : 1 }]}
-            onPress={handleRequest}
-            disabled={requesting}
-            activeOpacity={0.86}
-          >
-            {requesting
-              ? <ActivityIndicator color="#000" size="small" />
-              : (
+          {/* Sticky CTA */}
+          <View style={[cs.cta, { borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
+            <TouchableOpacity
+              style={[cs.back, { borderColor: theme.border }]}
+              onPress={closeSheet}
+              disabled={requesting}
+            >
+              <Text style={[cs.backTxt, { color: theme.hint }]}>Back</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[cs.confirm, { backgroundColor: C.brand, opacity: requesting ? 0.72 : 1 }]}
+              onPress={handleRequest}
+              disabled={requesting}
+              activeOpacity={0.86}
+            >
+              {requesting ? (
+                <ActivityIndicator color="#000" size="small" />
+              ) : (
                 <>
                   <Ionicons name="checkmark-circle" size={19} color="#000" />
                   <Text style={cs.confirmTxt}>Request Courier</Text>
                 </>
-              )
-            }
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-    </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 };
 
 const cs = StyleSheet.create({
-  overlay:      { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
-  sheet:        { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, paddingTop: 12, shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 20 },
-  handle:       { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 14 },
-  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 16 },
-  title:        { fontSize: T.xl, fontWeight: '800' },
-  closeBtn:     { width: 32, height: 32, borderRadius: 16, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  scroll:       { paddingHorizontal: 20, paddingBottom: 8, gap: 10 },
-  courierCard:  { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14 },
-  courierAvatar:{ width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  courierName:  { fontSize: T.md, fontWeight: '700', marginBottom: 3 },
+  overlay:       { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
+  sheet:         {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    paddingTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 20,
+    height: height * 0.88,       // ← fixed height so ScrollView works
+    maxHeight: height * 0.88,
+    flexDirection: 'column',
+  },
+  handle:        { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 14 },
+  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 16 },
+  title:         { fontSize: T.xl, fontWeight: '800' },
+  closeBtn:      { width: 32, height: 32, borderRadius: 16, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  scroll:        { paddingHorizontal: 20, paddingBottom: 8, gap: 10 },
+  courierCard:   { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14 },
+  courierAvatar: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+  courierName:   { fontSize: T.md, fontWeight: '700', marginBottom: 3 },
   courierVehicle:{ fontSize: T.sm, fontWeight: '500' },
-  courierEta:   { fontSize: T.xs, fontWeight: '500' },
-  pkgCard:      { borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },
-  pkgRow:       { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  pkgLabel:     { fontSize: T.sm, fontWeight: '600', width: 56 },
-  pkgVal:       { flex: 1, fontSize: T.sm, fontWeight: '600' },
-  routeCard:    { borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },
-  routeRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  routeDot:     { width: 10, height: 10, borderRadius: 5, marginTop: 14, flexShrink: 0 },
+  courierEta:    { fontSize: T.xs, fontWeight: '500' },
+  pkgCard:       { borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },
+  pkgRow:        { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  pkgLabel:      { fontSize: T.sm, fontWeight: '600', width: 56 },
+  pkgVal:        { flex: 1, fontSize: T.sm, fontWeight: '600' },
+  routeCard:     { borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },
+  routeRow:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  routeDot:      { width: 10, height: 10, borderRadius: 5, marginTop: 14, flexShrink: 0 },
   routeConnector:{ width: 1.5, height: 14, marginLeft: 4.25, borderLeftWidth: 1.5, borderStyle: 'dashed' },
-  routeLabel:   { fontSize: T.xs, fontWeight: '700', letterSpacing: 1, marginBottom: 2 },
-  routeAddr:    { fontSize: T.base, fontWeight: '500', lineHeight: 20 },
-  routeContact: { fontSize: T.xs, marginTop: 2 },
-  feeCard:      { borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },
-  feeRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  feeLabel:     { fontSize: T.sm, fontWeight: '500' },
-  feeVal:       { fontSize: T.sm, fontWeight: '700' },
-  feeSep:       { height: 1, marginVertical: 2 },
-  feeTotal:     { fontSize: T.lg, fontWeight: '900' },
-  note:         { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12 },
-  noteTxt:      { flex: 1, fontSize: T.sm, lineHeight: 18, fontWeight: '500' },
-  chipsRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  cta:          { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14, borderTopWidth: 1 },
-  back:         { flex: 1, height: 52, borderRadius: 14, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
-  backTxt:      { fontSize: T.md, fontWeight: '600' },
-  confirm:      { flex: 2.2, height: 52, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  confirmTxt:   { fontSize: T.md, fontWeight: '900', color: '#000' },
+  routeLabel:    { fontSize: T.xs, fontWeight: '700', letterSpacing: 1, marginBottom: 2 },
+  routeAddr:     { fontSize: T.base, fontWeight: '500', lineHeight: 20 },
+  routeContact:  { fontSize: T.xs, marginTop: 2 },
+  feeCard:       { borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },
+  feeRow:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  feeLabel:      { fontSize: T.sm, fontWeight: '500' },
+  feeVal:        { fontSize: T.sm, fontWeight: '700' },
+  feeSep:        { height: 1, marginVertical: 2 },
+  feeTotal:      { fontSize: T.lg, fontWeight: '900' },
+  note:          { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12 },
+  noteTxt:       { flex: 1, fontSize: T.sm, lineHeight: 18, fontWeight: '500' },
+  chipsRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  cta:           { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14, borderTopWidth: 1 },
+  back:          { flex: 1, height: 52, borderRadius: 14, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
+  backTxt:       { fontSize: T.md, fontWeight: '600' },
+  confirm:       { flex: 2.2, height: 52, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  confirmTxt:    { fontSize: T.md, fontWeight: '900', color: '#000' },
 });
 
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
@@ -422,9 +477,11 @@ export default function NearbyPartnersScreen({ route, navigation }) {
     if (!silent) setLoading(true);
     try {
       const res  = await deliveryAPI.getNearbyPartners({
-        pickupLat: params.pickupLat,
-        pickupLng: params.pickupLng,
-        radiusKm:  params.radiusKm ?? 15,
+        pickupLat:  params.pickupLat,
+        pickupLng:  params.pickupLng,
+        dropoffLat: params.dropoffLat,
+        dropoffLng: params.dropoffLng,
+        radiusKm:   params.radiusKm ?? 15,
       });
       const list = (res?.data?.partners ?? res?.partners ?? [])
         .filter(p => !String(p.partnerId).startsWith('mock-'));
@@ -566,16 +623,14 @@ export default function NearbyPartnersScreen({ route, navigation }) {
         </Animated.View>
       )}
 
-      {/* ── Confirm sheet ── */}
-      {selectedPartner && isBookingMode && (
-        <ConfirmSheet
-          partner={selectedPartner}
-          routeParams={params}
-          onClose={() => setSelectedPartner(null)}
-          onSuccess={handleDeliveryRequested}
-          theme={theme}
-        />
-      )}
+      {/* ── Confirm sheet (always rendered, modal controls visibility) ── */}
+      <ConfirmSheet
+        partner={selectedPartner}
+        routeParams={params}
+        onClose={() => setSelectedPartner(null)}
+        onSuccess={handleDeliveryRequested}
+        theme={theme}
+      />
     </View>
   );
 }

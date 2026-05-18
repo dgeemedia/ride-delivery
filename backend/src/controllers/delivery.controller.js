@@ -499,8 +499,12 @@ exports.rateDelivery = async (req, res) => {
 // New partners (rating = 0) get a neutral 3.0 so they aren't buried.
 // ─────────────────────────────────────────────────────────────────────────────
 exports.getNearbyPartners = async (req, res) => {
-  const { pickupLat, pickupLng, radiusKm = 15 } = req.query;
+  const { pickupLat, pickupLng, dropoffLat, dropoffLng, radiusKm = 15 } = req.query;
   if (!pickupLat || !pickupLng) throw new AppError('Please provide pickup coordinates', 400);
+
+  const routeKm = (dropoffLat && dropoffLng)
+    ? calculateDistance(parseFloat(pickupLat), parseFloat(pickupLng), parseFloat(dropoffLat), parseFloat(dropoffLng))
+    : null;
 
   const lat    = parseFloat(pickupLat);
   const lng    = parseFloat(pickupLng);
@@ -527,27 +531,39 @@ exports.getNearbyPartners = async (req, res) => {
       return scoreB - scoreA;
     })
     .slice(0, 20)
-    .map(p => {
-      const floorMultiplier = parseFloat(p.floorMultiplier ?? 1.0);
-      return {
-        partnerId:       p.user.id,
-        firstName:       p.user.firstName,
-        lastName:        p.user.lastName,
-        profileImage:    p.user.profileImage,
-        vehicleType:     p.vehicleType,
-        vehiclePlate:    p.vehiclePlate,
-        rating:          parseFloat((p.rating || 0).toFixed(1)),
-        totalDeliveries: p.totalDeliveries,
-        distanceKm:      p.distanceKm,
-        etaMinutes:      Math.ceil(p.distanceKm / 0.4),
-        currentLat:      p.currentLat,
-        currentLng:      p.currentLng,
-        floorMultiplier,
-        preferredFloorPrice: p.preferredFloorPrice ?? 0,
-      };
-    });
+    .map(p => ({
+      partnerId:       p.user.id,
+      firstName:       p.user.firstName,
+      lastName:        p.user.lastName,
+      profileImage:    p.user.profileImage,
+      vehicleType:     p.vehicleType,
+      vehiclePlate:    p.vehiclePlate,
+      rating:          parseFloat((p.rating || 0).toFixed(1)),
+      totalDeliveries: p.totalDeliveries,
+      distanceKm:      p.distanceKm,
+      etaMinutes:      Math.ceil(p.distanceKm / 0.4),
+      currentLat:      p.currentLat,
+      currentLng:      p.currentLng,
+      floorMultiplier: parseFloat(p.floorMultiplier ?? 1.0),
+      preferredFloorPrice: p.preferredFloorPrice ?? 0,
+    }));
 
-  res.status(200).json({ success: true, data: { partners: nearby, total: nearby.length } });
+  // Compute fee per partner using real route distance (or fallback 3 km)
+  const estimateKm = routeKm ?? 3;
+  const formatted  = await Promise.all(nearby.map(async (p) => {
+    const feeResult       = await fareEngine.calculateDeliveryFee(estimateKm, 0);
+    const floorMultiplier = p.floorMultiplier;
+    let   effectiveFee    = feeResult.estimatedFee;
+
+    if (floorMultiplier > 1.0) {
+      const floored  = fareEngine.applyDriverFloor(effectiveFee * floorMultiplier, effectiveFee);
+      effectiveFee   = floored.adjustedFare;
+    }
+
+    return { ...p, effectiveFee, routeKm: estimateKm };
+  }));
+
+  res.status(200).json({ success: true, data: { partners: formatted, total: formatted.length, routeKm: routeKm ? parseFloat(routeKm.toFixed(2)) : null } });
 };
 
 module.exports = exports;

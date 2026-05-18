@@ -4,6 +4,8 @@ import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   StatusBar, Dimensions, Animated, ActivityIndicator,
   Alert, RefreshControl, ScrollView, Platform,
+  Modal,
+  PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,20 +14,18 @@ import { rideAPI } from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
 
-// ─── Design tokens (Uber/Bolt/InDrive inspired) ───────────────────────────────
 const C = {
-  brand:      '#00C896',   // teal-green (primary CTA, active states)
-  brandDim:   '#00C89622', // brand with opacity
-  surge:      '#F5A623',   // amber for surge/driver-rate
+  brand:      '#00C896',
+  brandDim:   '#00C89622',
+  surge:      '#F5A623',
   surgeDim:   '#F5A62322',
   red:        '#FF4D4D',
   purple:     '#8B7CF8',
-  fare:       '#FFFFFF',   // fare is always white in dark mode
-  farePos:    '#00C896',   // standard fare
-  fareSurge:  '#F5A623',   // surged fare
+  fare:       '#FFFFFF',
+  farePos:    '#00C896',
+  fareSurge:  '#F5A623',
 };
 
-// Typography scale
 const T = {
   xs:   10,
   sm:   12,
@@ -58,7 +58,7 @@ const sr = StyleSheet.create({
   txt: { fontWeight: '700' },
 });
 
-// ─── Chip (replaces Pill — cleaner, more Bolt-like) ──────────────────────────
+// ─── Chip ──────────────────────────────────────────────────────────────────────
 const Chip = ({ icon, label, color, theme, small }) => {
   const col = color || theme.hint;
   return (
@@ -80,18 +80,14 @@ const chip = StyleSheet.create({
 
 // ─── DriverCard ───────────────────────────────────────────────────────────────
 const DriverCard = ({ driver, platformFare, onPress, theme }) => {
-  const scaleA       = useRef(new Animated.Value(1)).current;
-  const hasFloor     = driver.preferredFloorPrice > 0;
-  const effectiveFare = hasFloor
-    ? Math.max(platformFare ?? 0, driver.preferredFloorPrice)
-    : (platformFare ?? 0);
-  const floorActive  = hasFloor && driver.preferredFloorPrice > (platformFare ?? 0);
-  const vehicleIcon  = VEHICLE_ICON[driver.vehicleType] ?? 'car-outline';
+  const scaleA        = useRef(new Animated.Value(1)).current;
+  const effectiveFare = driver.effectiveFare ?? platformFare ?? 0;
+  const floorActive   = driver.floorMultiplier > 1.0 && driver.effectiveFare > (platformFare ?? 0);
+  const vehicleIcon   = VEHICLE_ICON[driver.vehicleType] ?? 'car-outline';
 
   const onPressIn  = () => Animated.spring(scaleA, { toValue: 0.975, useNativeDriver: true, tension: 300, friction: 20 }).start();
   const onPressOut = () => Animated.spring(scaleA, { toValue: 1,     useNativeDriver: true, tension: 300, friction: 20 }).start();
 
-  // Initials avatar
   const initials = `${driver.firstName?.[0] ?? ''}${driver.lastName?.[0] ?? ''}`;
 
   return (
@@ -110,7 +106,6 @@ const DriverCard = ({ driver, platformFare, onPress, theme }) => {
         onPressOut={onPressOut}
         activeOpacity={1}
       >
-        {/* ── Driver rate badge ── */}
         {floorActive && (
           <View style={[dc.rateBadge, { backgroundColor: C.surge }]}>
             <Ionicons name="trending-up" size={9} color="#1a1208" />
@@ -118,14 +113,11 @@ const DriverCard = ({ driver, platformFare, onPress, theme }) => {
           </View>
         )}
 
-        {/* ── Main row ── */}
         <View style={dc.row}>
-          {/* Avatar */}
           <View style={[dc.avatar, { backgroundColor: floorActive ? C.surge + '22' : C.brand + '18' }]}>
             <Text style={[dc.avatarTxt, { color: floorActive ? C.surge : C.brand }]}>{initials}</Text>
           </View>
 
-          {/* Info block */}
           <View style={dc.info}>
             <View style={dc.nameRow}>
               <Text style={[dc.name, { color: theme.foreground }]}>
@@ -141,10 +133,9 @@ const DriverCard = ({ driver, platformFare, onPress, theme }) => {
             </Text>
           </View>
 
-          {/* Fare block */}
           <View style={dc.fareBlock}>
             <Text style={[dc.fareMain, { color: floorActive ? C.fareSurge : C.farePos }]}>
-              ₦{(effectiveFare).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+              ₦{effectiveFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
             </Text>
             {floorActive && platformFare ? (
               <Text style={[dc.fareStrike, { color: theme.hint }]}>
@@ -155,7 +146,6 @@ const DriverCard = ({ driver, platformFare, onPress, theme }) => {
           </View>
         </View>
 
-        {/* ── Chips row ── */}
         <View style={dc.chips}>
           <Chip icon={vehicleIcon}        label={driver.vehicleType}            color={C.purple}   theme={theme} />
           <Chip icon="navigate-outline"   label={`${driver.distanceKm} km`}     color={theme.hint} theme={theme} />
@@ -202,44 +192,76 @@ const sb = StyleSheet.create({
   txt:  { fontSize: T.sm, fontWeight: '700', flex: 1 },
 });
 
-// ─── ConfirmSheet ─────────────────────────────────────────────────────────────
+// ─── ConfirmSheet (FIXED: no conditional hooks) ───────────────────────────────
 const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, theme }) => {
   const [requesting, setRequesting] = useState(false);
-  const slideA  = useRef(new Animated.Value(height)).current;
-  const insets  = useSafeAreaInsets();
+  const insets = useSafeAreaInsets();
 
-  const hasFloor      = driver.preferredFloorPrice > 0;
-  const effectiveFare = hasFloor
-    ? Math.max(platformFare ?? 0, driver.preferredFloorPrice)
-    : (platformFare ?? 0);
-  const floorActive   = hasFloor && driver.preferredFloorPrice > (platformFare ?? 0);
-  const bookingFee    = driver.bookingFee ?? 100;
-  const markupPct     = floorActive && platformFare
-    ? (((effectiveFare - platformFare) / platformFare) * 100).toFixed(1)
-    : null;
-  const vehicleIcon   = VEHICLE_ICON[driver.vehicleType] ?? 'car-outline';
-  const initials      = `${driver.firstName?.[0] ?? ''}${driver.lastName?.[0] ?? ''}`;
+  // Animation refs
+  const slideInY = useRef(new Animated.Value(height)).current;
+  const dragY = useRef(new Animated.Value(0)).current;
 
+  // PanResponder – always created, independent of driver
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 5 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: Animated.event([null, { dy: dragY }], { useNativeDriver: false }),
+      onPanResponderRelease: (_, { dy }) => {
+        if (dy > 100 || dy > 0.3 * height) {
+          closeSheet();
+        } else {
+          Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
+
+  // Reset animation when driver appears
   useEffect(() => {
-    Animated.spring(slideA, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }).start();
-  }, []);
+    if (!driver) return;
+    slideInY.setValue(height);
+    dragY.setValue(0);
+    Animated.spring(slideInY, {
+      toValue: 0,
+      tension: 70,
+      friction: 12,
+      useNativeDriver: true,
+    }).start();
+  }, [driver?.driverId]);
 
-  const close = () =>
-    Animated.timing(slideA, { toValue: height, duration: 220, useNativeDriver: true }).start(onClose);
+  // All hooks are now safely above this line.
+  if (!driver) return null;
+
+  // Derived values
+  const effectiveFare = driver.effectiveFare ?? platformFare ?? 0;
+  const floorActive = driver.floorMultiplier > 1.0 && driver.effectiveFare > (platformFare ?? 0);
+  const bookingFee = driver.bookingFee ?? 100;
+  const markupPct = floorActive && platformFare ? (((effectiveFare - platformFare) / platformFare) * 100).toFixed(1) : null;
+  const vehicleIcon = VEHICLE_ICON[driver.vehicleType] ?? 'car-outline';
+  const initials = `${driver.firstName?.[0] ?? ''}${driver.lastName?.[0] ?? ''}`;
+  const accent = floorActive ? C.surge : C.brand;
+
+  const closeSheet = () => {
+    Animated.parallel([
+      Animated.timing(slideInY, { toValue: height, duration: 220, useNativeDriver: true }),
+      Animated.timing(dragY, { toValue: 0, duration: 220, useNativeDriver: true }),
+    ]).start(onClose);
+  };
 
   const handleRequest = async () => {
     setRequesting(true);
     try {
       const res = await rideAPI.requestSpecificDriver({
-        pickupAddress:  routeParams.pickupAddress,
-        pickupLat:      routeParams.pickupLat,
-        pickupLng:      routeParams.pickupLng,
+        pickupAddress: routeParams.pickupAddress,
+        pickupLat: routeParams.pickupLat,
+        pickupLng: routeParams.pickupLng,
         dropoffAddress: routeParams.dropoffAddress,
-        dropoffLat:     routeParams.dropoffLat,
-        dropoffLng:     routeParams.dropoffLng,
-        driverId:       driver.driverId,
-        vehicleType:    driver.vehicleType,
-        paymentMethod:  'CASH',
+        dropoffLat: routeParams.dropoffLat,
+        dropoffLng: routeParams.dropoffLng,
+        driverId: driver.driverId,
+        vehicleType: driver.vehicleType,
+        paymentMethod: 'CASH',
         ...(floorActive && { driverFloorPrice: driver.preferredFloorPrice }),
       });
       onSuccess(res?.data?.ride ?? res?.ride);
@@ -249,157 +271,171 @@ const ConfirmSheet = ({ driver, platformFare, routeParams, onClose, onSuccess, t
     }
   };
 
-  const accent = floorActive ? C.surge : C.brand;
-
   return (
-    <View style={cs.overlay}>
-      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={close} activeOpacity={1} />
-      <Animated.View style={[cs.sheet, {
-        backgroundColor: theme.background,
-        borderColor: theme.border,
-        maxHeight: height * 0.88,
-        paddingBottom: insets.bottom + 8,
-        transform: [{ translateY: slideA }],
-      }]}>
-        {/* Handle bar */}
-        <View style={[cs.handle, { backgroundColor: theme.hint + '44' }]} />
+    <Modal
+      visible={!!driver}
+      animationType="none"
+      transparent
+      statusBarTranslucent
+      onRequestClose={closeSheet}
+    >
+      <View style={cs.overlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={closeSheet} activeOpacity={1} />
+        <Animated.View
+          style={[
+            cs.sheet,
+            {
+              backgroundColor: theme.background,
+              borderColor: theme.border,
+              transform: [{ translateY: Animated.add(slideInY, dragY) }],
+            },
+          ]}
+        >
+          <View
+            {...panResponder.panHandlers}
+            style={[cs.handle, { backgroundColor: theme.hint + '44' }]}
+          />
 
-        {/* Header */}
-        <View style={cs.header}>
-          <Text style={[cs.title, { color: theme.foreground }]}>Review & Confirm</Text>
-          <TouchableOpacity onPress={close} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <View style={[cs.closeBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Ionicons name="close" size={16} color={theme.hint} />
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={cs.scroll}>
-
-          {/* ── Driver card ── */}
-          <View style={[cs.driverCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <View style={[cs.dAvatar, { backgroundColor: accent + '20' }]}>
-              <Text style={[cs.dAvatarTxt, { color: accent }]}>{initials}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[cs.dName, { color: theme.foreground }]}>
-                {driver.firstName} {driver.lastName}
-              </Text>
-              <Text style={[cs.dVehicle, { color: theme.hint }]}>
-                {driver.vehicleColor} {driver.vehicleMake} • <Text style={{ color: accent, fontWeight: '800' }}>{driver.vehiclePlate}</Text>
-              </Text>
-            </View>
-            <View style={{ alignItems: 'flex-end', gap: 4 }}>
-              <StarRating rating={driver.rating} size={12} theme={theme} />
-              <Text style={[cs.dEta, { color: theme.hint }]}>~{driver.etaMinutes} min away</Text>
-            </View>
+          <View style={cs.header}>
+            <Text style={[cs.title, { color: theme.foreground }]}>Review & Confirm</Text>
+            <TouchableOpacity onPress={closeSheet} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <View style={[cs.closeBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                <Ionicons name="close" size={16} color={theme.hint} />
+              </View>
+            </TouchableOpacity>
           </View>
 
-          {/* ── Route ── */}
-          <View style={[cs.routeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <View style={cs.routeRow}>
-              <View style={[cs.routeDot, { backgroundColor: C.brand }]} />
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={cs.scroll}>
+            {/* Driver card */}
+            <View style={[cs.driverCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={[cs.dAvatar, { backgroundColor: accent + '20' }]}>
+                <Text style={[cs.dAvatarTxt, { color: accent }]}>{initials}</Text>
+              </View>
               <View style={{ flex: 1 }}>
-                <Text style={[cs.routeLabel, { color: theme.hint }]}>PICKUP</Text>
-                <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
-                  {routeParams.pickupAddress}
+                <Text style={[cs.dName, { color: theme.foreground }]}>
+                  {driver.firstName} {driver.lastName}
+                </Text>
+                <Text style={[cs.dVehicle, { color: theme.hint }]}>
+                  {driver.vehicleColor} {driver.vehicleMake} • <Text style={{ color: accent, fontWeight: '800' }}>{driver.vehiclePlate}</Text>
                 </Text>
               </View>
-            </View>
-            <View style={[cs.routeConnector, { borderColor: theme.border }]} />
-            <View style={cs.routeRow}>
-              <View style={[cs.routeDot, { backgroundColor: C.red }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[cs.routeLabel, { color: theme.hint }]}>DROPOFF</Text>
-                <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
-                  {routeParams.dropoffAddress}
-                </Text>
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                <StarRating rating={driver.rating} size={12} theme={theme} />
+                <Text style={[cs.dEta, { color: theme.hint }]}>~{driver.etaMinutes} min away</Text>
               </View>
             </View>
-          </View>
 
-          {/* ── Fare breakdown ── */}
-          <View style={[cs.fareCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <View style={cs.fareRow}>
-              <Text style={[cs.fareLabel, { color: theme.hint }]}>Platform estimate</Text>
-              <Text style={[cs.fareVal, { color: theme.foreground }]}>
-                ₦{(platformFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-              </Text>
+            {/* Route card */}
+            <View style={[cs.routeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={cs.routeRow}>
+                <View style={[cs.routeDot, { backgroundColor: C.brand }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[cs.routeLabel, { color: theme.hint }]}>PICKUP</Text>
+                  <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
+                    {routeParams.pickupAddress}
+                  </Text>
+                </View>
+              </View>
+              <View style={[cs.routeConnector, { borderColor: theme.border }]} />
+              <View style={cs.routeRow}>
+                <View style={[cs.routeDot, { backgroundColor: C.red }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[cs.routeLabel, { color: theme.hint }]}>DROPOFF</Text>
+                  <Text style={[cs.routeAddr, { color: theme.foreground }]} numberOfLines={2}>
+                    {routeParams.dropoffAddress}
+                  </Text>
+                </View>
+              </View>
             </View>
-            {floorActive && (
+
+            {/* Fare breakdown */}
+            <View style={[cs.fareCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <View style={cs.fareRow}>
-                <Text style={[cs.fareLabel, { color: theme.hint }]}>Driver floor {markupPct ? `(+${markupPct}%)` : ''}</Text>
-                <Text style={[cs.fareVal, { color: C.surge }]}>
+                <Text style={[cs.fareLabel, { color: theme.hint }]}>Platform estimate</Text>
+                <Text style={[cs.fareVal, { color: theme.foreground }]}>
+                  ₦{(platformFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                </Text>
+              </View>
+              {floorActive && (
+                <View style={cs.fareRow}>
+                  <Text style={[cs.fareLabel, { color: theme.hint }]}>Driver floor {markupPct ? `(+${markupPct}%)` : ''}</Text>
+                  <Text style={[cs.fareVal, { color: C.surge }]}>
+                    ₦{effectiveFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                  </Text>
+                </View>
+              )}
+              <View style={cs.fareRow}>
+                <Text style={[cs.fareLabel, { color: theme.hint }]}>Booking fee</Text>
+                <Text style={[cs.fareVal, { color: theme.foreground }]}>₦{bookingFee}</Text>
+              </View>
+              <View style={[cs.fareSep, { backgroundColor: theme.border }]} />
+              <View style={cs.fareRow}>
+                <Text style={[cs.fareLabel, { color: theme.foreground, fontWeight: '700' }]}>Estimated total</Text>
+                <Text style={[cs.fareTotal, { color: accent }]}>
                   ₦{effectiveFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
                 </Text>
               </View>
+            </View>
+
+            {floorActive && (
+              <View style={[cs.note, { backgroundColor: C.surge + '10', borderColor: C.surge + '30' }]}>
+                <Ionicons name="information-circle-outline" size={14} color={C.surge} style={{ marginTop: 1 }} />
+                <Text style={[cs.noteTxt, { color: C.surge }]}>
+                  This driver's floor price exceeds the platform estimate. Final fare recalculated from actual trip distance and time.
+                </Text>
+              </View>
             )}
-            <View style={cs.fareRow}>
-              <Text style={[cs.fareLabel, { color: theme.hint }]}>Booking fee</Text>
-              <Text style={[cs.fareVal, { color: theme.foreground }]}>₦{bookingFee}</Text>
-            </View>
-            <View style={[cs.fareSep, { backgroundColor: theme.border }]} />
-            <View style={cs.fareRow}>
-              <Text style={[cs.fareLabel, { color: theme.foreground, fontWeight: '700' }]}>Estimated total</Text>
-              <Text style={[cs.fareTotal, { color: accent }]}>
-                ₦{effectiveFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
-              </Text>
-            </View>
-          </View>
 
-          {/* ── Floor note ── */}
-          {floorActive && (
-            <View style={[cs.note, { backgroundColor: C.surge + '10', borderColor: C.surge + '30' }]}>
-              <Ionicons name="information-circle-outline" size={14} color={C.surge} style={{ marginTop: 1 }} />
-              <Text style={[cs.noteTxt, { color: C.surge }]}>
-                This driver's floor price exceeds the platform estimate. Final fare recalculated from actual trip distance and time.
-              </Text>
+            <View style={cs.chipsRow}>
+              <Chip icon={vehicleIcon}        label={driver.vehicleType}            color={C.purple}   theme={theme} />
+              <Chip icon="navigate-outline"   label={`${driver.distanceKm} km`}     color={theme.hint} theme={theme} />
+              <Chip icon="time-outline"       label={`~${driver.etaMinutes} min`}   color={theme.hint} theme={theme} />
+              <Chip icon="star-outline"       label={`${driver.totalRides} rides`}  color={theme.hint} theme={theme} />
             </View>
-          )}
+          </ScrollView>
 
-          {/* ── Chips summary ── */}
-          <View style={cs.chipsRow}>
-            <Chip icon={vehicleIcon}        label={driver.vehicleType}            color={C.purple}   theme={theme} />
-            <Chip icon="navigate-outline"   label={`${driver.distanceKm} km`}     color={theme.hint} theme={theme} />
-            <Chip icon="time-outline"       label={`~${driver.etaMinutes} min`}   color={theme.hint} theme={theme} />
-            <Chip icon="star-outline"       label={`${driver.totalRides} rides`}  color={theme.hint} theme={theme} />
-          </View>
-        </ScrollView>
-
-        {/* ── Sticky CTA ── */}
-        <View style={[cs.cta, { borderTopColor: theme.border }]}>
-          <TouchableOpacity
-            style={[cs.back, { borderColor: theme.border }]}
-            onPress={close}
-            disabled={requesting}
-          >
-            <Text style={[cs.backTxt, { color: theme.hint }]}>Back</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[cs.confirm, { backgroundColor: accent, opacity: requesting ? 0.72 : 1 }]}
-            onPress={handleRequest}
-            disabled={requesting}
-            activeOpacity={0.86}
-          >
-            {requesting
-              ? <ActivityIndicator color="#000" size="small" />
-              : (
+          <View style={[cs.cta, { borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
+            <TouchableOpacity style={[cs.back, { borderColor: theme.border }]} onPress={closeSheet} disabled={requesting}>
+              <Text style={[cs.backTxt, { color: theme.hint }]}>Back</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[cs.confirm, { backgroundColor: accent, opacity: requesting ? 0.72 : 1 }]}
+              onPress={handleRequest}
+              disabled={requesting}
+              activeOpacity={0.86}
+            >
+              {requesting ? (
+                <ActivityIndicator color="#000" size="small" />
+              ) : (
                 <>
                   <Ionicons name="checkmark-circle" size={19} color="#000" />
                   <Text style={cs.confirmTxt}>Request Driver</Text>
                 </>
-              )
-            }
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-    </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 };
 
 const cs = StyleSheet.create({
   overlay:     { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
-  sheet:       { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, paddingTop: 12, shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 20 },
+sheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    paddingTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 20,
+    height: height * 0.88,        // ✅ fixed height so ScrollView can flex
+    maxHeight: height * 0.88,     // optional, keep for safety
+    flexDirection: 'column',
+},
   handle:      { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 14 },
   header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 16 },
   title:       { fontSize: T.xl, fontWeight: '800' },
@@ -426,7 +462,13 @@ const cs = StyleSheet.create({
   note:        { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12 },
   noteTxt:     { flex: 1, fontSize: T.sm, lineHeight: 18, fontWeight: '500' },
   chipsRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  cta:         { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14, borderTopWidth: 1 },
+  cta:         {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    borderTopWidth: 1,
+  },
   back:        { flex: 1, height: 52, borderRadius: 14, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
   backTxt:     { fontSize: T.md, fontWeight: '600' },
   confirm:     { flex: 2.2, height: 52, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
@@ -454,6 +496,8 @@ export default function NearbyDriversScreen({ route, navigation }) {
         rideAPI.getNearbyDrivers({
           pickupLat:   params.pickupLat,
           pickupLng:   params.pickupLng,
+          dropoffLat:  params.dropoffLat,
+          dropoffLng:  params.dropoffLng,
           radiusKm:    15,
           vehicleType: params.vehicleType,
         }),
@@ -491,7 +535,6 @@ export default function NearbyDriversScreen({ route, navigation }) {
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      {/* ── Header ── */}
       <SafeAreaView edges={['top', 'left', 'right']} style={{ backgroundColor: theme.background }}>
         <View style={[s.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
@@ -513,11 +556,9 @@ export default function NearbyDriversScreen({ route, navigation }) {
             <Ionicons name="refresh-outline" size={18} color={C.brand} />
           </TouchableOpacity>
         </View>
-
         {surgeActive && <SurgeBar label={surgeLabel} theme={theme} />}
       </SafeAreaView>
 
-      {/* ── Route strip ── */}
       <View style={[s.strip, { backgroundColor: theme.backgroundAlt, borderBottomColor: theme.border }]}>
         <View style={s.stripItem}>
           <View style={[s.stripDot, { backgroundColor: C.brand }]} />
@@ -541,7 +582,6 @@ export default function NearbyDriversScreen({ route, navigation }) {
         ) : null}
       </View>
 
-      {/* ── List ── */}
       {loading ? (
         <View style={s.center}>
           <ActivityIndicator color={C.brand} size="large" />
@@ -589,17 +629,14 @@ export default function NearbyDriversScreen({ route, navigation }) {
         </Animated.View>
       )}
 
-      {/* ── Confirm sheet ── */}
-      {selectedDriver && (
-        <ConfirmSheet
-          driver={selectedDriver}
-          platformFare={platformFare}
-          routeParams={params}
-          onClose={() => setSelectedDriver(null)}
-          onSuccess={handleRideRequested}
-          theme={theme}
-        />
-      )}
+      <ConfirmSheet
+        driver={selectedDriver}
+        platformFare={platformFare}
+        routeParams={params}
+        onClose={() => setSelectedDriver(null)}
+        onSuccess={handleRideRequested}
+        theme={theme}
+      />
     </View>
   );
 }
