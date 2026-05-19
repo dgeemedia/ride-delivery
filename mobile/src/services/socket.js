@@ -29,9 +29,19 @@ class SocketService {
       });
     }
 
-    const token = await AsyncStorage.getItem('authToken');
-    if (!token) return;
+    let token = await AsyncStorage.getItem('authToken');
 
+// Token may not have flushed to AsyncStorage yet on Android — retry once
+if (!token) {
+  await new Promise(r => setTimeout(r, 200));
+  token = await AsyncStorage.getItem('authToken');
+}
+if (!token) {
+  console.warn('[Socket] No auth token — skipping connect');
+  return;
+}
+
+    console.log('[Socket] Connecting to:', SOCKET_URL);
     this.socket = io(SOCKET_URL, {
       auth: { token },
       transports: ['polling', 'websocket'],
@@ -42,36 +52,38 @@ class SocketService {
       timeout: 20000,
     });
 
-    this.socket.on('connect', () => {
-      console.log('[Socket] Connected:', this.socket.id);
+this.socket.on('connect', () => {
+  console.log('[Socket] Connected:', this.socket.id);
 
-      // Flush pending listeners now that socket is connected and
-      // server has joined user:X room
-      for (const { event, callback } of this._pendingListeners) {
-        this.socket.on(event, callback);
-      }
-      this._pendingListeners = [];
+  for (const { event, callback } of this._pendingListeners) {
+    this.socket.on(event, callback);
+  }
+  this._pendingListeners = [];
 
-      // Resolve any callers awaiting connection — use setTimeout(0) so
-      // the server-side room joins (user:X) complete before listeners fire
-      setTimeout(() => {
-        for (const cb of this._connectCallbacks) cb();
-        this._connectCallbacks = [];
-      }, 0);
+  setTimeout(() => {
+    for (const cb of this._connectCallbacks) cb();
+    this._connectCallbacks = [];
+  }, 0);
 
-      // Re-announce online status if driver was online before reconnect
-      if (this._isOnline && this._lastLocation) {
-        this.socket.emit('driver:online', this._lastLocation);
-      }
-    });
+  // Re-announce online if driver was online before reconnect
+  if (this._isOnline && this._lastLocation) {
+    this.socket.emit('driver:online', this._lastLocation);
+  }
+
+  // ADD: flush any goOnline call that fired before socket was ready
+  if (this._pendingOnline) {
+    this.socket.emit('driver:online', this._pendingOnline);
+    this._pendingOnline = null;
+  }
+});
 
     this.socket.on('disconnect', (reason) => {
       console.log('[Socket] Disconnected:', reason);
     });
 
     this.socket.on('connect_error', (err) => {
-      console.warn('[Socket] Connection error:', err.message);
-    });
+  console.warn('[Socket] Connection error:', err.message, '| URL:', SOCKET_URL);
+});
   }
 
   disconnect() {
@@ -85,12 +97,18 @@ class SocketService {
 
   // ── Driver helpers ────────────────────────────────────────────────────────
 
-  goOnline(location) {
-    if (!this.socket?.connected) return;
-    this._isOnline = true;
-    this._lastLocation = { lat: location.latitude, lng: location.longitude };
-    this.socket.emit('driver:online', this._lastLocation);
+goOnline(location) {
+  this._isOnline = true;
+  this._lastLocation = { lat: location.latitude, lng: location.longitude };
+
+  if (!this.socket?.connected) {
+    // Socket not ready yet — queue it, the connect handler will flush it
+    this._pendingOnline = this._lastLocation;
+    return;
   }
+  this._pendingOnline = null;
+  this.socket.emit('driver:online', this._lastLocation);
+}
 
   goOffline() {
     this._isOnline = false;
@@ -146,6 +164,14 @@ class SocketService {
   get isConnected() {
     return this.socket?.connected ?? false;
   }
+  
+// Call this from your app's AppState listener
+handleAppForeground() {
+  if (!this.socket?.connected) {
+    console.log('[Socket] App foregrounded — reconnecting...');
+    this.connect().catch(() => {});
+  }
+}
 }
 
 export default new SocketService();

@@ -10,7 +10,7 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
-import { rideAPI, walletAPI } from '../../services/api';
+import { rideAPI, walletAPI, driverAPI } from '../../services/api';
 import socketService          from '../../services/socket';
 
 const { width, height } = Dimensions.get('window');

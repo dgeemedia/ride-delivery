@@ -1,9 +1,9 @@
 // mobile/src/screens/Partner/ActiveDeliveryScreen.js
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
-  Platform, TextInput, Linking, PanResponder,
+View, Text, StyleSheet, TouchableOpacity, ScrollView,
+Alert, StatusBar, Dimensions, Animated, ActivityIndicator,
+Platform, TextInput, Linking, PanResponder, KeyboardAvoidingView,
 } from 'react-native';
 import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
@@ -16,12 +16,12 @@ import * as Location         from 'expo-location';
 const { height } = Dimensions.get('window');
 
 const COURIER_ACCENT = '#34D399';
-const TAB_BAR_HEIGHT = 60;
 const SHEET_MIN      = 200;
 const SHEET_DEFAULT  = Math.round(height * 0.54);
 const SHEET_MAX      = Math.round(height * 0.85);
 const DRAG_HANDLE_H  = 28;
 const ACTION_H       = 14 + 54 + 16;
+const COMPLETE_CARD_H = 180;
 
 const callPhone = (phone) => {
   if (!phone) return;
@@ -196,32 +196,27 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
   const [speed,         setSpeed]         = useState(null);
 
   const mapRef = useRef(null);
+const scrollRef = useRef(null);
 
   // Draggable sheet — upgraded from fixed height
   const sheetHeightAnim  = useRef(new Animated.Value(SHEET_DEFAULT)).current;
   const currentHeightRef = useRef(SHEET_DEFAULT);
   const startHeightRef   = useRef(SHEET_DEFAULT);
 
-  const sheetPadBottom = insets.bottom + 16;
-  const scrollHeightAnim = useRef(
-    sheetHeightAnim.interpolate({
-      inputRange:  [SHEET_MIN, SHEET_DEFAULT, SHEET_MAX],
-      outputRange: [
-        SHEET_MIN     - DRAG_HANDLE_H - ACTION_H - sheetPadBottom,
-        SHEET_DEFAULT - DRAG_HANDLE_H - ACTION_H - sheetPadBottom,
-        SHEET_MAX     - DRAG_HANDLE_H - ACTION_H - sheetPadBottom,
-      ],
-      extrapolate: 'clamp',
-    })
-  ).current;
+const sheetPadBottom = insets.bottom + 16;
 
-  const statusPillBottom = useRef(
-    sheetHeightAnim.interpolate({
-      inputRange:  [0, SHEET_MIN, SHEET_MAX],
-      outputRange: [TAB_BAR_HEIGHT + 10, TAB_BAR_HEIGHT + SHEET_MIN + 10, TAB_BAR_HEIGHT + SHEET_MAX + 10],
-      extrapolate: 'clamp',
-    })
-  ).current;
+const tabBarHeight =
+  54 + insets.bottom + (Platform.OS === 'android' ? 16 : 0);
+
+const statusPillBottom = sheetHeightAnim.interpolate({
+  inputRange: [0, SHEET_MIN, SHEET_MAX],
+  outputRange: [
+    tabBarHeight + 10,
+    tabBarHeight + SHEET_MIN + 10,
+    tabBarHeight + SHEET_MAX + 10,
+  ],
+  extrapolate: 'clamp',
+});
 
   const panResponder = useRef(
     PanResponder.create({
@@ -301,6 +296,30 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
       locationWatcher?.remove?.();
     };
   }, [deliveryId]);
+
+useEffect(() => {
+  if (showComplete && status === 'IN_TRANSIT') {
+    Animated.spring(sheetHeightAnim, {
+      toValue: SHEET_MAX,
+      tension: 100,
+      friction: 12,
+      useNativeDriver: false,
+    }).start(() => {
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+  } else if (!showComplete) {
+    Animated.spring(sheetHeightAnim, {
+      toValue: SHEET_DEFAULT,
+      tension: 100,
+      friction: 12,
+      useNativeDriver: false,
+    }).start(() => {
+      currentHeightRef.current = SHEET_DEFAULT;
+    });
+  }
+}, [showComplete]);
 
   const handlePickup = async () => {
     setActing(true);
@@ -387,7 +406,11 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
     );
   }
 
-  return (
+return (
+  <KeyboardAvoidingView
+    style={{ flex: 1 }}
+    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+  >
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
@@ -472,14 +495,26 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
         backgroundColor: theme.background,
         borderColor:     theme.border,
         height:          sheetHeightAnim,
-        bottom:          TAB_BAR_HEIGHT,
+        bottom:          tabBarHeight, // lift above tab bar with a small gap
       }]}>
         <View style={s.dragHandleArea} {...panResponder.panHandlers}>
           <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
         </View>
 
-        <Animated.View style={{ height: scrollHeightAnim, overflow: 'hidden' }}>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
+<ScrollView
+  ref={scrollRef}
+  style={{ flex: 1 }}
+  showsVerticalScrollIndicator={false}
+  keyboardShouldPersistTaps="handled"
+  keyboardDismissMode="on-drag"
+  contentContainerStyle={[
+    s.scrollContent,
+    {
+      flexGrow: 1,
+      paddingBottom: ACTION_H + sheetPadBottom + 24,
+    },
+  ]}
+>
 
             {/* Status header */}
             <View style={s.sheetHeader}>
@@ -511,46 +546,51 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
                 <Text style={[s.fareValue, { color: theme.foreground }]}>CASH</Text>
               </View>
             </View>
+
+            {/* Delivery confirmation panel — inside scroll so it's never clipped by the tab bar */}
+            {showComplete && status === 'IN_TRANSIT' && (
+              <View style={[s.completeCard, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '40' }]}>
+                <Text style={[s.completeTitle, { color: theme.foreground }]}>Confirm Delivery</Text>
+                <Text style={[s.completeSub, { color: theme.hint }]}>Enter the recipient's name to finalise</Text>
+                <View style={[s.inputRow, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                  <Ionicons name="person-outline" size={15} color={theme.hint} />
+                  <TextInput
+  style={[s.nameInput, { color: theme.foreground }]}
+  placeholder="Recipient's full name"
+  placeholderTextColor={theme.hint}
+  value={recipientName}
+  onChangeText={setRecipientName}
+  autoFocus
+onFocus={() => {
+  setTimeout(() => {
+    scrollRef.current?.scrollTo({ y: 80, animated: true });
+  }, 200);
+}}
+/>
+                </View>
+                <View style={s.completeActions}>
+                  <TouchableOpacity style={[s.cancelSmall, { borderColor: theme.border }]} onPress={() => setShowComplete(false)}>
+                    <Text style={[s.cancelSmallTxt, { color: theme.hint }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.confirmSmall, { backgroundColor: COURIER_ACCENT, opacity: acting ? 0.7 : 1 }]}
+                    onPress={handleComplete}
+                    disabled={acting}
+                  >
+                    {acting
+                      ? <ActivityIndicator color="#080C18" size="small" />
+                      : <Text style={s.confirmSmallTxt}>Confirm Delivered</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+<View style={{ height: showComplete ? 40 : 20 }} />           
           </ScrollView>
-        </Animated.View>
 
         {/* ── Action footer ── */}
         <View style={[s.actionFooter, { borderTopColor: theme.border, paddingBottom: sheetPadBottom }]}>
-
-          {/* Delivery confirmation panel */}
-          {showComplete && status === 'IN_TRANSIT' && (
-            <View style={[s.completeCard, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '40' }]}>
-              <Text style={[s.completeTitle, { color: theme.foreground }]}>Confirm Delivery</Text>
-              <Text style={[s.completeSub, { color: theme.hint }]}>Enter the recipient's name to finalise</Text>
-              <View style={[s.inputRow, { backgroundColor: theme.background, borderColor: theme.border }]}>
-                <Ionicons name="person-outline" size={15} color={theme.hint} />
-                <TextInput
-                  style={[s.nameInput, { color: theme.foreground }]}
-                  placeholder="Recipient's full name"
-                  placeholderTextColor={theme.hint}
-                  value={recipientName}
-                  onChangeText={setRecipientName}
-                  autoFocus
-                />
-              </View>
-              <View style={s.completeActions}>
-                <TouchableOpacity style={[s.cancelSmall, { borderColor: theme.border }]} onPress={() => setShowComplete(false)}>
-                  <Text style={[s.cancelSmallTxt, { color: theme.hint }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.confirmSmall, { backgroundColor: COURIER_ACCENT, opacity: acting ? 0.7 : 1 }]}
-                  onPress={handleComplete}
-                  disabled={acting}
-                >
-                  {acting
-                    ? <ActivityIndicator color="#080C18" size="small" />
-                    : <Text style={s.confirmSmallTxt}>Confirm Delivered</Text>
-                  }
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
           {status === 'ASSIGNED' && (
             <TouchableOpacity style={[s.actionBtn, { backgroundColor: COURIER_ACCENT }]} onPress={handlePickup} disabled={acting} activeOpacity={0.88}>
               {acting ? <ActivityIndicator color="#080C18" /> : (
@@ -584,6 +624,7 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
         </View>
       </Animated.View>
     </View>
+  </KeyboardAvoidingView>
   );
 }
 

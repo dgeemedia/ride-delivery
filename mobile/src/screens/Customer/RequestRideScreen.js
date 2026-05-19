@@ -503,6 +503,7 @@ export default function RequestRideScreen({ navigation }) {
 
   const isPickingLocation = placingPin !== null;
   const pinColor          = placingPin === 'dropoff' ? '#E05555' : accentColor;
+  const pinFg             = placingPin === 'dropoff' ? '#FFFFFF' : accentFg;
   const mapRegion         = pickupCoords ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 } : undefined;
   const sheetStyle        = step === 2 ? { height: sheetH } : {};
 
@@ -597,8 +598,8 @@ export default function RequestRideScreen({ navigation }) {
               {resolvingAddr && <ActivityIndicator color={pinColor} size="small" style={{ marginLeft: 8 }} />}
             </View>
             <TouchableOpacity style={[s.confirmBarBtn, { backgroundColor: pinColor, opacity: resolvingAddr ? 0.6 : 1 }]} onPress={confirmPin} disabled={resolvingAddr || !liveAddress} activeOpacity={0.88}>
-              <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-              <Text style={s.confirmBarBtnTxt}>Confirm Location</Text>
+              <Ionicons name="checkmark" size={18} color={pinFg} />
+              <Text style={[s.confirmBarBtnTxt, { color: pinFg }]}>Confirm Location</Text>
             </TouchableOpacity>
           </View>
         </>

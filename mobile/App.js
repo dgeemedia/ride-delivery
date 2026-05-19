@@ -1,6 +1,6 @@
 // mobile/App.js
 import React, { useEffect, useCallback, useState } from 'react';
-import { Platform, View, StyleSheet } from 'react-native';   // ✅ Platform now imported
+import { Platform, View, StyleSheet, AppState } from 'react-native';   // ✅ Platform now imported
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -11,12 +11,7 @@ import { RideProvider }     from './src/context/RideContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import AppNavigator         from './src/navigation/AppNavigator';
 import ErrorBoundary        from './src/components/ErrorBoundary';
-
-// ✅ REMOVED: expo-navigation-bar 'absolute' mode — this was the root cause.
-//    Setting the nav bar to absolute made it float OVER the app, and the tab
-//    bar was not tall enough to clear it. Now the system nav bar pushes the
-//    app content up naturally, and safe-area insets are zero on the bottom,
-//    so the tab bar sits cleanly above it with no overlap.
+import socketService        from './src/services/socket';
 
 // Keep splash visible until we explicitly hide it
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -53,6 +48,22 @@ export default function App() {
       }
     }
     prepare();
+  }, []);
+
+  useEffect(() => {
+
+    const sub = AppState.addEventListener('change', (state) => {
+
+      if (state === 'active') {
+
+        socketService.handleAppForeground();
+
+      }
+
+    });
+
+    return () => sub.remove();
+
   }, []);
 
   const onLayoutRootView = useCallback(async () => {

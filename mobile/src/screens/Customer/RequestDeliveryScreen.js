@@ -423,7 +423,7 @@ export default function RequestDeliveryScreen({ navigation }) {
   }, [pickupCoords, dropoffCoords, pickupContact, dropoffContact, packageDescription, packageWeight]);
 
   // ── Confirm delivery ─────────────────────────────────────────────────────
-  const confirmDelivery = async () => {
+const confirmDelivery = async () => {
     if (!selectedPartner) { Alert.alert('Select a partner', 'Please choose a delivery partner.'); return; }
     if (paymentMethod === 'WALLET' && walletBalance < feeEstimate) {
       Alert.alert('Insufficient Balance', 'Your wallet balance is less than the fee. Please top up or choose another payment method.');
@@ -432,7 +432,7 @@ export default function RequestDeliveryScreen({ navigation }) {
     setRequesting(true);
     try {
       const cardResult = await handleCardPayment(paymentMethod, feeEstimate);
-      await deliveryAPI.requestDelivery({
+      const res = await deliveryAPI.requestDelivery({
         pickupAddress,  pickupLat: pickupCoords.lat,  pickupLng: pickupCoords.lng,  pickupContact,
         dropoffAddress, dropoffLat: dropoffCoords.lat, dropoffLng: dropoffCoords.lng, dropoffContact,
         packageDescription, packageWeight: parseFloat(packageWeight) || 0,
@@ -441,8 +441,9 @@ export default function RequestDeliveryScreen({ navigation }) {
         paymentMethod,
         transactionId: cardResult?.transactionId ?? null,
       });
-      if (navigation.replace) navigation.replace('DeliveryTracking');
-      else navigation.goBack();
+      const newDeliveryId = res?.data?.delivery?.id ?? res?.data?.id ?? null;
+      if (navigation.replace) navigation.replace('DeliveryTracking', { deliveryId: newDeliveryId });
+      else navigation.navigate('DeliveryTracking', { deliveryId: newDeliveryId });
     } catch (err) {
       if (err?.message !== 'CANCELLED') Alert.alert('Request failed', err?.message ?? 'Could not place delivery.');
     } finally { setRequesting(false); }
@@ -455,6 +456,7 @@ export default function RequestDeliveryScreen({ navigation }) {
 
   const isPickingLocation = placingPin !== null;
   const pinColor          = placingPin === 'dropoff' ? '#E05555' : accentColor;
+  const pinFg             = placingPin === 'dropoff' ? '#FFFFFF' : accentFg;
   const mapRegion         = pickupCoords ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 } : LAGOS_DEFAULT;
 
   const confirmBtnLabel =
@@ -552,8 +554,8 @@ export default function RequestDeliveryScreen({ navigation }) {
               style={[s.confirmBarBtn, { backgroundColor: pinColor, opacity: resolvingAddr ? 0.6 : 1 }]}
               onPress={confirmPin} disabled={resolvingAddr || !liveAddress} activeOpacity={0.88}
             >
-              <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-              <Text style={s.confirmBarBtnTxt}>Confirm Location</Text>
+              <Ionicons name="checkmark" size={18} color={pinFg} />
+              <Text style={[s.confirmBarBtnTxt, { color: pinFg }]}>Confirm Location</Text>
             </TouchableOpacity>
           </View>
         </>

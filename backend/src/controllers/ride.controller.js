@@ -2,6 +2,7 @@
 const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError }         = require('../middleware/errorHandler');
+const { logger } = require('../utils/logger');
 const { calculateDistance } = require('../utils/helpers');
 const {
   estimateFare,
@@ -806,9 +807,17 @@ exports.requestSpecificDriver = async (req, res) => {
     }
   });
 
-  const io = getIO(req);
-  if (io) {
-    io.to(`user:${driverId}`).emit('ride:new_request', {
+const io = getIO(req);
+if (!io) {
+  logger.error('[ride:new_request] io is null for rideId:', ride.id);
+}
+if (io) {
+  // ADD THESE 3 LINES:
+  const socks = await io.in(`user:${driverId}`).allSockets();
+  logger.info(`[ride:new_request] targeting user:${driverId} — sockets in room: ${socks.size}`);
+  if (socks.size === 0) logger.warn(`[ride:new_request] DRIVER HAS NO SOCKET — emit will be lost`);
+
+  io.to(`user:${driverId}`).emit('ride:new_request', {
       rideId:             ride.id,
       pickupAddress:      ride.pickupAddress,
       dropoffAddress:     ride.dropoffAddress,

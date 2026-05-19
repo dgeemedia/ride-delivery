@@ -5,8 +5,7 @@ import { Platform } from 'react-native';
 const PRODUCTION_URL = 'https://diakite.onrender.com/api';
 
 const NATIVE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL     // set in .env.local for local dev
-  ?? Constants.expoConfig?.extra?.apiUrl   // set from app.config.js → .env
+  Constants.expoConfig?.extra?.apiUrl      // ← this is set by app.config.js correctly
   ?? PRODUCTION_URL;
 
 // Web always uses localhost — browser and backend on same machine

@@ -50,17 +50,19 @@ const initializeSocketHandlers = (io) => {
   io.on('connection', (socket) => {
     logger.info(`[Socket] Connected: ${socket.userName} (${socket.userId}) role=${socket.userRole}`);
 
-    activeSockets.set(socket.userId, socket.id);
+// Disconnect any existing ghost socket for this user
+const existingSocketId = activeSockets.get(socket.userId);
+if (existingSocketId && existingSocketId !== socket.id) {
+  const existingSocket = io.sockets.sockets.get(existingSocketId);
+  if (existingSocket) {
+    logger.info(`[Socket] Kicking ghost socket ${existingSocketId} for user ${socket.userId}`);
+    existingSocket.disconnect(true);
+  }
+}
 
-    // Every user joins their private room — this room is ALWAYS available
-    // and is used by emitToPartner / emitToUser for targeted delivery.
-    socket.join(`user:${socket.userId}`);
-
-    // ── AUTO-REJOIN: if this is a DELIVERY_PARTNER who is still marked
-    //    online in the DB (e.g. app reconnected after a network drop),
-    //    immediately rejoin the broadcast room so they can receive both
-    //    targeted and broadcast delivery requests without having to toggle
-    //    the switch off and on again.
+activeSockets.set(socket.userId, socket.id);
+socket.join(`user:${socket.userId}`);
+logger.info(`[Socket] ${socket.userName} (${socket.userId}) joined room user:${socket.userId}`);
     if (socket.userRole === 'DELIVERY_PARTNER') {
       prisma.deliveryPartnerProfile.findUnique({
         where:  { userId: socket.userId },
@@ -385,12 +387,37 @@ const initializeSocketHandlers = (io) => {
       socket.join('admins:online');
     }
 
-    // ── DISCONNECT ─────────────────────────────────
+// ── DISCONNECT ─────────────────────────────────
 
-    socket.on('disconnect', async () => {
-      logger.info(`[Socket] Disconnected: ${socket.userName} (${socket.userId})`);
+    socket.on('disconnect', async (reason) => {
+      logger.info(`[Socket] Disconnected: ${socket.userName} (${socket.userId}) reason=${reason}`);
+
+      if (reason === 'transport close' || reason === 'ping timeout') {
+        setTimeout(async () => {
+          const current = activeSockets.get(socket.userId);
+          if (current && current !== socket.id) return;
+          activeSockets.delete(socket.userId);
+          try {
+            if (socket.userRole === 'DRIVER') {
+              await prisma.driverProfile.updateMany({
+                where: { userId: socket.userId },
+                data:  { isOnline: false },
+              });
+            }
+            if (socket.userRole === 'DELIVERY_PARTNER') {
+              await prisma.deliveryPartnerProfile.updateMany({
+                where: { userId: socket.userId },
+                data:  { isOnline: false },
+              });
+            }
+          } catch (err) {
+            logger.error('[Socket] delayed disconnect cleanup error:', err.message);
+          }
+        }, 15000);
+        return;
+      }
+
       activeSockets.delete(socket.userId);
-
       try {
         if (socket.userRole === 'DRIVER') {
           await prisma.driverProfile.updateMany({
@@ -408,8 +435,9 @@ const initializeSocketHandlers = (io) => {
         logger.error('[Socket] disconnect cleanup error:', err.message);
       }
     });
-  });
-};
+
+  }); 
+};    
 
 // ─────────────────────────────────────────────
 // UTILITY EXPORTS
@@ -418,19 +446,9 @@ const initializeSocketHandlers = (io) => {
 const emitToUser          = (io, userId, event, data) => io?.to(`user:${userId}`).emit(event, data);
 const broadcastToDrivers  = (io, event, data)          => io?.to('drivers:online').emit(event, data);
 const broadcastToPartners = (io, event, data)          => io?.to('partners:online').emit(event, data);
-
-// ── FIX: emit to the partner via their user:X room which is joined on
-//         every connection — not partner:X which only exists after the
-//         partner:online socket event fires. This guarantees delivery
-//         even after a socket reconnect where partner:online was not
-//         re-emitted by the client.
-const emitToPartner = (io, partnerId, event, data) =>
-  io?.to(`user:${partnerId}`).emit(event, data);
-
-const getSocketId      = (userId)                 => activeSockets.get(userId) || null;
-
-// SHIELD helper — emit to a beneficiary's live tracker room
-const emitToShieldRoom = (io, token, event, data) => io?.to(`shield:${token}`).emit(event, data);
+const emitToPartner       = (io, partnerId, event, data) => io?.to(`user:${partnerId}`).emit(event, data);
+const getSocketId         = (userId) => activeSockets.get(userId) || null;
+const emitToShieldRoom    = (io, token, event, data) => io?.to(`shield:${token}`).emit(event, data);
 
 module.exports = {
   initializeSocketHandlers,
