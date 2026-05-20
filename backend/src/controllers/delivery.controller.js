@@ -490,14 +490,6 @@ exports.rateDelivery = async (req, res) => {
   res.status(201).json({ success: true, message: 'Rating submitted successfully', data: { rating: newRating } });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/deliveries/nearby-partners
-//
-// Ranking uses a weighted blend:
-//   score = (normalised_rating × 0.65) − (normalised_distance × 0.35)
-//
-// New partners (rating = 0) get a neutral 3.0 so they aren't buried.
-// ─────────────────────────────────────────────────────────────────────────────
 exports.getNearbyPartners = async (req, res) => {
   const { pickupLat, pickupLng, dropoffLat, dropoffLng, radiusKm = 15 } = req.query;
   if (!pickupLat || !pickupLng) throw new AppError('Please provide pickup coordinates', 400);
