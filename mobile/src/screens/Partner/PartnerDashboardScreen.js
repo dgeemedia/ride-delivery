@@ -358,19 +358,19 @@ export default function PartnerDashboardScreen({ navigation }) {
     socketService.on('delivery:incoming_request', handleIncomingDelivery);
     socketService.on('delivery:cancelled',        handleCancelled);
 
-    socketService.connect()
-      .then(async () => {
-        if (isOnline) {
-          try {
-            const coords = await getRealLocation();
-            socketService.goOnline({ latitude: coords.lat, longitude: coords.lng });
-          } catch {
-            socketService.goOnline({});
-          }
-        }
-      })
-      .catch((err) => console.warn('[PartnerDashboard] socket connect:', err?.message));
-
+   // AFTER
+socketService.connect()
+  .then(async () => {
+    if (isOnline) {
+      try {
+        const coords = await getRealLocation();
+        socketService.goOnline({ latitude: coords.lat, longitude: coords.lng });
+      } catch {
+        // Do NOT call goOnline with empty coords — coords already saved via REST
+      }
+    }
+  })
+  .catch((err) => console.warn('[PartnerDashboard] socket connect:', err?.message));
     return () => {
       socketService.off('delivery:incoming_request', handleIncomingDelivery);
       socketService.off('delivery:cancelled',        handleCancelled);

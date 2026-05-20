@@ -155,14 +155,17 @@ exports.updateStatus = async (req, res) => {
     }
   }
 
-  const updatedProfile = await prisma.deliveryPartnerProfile.update({
-    where: { userId: req.user.id },
-    data: {
-      isOnline:   Boolean(isOnline),
-      currentLat: currentLat ?? null,
-      currentLng: currentLng ?? null,
-    },
-  });
+  // AFTER
+const updatedProfile = await prisma.deliveryPartnerProfile.update({
+  where: { userId: req.user.id },
+  data: {
+    isOnline: Boolean(isOnline),
+    // Only overwrite coords when real values arrive — never null them out
+    ...(currentLat != null && currentLng != null
+      ? { currentLat, currentLng }
+      : {}),
+  },
+});
 
   res.status(200).json({
     success: true,
