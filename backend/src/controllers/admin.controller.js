@@ -969,7 +969,20 @@ exports.getRevenueAnalytics = async (req, res) => {
   const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
   const byMethod = {};
   payments.forEach(p => { byMethod[p.method] = (byMethod[p.method] || 0) + p.amount; });
-  res.status(200).json({ success: true, data: { totalRevenue, platformFee: totalRevenue * 0.20, netRevenue: totalRevenue * 0.80, transactionCount: payments.length, dailyRevenue: Object.values(revenueByDate), byMethod, period, currency: 'NGN' } });
+  // AFTER
+const { platform } = await require('../utils/fareEngine').getSettings();
+const commissionRate = platform.ridesCommission; // reads from DB, respects admin changes
+
+res.status(200).json({ success: true, data: {
+  totalRevenue,
+  platformFee:  Math.round(totalRevenue * commissionRate),
+  netRevenue:   Math.round(totalRevenue * (1 - commissionRate)),
+  transactionCount: payments.length,
+  dailyRevenue: Object.values(revenueByDate),
+  byMethod,
+  period,
+  currency: 'NGN',
+}});
 };
 
 exports.getPerformanceAnalytics = async (req, res) => {
@@ -1252,16 +1265,6 @@ exports.getTickets = async (req, res) => {
   res.status(200).json({ success: true, data: { tickets, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } } });
 };
 
-exports.updateTicket = async (req, res) => {
-  const { id } = req.params;
-  const { status, assignedTo, resolution } = req.body;
-  const ticket = await prisma.supportTicket.update({ where: { id }, data: { ...(status && { status }), ...(assignedTo && { assignedTo }), ...(resolution && { resolution }), ...(status === 'resolved' && { resolvedAt: new Date() }) } });
-  if (status === 'resolved') {
-    await notificationService.notify({ userId: ticket.userId, title: 'Support Ticket Resolved ✅', message: `Your support ticket #${ticket.ticketNumber} has been resolved. ${resolution || ''}`, type: 'ticket_resolved', data: { ticketId: id, ticketNumber: ticket.ticketNumber } });
-  }
-  res.status(200).json({ success: true, message: 'Ticket updated', data: { ticket } });
-};
-
 // ─────────────────────────────────────────────
 // ACTIVITY LOGS
 // ─────────────────────────────────────────────
@@ -1336,6 +1339,27 @@ exports.getWithdrawableBalance = async (wallet) => {
 exports.broadcastNotification = async (req, res) => {
   const { title, message, type = 'admin_broadcast', role } = req.body;
   if (!title || !message) throw new AppError('Title and message are required', 400);
+
+  // ── Quiet hours check ──────────────────────────────────────────────────
+  const quietSettings = await prisma.systemSettings.findMany({
+    where: { key: { in: ['notifications_quiet_hours_start', 'notifications_quiet_hours_end'] } },
+  });
+  const qs = Object.fromEntries(quietSettings.map(s => [s.key, parseInt(s.value)]));
+  const quietStart = qs['notifications_quiet_hours_start'] ?? 23;
+  const quietEnd   = qs['notifications_quiet_hours_end']   ?? 7;
+  const currentHour = new Date().getHours();
+
+  const inQuietHours = quietStart > quietEnd
+    ? currentHour >= quietStart || currentHour < quietEnd   // overnight window e.g. 23→7
+    : currentHour >= quietStart && currentHour < quietEnd;  // same-day window
+
+  if (inQuietHours) {
+    throw new AppError(
+      `Broadcasts are blocked during quiet hours (${quietStart}:00–${quietEnd}:00). Schedule for later.`,
+      403
+    );
+  }
+
   const where = { isActive: true };
   if (role) where.role = role;
   const users = await prisma.user.findMany({ where, select: { id: true } });
@@ -1524,33 +1548,6 @@ exports.previewOnboardingBonuses = async (req, res) => {
       partners: { total: eligiblePartners.length, eligible: partnersEligible.length },
     },
   });
-};
-
-// ─── RIDE DETAIL ─────────────────────────────────────────────────────────────
-
-exports.getRideById = async (req, res) => {
-  const { id } = req.params;
- 
-  const ride = await prisma.ride.findUnique({
-    where: { id },
-    include: {
-      customer: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, profileImage: true } },
-      driver: {
-        select: {
-          id: true, firstName: true, lastName: true, email: true, phone: true, profileImage: true,
-          driverProfile: {
-            select: { vehicleType: true, vehicleMake: true, vehicleModel: true, vehicleColor: true, vehiclePlate: true, rating: true, currentLat: true, currentLng: true },
-          },
-        },
-      },
-      payment: true,
-      rating: true,
-    },
-  });
- 
-  if (!ride) throw new AppError('Ride not found', 404);
- 
-  res.status(200).json({ success: true, data: { ride } });
 };
 
 // ─── DELIVERY DETAIL + LIVE + CANCEL ─────────────────────────────────────────
@@ -2476,29 +2473,6 @@ exports.runDuoPayOverdueCheck = async (req, res) => {
     success: true,
     message: `Overdue check complete. ${result.overdue} transactions marked overdue, ${result.suspended} accounts suspended.`,
     data:    result,
-  });
-};
-
-// ─── ONBOARDING BONUS PREVIEW (dry run) ──────────────────────────────────────
-
-exports.previewOnboardingBonuses = async (req, res) => {
-  const [eligibleDrivers, eligiblePartners] = await Promise.all([
-    prisma.driverProfile.findMany({
-      where:   { isApproved: true },
-      include: { user: { include: { wallet: { select: { balance: true } } } } },
-    }),
-    prisma.deliveryPartnerProfile.findMany({
-      where:   { isApproved: true },
-      include: { user: { include: { wallet: { select: { balance: true } } } } },
-    }),
-  ]);
-
-  res.status(200).json({
-    success: true,
-    data: {
-      eligibleDrivers:  eligibleDrivers.filter(d  => (d.user.wallet?.balance ?? 0) === 0).length,
-      eligiblePartners: eligiblePartners.filter(p => (p.user.wallet?.balance ?? 0) === 0).length,
-    },
   });
 };
 

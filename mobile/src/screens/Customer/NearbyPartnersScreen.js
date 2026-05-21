@@ -144,6 +144,10 @@ const pc = StyleSheet.create({
 // ─── ConfirmSheet (NOW A MODAL – always visible, draggable) ─────────────────
 const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
   const [requesting, setRequesting] = useState(false);
+  const [pickupAddress, setPickupAddress] = useState(routeParams.pickupAddress);
+  const [pickupLat,     setPickupLat]     = useState(routeParams.pickupLat);
+  const [pickupLng,     setPickupLng]     = useState(routeParams.pickupLng);
+  const [showPickupEdit, setShowPickupEdit] = useState(false);
   const insets = useSafeAreaInsets();
 
   // Animation refs (always declared)
@@ -195,9 +199,9 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
     setRequesting(true);
     try {
       const res = await deliveryAPI.requestDelivery({
-        pickupAddress:      routeParams.pickupAddress,
-        pickupLat:          routeParams.pickupLat,
-        pickupLng:          routeParams.pickupLng,
+        pickupAddress,
+        pickupLat,
+        pickupLng,
         pickupContact:      routeParams.pickupContact,
         dropoffAddress:     routeParams.dropoffAddress,
         dropoffLat:         routeParams.dropoffLat,
@@ -301,6 +305,60 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
               </View>
             ) : null}
 
+            {/* Pickup confirmation strip */}
+            <View style={[pcs.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <View style={[pcs.dot, { backgroundColor: C.brand }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={[pcs.label, { color: theme.hint }]}>PICKUP</Text>
+                <Text style={[pcs.addr, { color: theme.foreground }]} numberOfLines={2}>
+                  {pickupAddress}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[pcs.changeBtn, { borderColor: C.brand + '50' }]}
+                onPress={() => setShowPickupEdit(true)}
+                disabled={requesting}
+              >
+                <Ionicons name="pencil-outline" size={12} color={C.brand} />
+                <Text style={[pcs.changeTxt, { color: C.brand }]}>Change</Text>
+              </TouchableOpacity>
+            </View>
+
+            {showPickupEdit && (
+              <View style={[pcs.editor, { backgroundColor: theme.backgroundAlt, borderColor: C.brand + '40' }]}>
+                <Text style={[pcs.editorTitle, { color: theme.foreground }]}>
+                  Use current location or keep existing
+                </Text>
+                <TouchableOpacity
+                  style={[pcs.useCurrentBtn, { backgroundColor: C.brand }]}
+                  onPress={async () => {
+                    try {
+                      const Location = require('expo-location');
+                      const { status } = await Location.requestForegroundPermissionsAsync();
+                      if (status !== 'granted') {
+                        Alert.alert('Permission denied', 'Allow location access to use current location.');
+                        return;
+                      }
+                      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+                      const [place] = await Location.reverseGeocodeAsync(loc.coords);
+                      const addr = [place?.name, place?.street, place?.city].filter(Boolean).join(', ');
+                      setPickupLat(loc.coords.latitude);
+                      setPickupLng(loc.coords.longitude);
+                      setPickupAddress(addr || `${loc.coords.latitude.toFixed(5)}, ${loc.coords.longitude.toFixed(5)}`);
+                      setShowPickupEdit(false);
+                    } catch {
+                      Alert.alert('Error', 'Could not get current location.');
+                    }
+                  }}
+                >
+                  <Ionicons name="locate-outline" size={14} color="#000" />
+                  <Text style={pcs.useCurrentTxt}>Use My Current Location</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowPickupEdit(false)} style={pcs.keepBtn}>
+                  <Text style={[pcs.keepTxt, { color: theme.hint }]}>Keep current pickup</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {/* Route */}
             {routeParams.pickupAddress ? (
               <View style={[cs.routeCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
@@ -456,6 +514,21 @@ const cs = StyleSheet.create({
   backTxt:       { fontSize: T.md, fontWeight: '600' },
   confirm:       { flex: 2.2, height: 52, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
   confirmTxt:    { fontSize: T.md, fontWeight: '900', color: '#000' },
+});
+
+const pcs = StyleSheet.create({
+  wrap:         { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, padding: 12 },
+  dot:          { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
+  label:        { fontSize: 9, fontWeight: '700', letterSpacing: 1.5, marginBottom: 2 },
+  addr:         { fontSize: 13, fontWeight: '500', lineHeight: 18 },
+  changeBtn:    { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 5, flexShrink: 0 },
+  changeTxt:    { fontSize: 11, fontWeight: '700' },
+  editor:       { borderRadius: 14, borderWidth: 1.5, padding: 14, gap: 10 },
+  editorTitle:  { fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  useCurrentBtn:{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, justifyContent: 'center' },
+  useCurrentTxt:{ fontSize: 13, fontWeight: '800', color: '#000' },
+  keepBtn:      { alignItems: 'center', paddingVertical: 6 },
+  keepTxt:      { fontSize: 12, fontWeight: '600' },
 });
 
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────

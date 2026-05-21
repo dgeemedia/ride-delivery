@@ -8,10 +8,17 @@ export const settingsAPI = {
     return response.data;
   },
 
-  updateSetting: async (key: string, value: string | number): Promise<ApiResponse<{ setting: any }>> => {
-    const response = await api.put(`/admin/settings/${key}`, { value });
-    return response.data;
-  },
+updateSetting: async (
+  key: string,
+  value: string | number,
+  category?: string,
+): Promise<ApiResponse<{ setting: any }>> => {
+  const response = await api.put(`/admin/settings/${key}`, {
+    value,
+    ...(category && { category }),
+  });
+  return response.data;
+},
 
   // Sends all keys in one request — avoids rate-limit bursts from parallel PUTs
   updateSettingsBatch: async (

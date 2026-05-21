@@ -198,9 +198,9 @@ export default function RequestDeliveryScreen({ navigation }) {
 
   // ── Flow ─────────────────────────────────────────────────────────────────
   const [step,       setStep]       = useState(1);
-  const [requesting, setRequesting] = useState(false);
-  const [mapReady,   setMapReady]   = useState(false);
-
+  const [requesting,      setRequesting]      = useState(false);
+  const [pendingDeliveryId, setPendingDeliveryId] = useState(null);
+  const [mapReady,        setMapReady]        = useState(false);
   const sheetH    = useRef(new Animated.Value(SHEET_SNAP)).current;
   const pinBounce = useRef(new Animated.Value(0)).current;
   const mapRef       = useRef(null);
@@ -235,6 +235,27 @@ export default function RequestDeliveryScreen({ navigation }) {
     })();
     socketService.connect?.();
   }, []);
+
+  useEffect(() => {
+  const handleStatus = (data) => {
+    if (data.deliveryId === pendingDeliveryId && data.status === 'ASSIGNED') {
+      setTimeout(() => navigation.replace('DeliveryTracking', { deliveryId: pendingDeliveryId }), 1800);
+    }
+  };
+  const handleCancelled = (data) => {
+    if (data.deliveryId === pendingDeliveryId) {
+      setPendingDeliveryId(null);
+      setStep(2);
+      Alert.alert('Request Cancelled', 'The courier cancelled. Please choose another.');
+    }
+  };
+  socketService.on('delivery:status:update', handleStatus);
+  socketService.on('delivery:cancelled',     handleCancelled);
+  return () => {
+    socketService.off('delivery:status:update', handleStatus);
+    socketService.off('delivery:cancelled',     handleCancelled);
+  };
+}, [pendingDeliveryId, navigation]);
 
   useEffect(() => {
     if (pickupCoords && mapReady && step === 1 && !placingPin) {
@@ -433,14 +454,29 @@ const confirmDelivery = async () => {
         paymentMethod,
         transactionId: cardResult?.transactionId ?? null,
       });
-      const newDeliveryId = res?.data?.delivery?.id ?? res?.data?.id ?? null;
-      if (navigation.replace) navigation.replace('DeliveryTracking', { deliveryId: newDeliveryId });
-      else navigation.navigate('DeliveryTracking', { deliveryId: newDeliveryId });
+    const newDeliveryId = res?.data?.delivery?.id ?? res?.data?.id ?? null;
+    setPendingDeliveryId(newDeliveryId);
+    if (newDeliveryId) socketService.joinRide(newDeliveryId);
+    setStep(4);
     } catch (err) {
       if (err?.message !== 'CANCELLED') Alert.alert('Request failed', err?.message ?? 'Could not place delivery.');
     } finally { setRequesting(false); }
   };
 
+  const cancelPendingDelivery = async () => {
+  if (!pendingDeliveryId) { navigation.goBack(); return; }
+  try {
+    await deliveryAPI.cancelDelivery(pendingDeliveryId, { reason: 'Customer cancelled before acceptance' });
+    socketService.leaveRide(pendingDeliveryId);
+  } catch (err) {
+    const msg = err?.message ?? '';
+    if (!msg.includes('Cannot cancel') && !msg.includes('not found')) {
+      Alert.alert('Note', 'Could not reach server, but your request has been removed locally.');
+    }
+  }
+  setPendingDeliveryId(null);
+  setStep(2);
+};
   const handleSelectPartner = (partner) => {
     setSelectedPartner(partner);
     mapRef.current?.animateToRegion({ latitude: partner.currentLat, longitude: partner.currentLng, latitudeDelta: 0.015, longitudeDelta: 0.015 }, 600);
@@ -506,6 +542,7 @@ const confirmDelivery = async () => {
         style={[s.backBtn, { top: backBtnTop, backgroundColor: theme.card + 'CC', borderColor: theme.border }]}
         onPress={() => {
           if (isPickingLocation) { setPlacingPin(null); setLiveAddress(''); setMapCenter(null); }
+          else if (step === 4) { cancelPendingDelivery(); }
           else if (step > 1) {
             setStep(prev => prev - 1);
             if (step === 2) Animated.timing(sheetH, { toValue: SHEET_SNAP, duration: 200, useNativeDriver: false }).start();
@@ -781,6 +818,19 @@ const confirmDelivery = async () => {
     </View>
   );
 }
+
+{/* ── STEP 4 — waiting for partner ── */}
+            {step === 4 && (
+              <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 22 }}>
+                <WaitingSheet
+                  accentColor={accentColor}
+                  theme={theme}
+                  driverName={selectedPartner?.firstName ?? 'the courier'}
+                  onCancel={cancelPendingDelivery}
+                  rideAccepted={false}
+                />
+              </ScrollView>
+            )}
 
 const s = StyleSheet.create({
   root:        { flex: 1 },

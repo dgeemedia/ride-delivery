@@ -488,11 +488,22 @@ export default function RequestRideScreen({ navigation }) {
     } finally { setRequesting(false); }
   };
 
-  const cancelPendingRide = async () => {
-    if (!pendingRideId) { navigation.goBack(); return; }
-    try { await rideAPI.cancelRide(pendingRideId, { reason: 'Customer cancelled before acceptance' }); socketService.leaveRide(pendingRideId); } catch {}
-    setPendingRideId(null); setRideAccepted(false); setStep(2);
-  };
+const cancelPendingRide = async () => {
+  if (!pendingRideId) { navigation.goBack(); return; }
+  try {
+    await rideAPI.cancelRide(pendingRideId, { reason: 'Customer cancelled before acceptance' });
+    socketService.leaveRide(pendingRideId);
+  } catch (err) {
+    // If already cancelled or not found, still proceed to clean up locally
+    const msg = err?.message ?? '';
+    if (!msg.includes('Cannot cancel') && !msg.includes('not found')) {
+      Alert.alert('Note', 'Could not reach server, but your request has been removed locally.');
+    }
+  }
+  setPendingRideId(null);
+  setRideAccepted(false);
+  setStep(2);
+};
 
   const handleSelectDriver = (driver) => {
     setSelectedDriver(driver);

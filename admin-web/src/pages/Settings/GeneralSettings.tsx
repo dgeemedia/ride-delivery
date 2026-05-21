@@ -267,19 +267,19 @@ const PlatformSection: React.FC = () => {
     }
     setLoading(true);
     try {
-      await Promise.all([
-        settingsAPI.updateSetting('platform_name',        form.name),
-        settingsAPI.updateSetting('support_email',        form.supportEmail),
-        settingsAPI.updateSetting('support_phone',        form.supportPhone),
-        settingsAPI.updateSetting('support_whatsapp',     form.supportWhatsapp),
-        settingsAPI.updateSetting('platform_logo',        form.logoUrl),
-        settingsAPI.updateSetting('maintenance_mode',     String(form.maintenance)),
-        settingsAPI.updateSetting('maintenance_message',  form.maintenanceMessage),
-        settingsAPI.updateSetting('maintenance_starts_at',
-          form.maintenanceStartsAt ? new Date(form.maintenanceStartsAt).toISOString() : ''),
-        settingsAPI.updateSetting('maintenance_ends_at',
-          form.maintenanceEndsAt ? new Date(form.maintenanceEndsAt).toISOString() : ''),
-      ]);
+      await settingsAPI.updateSettingsBatch([
+  { key: 'platform_name',         value: form.name,             category: 'platform' },
+  { key: 'support_email',         value: form.supportEmail,     category: 'platform' },
+  { key: 'support_phone',         value: form.supportPhone,     category: 'platform' },
+  { key: 'support_whatsapp',      value: form.supportWhatsapp,  category: 'platform' },
+  { key: 'platform_logo',         value: form.logoUrl,          category: 'platform' },
+  { key: 'maintenance_mode',      value: String(form.maintenance),         category: 'platform' },
+  { key: 'maintenance_message',   value: form.maintenanceMessage,          category: 'platform' },
+  { key: 'maintenance_starts_at', value: form.maintenanceStartsAt
+      ? new Date(form.maintenanceStartsAt).toISOString() : '',             category: 'platform' },
+  { key: 'maintenance_ends_at',   value: form.maintenanceEndsAt
+      ? new Date(form.maintenanceEndsAt).toISOString() : '',               category: 'platform' },
+]);
       toast.success('Platform settings saved');
     } catch { toast.error('Failed to save settings'); }
     finally  { setLoading(false); }
@@ -593,9 +593,9 @@ const LegalContentSection: React.FC = () => {
     setLoading(true);
     try {
       await Promise.all([
-        settingsAPI.updateSetting('terms_content',   content.terms_content),
-        settingsAPI.updateSetting('privacy_content', content.privacy_content),
-        settingsAPI.updateSetting('help_content',    content.help_content),
+        settingsAPI.updateSetting('terms_content',   content.terms_content,   'legal'),
+        settingsAPI.updateSetting('privacy_content', content.privacy_content, 'legal'),
+        settingsAPI.updateSetting('help_content',    content.help_content,    'legal'),
       ]);
       toast.success('Legal & Help content saved — live in the app immediately');
     } catch { toast.error('Failed to save content'); }
@@ -842,7 +842,7 @@ const SurgeSection: React.FC = () => {
   const handleSave = async () => {
     setLoading(true);
     try {
-      await settingsAPI.updateSetting('surge_windows', JSON.stringify(windows));
+      await settingsAPI.updateSetting('surge_windows', JSON.stringify(windows), 'surge');
       toast.success('Surge windows saved — live on next fare request');
     } catch { toast.error('Failed to save surge config'); }
     finally   { setLoading(false); }
@@ -953,9 +953,9 @@ const NotificationsSection: React.FC = () => {
     setLoading(true);
     try {
       await Promise.all([
-        settingsAPI.updateSetting('notifications_quiet_hours_start',     form.quietStart),
-        settingsAPI.updateSetting('notifications_quiet_hours_end',       form.quietEnd),
-        settingsAPI.updateSetting('notifications_max_broadcast_per_day', form.maxPerDay),
+        settingsAPI.updateSetting('notifications_quiet_hours_start',     form.quietStart, 'notifications'),
+        settingsAPI.updateSetting('notifications_quiet_hours_end',       form.quietEnd,   'notifications'),
+        settingsAPI.updateSetting('notifications_max_broadcast_per_day', form.maxPerDay,  'notifications'),
       ]);
       toast.success('Notification settings saved');
     } catch { toast.error('Failed to save notification settings'); }
@@ -1024,8 +1024,8 @@ const WalletLimitsSection: React.FC = () => {
     setLoading(true);
     try {
       await Promise.all([
-        settingsAPI.updateSetting('wallet_topup_min', String(min)),
-        settingsAPI.updateSetting('wallet_topup_max', String(max)),
+        settingsAPI.updateSetting('wallet_topup_min', String(min), 'wallet'),
+        settingsAPI.updateSetting('wallet_topup_max', String(max), 'wallet'),
       ]);
       toast.success('Deposit limits saved — live immediately');
     } catch { toast.error('Failed to save deposit limits'); }

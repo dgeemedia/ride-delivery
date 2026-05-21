@@ -19,12 +19,6 @@
 
 const prisma = require('../lib/prisma');
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HARDCODED FALLBACKS
-// Used when a setting has never been saved to the DB.
-// These must match the PRICING_DEFAULTS in GeneralSettings.tsx.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const FALLBACK_RATES = {
   CAR:        { baseFare: 500,  perKm: 130, perMinute: 15, minimumFare: 500,  bookingFee: 100, cancellationFee: 200 },
   BIKE:       { baseFare: 200,  perKm: 80,  perMinute: 8,  minimumFare: 250,  bookingFee: 50,  cancellationFee: 100 },
@@ -62,6 +56,15 @@ let _waiters = [];       // promises waiting for first load
 const invalidateFareCache = () => {
   _cache = null;
 };
+
+const SURGE_WINDOWS = [
+  { label: 'Morning Rush',  days: [1,2,3,4,5], hourStart: 6,  hourEnd: 9,  multiplier: 1.4 },
+  { label: 'Evening Rush',  days: [1,2,3,4,5], hourStart: 16, hourEnd: 20, multiplier: 1.5 },
+  { label: 'Friday Night',  days: [5],         hourStart: 18, hourEnd: 23, multiplier: 1.6 },
+  { label: 'Late Night',    days: [0,1,2,3,4,5,6], hourStart: 23, hourEnd: 24, multiplier: 1.3 },
+  { label: 'Early Morning', days: [0,1,2,3,4,5,6], hourStart: 0,  hourEnd: 5,  multiplier: 1.3 },
+  { label: 'Weekend Day',   days: [0,6],        hourStart: 10, hourEnd: 20, multiplier: 1.2 },
+];
 
 /**
  * Load all pricing settings from SystemSettings and build the RATES map.
@@ -232,18 +235,8 @@ const getSettings = async () => {
 // SURGE WINDOWS (time-based, not in admin settings — change here)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SURGE_WINDOWS = [
-  { label: 'Morning Rush',  days: [1,2,3,4,5], hourStart: 6,  hourEnd: 9,  multiplier: 1.4 },
-  { label: 'Evening Rush',  days: [1,2,3,4,5], hourStart: 16, hourEnd: 20, multiplier: 1.5 },
-  { label: 'Friday Night',  days: [5],         hourStart: 18, hourEnd: 23, multiplier: 1.6 },
-  { label: 'Late Night',    days: [0,1,2,3,4,5,6], hourStart: 23, hourEnd: 24, multiplier: 1.3 },
-  { label: 'Early Morning', days: [0,1,2,3,4,5,6], hourStart: 0,  hourEnd: 5,  multiplier: 1.3 },
-  { label: 'Weekend Day',   days: [0,6],        hourStart: 10, hourEnd: 20, multiplier: 1.2 },
-];
-
 const getSurgeMultiplier = (atTime = new Date()) => {
-  // Use cached surge windows if available, otherwise fall back to hardcoded
-  const windows = (_cache && _cache.surgeWindows) ? _cache.surgeWindows : SURGE_WINDOWS;
+  const windows = (_cache?.surgeWindows) ?? SURGE_WINDOWS;
   const day  = atTime.getDay();
   const hour = atTime.getHours();
   for (const w of windows) {
