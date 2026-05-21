@@ -177,7 +177,9 @@ const _loadFromDB = async () => {
       surgeWindows = typeof s['surge_windows'] === 'string'
         ? JSON.parse(s['surge_windows'])
         : s['surge_windows'];
-    } catch {}
+    } catch (e) {
+      console.error('[fareEngine] Failed to parse surge_windows from DB, using defaults:', e.message);
+    }
   }
 
   return { rates, delivery, platform, surgeWindows, loadedAt: Date.now() };
@@ -218,7 +220,7 @@ const getSettings = async () => {
       rates:    FALLBACK_RATES,
       delivery: FALLBACK_DELIVERY,
       platform: FALLBACK_PLATFORM,
-      loadedAt: Date.now(),
+      loadedAt: 0,   // ← force immediate retry on next request
     };
     _cache = fallback;
 
@@ -258,7 +260,7 @@ const AVERAGE_SPEED_KMPH = 18; // Lagos average
  * async because it reads live settings from DB (with cache).
  */
 const estimateFare = async (distanceKm, vehicleType = 'CAR', atTime = new Date(), driverFloorMultiplier = 1.0) => {
-  const { rates } = await getSettings();
+  const { rates, platform } = await getSettings();   // ← single call
   const r     = rates[vehicleType] ?? rates.CAR;
   const surge = getSurgeMultiplier(atTime);
   const estMin = (distanceKm / AVERAGE_SPEED_KMPH) * 60;
@@ -269,8 +271,6 @@ const estimateFare = async (distanceKm, vehicleType = 'CAR', atTime = new Date()
 
   let total = Math.max(r.minimumFare, coreCharge) + r.bookingFee;
   total     = Math.round(total / 50) * 50;
-
-  const { platform } = await getSettings();
   const platformCommission = (total - r.bookingFee) * platform.ridesCommission;
   const surgeBonus         = surge.multiplier > 1 ? (total - r.bookingFee) * (surge.multiplier - 1) * 0.05 : 0;
   const driverEarnings     = total - r.bookingFee - platformCommission;
@@ -400,13 +400,13 @@ const applyDriverFloor = (driverFloorNgn, platformEstimateNgn) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const summarizePlatformRevenue = async (rides) => {
-  const { rates } = await getSettings();
+  const { rates, platform } = await getSettings();     // ← destructure platform too
   let totalFares = 0, totalBooking = 0, totalCommission = 0, totalDriverPay = 0;
 
   for (const ride of rides) {
     const fare     = ride.actualFare || ride.estimatedFare || 0;
     const r        = rates[ride.vehicleType] ?? rates.CAR;
-    const commission = (fare - r.bookingFee) * 0.20;
+    const commission = (fare - r.bookingFee) * platform.ridesCommission; 
     totalFares      += fare;
     totalBooking    += r.bookingFee;
     totalCommission += commission;

@@ -5,12 +5,12 @@ const prisma = require('../lib/prisma');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const shieldService = require('../services/shield.service');
-const { invalidateFareCache } = require('../utils/fareEngine');
+const { invalidateFareCache, getSettings } = require('../utils/fareEngine');
 const bcrypt = require('bcryptjs');
 const { invalidateMaintenanceCache } = require('../middleware/maintenance.middleware');
 const commissionService = require('../services/commission.service');
 const { validationResult } = require('express-validator');
-
+const { getWithdrawableBalance } = require('../utils/walletHelpers');
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
@@ -29,6 +29,57 @@ const logActivity = async ({ userId, action, entityType, entityId, details, req 
   });
 };
 
+async function fetchBonusCandidates() {
+  const [allDrivers, allPartners] = await Promise.all([
+    prisma.driverProfile.findMany({
+      where:   { isApproved: true },
+      include: {
+        user: {
+          include: {
+            wallet: {
+              include: {
+                transactions: {
+                  where: { reference: { startsWith: 'ONBOARDING-DRV-' } },
+                  select: { id: true },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.deliveryPartnerProfile.findMany({
+      where:   { isApproved: true },
+      include: {
+        user: {
+          include: {
+            wallet: {
+              include: {
+                transactions: {
+                  where: { reference: { startsWith: 'ONBOARDING-PTR-' } },
+                  select: { id: true },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+ 
+  // Eligible = has a wallet AND has never received an onboarding bonus transaction
+  const driversEligible  = allDrivers.filter(d =>
+    d.user.wallet && d.user.wallet.transactions.length === 0
+  );
+  const partnersEligible = allPartners.filter(p =>
+    p.user.wallet && p.user.wallet.transactions.length === 0
+  );
+ 
+  return { allDrivers, allPartners, driversEligible, partnersEligible };
+}
+ 
 // ─────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────
@@ -69,7 +120,10 @@ exports.getDashboardStats = async (req, res) => {
       _sum: { amount: true },
     }),
  
-    prisma.wallet.aggregate({ _sum: { balance: true } }),
+    prisma.wallet.aggregate({
+      where: { user: { role: { in: ['CUSTOMER', 'DRIVER', 'DELIVERY_PARTNER'] }, isActive: true } },
+      _sum: { balance: true },
+    }),
     prisma.driverProfile.count({ where: { isApproved: false, isRejected: false } }),
     prisma.deliveryPartnerProfile.count({ where: { isApproved: false, isRejected: false } }),
     prisma.supportTicket.count({ where: { status: 'open' } }),
@@ -969,9 +1023,9 @@ exports.getRevenueAnalytics = async (req, res) => {
   const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
   const byMethod = {};
   payments.forEach(p => { byMethod[p.method] = (byMethod[p.method] || 0) + p.amount; });
-  // AFTER
-const { platform } = await require('../utils/fareEngine').getSettings();
-const commissionRate = platform.ridesCommission; // reads from DB, respects admin changes
+
+  const { platform } = await getSettings();
+  const commissionRate = platform.ridesCommission;
 
 res.status(200).json({ success: true, data: {
   totalRevenue,
@@ -1193,7 +1247,7 @@ exports.updateSettingsBatch = async (req, res) => {
   if (!Array.isArray(settings) || settings.length === 0)
     throw new AppError('settings array is required', 400);
 
-  const results = await Promise.all(
+  const results = await prisma.$transaction(
     settings.map(({ key, value, category = 'general', description }) =>
       prisma.systemSettings.upsert({
         where:  { key },
@@ -1318,20 +1372,6 @@ exports.adjustWallet = async (req, res) => {
   res.status(200).json({ success: true, message: `Wallet ${type}ed successfully`, data: { wallet: updatedWallet, transaction } });
 };
 
-exports.getWithdrawableBalance = async (wallet) => {
-  const bonusCredits = await prisma.walletTransaction.aggregate({
-    where: {
-      walletId:    wallet.id,
-      type:        'CREDIT',
-      status:      'COMPLETED',
-      description: { contains: 'non-withdrawable' },
-    },
-    _sum: { amount: true },
-  });
-  const totalBonus = bonusCredits._sum.amount ?? 0;
-  return Math.max(0, wallet.balance - totalBonus);
-};
-
 // ─────────────────────────────────────────────
 // BROADCAST NOTIFICATIONS
 // ─────────────────────────────────────────────
@@ -1375,66 +1415,132 @@ exports.broadcastNotification = async (req, res) => {
 // ONBOARDING BONUS BULK DISBURSEMENT
 // SUPER_ADMIN only — credits all approved drivers/partners at ₦0 balance
 // ─────────────────────────────────────────────
+exports.previewOnboardingBonuses = async (req, res) => {
+  if (req.user.role !== 'SUPER_ADMIN')
+    throw new AppError('Only Super Admins can preview onboarding bonuses', 403);
+ 
+  const { allDrivers, allPartners, driversEligible, partnersEligible } =
+    await fetchBonusCandidates();
+ 
+  res.status(200).json({
+    success: true,
+    data: {
+      drivers: {
+        total:             allDrivers.length,
+        eligible:          driversEligible.length,
+        alreadyBonused:    allDrivers.length - driversEligible.length,
+        totalWalletBalance: allDrivers.reduce(
+          (sum, d) => sum + (d.user.wallet?.balance ?? 0), 0
+        ),
+      },
+      partners: {
+        total:             allPartners.length,
+        eligible:          partnersEligible.length,
+        alreadyBonused:    allPartners.length - partnersEligible.length,
+        totalWalletBalance: allPartners.reduce(
+          (sum, p) => sum + (p.user.wallet?.balance ?? 0), 0
+        ),
+      },
+    },
+  });
+};
 
 exports.disburseOnboardingBonuses = async (req, res) => {
-  if (req.user.role !== 'SUPER_ADMIN') throw new AppError('Only Super Admins can disburse onboarding bonuses', 403);
-
+  if (req.user.role !== 'SUPER_ADMIN')
+    throw new AppError('Only Super Admins can disburse onboarding bonuses', 403);
+ 
   const { driverBonus = 5000, partnerBonus = 5000 } = req.body;
-  if (driverBonus < 0 || partnerBonus < 0) throw new AppError('Bonus amounts must be positive', 400);
-
-  // ── FIX: use separate select levels — no mixing select+include on same level
-  const [eligibleDrivers, eligiblePartners] = await Promise.all([
-    prisma.driverProfile.findMany({
-      where:   { isApproved: true },
-      include: {
-        user: {
-          include: { wallet: { select: { id: true, balance: true } } },
-        },
-      },
-    }),
-    prisma.deliveryPartnerProfile.findMany({
-      where:   { isApproved: true },
-      include: {
-        user: {
-          include: { wallet: { select: { id: true, balance: true } } },
-        },
-      },
-    }),
-  ]);
-
-  // Only credit those who currently have ₦0 (never received a bonus)
-  const driversToBonus  = eligibleDrivers.filter(d  => (d.user.wallet?.balance ?? 0) === 0);
-  const partnersToBonus = eligiblePartners.filter(p => (p.user.wallet?.balance ?? 0) === 0);
-
-  let driverCount = 0, partnerCount = 0;
+  if (driverBonus < 0 || partnerBonus < 0)
+    throw new AppError('Bonus amounts must be positive', 400);
+ 
+  const { driversEligible, partnersEligible } = await fetchBonusCandidates();
+ 
+  if (driversEligible.length === 0 && partnersEligible.length === 0) {
+    return res.status(200).json({
+      success: true,
+      message: 'No eligible recipients — all approved drivers and partners have already received an onboarding bonus.',
+      data: { drivers: 0, partners: 0, driverBonus, partnerBonus, totalDisbursed: 0, currency: 'NGN' },
+    });
+  }
+ 
   const REF = `ONBOARDING-${Date.now()}`;
-
-  for (const driver of driversToBonus) {
-    const wallet = driver.user.wallet;
-    if (!wallet) continue;
-    await prisma.$transaction([
-      prisma.wallet.update({ where: { id: wallet.id }, data: { balance: { increment: driverBonus } } }),
-      prisma.walletTransaction.create({ data: { walletId: wallet.id, type: 'CREDIT', amount: driverBonus, description: 'Onboarding bonus — non-withdrawable, for accepting rides only', status: 'COMPLETED', reference: `${REF}-DRV-${driver.user.id}` } }),
-    ]);
-    await notificationService.notify({ userId: driver.user.id, title: '🎁 Onboarding Bonus Received!', message: `₦${driverBonus.toLocaleString('en-NG')} has been credited to your wallet. You can now start accepting rides. Welcome to Diakite!`, type: notificationService.TYPES?.PAYMENT_RECEIVED ?? 'payment_received', data: { amount: driverBonus, type: 'onboarding_bonus' } });
-    driverCount++;
-  }
-
-  for (const partner of partnersToBonus) {
-    const wallet = partner.user.wallet;
-    if (!wallet) continue;
-    await prisma.$transaction([
-      prisma.wallet.update({ where: { id: wallet.id }, data: { balance: { increment: partnerBonus } } }),
-      prisma.walletTransaction.create({ data: { walletId: wallet.id, type: 'CREDIT', amount: partnerBonus, description: 'Onboarding bonus — non-withdrawable, for accepting deliveries only', status: 'COMPLETED', reference: `${REF}-PTR-${partner.user.id}` } }),
-    ]);
-    await notificationService.notify({ userId: partner.user.id, title: '🎁 Onboarding Bonus Received!', message: `₦${partnerBonus.toLocaleString('en-NG')} has been credited to your wallet. You can now start accepting deliveries. Welcome to Diakite!`, type: notificationService.TYPES?.PAYMENT_RECEIVED ?? 'payment_received', data: { amount: partnerBonus, type: 'onboarding_bonus' } });
-    partnerCount++;
-  }
-
-  await logActivity({ userId: req.user.id, action: 'onboarding_bonus_disbursed', entityType: 'Wallet', entityId: null, details: { driverBonus, partnerBonus, driverCount, partnerCount, totalDisbursed: (driverBonus * driverCount) + (partnerBonus * partnerCount) }, req });
-
-  res.status(200).json({ success: true, message: `Onboarding bonus disbursed to ${driverCount} driver(s) and ${partnerCount} delivery partner(s).`, data: { drivers: driverCount, partners: partnerCount, driverBonus, partnerBonus, totalDisbursed: (driverBonus * driverCount) + (partnerBonus * partnerCount), currency: 'NGN' } });
+ 
+  await prisma.$transaction([
+    ...driversEligible.flatMap(driver => [
+      prisma.wallet.update({
+        where: { id: driver.user.wallet.id },
+        data:  { balance: { increment: driverBonus } },
+      }),
+      prisma.walletTransaction.create({
+        data: {
+          walletId:    driver.user.wallet.id,
+          type:        'CREDIT',
+          amount:      driverBonus,
+          description: 'Onboarding bonus — non-withdrawable, for accepting rides only',
+          status:      'COMPLETED',
+          reference:   `ONBOARDING-DRV-${driver.user.id}-${REF}`,
+        },
+      }),
+    ]),
+    ...partnersEligible.flatMap(partner => [
+      prisma.wallet.update({
+        where: { id: partner.user.wallet.id },
+        data:  { balance: { increment: partnerBonus } },
+      }),
+      prisma.walletTransaction.create({
+        data: {
+          walletId:    partner.user.wallet.id,
+          type:        'CREDIT',
+          amount:      partnerBonus,
+          description: 'Onboarding bonus — non-withdrawable, for accepting deliveries only',
+          status:      'COMPLETED',
+          reference:   `ONBOARDING-PTR-${partner.user.id}-${REF}`,
+        },
+      }),
+    ]),
+  ]);
+ 
+  await Promise.all([
+    ...driversEligible.map(driver =>
+      notificationService.notify({
+        userId:  driver.user.id,
+        title:   '🎁 Onboarding Bonus Received!',
+        message: `₦${driverBonus.toLocaleString('en-NG')} has been credited to your wallet. You can now start accepting rides. Welcome to Diakite!`,
+        type:    notificationService.TYPES?.PAYMENT_RECEIVED ?? 'payment_received',
+        data:    { amount: driverBonus, type: 'onboarding_bonus' },
+      })
+    ),
+    ...partnersEligible.map(partner =>
+      notificationService.notify({
+        userId:  partner.user.id,
+        title:   '🎁 Onboarding Bonus Received!',
+        message: `₦${partnerBonus.toLocaleString('en-NG')} has been credited to your wallet. You can now start accepting deliveries. Welcome to Diakite!`,
+        type:    notificationService.TYPES?.PAYMENT_RECEIVED ?? 'payment_received',
+        data:    { amount: partnerBonus, type: 'onboarding_bonus' },
+      })
+    ),
+  ]);
+ 
+  const driverCount  = driversEligible.length;
+  const partnerCount = partnersEligible.length;
+  const totalDisbursed = (driverBonus * driverCount) + (partnerBonus * partnerCount);
+ 
+  await logActivity({
+    userId:     req.user.id,
+    action:     'onboarding_bonus_disbursed',
+    entityType: 'Wallet',
+    entityId:   null,
+    details:    { driverBonus, partnerBonus, driverCount, partnerCount, totalDisbursed },
+    req,
+  });
+ 
+  res.status(200).json({
+    success: true,
+    message: `Onboarding bonus disbursed to ${driverCount} driver(s) and ${partnerCount} delivery partner(s).`,
+    data:    { drivers: driverCount, partners: partnerCount, driverBonus, partnerBonus, totalDisbursed, currency: 'NGN' },
+  });
 };
+ 
 
 exports.disburseCustomBonuses = async (req, res) => {
   const errors = validationResult(req);
@@ -1465,9 +1571,9 @@ exports.disburseCustomBonuses = async (req, res) => {
   const transactions     = [];
 
   // Perform all wallet updates in parallel for speed but inside a safe loop
-  await Promise.all(wallets.map(async (wallet, index) => {
-    const ref = `${refBase}-${index}`;
-    await prisma.$transaction([
+ // Single atomic transaction for all wallet ops
+  await prisma.$transaction(
+    wallets.flatMap((wallet, index) => [
       prisma.wallet.update({
         where: { id: wallet.id },
         data:  { balance: { increment: amount } },
@@ -1479,20 +1585,22 @@ exports.disburseCustomBonuses = async (req, res) => {
           amount,
           description: `${description || 'Admin bonus'}${nonWithdrawable ? ' (non‑withdrawable)' : ''}`,
           status:      'COMPLETED',
-          reference:   ref,
+          reference:   `${refBase}-${index}`,
         },
       }),
-    ]);
+    ])
+  );
 
-    // Notify each recipient
-    await notificationService.notify({
+  // Notifications after commit — parallel, non-blocking
+  await Promise.all(wallets.map(wallet =>
+    notificationService.notify({
       userId:  wallet.user.id,
       title:   '🎁 Bonus Received!',
       message: `₦${amount.toLocaleString('en-NG')} has been credited to your wallet.${nonWithdrawable ? ' This is non‑withdrawable and can only be used for rides/deliveries.' : ''}`,
       type:    notificationService.TYPES?.PAYMENT_RECEIVED ?? 'payment_received',
       data:    { amount, nonWithdrawable, creditedBy: req.user.id },
-    });
-  }));
+    })
+  ));
 
   // Log the action
   await logActivity({
@@ -1519,33 +1627,6 @@ exports.disburseCustomBonuses = async (req, res) => {
       amount,
       totalDisbursed: amount * wallets.length,
       currency: 'NGN',
-    },
-  });
-};
-
-exports.previewOnboardingBonuses = async (req, res) => {
-  if (req.user.role !== 'SUPER_ADMIN')
-    throw new AppError('Only Super Admins can preview onboarding bonuses', 403);
-
-  const [eligibleDrivers, eligiblePartners] = await Promise.all([
-    prisma.driverProfile.findMany({
-      where:   { isApproved: true },
-      include: { user: { include: { wallet: { select: { balance: true } } } } },
-    }),
-    prisma.deliveryPartnerProfile.findMany({
-      where:   { isApproved: true },
-      include: { user: { include: { wallet: { select: { balance: true } } } } },
-    }),
-  ]);
-
-  const driversEligible  = eligibleDrivers.filter(d  => (d.user.wallet?.balance ?? 0) === 0);
-  const partnersEligible = eligiblePartners.filter(p => (p.user.wallet?.balance ?? 0) === 0);
-
-  res.status(200).json({
-    success: true,
-    data: {
-      drivers:  { total: eligibleDrivers.length,  eligible: driversEligible.length  },
-      partners: { total: eligiblePartners.length, eligible: partnersEligible.length },
     },
   });
 };
@@ -1817,7 +1898,7 @@ exports.deleteUser = async (req, res) => {
  
   // Soft delete: deactivate + anonymise PII
   const anonymisedEmail = `deleted_${id}@diakite.internal`;
-  const anonymisedPhone = `+000000000000${id.slice(0, 4)}`;
+  const anonymisedPhone = `+000${id.replace(/-/g, '').slice(0, 12)}`;
  
   const deleted = await prisma.user.update({
     where: { id },

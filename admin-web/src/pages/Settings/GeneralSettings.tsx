@@ -96,8 +96,15 @@ const Section: React.FC<{
 // ─────────────────────────────────────────────────────────────────────────────
 // MARKDOWN → HTML  (admin preview only — mobile uses its own renderer)
 // ─────────────────────────────────────────────────────────────────────────────
-function inlineFormat(text: string): string {
+function escapeHtml(text: string): string {
   return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function inlineFormat(text: string): string {
+  return escapeHtml(text)              // ← escape first, then format
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g,     '<em>$1</em>')
     .replace(/`(.+?)`/g,       '<code style="background:#f3f4f6;padding:1px 5px;border-radius:3px;font-size:12px">$1</code>');
@@ -236,7 +243,7 @@ const PlatformSection: React.FC = () => {
           supportPhone:    s['support_phone']?.value    ?? f.supportPhone,
           supportWhatsapp: s['support_whatsapp']?.value ?? s['support_phone']?.value ?? f.supportWhatsapp,
           logoUrl:         s['platform_logo']?.value    ?? '',
-          maintenance:     s['maintenance_mode']?.value === true || s['maintenance_mode']?.value === 'true',
+          maintenance:     String(s['maintenance_mode']?.value) === 'true',
           maintenanceMessage:  s['maintenance_message']?.value ?? '',
           maintenanceStartsAt: s['maintenance_starts_at']?.value
             ? new Date(s['maintenance_starts_at'].value).toISOString().slice(0,16) : '',
@@ -244,7 +251,7 @@ const PlatformSection: React.FC = () => {
             ? new Date(s['maintenance_ends_at'].value).toISOString().slice(0,16) : '',
         }));
       })
-      .catch(() => toast.error('Could not load platform settings.'))
+      .catch((err: any) => { if (!err?._handled) toast.error('Could not load platform settings.'); })
       .finally(() => setFetching(false));
   }, []);
 
@@ -253,18 +260,30 @@ const PlatformSection: React.FC = () => {
     const endsAt = new Date(form.maintenanceEndsAt);
     const ms = endsAt.getTime() - Date.now();
     if (ms <= 0) { setForm(f => ({ ...f, maintenance: false })); return; }
-    const t = setTimeout(() => {
+    const t = setTimeout(async () => {
       setForm(f => ({ ...f, maintenance: false }));
-      toast.success('Maintenance window expired — toggle turned off automatically');
+      try {
+        await settingsAPI.updateSetting('maintenance_mode', 'false', 'platform');
+        toast.success('Maintenance window expired — mode turned off automatically');
+      } catch (err: any) {
+        if (!err?._handled) toast.error('Maintenance window expired but failed to turn off — please disable manually');
+      }
     }, ms);
     return () => clearTimeout(t);
   }, [form.maintenance, form.maintenanceEndsAt]);
-
+  
   const handleSave = async () => {
+    if (form.maintenanceEndsAt && !form.maintenanceStartsAt) {
+      toast.error('Set a start time when using an end time'); return;
+    }
     if (form.maintenanceStartsAt && form.maintenanceEndsAt &&
         new Date(form.maintenanceEndsAt) <= new Date(form.maintenanceStartsAt)) {
       toast.error('End time must be after start time'); return;
     }
+    if (form.maintenance && !window.confirm(
+      'Enabling maintenance mode will return 503 to all customers and drivers immediately. Continue?'
+    )) return;
+
     setLoading(true);
     try {
       await settingsAPI.updateSettingsBatch([
@@ -281,7 +300,7 @@ const PlatformSection: React.FC = () => {
       ? new Date(form.maintenanceEndsAt).toISOString() : '',               category: 'platform' },
 ]);
       toast.success('Platform settings saved');
-    } catch { toast.error('Failed to save settings'); }
+  } catch (err: any) { if (!err?._handled) toast.error('Failed to save settings'); }
     finally  { setLoading(false); }
   };
 
@@ -589,16 +608,16 @@ const LegalContentSection: React.FC = () => {
       .finally(() => setFetching(false));
   }, []);
 
-  const handleSave = async () => {
+const handleSave = async () => {
     setLoading(true);
     try {
-      await Promise.all([
-        settingsAPI.updateSetting('terms_content',   content.terms_content,   'legal'),
-        settingsAPI.updateSetting('privacy_content', content.privacy_content, 'legal'),
-        settingsAPI.updateSetting('help_content',    content.help_content,    'legal'),
+      await settingsAPI.updateSettingsBatch([
+        { key: 'terms_content',   value: content.terms_content,   category: 'legal' },
+        { key: 'privacy_content', value: content.privacy_content, category: 'legal' },
+        { key: 'help_content',    value: content.help_content,    category: 'legal' },
       ]);
       toast.success('Legal & Help content saved — live in the app immediately');
-    } catch { toast.error('Failed to save content'); }
+   } catch (err: any) { if (!err?._handled) toast.error('Failed to save content'); }
     finally  { setLoading(false); }
   };
 
@@ -733,23 +752,37 @@ const PricingSection: React.FC = () => {
           ),
         }));
       })
-      .catch(() => toast.error('Could not load saved pricing — showing defaults.'))
+      .catch((err: any) => { if (!err?._handled) toast.error('Could not load saved pricing — showing defaults.'); })
       .finally(() => setFetching(false));
   }, []);
 
   const set = (key: keyof PricingState) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setValues(v => ({ ...v, [key]: e.target.value }));
 
-  const handleSave = async () => {
+const handleSave = async () => {
+    // Validate before sending
+    const commissionKeys = ['platform_commission_rides', 'platform_commission_deliveries'] as const;
+    for (const key of Object.keys(PRICING_DEFAULTS) as (keyof PricingState)[]) {
+      const v = parseFloat(values[key]);
+      if (isNaN(v) || v < 0) {
+        toast.error(`Invalid value for ${key} — must be a positive number`); return;
+      }
+      if (commissionKeys.includes(key as any) && v > 100) {
+        toast.error(`Commission rate for ${key} cannot exceed 100%`); return;
+      }
+    }
     setLoading(true);
     try {
-      await Promise.all(
-        (Object.keys(PRICING_DEFAULTS) as (keyof PricingState)[])
-          .map(key => settingsAPI.updateSetting(key, values[key]))
+      await settingsAPI.updateSettingsBatch(
+        (Object.keys(PRICING_DEFAULTS) as (keyof PricingState)[]).map(key => ({
+          key,
+          value: values[key],
+          category: commissionKeys.includes(key as any) ? 'platform' : 'pricing',
+        }))
       );
       toast.success('Pricing saved — live on next fare request');
-    } catch { toast.error('Failed to save pricing'); }
-    finally   { setLoading(false); }
+    } catch (err: any) { if (!err?._handled) toast.error('Failed to save pricing'); }
+    finally  { setLoading(false); }
   };
 
   const Field = ({ label, k, prefix = '₦' }: { label: string; k: keyof PricingState; prefix?: string }) => (
@@ -833,7 +866,14 @@ const SurgeSection: React.FC = () => {
     settingsAPI.getSettings('surge')
       .then(res => {
         const val = res.data?.settings?.['surge_windows']?.value;
-        if (val) { try { setWindows(typeof val === 'string' ? JSON.parse(val) : val); } catch {} }
+        if (val) {
+          try {
+            setWindows(typeof val === 'string' ? JSON.parse(val) : val);
+          } catch (e) {
+            console.error('Failed to parse surge_windows:', e);
+            toast.error('Surge window data is corrupted — showing defaults');
+          }
+        }
       })
       .catch(() => {})
       .finally(() => setFetching(false));
@@ -844,7 +884,7 @@ const SurgeSection: React.FC = () => {
     try {
       await settingsAPI.updateSetting('surge_windows', JSON.stringify(windows), 'surge');
       toast.success('Surge windows saved — live on next fare request');
-    } catch { toast.error('Failed to save surge config'); }
+    } catch (err: any) { if (!err?._handled) toast.error('Failed to save surge config'); }
     finally   { setLoading(false); }
   };
 
@@ -958,7 +998,7 @@ const NotificationsSection: React.FC = () => {
         settingsAPI.updateSetting('notifications_max_broadcast_per_day', form.maxPerDay,  'notifications'),
       ]);
       toast.success('Notification settings saved');
-    } catch { toast.error('Failed to save notification settings'); }
+    } catch (err: any) { if (!err?._handled) toast.error('Failed to save notification settings'); }
     finally   { setLoading(false); }
   };
 
@@ -1028,7 +1068,7 @@ const WalletLimitsSection: React.FC = () => {
         settingsAPI.updateSetting('wallet_topup_max', String(max), 'wallet'),
       ]);
       toast.success('Deposit limits saved — live immediately');
-    } catch { toast.error('Failed to save deposit limits'); }
+   } catch (err: any) { if (!err?._handled) toast.error('Failed to save deposit limits'); }
     finally  { setLoading(false); }
   };
 
@@ -1115,30 +1155,34 @@ const WalletLimitsSection: React.FC = () => {
     </Section>
   );
 };
+// ─────────────────────────────────────────────────────────────────────────────
+// ONBOARDING BONUS — replace the entire OnboardingBonusSection component in
+// admin-web/src/pages/Settings/GeneralSettings.tsx
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ONBOARDING BONUS
-// ─────────────────────────────────────────────────────────────────────────────
 const OnboardingBonusSection: React.FC = () => {
   const [driverBonus,  setDriverBonus]  = useState('5000');
   const [partnerBonus, setPartnerBonus] = useState('5000');
   const [loading,      setLoading]      = useState(false);
   const [previewing,   setPreviewing]   = useState(false);
   const [preview,      setPreview]      = useState<{
-    drivers:  { eligible: number; total: number };
-    partners: { eligible: number; total: number };
+    drivers:  { eligible: number; total: number; alreadyBonused: number; totalWalletBalance: number };
+    partners: { eligible: number; total: number; alreadyBonused: number; totalWalletBalance: number };
   } | null>(null);
   const [result,      setResult]      = useState<{ drivers: number; partners: number } | null>(null);
   const [logs,        setLogs]        = useState<any[]>([]);
   const [logsOpen,    setLogsOpen]    = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
 
+  // Clear stale preview whenever bonus amounts change
+  useEffect(() => { setPreview(null); }, [driverBonus, partnerBonus]);
+
   const handlePreview = async () => {
-    setPreviewing(true); setPreview(null);
+    setPreviewing(true); setPreview(null); setResult(null);
     try {
       const res = await api.get('/admin/bonuses/onboarding/preview');
       setPreview(res.data.data);
-    } catch { toast.error('Preview failed'); }
+    } catch (err: any) { if (!err?._handled) toast.error('Preview failed'); }
     finally  { setPreviewing(false); }
   };
 
@@ -1148,13 +1192,18 @@ const OnboardingBonusSection: React.FC = () => {
     if (isNaN(dAmt) || isNaN(pAmt) || dAmt < 0 || pAmt < 0) {
       toast.error('Enter valid bonus amounts'); return;
     }
+    if (!preview) { toast.error('Run a preview first'); return; }
+    const totalEligible = preview.drivers.eligible + preview.partners.eligible;
+    if (totalEligible === 0) { toast.error('No eligible recipients'); return; }
+
     setLoading(true); setResult(null);
     try {
       const res = await api.post('/admin/bonuses/onboarding', { driverBonus: dAmt, partnerBonus: pAmt });
-      setResult(res.data.data); setPreview(null);
+      setResult(res.data.data);
+      setPreview(null);
       toast.success(`Bonuses sent to ${res.data.data.drivers + res.data.data.partners} recipients`);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to disburse bonuses');
+      if (!err?._handled) toast.error(err?.response?.data?.message || 'Failed to disburse bonuses');
     } finally { setLoading(false); }
   };
 
@@ -1163,19 +1212,26 @@ const OnboardingBonusSection: React.FC = () => {
     try {
       const res = await api.get('/admin/logs?action=onboarding_bonus_disbursed&limit=10');
       setLogs(res.data.data?.logs ?? []);
-    } catch { toast.error('Could not load history'); }
+    } catch (err: any) { if (!err?._handled) toast.error('Could not load history'); }
     finally  { setLogsLoading(false); }
   };
+
+  const totalEligible  = preview ? preview.drivers.eligible  + preview.partners.eligible  : 0;
+  const totalPayout    = preview
+    ? (preview.drivers.eligible  * parseFloat(driverBonus  || '0')) +
+      (preview.partners.eligible * parseFloat(partnerBonus || '0'))
+    : 0;
 
   return (
     <Section
       icon={<Gift className="h-4 w-4" />}
       title="Onboarding Bonus"
-      subtitle="Credits every approved driver and partner whose wallet is ₦0 — safe to re-run"
+      subtitle="Credits every approved driver and partner who has never received an onboarding bonus — safe to re-run"
     >
       <Alert variant="info" className="mb-5">
-        Only approved drivers/partners with a <strong>₦0 balance</strong> receive the bonus.
-        It is <strong>non-withdrawable</strong> — intended as a starter for rides or deliveries.
+        Only approved drivers/partners who have <strong>never previously received</strong> an
+        onboarding bonus transaction are eligible.
+        The bonus is <strong>non-withdrawable</strong> — intended as a starter for rides or deliveries.
       </Alert>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-sm mb-5">
@@ -1200,23 +1256,61 @@ const OnboardingBonusSection: React.FC = () => {
 
       {/* Preview result */}
       {preview && (
-        <div className="mb-4 grid grid-cols-2 divide-x divide-gray-200 border border-gray-200 rounded-lg overflow-hidden">
-          <div className="p-4">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Drivers</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{preview.drivers.eligible}</p>
-            <p className="text-xs text-gray-500">of {preview.drivers.total} approved eligible</p>
-            <p className="text-xs font-medium text-green-600 mt-1">
-              Total: ₦{(preview.drivers.eligible * +driverBonus).toLocaleString('en-NG')}
-            </p>
+        <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+          <div className="grid grid-cols-2 divide-x divide-gray-200">
+            {/* Drivers */}
+            <div className="p-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Drivers</p>
+              <p className="mt-1 text-2xl font-bold text-gray-900">{preview.drivers.eligible}</p>
+              <p className="text-xs text-gray-500">of {preview.drivers.total} approved eligible</p>
+              {preview.drivers.alreadyBonused > 0 && (
+                <p className="text-xs text-orange-500 mt-0.5">
+                  {preview.drivers.alreadyBonused} already received bonus
+                </p>
+              )}
+              <p className="text-xs font-medium text-green-600 mt-2">
+                Payout: ₦{(preview.drivers.eligible * parseFloat(driverBonus || '0')).toLocaleString('en-NG')}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Total in wallets: ₦{preview.drivers.totalWalletBalance.toLocaleString('en-NG')}
+              </p>
+            </div>
+            {/* Partners */}
+            <div className="p-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Partners</p>
+              <p className="mt-1 text-2xl font-bold text-gray-900">{preview.partners.eligible}</p>
+              <p className="text-xs text-gray-500">of {preview.partners.total} approved eligible</p>
+              {preview.partners.alreadyBonused > 0 && (
+                <p className="text-xs text-orange-500 mt-0.5">
+                  {preview.partners.alreadyBonused} already received bonus
+                </p>
+              )}
+              <p className="text-xs font-medium text-green-600 mt-2">
+                Payout: ₦{(preview.partners.eligible * parseFloat(partnerBonus || '0')).toLocaleString('en-NG')}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Total in wallets: ₦{preview.partners.totalWalletBalance.toLocaleString('en-NG')}
+              </p>
+            </div>
           </div>
-          <div className="p-4">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Partners</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{preview.partners.eligible}</p>
-            <p className="text-xs text-gray-500">of {preview.partners.total} approved eligible</p>
-            <p className="text-xs font-medium text-green-600 mt-1">
-              Total: ₦{(preview.partners.eligible * +partnerBonus).toLocaleString('en-NG')}
-            </p>
-          </div>
+          {/* Grand total bar */}
+          {totalEligible > 0 && (
+            <div className="px-4 py-3 bg-green-50 border-t border-gray-200 flex items-center justify-between">
+              <p className="text-xs text-gray-600">
+                {totalEligible} recipient{totalEligible !== 1 ? 's' : ''} will be credited
+              </p>
+              <p className="text-sm font-bold text-green-700">
+                Total: ₦{totalPayout.toLocaleString('en-NG')}
+              </p>
+            </div>
+          )}
+          {totalEligible === 0 && (
+            <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
+              <p className="text-xs text-gray-500">
+                All approved drivers and partners have already received an onboarding bonus.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1233,9 +1327,12 @@ const OnboardingBonusSection: React.FC = () => {
         <Button
           loading={loading}
           onClick={handleDisbursement}
-          disabled={!preview || (preview.drivers.eligible + preview.partners.eligible === 0)}
+          disabled={!preview || totalEligible === 0}
         >
-          <Gift className="h-4 w-4" />Disburse Bonuses
+          <Gift className="h-4 w-4" />
+          {totalEligible > 0
+            ? `Disburse ₦${totalPayout.toLocaleString('en-NG')} to ${totalEligible} Recipient${totalEligible !== 1 ? 's' : ''}`
+            : 'Disburse Bonuses'}
         </Button>
       </div>
 
@@ -1284,7 +1381,6 @@ const OnboardingBonusSection: React.FC = () => {
     </Section>
   );
 };
-
 // ─────────────────────────────────────────────────────────────────────────────
 // CUSTOM BONUS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1327,6 +1423,13 @@ const CustomBonusSection: React.FC = () => {
       ];
       setRecipients(mapped);
       setSelected(new Set());
+      const totalDrivers  = driversRes?.data?.data?.pagination?.total  ?? 0;
+      const totalPartners = partnersRes?.data?.data?.pagination?.total ?? 0;
+      if (mapped.length < totalDrivers + totalPartners) {
+        toast.error(
+          `Showing ${mapped.length} of ${totalDrivers + totalPartners} recipients — use filters to narrow the list`
+        );
+      }
     } catch {
       toast.error('Failed to load recipients');
     } finally {
@@ -1370,7 +1473,7 @@ const CustomBonusSection: React.FC = () => {
       setAmount('');
       setDescription('');
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Disbursement failed');
+      if (!err?._handled) toast.error(err?.response?.data?.message || 'Disbursement failed');
     } finally {
       setSending(false);
     }
@@ -1561,7 +1664,7 @@ const AuditLogSection: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try { const res = await api.get('/admin/logs?entityType=SystemSettings&limit=15'); setLogs(res.data.data?.logs ?? []); }
-    catch { toast.error('Could not load audit log'); } finally { setLoading(false); }
+    catch (err: any) { if (!err?._handled) toast.error('Could not load audit log'); } finally { setLoading(false); }
   }, []);
 
   return (
@@ -1610,8 +1713,11 @@ const DangerZoneSection: React.FC = () => {
   const clearFareCache = async () => {
     if (!window.confirm('Force-clear the fare engine cache? Next fare request will reload all pricing from DB.')) return;
     setCacheLoading(true);
-    try { await settingsAPI.updateSetting('fare_cache_bust', String(Date.now())); toast.success('Fare cache cleared'); }
-    catch { toast.error('Failed to clear fare cache'); } finally { setCacheLoading(false); }
+    try {
+      await api.post('/admin/settings/invalidate-cache');
+      toast.success('Fare cache cleared');
+    } catch (err: any) { if (!err?._handled) toast.error('Failed to clear fare cache'); }
+    finally  { setCacheLoading(false); }
   };
 
   return (

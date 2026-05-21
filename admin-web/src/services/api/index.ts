@@ -28,17 +28,23 @@ api.interceptors.request.use(
 // Response interceptor
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+(error) => {
     if (error.response?.status === 401) {
       useAuthStore.getState().logout();
       window.location.href = '/login';
       toast.error('Session expired. Please login again.');
+      // mark so components don't double-toast
+      error._handled = true;
     } else if (error.response?.status === 403) {
-      toast.error('You do not have permission to perform this action.');
+      // Don't toast here — the component has the specific reason (e.g. quiet hours).
+      // Only mark it so components can choose to suppress their own generic fallback.
+      error._handled = false;
     } else if (error.response?.status >= 500) {
       toast.error('Server error. Please try again later.');
+      error._handled = true;
     } else if (error.code === 'ECONNABORTED') {
       toast.error('Request timeout. Please check your connection.');
+      error._handled = true;
     }
     return Promise.reject(error);
   }
