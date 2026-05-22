@@ -357,7 +357,7 @@ router.get('/wallets',
 
 router.post('/wallets/:userId/adjust',
   param('userId').isUUID(),
-  authorize('ADMIN', 'SUPER_ADMIN'),
+  authorize('SUPER_ADMIN'),
   [
     body('amount').isFloat({ min: 0.01 }),
     body('type').isIn(['credit', 'debit']),
