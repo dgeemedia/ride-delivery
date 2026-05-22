@@ -164,13 +164,13 @@ const sb = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // StepDots
 // ─────────────────────────────────────────────────────────────────────────────
-export const StepDots = ({ step, accentColor, theme }) => (
+export const StepDots = ({ current, accentColor, theme }) => (
   <View style={std.wrap}>
     {[1, 2, 3].map(s => (
       <View key={s} style={[std.dot,
-        s === step  ? { backgroundColor: accentColor, width: 22 } :
-        s < step    ? { backgroundColor: accentColor + '50' }     :
-                      { backgroundColor: theme.border }
+        s === current  ? { backgroundColor: accentColor, width: 22 } :
+        s < current    ? { backgroundColor: accentColor + '50' }     :
+                         { backgroundColor: theme.border }
       ]} />
     ))}
   </View>

@@ -140,6 +140,43 @@ const pi = StyleSheet.create({
   input:   { fontSize: 13, fontWeight: '500', minHeight: 20, outlineWidth: 0, borderWidth: 0 },
 });
 
+// ── WaitingSheet ──────────────────────────────────────────────────────────────
+const WaitingSheet = ({ accentColor, theme, driverName, onCancel, rideAccepted }) => {
+  const dotA = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    if (rideAccepted) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(dotA, { toValue: 1,   duration: 600, useNativeDriver: true }),
+      Animated.timing(dotA, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [rideAccepted]);
+
+  return (
+    <View style={wt.wrap}>
+      <View style={[wt.iconWrap, { backgroundColor: accentColor + '18' }]}>
+        <Animated.View style={{ opacity: dotA }}>
+          <Ionicons name="bicycle-outline" size={32} color={accentColor} />
+        </Animated.View>
+      </View>
+      <Text style={[wt.title, { color: theme.foreground }]}>Request Sent!</Text>
+      <Text style={[wt.sub, { color: theme.hint }]}>Waiting for {driverName} to accept…</Text>
+      <TouchableOpacity style={[wt.cancelBtn, { borderColor: theme.border }]} onPress={onCancel} activeOpacity={0.8}>
+        <Text style={[wt.cancelTxt, { color: theme.hint }]}>Cancel Request</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+const wt = StyleSheet.create({
+  wrap:      { alignItems: 'center', paddingVertical: 24 },
+  iconWrap:  { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  title:     { fontSize: 20, fontWeight: '900', marginBottom: 6, letterSpacing: -0.3 },
+  sub:       { fontSize: 14, textAlign: 'center', marginBottom: 24 },
+  cancelBtn: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 24, paddingVertical: 10 },
+  cancelTxt: { fontSize: 14, fontWeight: '600' },
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -151,7 +188,6 @@ export default function RequestDeliveryScreen({ navigation }) {
 
   const { handleCardPayment } = useCardPayment();
 
-  // ── Location state ───────────────────────────────────────────────────────
   const [pickupAddress,  setPickupAddress]  = useState('');
   const [dropoffAddress, setDropoffAddress] = useState('');
   const [pickupCoords,   setPickupCoords]   = useState(null);
@@ -161,52 +197,45 @@ export default function RequestDeliveryScreen({ navigation }) {
   const [liveAddress,    setLiveAddress]    = useState('');
   const [mapCenter,      setMapCenter]      = useState(null);
 
-  // ── Search modal ─────────────────────────────────────────────────────────
   const [searchModal,   setSearchModal]   = useState(null);
   const [searchQuery,   setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimer = useRef(null);
 
-  // ── Package form ─────────────────────────────────────────────────────────
   const [pickupContact,      setPickupContact]      = useState('');
   const [dropoffContact,     setDropoffContact]     = useState('');
   const [packageDescription, setPackageDescription] = useState('');
   const [packageWeight,      setPackageWeight]      = useState('');
   const [packageNotes,       setPackageNotes]       = useState('');
 
-  // ── Partner / scanning state ─────────────────────────────────────────────
   const [partners,        setPartners]        = useState([]);
   const [visiblePartners, setVisiblePartners] = useState([]);
   const [selectedPartner, setSelectedPartner] = useState(null);
   const [scanning,        setScanning]        = useState(false);
   const [scanDone,        setScanDone]        = useState(false);
 
-  // ── Fare / distance ──────────────────────────────────────────────────────
   const [distanceKm,  setDistanceKm]  = useState(null);
   const [feeEstimate, setFeeEstimate] = useState(null);
   const [etaMinutes,  setEtaMinutes]  = useState(null);
 
-  // ── Payment ──────────────────────────────────────────────────────────────
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [walletBalance, setWalletBalance] = useState(null);
   const [loadingWallet, setLoadingWallet] = useState(false);
 
-  // ── Nearby quick-destinations ────────────────────────────────────────────
   const [nearbyPlaces,  setNearbyPlaces]  = useState([]);
   const [loadingNearby, setLoadingNearby] = useState(false);
 
-  // ── Flow ─────────────────────────────────────────────────────────────────
-  const [step,       setStep]       = useState(1);
-  const [requesting,      setRequesting]      = useState(false);
+  const [step,              setStep]              = useState(1);
+  const [requesting,        setRequesting]        = useState(false);
   const [pendingDeliveryId, setPendingDeliveryId] = useState(null);
-  const [mapReady,        setMapReady]        = useState(false);
+  const [mapReady,          setMapReady]          = useState(false);
+
   const sheetH    = useRef(new Animated.Value(SHEET_SNAP)).current;
   const pinBounce = useRef(new Animated.Value(0)).current;
   const mapRef       = useRef(null);
   const geocodeTimer = useRef(null);
 
-  // ── Radar — imperative, works on OSM + Google Maps ───────────────────────
   const radar = useRadarPulse(mapRef, accentColor);
 
   useEffect(() => {
@@ -221,7 +250,6 @@ export default function RequestDeliveryScreen({ navigation }) {
   const scrollPadBottom = insets.bottom + TAB_CONTENT_H + 24;
   const backBtnTop      = insets.top + 14;
 
-  // ── Location permission ──────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -237,25 +265,25 @@ export default function RequestDeliveryScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
-  const handleStatus = (data) => {
-    if (data.deliveryId === pendingDeliveryId && data.status === 'ASSIGNED') {
-      setTimeout(() => navigation.replace('DeliveryTracking', { deliveryId: pendingDeliveryId }), 1800);
-    }
-  };
-  const handleCancelled = (data) => {
-    if (data.deliveryId === pendingDeliveryId) {
-      setPendingDeliveryId(null);
-      setStep(2);
-      Alert.alert('Request Cancelled', 'The courier cancelled. Please choose another.');
-    }
-  };
-  socketService.on('delivery:status:update', handleStatus);
-  socketService.on('delivery:cancelled',     handleCancelled);
-  return () => {
-    socketService.off('delivery:status:update', handleStatus);
-    socketService.off('delivery:cancelled',     handleCancelled);
-  };
-}, [pendingDeliveryId, navigation]);
+    const handleStatus = (data) => {
+      if (data.deliveryId === pendingDeliveryId && data.status === 'ASSIGNED') {
+        setTimeout(() => navigation.replace('DeliveryTracking', { deliveryId: pendingDeliveryId }), 1800);
+      }
+    };
+    const handleCancelled = (data) => {
+      if (data.deliveryId === pendingDeliveryId) {
+        setPendingDeliveryId(null);
+        setStep(2);
+        Alert.alert('Request Cancelled', 'The courier cancelled. Please choose another.');
+      }
+    };
+    socketService.on('delivery:status:update', handleStatus);
+    socketService.on('delivery:cancelled',     handleCancelled);
+    return () => {
+      socketService.off('delivery:status:update', handleStatus);
+      socketService.off('delivery:cancelled',     handleCancelled);
+    };
+  }, [pendingDeliveryId, navigation]);
 
   useEffect(() => {
     if (pickupCoords && mapReady && step === 1 && !placingPin) {
@@ -263,7 +291,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     }
   }, [pickupCoords, mapReady]);
 
-  // ── Wallet fetch when entering confirm step ──────────────────────────────
   useEffect(() => {
     if (step === 3) {
       setLoadingWallet(true);
@@ -274,7 +301,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     }
   }, [step]);
 
-  // ── Nearby places ────────────────────────────────────────────────────────
   const fetchNearbyPlaces = useCallback(async (coords) => {
     setLoadingNearby(true);
     try {
@@ -307,7 +333,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     } catch { setter(`${lat.toFixed(5)}, ${lng.toFixed(5)}`); }
   }, []);
 
-  // ── Search ───────────────────────────────────────────────────────────────
   const searchPlaces = useCallback(async (text) => {
     setSearchQuery(text);
     if (text.length < 3) { setSearchResults([]); setSearchLoading(false); return; }
@@ -361,7 +386,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     }
   };
 
-  // ── Map pin callbacks ────────────────────────────────────────────────────
   const onRegionChange = useCallback((region) => {
     if (!placingPin) return;
     setMapCenter({ lat: region.latitude, lng: region.longitude });
@@ -403,7 +427,6 @@ export default function RequestDeliveryScreen({ navigation }) {
     mapRef.current?.animateToRegion({ latitude: center.lat, longitude: center.lng, latitudeDelta: 0.008, longitudeDelta: 0.008 }, 500);
   }, [pickupCoords, dropoffCoords, pickupAddress, dropoffAddress]);
 
-  // ── Proceed — radar scan phase ───────────────────────────────────────────
   const proceedToMap = useCallback(async () => {
     if (!pickupCoords || !dropoffCoords) { Alert.alert('Set both locations', 'Please set both pickup and drop-off locations.'); return; }
     if (!pickupContact || !dropoffContact) { Alert.alert('Missing contacts', 'Please enter phone numbers for both pickup and drop-off contacts.'); return; }
@@ -411,7 +434,7 @@ export default function RequestDeliveryScreen({ navigation }) {
     const km  = haversineKm(pickupCoords.lat, pickupCoords.lng, dropoffCoords.lat, dropoffCoords.lng);
     const wKg = parseFloat(packageWeight) || 0;
     setDistanceKm(km); setFeeEstimate(calcFee(km, wKg)); setEtaMinutes(Math.ceil(km / 0.4));
-    setStep(2); setScanning(true); setScanDone(false); // radar starts via useEffect
+    setStep(2); setScanning(true); setScanDone(false);
     setPartners([]); setVisiblePartners([]); setSelectedPartner(null);
     setTimeout(() => {
       mapRef.current?.fitToCoordinates(
@@ -426,7 +449,7 @@ export default function RequestDeliveryScreen({ navigation }) {
       setPartners(list);
       list.forEach((_, i) => { setTimeout(() => setVisiblePartners(prev => [...prev, list[i]]), i * 200 + 500); });
       setTimeout(() => {
-        setScanDone(true); setScanning(false); // radar stops via useEffect
+        setScanDone(true); setScanning(false);
         Animated.spring(sheetH, { toValue: SHEET_SNAP, tension: 60, friction: 12, useNativeDriver: false }).start();
       }, list.length * 200 + 1200);
     } catch {
@@ -435,8 +458,7 @@ export default function RequestDeliveryScreen({ navigation }) {
     }
   }, [pickupCoords, dropoffCoords, pickupContact, dropoffContact, packageDescription, packageWeight]);
 
-  // ── Confirm delivery ─────────────────────────────────────────────────────
-const confirmDelivery = async () => {
+  const confirmDelivery = async () => {
     if (!selectedPartner) { Alert.alert('Select a partner', 'Please choose a delivery partner.'); return; }
     if (paymentMethod === 'WALLET' && walletBalance < feeEstimate) {
       Alert.alert('Insufficient Balance', 'Your wallet balance is less than the fee. Please top up or choose another payment method.');
@@ -454,29 +476,30 @@ const confirmDelivery = async () => {
         paymentMethod,
         transactionId: cardResult?.transactionId ?? null,
       });
-    const newDeliveryId = res?.data?.delivery?.id ?? res?.data?.id ?? null;
-    setPendingDeliveryId(newDeliveryId);
-    if (newDeliveryId) socketService.joinRide(newDeliveryId);
-    setStep(4);
+      const newDeliveryId = res?.data?.delivery?.id ?? res?.data?.id ?? null;
+      setPendingDeliveryId(newDeliveryId);
+      if (newDeliveryId) socketService.joinRide(newDeliveryId);
+      setStep(4);
     } catch (err) {
       if (err?.message !== 'CANCELLED') Alert.alert('Request failed', err?.message ?? 'Could not place delivery.');
     } finally { setRequesting(false); }
   };
 
   const cancelPendingDelivery = async () => {
-  if (!pendingDeliveryId) { navigation.goBack(); return; }
-  try {
-    await deliveryAPI.cancelDelivery(pendingDeliveryId, { reason: 'Customer cancelled before acceptance' });
-    socketService.leaveRide(pendingDeliveryId);
-  } catch (err) {
-    const msg = err?.message ?? '';
-    if (!msg.includes('Cannot cancel') && !msg.includes('not found')) {
-      Alert.alert('Note', 'Could not reach server, but your request has been removed locally.');
+    if (!pendingDeliveryId) { navigation.goBack(); return; }
+    try {
+      await deliveryAPI.cancelDelivery(pendingDeliveryId, { reason: 'Customer cancelled before acceptance' });
+      socketService.leaveRide(pendingDeliveryId);
+    } catch (err) {
+      const msg = err?.message ?? '';
+      if (!msg.includes('Cannot cancel') && !msg.includes('not found')) {
+        Alert.alert('Note', 'Could not reach server, but your request has been removed locally.');
+      }
     }
-  }
-  setPendingDeliveryId(null);
-  setStep(2);
-};
+    setPendingDeliveryId(null);
+    setStep(2);
+  };
+
   const handleSelectPartner = (partner) => {
     setSelectedPartner(partner);
     mapRef.current?.animateToRegion({ latitude: partner.currentLat, longitude: partner.currentLng, latitudeDelta: 0.015, longitudeDelta: 0.015 }, 600);
@@ -497,7 +520,6 @@ const confirmDelivery = async () => {
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* ── FULL-SCREEN MAP ── */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -528,16 +550,13 @@ const confirmDelivery = async () => {
             strokeColor={accentColor} strokeWidth={3} lineDashPattern={[8, 5]}
           />
         )}
-        {/* Partner pins — revealed one-by-one */}
         {step >= 2 && visiblePartners.map((p) => (
           <PartnerPin key={p.partnerId} partner={p} selected={selectedPartner?.partnerId === p.partnerId} onPress={() => handleSelectPartner(p)} accentColor={accentColor} />
         ))}
-        {/* NOTE: No <RadarPulse> here — radar is driven imperatively via useRadarPulse */}
       </MapView>
 
       <View style={s.topGradient} pointerEvents="none" />
 
-      {/* Back button */}
       <TouchableOpacity
         style={[s.backBtn, { top: backBtnTop, backgroundColor: theme.card + 'CC', borderColor: theme.border }]}
         onPress={() => {
@@ -554,7 +573,6 @@ const confirmDelivery = async () => {
         <Ionicons name="arrow-back" size={20} color={theme.foreground} />
       </TouchableOpacity>
 
-      {/* ── PIN-PLACING MODE ── */}
       {isPickingLocation && (
         <>
           <View style={s.crosshairWrap} pointerEvents="none">
@@ -590,20 +608,18 @@ const confirmDelivery = async () => {
         </>
       )}
 
-      {/* ── KEYBOARD-AWARE SHEET WRAPPER ── */}
       {!isPickingLocation && (
         <KeyboardAvoidingView style={s.kavWrapper} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} pointerEvents="box-none">
           <Animated.View style={[s.sheet, { backgroundColor: theme.background, borderColor: theme.border, height: step === 2 ? sheetH : SHEET_SNAP }]}>
 
-            {/* Handle + step dots — hidden during compact scan bar */}
             {!(step === 2 && !scanDone) && (
               <View style={s.sheetTop}>
                 <View style={[s.handle, { backgroundColor: theme.border }]} />
-                <StepDots step={step} accentColor={accentColor} theme={theme} />
+                <StepDots current={step} accentColor={accentColor} theme={theme} />
               </View>
             )}
 
-            {/* ── STEP 1 — locations + package info ── */}
+            {/* ── STEP 1 ── */}
             {step === 1 && (
               <ScrollView
                 showsVerticalScrollIndicator={false}
@@ -683,7 +699,7 @@ const confirmDelivery = async () => {
               </ScrollView>
             )}
 
-            {/* ── STEP 2 — scanning + partner list ── */}
+            {/* ── STEP 2 ── */}
             {step === 2 && (
               <>
                 <ScanningBar theme={theme} accentColor={accentColor} count={partners.length} done={scanDone} label="partner" />
@@ -721,7 +737,7 @@ const confirmDelivery = async () => {
               </>
             )}
 
-            {/* ── STEP 3 — confirm delivery ── */}
+            {/* ── STEP 3 ── */}
             {step === 3 && selectedPartner && (
               <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={[s.scrollContent, { paddingBottom: scrollPadBottom }]}>
                 <Text style={[s.sheetTitle, { color: theme.foreground }]}>Confirm Delivery</Text>
@@ -804,6 +820,20 @@ const confirmDelivery = async () => {
                 </TouchableOpacity>
               </ScrollView>
             )}
+
+            {/* ── STEP 4 — waiting for partner ── */}
+            {step === 4 && (
+              <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 22 }}>
+                <WaitingSheet
+                  accentColor={accentColor}
+                  theme={theme}
+                  driverName={selectedPartner?.firstName ?? 'the courier'}
+                  onCancel={cancelPendingDelivery}
+                  rideAccepted={false}
+                />
+              </ScrollView>
+            )}
+
           </Animated.View>
         </KeyboardAvoidingView>
       )}
@@ -818,19 +848,6 @@ const confirmDelivery = async () => {
     </View>
   );
 }
-
-{/* ── STEP 4 — waiting for partner ── */}
-            {step === 4 && (
-              <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 22 }}>
-                <WaitingSheet
-                  accentColor={accentColor}
-                  theme={theme}
-                  driverName={selectedPartner?.firstName ?? 'the courier'}
-                  onCancel={cancelPendingDelivery}
-                  rideAccepted={false}
-                />
-              </ScrollView>
-            )}
 
 const s = StyleSheet.create({
   root:        { flex: 1 },

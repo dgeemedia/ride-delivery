@@ -71,10 +71,7 @@ api.interceptors.response.use(
       const reason = error.response?.data?.code ?? 'session_expired';
       emitForceLogout(reason);
     }
- 
-    // Re-reject with the unwrapped backend payload so catch blocks can do:
-    //   err?.message  or  err?.errors
-    // instead of  err?.response?.data?.message
+
     return Promise.reject(error.response?.data ?? error);
   }
 );
@@ -83,17 +80,21 @@ api.interceptors.response.use(
 // AUTH
 // ─────────────────────────────────────────────────────────────────────────────
 export const authAPI = {
-  register:       (data) => api.post('/auth/register', data),
-  login:          (data) => api.post('/auth/login', data),
-  getCurrentUser: ()     => api.get('/auth/me'),
-  logout:         ()     => api.post('/auth/logout'),
+  register:         (data) => api.post('/auth/register', data),
+  login:            (data) => api.post('/auth/login', data),
+  getCurrentUser:   ()     => api.get('/auth/me'),
+  logout:           ()     => api.post('/auth/logout'),
+
+  // ── Password reset ────────────────────────────────────────────────────────
+  forgotPassword:   (data) => api.post('/auth/forgot-password', data),
+  resetPassword:    (data) => api.post('/auth/reset-password', data),
 
   // ── 2FA ───────────────────────────────────────────────────────────────────
-  verifyOtp:      (data) => api.post('/auth/verify-otp', data),
-  resendOtp:      (data) => api.post('/auth/resend-otp', data),
-  setup2FA:       (data) => api.post('/auth/2fa/setup', data),
-  confirm2FA:     (data) => api.post('/auth/2fa/confirm', data),
-  disable2FA:     (data) => api.post('/auth/2fa/disable', data),
+  verifyOtp:        (data) => api.post('/auth/verify-otp', data),
+  resendOtp:        (data) => api.post('/auth/resend-otp', data),
+  setup2FA:         (data) => api.post('/auth/2fa/setup', data),
+  confirm2FA:       (data) => api.post('/auth/2fa/confirm', data),
+  disable2FA:       (data) => api.post('/auth/2fa/disable', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,31 +151,31 @@ export const userAPI = {
 // DRIVER
 // ─────────────────────────────────────────────────────────────────────────────
 export const driverAPI = {
-  getProfile:        ()       => api.get('/drivers/profile'),
-  updateProfile:     (data)   => api.post('/drivers/profile', data),
-  updateStatus:      (data)   => api.put('/drivers/status', data),
-  getEarnings:       (params) => api.get('/drivers/earnings', { params }),
-  getStats:          ()       => api.get('/drivers/stats'),
-  getNearbyRequests: ()       => api.get('/drivers/nearby-requests'),
-  requestPayout:     (data)   => api.post('/drivers/payout/request', data),
-  getPayoutHistory:  (params) => api.get('/drivers/payout/history', { params }),
-  uploadDocuments:   (data)   => api.post('/drivers/documents', data),
-  setFloorMultiplier: (data) => api.put('/drivers/floor-price', data),
+  getProfile:         ()       => api.get('/drivers/profile'),
+  updateProfile:      (data)   => api.post('/drivers/profile', data),
+  updateStatus:       (data)   => api.put('/drivers/status', data),
+  getEarnings:        (params) => api.get('/drivers/earnings', { params }),
+  getStats:           ()       => api.get('/drivers/stats'),
+  getNearbyRequests:  ()       => api.get('/drivers/nearby-requests'),
+  requestPayout:      (data)   => api.post('/drivers/payout/request', data),
+  getPayoutHistory:   (params) => api.get('/drivers/payout/history', { params }),
+  uploadDocuments:    (data)   => api.post('/drivers/documents', data),
+  setFloorMultiplier: (data)   => api.put('/drivers/floor-price', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PARTNER
 // ─────────────────────────────────────────────────────────────────────────────
 export const partnerAPI = {
-  getProfile:        ()        => api.get('/partners/profile'),
-  updateProfile:     (data)    => api.post('/partners/profile', data),
-  updateStatus:      (data)    => api.put('/partners/status', data),
-  getEarnings:       (params)  => api.get('/partners/earnings', { params }),
-  getStats:          ()        => api.get('/partners/stats'),
-  getNearbyRequests: ()        => api.get('/partners/nearby-requests'),
-  uploadDocuments:   (data)    => api.post('/partners/documents', data),
-  requestPayout:     (data)    => api.post('/partners/payout/request', data),
-  getPayoutHistory:  (params)  => api.get('/partners/payout/history', { params }),
+  getProfile:         ()       => api.get('/partners/profile'),
+  updateProfile:      (data)   => api.post('/partners/profile', data),
+  updateStatus:       (data)   => api.put('/partners/status', data),
+  getEarnings:        (params) => api.get('/partners/earnings', { params }),
+  getStats:           ()       => api.get('/partners/stats'),
+  getNearbyRequests:  ()       => api.get('/partners/nearby-requests'),
+  uploadDocuments:    (data)   => api.post('/partners/documents', data),
+  requestPayout:      (data)   => api.post('/partners/payout/request', data),
+  getPayoutHistory:   (params) => api.get('/partners/payout/history', { params }),
   setFloorMultiplier: (data)   => api.put('/partners/floor-price', data),
 };
 
@@ -205,8 +206,8 @@ export const walletAPI = {
   verifyBankAccount:      (params) => api.get('/wallet/verify-account', { params }),
   transfer:               (data)   => api.post('/wallet/transfer', data),
   withdraw:               (data)   => api.post('/wallet/withdraw', data),
-  getDepositLimits:           ()   => api.get('/wallet/deposit-limits'),
-  emailTransactionHistory:    (data)   => api.post('/wallet/transactions/email', data),
+  getDepositLimits:       ()       => api.get('/wallet/deposit-limits'),
+  emailTransactionHistory:(data)   => api.post('/wallet/transactions/email', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -301,14 +302,12 @@ const uploadSingle = async (url, fieldName, file) => {
     AsyncStorage.getItem('deviceId'),
   ]);
 
-  // Read the file and upload via FileSystem.uploadAsync — this is the only
-  // method that reliably sends a binary file part from React Native / Expo.
   const uploadUrl = `${API_BASE_URL}${url}`;
 
   const result = await FileSystem.uploadAsync(uploadUrl, file.uri, {
     httpMethod:  'POST',
     uploadType:  'multipart',
-    fieldName,                                          // must match multer's field name
+    fieldName,
     mimeType:    file.mimeType ?? file.type ?? 'image/jpeg',
     headers: {
       ...(token    && { Authorization: `Bearer ${token}` }),
@@ -324,23 +323,16 @@ const uploadSingle = async (url, fieldName, file) => {
 
   let body;
   try { body = JSON.parse(result.body); } catch { body = result.body; }
-  return body; // { success, data: { url, publicId } }
+  return body;
 };
 
 export const uploadAPI = {
-  // Driver documents
   uploadDriverLicense:       (image) => uploadSingle('/upload/driver/license',              'license',      image),
   uploadVehicleRegistration: (image) => uploadSingle('/upload/driver/vehicle-registration', 'registration', image),
   uploadInsurance:           (image) => uploadSingle('/upload/driver/insurance',            'insurance',    image),
-
-  // Partner documents
   uploadPartnerId:           (image) => uploadSingle('/upload/partner/id',      'id',      image),
   uploadPartnerVehicle:      (image) => uploadSingle('/upload/partner/vehicle', 'vehicle', image),
-
-  // Profile image
   uploadProfileImage:        (image) => uploadSingle('/upload/profile-image',   'image',   image),
-
-  // Base64 fallback (already exists on backend)
   uploadBase64:              (base64, folder) => api.post('/upload/base64', { base64Data: base64, folder }),
 };
 

@@ -1009,7 +1009,7 @@ interface PwFieldProps {
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
-const PwField: React.FC<PwFieldProps> = ({ label, name, field, hint, value, show, onToggle, onChange }) => (
+const PwField: React.FC<PwFieldProps> = ({ label, name, hint, value, show, onToggle, onChange }) => (
   <div>
     <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
     <div className="relative">

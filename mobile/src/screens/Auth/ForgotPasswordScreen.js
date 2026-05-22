@@ -168,6 +168,13 @@ export default function ForgotPasswordScreen({ navigation }) {
   const topPad  = Math.max(insets.top, TINY ? 12 : 16);
   const botPad  = Math.max(insets.bottom, 8);
 
+  // ── Step data (renamed from `step` to avoid Hermes reserved word clash) ───
+  const RECOVERY_STEPS = [
+    { icon: 'mail-outline',      text: 'Open the email from Diakite'      },
+    { icon: 'link-outline',      text: 'Tap the "Reset Password" button'  },
+    { icon: 'lock-open-outline', text: 'Choose a new password'            },
+  ];
+
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={darkMode ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
@@ -295,12 +302,8 @@ export default function ForgotPasswordScreen({ navigation }) {
                   <Ionicons name="mail-open-outline" size={SMALL ? 38 : 44} color={theme.foreground} />
                 </View>
 
-                {/* Step list */}
-                {[
-                  { icon: 'mail-outline',          text: 'Open the email from Diakite'       },
-                  { icon: 'link-outline',           text: 'Tap the "Reset Password" button'  },
-                  { icon: 'lock-open-outline',      text: 'Choose a new password'             },
-                ].map((step, i) => (
+                {/* Step list — `item` used instead of `step` to avoid Hermes reserved word clash on Android */}
+                {RECOVERY_STEPS.map((item, i) => (
                   <View key={i} style={[s.stepRow, { backgroundColor: G.card(mode), borderColor: G.border(mode), overflow: 'hidden', marginBottom: SMALL ? 8 : 10 }]}>
                     <LinearGradient
                       colors={darkMode ? ['rgba(255,255,255,0.04)', 'rgba(255,255,255,0.01)'] : ['rgba(255,255,255,0.9)', 'rgba(255,255,255,0.7)']}
@@ -310,8 +313,8 @@ export default function ForgotPasswordScreen({ navigation }) {
                     <View style={[s.stepNum, { backgroundColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }]}>
                       <Text style={[s.stepNumTxt, { color: theme.foreground }]}>{i + 1}</Text>
                     </View>
-                    <Ionicons name={step.icon} size={16} color={theme.hint} style={{ marginRight: 10 }} />
-                    <Text style={[s.stepTxt, { color: theme.foreground, fontSize: SMALL ? 13 : 14 }]}>{step.text}</Text>
+                    <Ionicons name={item.icon} size={16} color={theme.hint} style={{ marginRight: 10 }} />
+                    <Text style={[s.stepTxt, { color: theme.foreground, fontSize: SMALL ? 13 : 14 }]}>{item.text}</Text>
                   </View>
                 ))}
 

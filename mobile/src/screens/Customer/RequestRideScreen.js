@@ -17,6 +17,7 @@ import { useRadarPulse, ScanningBar, StepDots, LocationSearchModal } from '../..
 import { PaymentSelector, useCardPayment }                           from '../../components/PaymentSelector';
 
 const { height } = Dimensions.get('window');
+const SHEET_SNAP = height * 0.75;
 
 const calcFare    = (km) => Math.max(300, 500 + km * 120);
 const haversineKm = (lat1, lng1, lat2, lng2) => {
@@ -445,7 +446,7 @@ export default function RequestRideScreen({ navigation }) {
         { edgePadding: { top: 100, right: 60, bottom: 280, left: 60 }, animated: true }
       );
     }, 300);
-    Animated.timing(sheetH, { toValue: 110, duration: 300, useNativeDriver: false }).start();
+    Animated.timing(sheetH, { toValue: 200, duration: 300, useNativeDriver: false }).start();
     try {
       const res  = await rideAPI.getNearbyDrivers({ pickupLat: pickupCoords.lat, pickupLng: pickupCoords.lng, dropoffLat: dropoffCoords.lat, dropoffLng: dropoffCoords.lng, radiusKm: 50 });
       const list = (res?.data?.drivers ?? res?.drivers ?? []).filter(d => !String(d.driverId).startsWith('mock-'));
@@ -483,6 +484,7 @@ export default function RequestRideScreen({ navigation }) {
       setPendingRideId(rideId);
       if (rideId) socketService.joinRide(rideId);
       setStep(4);
+      Animated.timing(sheetH, { toValue: SHEET_SNAP, duration: 300, useNativeDriver: false }).start();
     } catch (err) {
       if (err?.message !== 'CANCELLED') Alert.alert('Request failed', err?.message ?? 'Could not book the ride.');
     } finally { setRequesting(false); }
@@ -516,7 +518,7 @@ const cancelPendingRide = async () => {
   const pinColor          = placingPin === 'dropoff' ? '#E05555' : accentColor;
   const pinFg             = placingPin === 'dropoff' ? '#FFFFFF' : accentFg;
   const mapRegion         = pickupCoords ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 } : undefined;
-  const sheetStyle        = step === 2 ? { height: sheetH } : {};
+  const sheetStyle = step === 2 ? { height: sheetH } : { height: SHEET_SNAP };
 
   const confirmBtnLabel =
     paymentMethod === 'WALLET'      ? 'Confirm • Pay via Wallet'      :
@@ -621,7 +623,7 @@ const cancelPendingRide = async () => {
 
           {step === 1 && (
             <>
-              <StepDots step={1} accentColor={accentColor} theme={theme} />
+              <StepDots current={1} accentColor={accentColor} theme={theme} />
               <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
                 <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                   <Text style={[s.sheetTitle, { color: theme.foreground }]}>Where to?</Text>
@@ -723,7 +725,7 @@ const cancelPendingRide = async () => {
 
           {step === 3 && selectedDriver && (
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 22, paddingBottom: sheetPadBottom }}>
-              <StepDots step={3} accentColor={accentColor} theme={theme} />
+             <StepDots current={3} accentColor={accentColor} theme={theme} />
               <Text style={[s.sheetTitle, { color: theme.foreground }]}>Confirm Ride</Text>
               <View style={[s.confirmRoute, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <View style={s.confirmRow}><View style={[s.cDot, { backgroundColor: accentColor }]} /><Text style={[s.confirmAddr, { color: theme.foreground }]} numberOfLines={2}>{pickupAddress}</Text></View>

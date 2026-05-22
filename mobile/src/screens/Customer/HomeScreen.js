@@ -8,6 +8,7 @@ import {
   StatusBar, Dimensions, Animated, ActivityIndicator,
   Image, Alert, Platform, Modal, SafeAreaView, ScrollView,
   TextInput, PanResponder,
+  RefreshControl,                               // ← ADDED
 } from 'react-native';
 import MapView from '../../components/SmartMapView';
 import * as Location from 'expo-location';
@@ -24,7 +25,6 @@ import { checkMaintenance }  from '../../utils/maintenanceCheck';
 import { useInactivityLogout } from '../../hooks/useInactivityLogout';
 import { CommonActions }     from '@react-navigation/native';
 
-// ── Custom SVG service icons ──────────────────────────────────────────────────
 import {
   RidesIcon,
   SendIcon,
@@ -36,12 +36,10 @@ import {
 const { width, height } = Dimensions.get('window');
 const H_PAD = 16;
 
-// Two snap points for the draggable sheet
 const SHEET_EXPANDED  = height * 0.92;
 const SHEET_COLLAPSED = height * 0.78;
 const COLLAPSED_Y     = SHEET_EXPANDED - SHEET_COLLAPSED;
 
-// Tab bar height (matches CustomerNavigator)
 const TAB_CONTENT_H = 54;
 const TAB_H         = Platform.OS === 'android'
   ? TAB_CONTENT_H + 16
@@ -254,12 +252,7 @@ const ServiceIcon = ({ item, theme, darkMode }) => (
 
 const si = StyleSheet.create({
   wrap:    { alignItems: 'center', width: 72 },
-  iconBox: {
-    width: 64, height: 64, borderRadius: 20,
-    justifyContent: 'center', alignItems: 'center',
-    marginBottom: 2,                // reduced from 7 for a tighter fit
-    overflow: 'hidden',
-  },
+  iconBox: { width: 64, height: 64, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 2, overflow: 'hidden' },
   label: { fontSize: 12, fontWeight: '700', marginBottom: 2, textAlign: 'center' },
   sub:   { fontSize: 10, fontWeight: '500', textAlign: 'center' },
 });
@@ -307,8 +300,8 @@ export default function HomeScreen({ navigation }) {
   const [activeDelivery,  setActiveDelivery]  = useState(null);
   const [maintenance,     setMaintenance]     = useState({ isOn: false, isScheduled: false, message: '', endsAt: null });
   const [historyLoading,  setHistoryLoading]  = useState(true);
+  const [refreshing,      setRefreshing]      = useState(false); // ← ADDED
   const [sheetExpanded,   setSheetExpanded]   = useState(false);
-  // Store user's current coords so Couriers card passes them along
   const [userCoords,      setUserCoords]      = useState(null);
 
   const fadeA       = useRef(new Animated.Value(0)).current;
@@ -377,7 +370,7 @@ export default function HomeScreen({ navigation }) {
     return unsub;
   }, [navigation]);
 
-  const fetchAll = async () => {
+  const fetchAll = async (isPullRefresh = false) => {
     try {
       const [rideRes, deliveryRes, rideHistRes, delHistRes] = await Promise.allSettled([
         rideAPI.getActiveRide(),
@@ -405,9 +398,19 @@ export default function HomeScreen({ navigation }) {
       console.warn('Fetch error:', e);
     } finally {
       setHistoryLoading(false);
-      Animated.timing(fadeA, { toValue: 1, duration: 450, useNativeDriver: true }).start();
+      setRefreshing(false); // ← ADDED: always clear the spinner
+
+      if (!isPullRefresh) {
+        Animated.timing(fadeA, { toValue: 1, duration: 450, useNativeDriver: true }).start();
+      }
     }
   };
+
+  // ── Pull-to-refresh handler ──────────────────────────────────────────────
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchAll(true);
+  }, []);
 
   // Grab user location once for the Couriers card
   useEffect(() => {
@@ -482,7 +485,6 @@ export default function HomeScreen({ navigation }) {
   const inputBg     = darkMode ? 'rgba(255,255,255,0.07)' : '#F2F2F2';
   const inputBorder = darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)';
 
-  // Bottom padding = tab bar height + safe area + breathing room
   const scrollPaddingBottom = insets.bottom + TAB_H + 24;
 
   return (
@@ -569,7 +571,6 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Collapse button — visible when sheet is expanded */}
         {sheetExpanded && (
           <TouchableOpacity
             style={[s.collapseBtn, {
@@ -593,7 +594,7 @@ export default function HomeScreen({ navigation }) {
           transform: [{ translateY: sheetTransY }],
         }]}
       >
-        {/* ── Drag handle — PanResponder lives here only ── */}
+        {/* ── Drag handle ── */}
         <View style={s.handleWrap} {...panResponder.panHandlers}>
           <View style={[s.handle, { backgroundColor: darkMode ? 'rgba(255,255,255,0.20)' : 'rgba(0,0,0,0.16)' }]} />
           {sheetExpanded && (
@@ -638,13 +639,13 @@ export default function HomeScreen({ navigation }) {
             />
           )}
 
-          {/* Service Icons + Search Bar — grouped together */}
+          {/* Service icons + search bar */}
           <View style={{ paddingHorizontal: H_PAD }}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={s.serviceScrollContent}
-              style={{ marginBottom: 4 }}   // set 0 for zero gap, or 2-4 for a tiny breath
+              style={{ marginBottom: 4 }}
             >
               {serviceCards.map(item => (
                 <ServiceIcon key={item.id} item={item} theme={theme} darkMode={darkMode} />
@@ -680,7 +681,7 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* ── Scrollable recent list ── */}
+          {/* ── PULL-TO-REFRESH: RefreshControl added to the recent trips ScrollView ── */}
           <ScrollView
             style={s.scrollArea}
             showsVerticalScrollIndicator={false}
@@ -689,6 +690,15 @@ export default function HomeScreen({ navigation }) {
               paddingHorizontal: H_PAD,
             }}
             keyboardShouldPersistTaps="handled"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={theme.foreground}
+                colors={[theme.foreground]}
+                progressBackgroundColor={darkMode ? '#1C1C1E' : '#FFFFFF'}
+              />
+            }
           >
             {historyLoading ? (
               <ActivityIndicator color={theme.foreground} style={{ marginTop: 24 }} />
@@ -720,8 +730,6 @@ export default function HomeScreen({ navigation }) {
 
 const s = StyleSheet.create({
   root: { flex: 1 },
-
-  // Map
   mapContainer: { flex: 1 },
   mapControls: {
     position: 'absolute', top: 0, left: 0, right: 0,
@@ -738,39 +746,22 @@ const s = StyleSheet.create({
   avatar:         { width: 44, height: 44, borderRadius: 22, borderWidth: 2 },
   avatarFallback: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
   avatarInitials: { fontSize: 14, fontWeight: '800' },
-
   collapseBtn: {
     position: 'absolute', right: H_PAD,
     width: 36, height: 36, borderRadius: 18,
     borderWidth: 1, justifyContent: 'center', alignItems: 'center',
   },
-
-  // Sheet
   sheet: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
     borderTopLeftRadius: 26, borderTopRightRadius: 26,
     shadowColor: '#000', shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.14, shadowRadius: 14, elevation: 22,
   },
-
-  handleWrap: {
-    alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 6,
-    minHeight: 36,
-  },
+  handleWrap:    { alignItems: 'center', paddingTop: 10, paddingBottom: 6, minHeight: 36 },
   handle:        { width: 38, height: 4, borderRadius: 2 },
   expandedTitle: { marginTop: 6, fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
-
-  sheetInner: {
-    flex: 1,
-    overflow: 'hidden',
-  },
-
-  scrollArea: {
-    flex: 1,
-  },
-
+  sheetInner:    { flex: 1, overflow: 'hidden' },
+  scrollArea:    { flex: 1 },
   greetRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: H_PAD, marginBottom: 16, marginTop: 2,
@@ -785,14 +776,7 @@ const s = StyleSheet.create({
     width: 7, height: 7, borderRadius: 4,
     backgroundColor: '#E05555', borderWidth: 1.5,
   },
-
-  // ── Service row — horizontal scroll (now style for outer ScrollView) ─────
-  serviceScrollContent: {
-    gap: 8,
-    paddingRight: 4,
-  },
-
-  // Search bar — removed marginHorizontal (parent handles padding)
+  serviceScrollContent: { gap: 8, paddingRight: 4 },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     borderRadius: 14, borderWidth: 1,
@@ -804,13 +788,11 @@ const s = StyleSheet.create({
     borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6,
   },
   laterTxt: { fontSize: 12, fontWeight: '600' },
-
   sectionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: H_PAD, marginBottom: 2, marginTop: 2,
   },
   sectionLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
-
   emptyWrap: { alignItems: 'center', paddingTop: 32, gap: 10 },
   emptyTxt:  { fontSize: 13, fontWeight: '500' },
 });

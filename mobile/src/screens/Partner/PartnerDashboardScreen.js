@@ -5,6 +5,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, Dimensions, Animated,
   ActivityIndicator, Alert, Image, ScrollView,
+  RefreshControl,                               // ← ADDED
 } from 'react-native';
 import MapView                                 from '../../components/SmartMapView';
 import { Ionicons }                            from '@expo/vector-icons';
@@ -24,7 +25,7 @@ import {
 } from '../../components/PartnerIcons';
 
 const { width, height } = Dimensions.get('window');
-const CA     = '#34D399';   // courier accent (teal-green)
+const CA     = '#34D399';
 const PURPLE = '#A78BFA';
 const H_PAD  = 20;
 const TAB_H  = 54;
@@ -79,7 +80,7 @@ const rb = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ONLINE TOGGLE  (matches DriverDashboard pill-style toggle)
+// ONLINE TOGGLE
 // ─────────────────────────────────────────────────────────────────────────────
 const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, isRejected, maintenanceOn, theme, darkMode }) => {
   const pulseA = useRef(new Animated.Value(1)).current;
@@ -148,7 +149,7 @@ const ot = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WALLET STRIP  (mirrors DriverDashboard EarningsStrip)
+// WALLET STRIP
 // ─────────────────────────────────────────────────────────────────────────────
 const WalletStrip = ({ balance, todayEarnings, onTopUp, onWithdraw, theme, darkMode }) => (
   <View style={[ws.card, {
@@ -260,6 +261,7 @@ export default function PartnerDashboardScreen({ navigation }) {
   const [walletBalance,     setWalletBalance]     = useState(null);
   const [todayEarnings,     setTodayEarnings]     = useState(0);
   const [loading,           setLoading]           = useState(true);
+  const [refreshing,        setRefreshing]        = useState(false); // ← ADDED
   const [activeDelivery,    setActiveDelivery]    = useState(null);
   const [floorPriceActive,  setFloorPriceActive]  = useState(false);
   const [activeFloorAmount, setActiveFloorAmount] = useState(0);
@@ -274,7 +276,8 @@ export default function PartnerDashboardScreen({ navigation }) {
   const isApproved     = profile?.isApproved ?? false;
   const isRejected     = profile?.isRejected ?? false;
 
-  const fetchData = useCallback(async () => {
+  // ── fetchData: accepts isPullRefresh flag ─────────────────────────────────
+  const fetchData = useCallback(async (isPullRefresh = false) => {
     try {
       const [profileRes, statsRes, walletRes, earningsRes, activeDelRes] = await Promise.allSettled([
         partnerAPI.getProfile(),
@@ -306,20 +309,29 @@ export default function PartnerDashboardScreen({ navigation }) {
     } catch {}
     finally {
       setLoading(false);
-      Animated.parallel([
-        Animated.timing(fadeA,  { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.spring(sheetY, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }),
-      ]).start();
+      setRefreshing(false); // ← ADDED: always clear the spinner
+
+      if (!isPullRefresh) {
+        Animated.parallel([
+          Animated.timing(fadeA,  { toValue: 1, duration: 500, useNativeDriver: true }),
+          Animated.spring(sheetY, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }),
+        ]).start();
+      }
     }
   }, []);
 
   useEffect(() => { fetchData(); }, []);
   useEffect(() => {
-    const unsub = navigation.addListener('focus', fetchData);
+    const unsub = navigation.addListener('focus', () => fetchData(false));
     return unsub;
   }, [navigation, fetchData]);
 
-  // ── Post-registration doc upload pop-up (once) ───────────────────────────
+  // ── Pull-to-refresh handler ──────────────────────────────────────────────
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchData(true);
+  }, [fetchData]);
+
   useEffect(() => {
     const showDocPrompt = async () => {
       try {
@@ -343,34 +355,34 @@ export default function PartnerDashboardScreen({ navigation }) {
   }, [loading, profile]);
 
   useEffect(() => {
-  const handleIncomingDelivery = (data) => {
-    const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
-    if (currentRoute === 'IncomingDeliveryQueue') return;
-    navigation.navigate('IncomingDeliveryQueue', { initialRequest: data });
-  };
-  const handleCancelled = () => {
-    const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
-    if (currentRoute !== 'IncomingDeliveryQueue') {
-      try { navigation.goBack(); } catch {}
-    }
-  };
+    const handleIncomingDelivery = (data) => {
+      const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
+      if (currentRoute === 'IncomingDeliveryQueue') return;
+      navigation.navigate('IncomingDeliveryQueue', { initialRequest: data });
+    };
+    const handleCancelled = () => {
+      const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
+      if (currentRoute !== 'IncomingDeliveryQueue') {
+        try { navigation.goBack(); } catch {}
+      }
+    };
 
     socketService.on('delivery:incoming_request', handleIncomingDelivery);
     socketService.on('delivery:cancelled',        handleCancelled);
 
-   // AFTER
-socketService.connect()
-  .then(async () => {
-    if (isOnline) {
-      try {
-        const coords = await getRealLocation();
-        socketService.goOnline({ latitude: coords.lat, longitude: coords.lng });
-      } catch {
-        // Do NOT call goOnline with empty coords — coords already saved via REST
-      }
-    }
-  })
-  .catch((err) => console.warn('[PartnerDashboard] socket connect:', err?.message));
+    socketService.connect()
+      .then(async () => {
+        if (isOnline) {
+          try {
+            const coords = await getRealLocation();
+            socketService.goOnline({ latitude: coords.lat, longitude: coords.lng });
+          } catch {
+            // Do NOT call goOnline with empty coords
+          }
+        }
+      })
+      .catch((err) => console.warn('[PartnerDashboard] socket connect:', err?.message));
+
     return () => {
       socketService.off('delivery:incoming_request', handleIncomingDelivery);
       socketService.off('delivery:cancelled',        handleCancelled);
@@ -419,7 +431,7 @@ socketService.connect()
         socketService.goOffline();
       }
       setIsOnline(next);
-      fetchData();
+      fetchData(true);
     } catch (err) {
       Alert.alert('Error', err?.response?.data?.message ?? 'Failed to update status.');
     } finally {
@@ -506,11 +518,20 @@ socketService.connect()
           <View style={[s.handle, { backgroundColor: darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.13)' }]} />
         </View>
 
-        {/* ── Bounded ScrollView for perfect scrolling ── */}
+        {/* ── PULL-TO-REFRESH: RefreshControl added to ScrollView ── */}
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[s.sheetScroll, { paddingBottom: insets.bottom + TAB_H + 20 }]}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={CA}
+              colors={[CA]}
+              progressBackgroundColor={darkMode ? '#1C1C1E' : '#FFFFFF'}
+            />
+          }
         >
           <Animated.View style={{ opacity: fadeA }}>
 
@@ -536,9 +557,7 @@ socketService.connect()
                 <View style={{ flex: 1 }}>
                   <Text style={[s.alertTitle, { color: '#E05555' }]}>Application Rejected</Text>
                   <Text style={[s.alertSub, { color: theme.hint }]}>
-                    {profile?.rejectionReason
-                      ? `Reason: ${profile.rejectionReason}`
-                      : 'Upload updated documents to re-submit.'}
+                    {profile?.rejectionReason ? `Reason: ${profile.rejectionReason}` : 'Upload updated documents to re-submit.'}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={15} color="#E05555" />
@@ -705,8 +724,6 @@ socketService.connect()
 const s = StyleSheet.create({
   root:         { flex: 1 },
   mapContainer: { flex: 1 },
-
-  // Map overlay top bar
   mapTopBar:   { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: H_PAD },
   statusPill:  { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   pillDot:     { width: 7, height: 7, borderRadius: 4 },
@@ -716,35 +733,23 @@ const s = StyleSheet.create({
   avatar:         { width: 42, height: 42, borderRadius: 21, borderWidth: 2 },
   avatarFallback: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
   avatarInitials: { fontSize: 14, fontWeight: '800' },
-
-  // Bottom sheet — fixed height bounded container
   sheet:       { position: 'absolute', left: 0, right: 0, bottom: 0, height: SHEET_SNAP, borderTopLeftRadius: 26, borderTopRightRadius: 26, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.14, shadowRadius: 14, elevation: 22 },
   handleWrap:  { alignItems: 'center', paddingTop: 10, paddingBottom: 4 },
   handle:      { width: 38, height: 4, borderRadius: 2 },
   sheetScroll: { paddingHorizontal: H_PAD, paddingTop: 4 },
-
-  // Sheet header
   sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16 },
   eyebrow:     { fontSize: 10, fontWeight: '800', letterSpacing: 3, marginBottom: 3 },
   name:        { fontSize: 22, fontWeight: '900', letterSpacing: -0.3 },
-
-  // Alert banners
   alertBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 14 },
   alertTitle:  { fontSize: 13, fontWeight: '800', marginBottom: 2 },
   alertSub:    { fontSize: 11, lineHeight: 17 },
-
-  // Stats
   statsRow:    { flexDirection: 'row', gap: 10, marginBottom: 14 },
-
-  // Row cards (vehicle, floor price)
   rowCard:           { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 12 },
   rowIcon:           { width: 52, height: 52, borderRadius: 14, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   rowCardTitle:      { fontSize: 14, fontWeight: '700', marginBottom: 2 },
   rowCardSub:        { fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
   vehicleStatusBadge:{ borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, marginRight: 4 },
   vehicleStatusTxt:  { fontSize: 12, fontWeight: '700' },
-
-  // Quick actions grid
   sectionTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 3, marginBottom: 12, marginTop: 4 },
   actionGrid:   { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 18 },
   actionCard:   { width: (width - H_PAD * 2 - 10) / 2, borderRadius: 16, borderWidth: 1, padding: 14, alignItems: 'center', gap: 8 },
@@ -752,8 +757,6 @@ const s = StyleSheet.create({
   actionLabel:  { fontSize: 12, fontWeight: '700', textAlign: 'center' },
   floorBadge:   { borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2, marginTop: -2 },
   floorBadgeTxt:{ fontSize: 9, fontWeight: '900', color: '#fff', letterSpacing: 0.3 },
-
-  // Footer
   footer:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12, borderWidth: 1, paddingVertical: 12, marginBottom: 4 },
   footerTxt: { fontSize: 12, fontWeight: '700' },
 });

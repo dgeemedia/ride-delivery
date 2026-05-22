@@ -5,6 +5,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, Dimensions, Animated,
   ActivityIndicator, Alert, Image, ScrollView,
+  RefreshControl,                               // ← ADDED
 } from 'react-native';
 import MapView                                 from '../../components/SmartMapView';
 import { Ionicons }                            from '@expo/vector-icons';
@@ -196,14 +197,13 @@ const es = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// METRIC CARD — now accepts IconComponent (SVG) instead of Ionicons string
+// METRIC CARD
 // ─────────────────────────────────────────────────────────────────────────────
 const MetricCard = ({ IconComponent, value, label, color, theme, darkMode }) => (
   <View style={[mc.card, {
     backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : '#F2F2F7',
     borderColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
   }]}>
-    {/* SVG icon rendered at 40px inside a tinted box */}
     <View style={[mc.iconBox, { backgroundColor: (color || theme.accent) + '18' }]}>
       <IconComponent size={40} />
     </View>
@@ -260,6 +260,7 @@ export default function DriverDashboardScreen({ navigation }) {
   const [walletBalance,     setWalletBalance]     = useState(null);
   const [todayEarnings,     setTodayEarnings]     = useState(0);
   const [loading,           setLoading]           = useState(true);
+  const [refreshing,        setRefreshing]        = useState(false); // ← ADDED
   const [activeRide,        setActiveRide]        = useState(null);
   const [floorPriceActive,  setFloorPriceActive]  = useState(false);
   const [activeFloorAmount, setActiveFloorAmount] = useState(0);
@@ -274,7 +275,8 @@ export default function DriverDashboardScreen({ navigation }) {
   const isApproved     = profile?.isApproved ?? false;
   const isRejected     = profile?.isRejected ?? false;
 
-  const fetchData = useCallback(async () => {
+  // ── fetchData: accepts a flag so pull-to-refresh skips the entry animation ──
+  const fetchData = useCallback(async (isPullRefresh = false) => {
     try {
       const [profileRes, statsRes, walletRes, earningsRes, activeRideRes] = await Promise.allSettled([
         driverAPI.getProfile(),
@@ -304,18 +306,29 @@ export default function DriverDashboardScreen({ navigation }) {
     } catch {}
     finally {
       setLoading(false);
-      Animated.parallel([
-        Animated.timing(fadeA,  { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.spring(sheetY, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }),
-      ]).start();
+      setRefreshing(false); // ← ADDED: always clear the spinner
+
+      // Only run the entry animation on first load, not on pull-to-refresh
+      if (!isPullRefresh) {
+        Animated.parallel([
+          Animated.timing(fadeA,  { toValue: 1, duration: 500, useNativeDriver: true }),
+          Animated.spring(sheetY, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }),
+        ]).start();
+      }
     }
   }, []);
 
   useEffect(() => { fetchData(); }, []);
   useEffect(() => {
-    const unsub = navigation.addListener('focus', fetchData);
+    const unsub = navigation.addListener('focus', () => fetchData(false));
     return unsub;
   }, [navigation, fetchData]);
+
+  // ── Pull-to-refresh handler ──────────────────────────────────────────────
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchData(true); // true = is a pull-refresh, skip entry animation
+  }, [fetchData]);
 
   useEffect(() => {
     const showDocPrompt = async () => {
@@ -339,7 +352,7 @@ export default function DriverDashboardScreen({ navigation }) {
     if (!loading && profile) showDocPrompt();
   }, [loading, profile]);
 
-useEffect(() => {
+  useEffect(() => {
     const handleReq = (data) => {
       const currentRoute = navigation.getState()?.routes?.slice(-1)[0]?.name;
       if (currentRoute === 'IncomingRideQueue') return;
@@ -353,14 +366,13 @@ useEffect(() => {
       }
     };
 
-socketService.connect()
+    socketService.connect()
       .then(() => {
         socketService.on('ride:new_request', handleReq);
         socketService.on('ride:cancelled',   handleCanc);
       })
       .catch((err) => {
         console.warn('[Dashboard] socket connect:', err?.message);
-        // Still register — pending queue will attach on next connect
         socketService.on('ride:new_request', handleReq);
         socketService.on('ride:cancelled',   handleCanc);
       });
@@ -402,7 +414,7 @@ socketService.connect()
         socketService.goOffline();
       }
       setIsOnline(next);
-      fetchData();
+      fetchData(true);
     } catch (err) {
       Alert.alert('Error', err?.response?.data?.message ?? 'Failed to update status.');
     } finally {
@@ -485,10 +497,20 @@ socketService.connect()
           <View style={[s.handle, { backgroundColor: darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.13)' }]} />
         </View>
 
+        {/* ── PULL-TO-REFRESH: RefreshControl added to ScrollView ── */}
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[s.sheetScroll, { paddingBottom: insets.bottom + TAB_H + 20 }]}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={GREEN}
+              colors={[GREEN]}
+              progressBackgroundColor={darkMode ? '#1C1C1E' : '#FFFFFF'}
+            />
+          }
         >
           <Animated.View style={{ opacity: fadeA }}>
 
@@ -543,12 +565,11 @@ socketService.connect()
               <EarningsStrip balance={walletBalance} todayEarnings={todayEarnings} onTopUp={goToTopUp} onWithdraw={goToWithdraw} theme={theme} darkMode={darkMode} />
             )}
 
-            {/* ── Stats row — SVG icons ── */}
+            {/* Stats row */}
             {loading ? (
               <ActivityIndicator color={theme.accent} style={{ marginBottom: 16 }} />
             ) : (
               <View style={s.statsRow}>
-                {/* Rides count → RideHistoryIcon */}
                 <MetricCard
                   IconComponent={RideHistoryIcon}
                   value={stats?.completedRides ?? profile?.totalRides ?? 0}
@@ -557,7 +578,6 @@ socketService.connect()
                   theme={theme}
                   darkMode={darkMode}
                 />
-                {/* Rating → EarningsIcon (star/value motif) */}
                 <MetricCard
                   IconComponent={EarningsIcon}
                   value={(profile?.rating ?? stats?.rating ?? 0).toFixed(1)}
@@ -566,7 +586,6 @@ socketService.connect()
                   theme={theme}
                   darkMode={darkMode}
                 />
-                {/* Acceptance rate → FloorPriceIcon (bar-chart / trending up) */}
                 <MetricCard
                   IconComponent={FloorPriceIcon}
                   value={isApproved ? '94%' : '—'}
@@ -578,14 +597,13 @@ socketService.connect()
               </View>
             )}
 
-            {/* ── Vehicle card — DocumentsIcon ── */}
+            {/* Vehicle card */}
             {profile?.vehicleMake && (
               <TouchableOpacity
                 style={[s.rowCard, { backgroundColor: inputBg, borderColor: inputBorder }]}
                 onPress={goToDocuments}
                 activeOpacity={0.8}
               >
-                {/* replaced Ionicons car-outline with DocumentsIcon */}
                 <View style={[s.rowIcon, { backgroundColor: theme.accent + '18' }]}>
                   <DocumentsIcon size={36} />
                 </View>
@@ -599,14 +617,13 @@ socketService.connect()
               </TouchableOpacity>
             )}
 
-            {/* ── Floor price card — FloorPriceIcon ── */}
+            {/* Floor price card */}
             {floorPriceActive && !loading && (
               <TouchableOpacity
                 style={[s.rowCard, { backgroundColor: inputBg, borderColor: inputBorder }]}
                 onPress={() => navigation.navigate('FloorPrice')}
                 activeOpacity={0.8}
               >
-                {/* replaced Ionicons trending-up-outline with FloorPriceIcon */}
                 <View style={[s.rowIcon, { backgroundColor: PURPLE + '18' }]}>
                   <FloorPriceIcon size={36} />
                 </View>
@@ -682,7 +699,6 @@ const s = StyleSheet.create({
   alertTitle:  { fontSize: 13, fontWeight: '800', marginBottom: 2 },
   alertSub:    { fontSize: 11, lineHeight: 17 },
   statsRow:    { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  // Row cards — icon box slightly larger to fit SVG
   rowCard:      { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 12 },
   rowIcon:      { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   rowCardTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },

@@ -20,13 +20,14 @@ const SHEET_DEFAULT  = Math.round(height * 0.50);
 const SHEET_MAX      = Math.round(height * 0.82);
 const DRAG_HANDLE_H  = 28;
 
+// ── Renamed `step` key → `stageIndex` to avoid Hermes reserved-word crash ────
 const STATUS_CONFIG = {
-  REQUESTED:   { label: 'Finding your driver',  sublabel: 'Matching you with the best driver nearby', color: '#4E8DBD', icon: 'time-outline',             step: 0 },
-  ACCEPTED:    { label: 'Driver on the way',    sublabel: 'Your driver is heading to pickup',          color: '#FFB800', icon: 'car-outline',              step: 1 },
-  ARRIVED:     { label: 'Driver has arrived',   sublabel: 'Look for your driver at the pickup point',  color: '#A78BFA', icon: 'location-outline',         step: 2 },
-  IN_PROGRESS: { label: 'Ride in progress',     sublabel: 'Sit back, you\'re on your way',             color: '#5DAA72', icon: 'navigate-outline',         step: 3 },
-  COMPLETED:   { label: 'Ride completed',       sublabel: 'Hope you enjoyed the ride!',                color: '#5DAA72', icon: 'checkmark-circle-outline',  step: 4 },
-  CANCELLED:   { label: 'Ride cancelled',       sublabel: 'This ride has been cancelled',              color: '#E05555', icon: 'close-circle-outline',      step: -1 },
+  REQUESTED:   { label: 'Finding your driver',  sublabel: 'Matching you with the best driver nearby', color: '#4E8DBD', icon: 'time-outline',             stageIndex: 0 },
+  ACCEPTED:    { label: 'Driver on the way',    sublabel: 'Your driver is heading to pickup',          color: '#FFB800', icon: 'car-outline',              stageIndex: 1 },
+  ARRIVED:     { label: 'Driver has arrived',   sublabel: 'Look for your driver at the pickup point',  color: '#A78BFA', icon: 'location-outline',         stageIndex: 2 },
+  IN_PROGRESS: { label: 'Ride in progress',     sublabel: 'Sit back, you\'re on your way',             color: '#5DAA72', icon: 'navigate-outline',         stageIndex: 3 },
+  COMPLETED:   { label: 'Ride completed',       sublabel: 'Hope you enjoyed the ride!',                color: '#5DAA72', icon: 'checkmark-circle-outline',  stageIndex: 4 },
+  CANCELLED:   { label: 'Ride cancelled',       sublabel: 'This ride has been cancelled',              color: '#E05555', icon: 'close-circle-outline',      stageIndex: -1 },
 };
 
 const STEPS = ['Matched', 'En Route', 'Arrived', 'In Progress'];
@@ -46,7 +47,7 @@ const callPhone = (phone) => {
     .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
 };
 
-// ── ETACountdownRing — circular timer (Uber-inspired) ─────────────────────────
+// ── ETACountdownRing ──────────────────────────────────────────────────────────
 const ETACountdownRing = ({ etaMinutes, color }) => {
   const spinA = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -76,25 +77,25 @@ const era = StyleSheet.create({
   label:   { fontSize: 9, fontWeight: '700', letterSpacing: 1 },
 });
 
-// ── StatusRail — InDrive-inspired horizontal progress strip ───────────────────
-const StatusRail = ({ step, color, theme }) => (
+// ── StatusRail — prop renamed from `step` → `stageIndex` ─────────────────────
+const StatusRail = ({ stageIndex, color, theme }) => (
   <View style={sr.wrap}>
     {STEPS.map((s, i) => {
-      const active = i <= step;
+      const active = i <= stageIndex;
       return (
         <React.Fragment key={s}>
           <View style={sr.item}>
             <View style={[sr.dot, {
               backgroundColor: active ? color : theme.border,
               borderColor:     active ? color : theme.border,
-              transform:       [{ scale: i === step ? 1.3 : 1 }],
+              transform:       [{ scale: i === stageIndex ? 1.3 : 1 }],
             }]}>
-              {active && i < step && <Ionicons name="checkmark" size={8} color="#080C18" />}
+              {active && i < stageIndex && <Ionicons name="checkmark" size={8} color="#080C18" />}
             </View>
-            <Text style={[sr.lbl, { color: active ? color : theme.hint, fontWeight: i === step ? '800' : '500' }]}>{s}</Text>
+            <Text style={[sr.lbl, { color: active ? color : theme.hint, fontWeight: i === stageIndex ? '800' : '500' }]}>{s}</Text>
           </View>
           {i < STEPS.length - 1 && (
-            <View style={[sr.line, { backgroundColor: i < step ? color : theme.border }]} />
+            <View style={[sr.line, { backgroundColor: i < stageIndex ? color : theme.border }]} />
           )}
         </React.Fragment>
       );
@@ -109,7 +110,7 @@ const sr = StyleSheet.create({
   line: { flex: 1, height: 2, marginBottom: 14, marginHorizontal: 2 },
 });
 
-// ── DriverHeroCard — large card inspired by InDrive driver reveal ──────────────
+// ── DriverHeroCard ────────────────────────────────────────────────────────────
 const DriverHeroCard = ({ ride, theme, accentColor }) => {
   const driver = ride?.driver;
   if (!driver) return null;
@@ -118,7 +119,6 @@ const DriverHeroCard = ({ ride, theme, accentColor }) => {
 
   return (
     <View style={[dh.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-      {/* Left: avatar + trust badge */}
       <View style={dh.leftCol}>
         <View style={[dh.avatarWrap, { borderColor: accentColor + '60' }]}>
           <View style={[dh.avatar, { backgroundColor: accentColor + '22' }]}>
@@ -134,7 +134,6 @@ const DriverHeroCard = ({ ride, theme, accentColor }) => {
         )}
       </View>
 
-      {/* Center: driver info */}
       <View style={{ flex: 1 }}>
         <Text style={[dh.name, { color: theme.foreground }]}>
           {driver.firstName} {driver.lastName}
@@ -159,7 +158,6 @@ const DriverHeroCard = ({ ride, theme, accentColor }) => {
         </View>
       </View>
 
-      {/* Right: call button */}
       {driver.phone && (
         <TouchableOpacity
           style={[dh.callBtn, { backgroundColor: accentColor, shadowColor: accentColor }]}
@@ -239,7 +237,6 @@ export default function RideTrackingScreen({ route, navigation }) {
   const hasNavigatedRef = useRef(false);
   const etaTimerRef     = useRef(null);
 
-  // Draggable sheet
   const sheetHeightAnim  = useRef(new Animated.Value(SHEET_DEFAULT)).current;
   const currentHeightRef = useRef(SHEET_DEFAULT);
   const startHeightRef   = useRef(SHEET_DEFAULT);
@@ -297,7 +294,6 @@ export default function RideTrackingScreen({ route, navigation }) {
     })
   ).current;
 
-  // ── ETA countdown timer ───────────────────────────────────────────────────
   const startEtaTimer = useCallback((minutes) => {
     clearInterval(etaTimerRef.current);
     if (!minutes) return;
@@ -312,7 +308,6 @@ export default function RideTrackingScreen({ route, navigation }) {
 
   useEffect(() => () => clearInterval(etaTimerRef.current), []);
 
-  // ── Load ride ─────────────────────────────────────────────────────────────
   const loadRide = useCallback(async () => {
     try {
       const res = rideId ? await rideAPI.getRideById(rideId) : await rideAPI.getActiveRide();
@@ -387,7 +382,6 @@ export default function RideTrackingScreen({ route, navigation }) {
     ]);
   };
 
-  // ── Derived ───────────────────────────────────────────────────────────────
   const status     = ride?.status ?? 'REQUESTED';
   const statusCfg  = STATUS_CONFIG[status] ?? STATUS_CONFIG.ACCEPTED;
   const pickupLat  = ride?.pickupLat;
@@ -429,7 +423,6 @@ export default function RideTrackingScreen({ route, navigation }) {
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* ── MAP — same SmartMapView import as RequestRideScreen ── */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -439,11 +432,9 @@ export default function RideTrackingScreen({ route, navigation }) {
         showsCompass={false}
         toolbarEnabled={false}
       >
-        {/* Driver pin — teardrop styled via OsmMapView's Leaflet bridge */}
         {driverLocation && (
           <Marker coordinate={driverLocation} anchor={{ x: 0.5, y: 1 }} pinColor={statusCfg.color} />
         )}
-        {/* Pickup landmark */}
         {pickupLat && (
           <Marker
             coordinate={{ latitude: pickupLat, longitude: pickupLng }}
@@ -451,7 +442,6 @@ export default function RideTrackingScreen({ route, navigation }) {
             pinColor={accentColor}
           />
         )}
-        {/* Dropoff landmark */}
         {dropoffLat && (
           <Marker
             coordinate={{ latitude: dropoffLat, longitude: dropoffLng }}
@@ -459,7 +449,6 @@ export default function RideTrackingScreen({ route, navigation }) {
             pinColor="#E05555"
           />
         )}
-        {/* Full route */}
         {pickupLat && dropoffLat && (
           <Polyline
             coordinates={[
@@ -469,7 +458,6 @@ export default function RideTrackingScreen({ route, navigation }) {
             strokeColor={accentColor} strokeWidth={3} lineDashPattern={[8, 5]}
           />
         )}
-        {/* Driver-to-pickup en-route line */}
         {driverLocation && pickupLat && ['ACCEPTED', 'ARRIVED'].includes(status) && (
           <Polyline
             coordinates={[driverLocation, { latitude: pickupLat, longitude: pickupLng }]}
@@ -478,10 +466,8 @@ export default function RideTrackingScreen({ route, navigation }) {
         )}
       </MapView>
 
-      {/* Top gradient */}
       <View style={s.topGradient} pointerEvents="none" />
 
-      {/* ── Back button ── */}
       <TouchableOpacity
         style={[s.backBtn, { top: backBtnTop }]}
         onPress={() => navigation.goBack()}
@@ -490,7 +476,6 @@ export default function RideTrackingScreen({ route, navigation }) {
         <Ionicons name="arrow-back" size={20} color="#fff" />
       </TouchableOpacity>
 
-      {/* ── Top status chip (floating, above sheet) ── */}
       <Animated.View style={[s.statusPill, {
         backgroundColor: statusCfg.color + '20',
         borderColor:     statusCfg.color + '60',
@@ -505,14 +490,12 @@ export default function RideTrackingScreen({ route, navigation }) {
         )}
       </Animated.View>
 
-      {/* ── Bottom sheet ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
         height:          sheetHeightAnim,
         bottom:          TAB_BAR_HEIGHT,
       }]}>
-        {/* Drag handle */}
         <View style={s.dragHandleWrap} {...panResponder.panHandlers}>
           <View style={[s.dragHandle, { backgroundColor: theme.border }]} />
         </View>
@@ -520,13 +503,13 @@ export default function RideTrackingScreen({ route, navigation }) {
         <Animated.View style={{ height: scrollHeightAnim, overflow: 'hidden' }}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
 
-            {/* ── Status rail + ETA ring header ── */}
             <View style={s.headerRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[s.statusTitle, { color: theme.foreground }]}>{statusCfg.label}</Text>
                 <Text style={[s.statusSub, { color: theme.hint }]}>{statusCfg.sublabel}</Text>
                 <View style={{ marginTop: 12 }}>
-                  <StatusRail step={statusCfg.step} color={statusCfg.color} theme={theme} />
+                  {/* stageIndex replaces step prop to avoid Hermes crash */}
+                  <StatusRail stageIndex={statusCfg.stageIndex} color={statusCfg.color} theme={theme} />
                 </View>
               </View>
               {['ACCEPTED', 'ARRIVED'].includes(status) && (
@@ -534,7 +517,6 @@ export default function RideTrackingScreen({ route, navigation }) {
               )}
             </View>
 
-            {/* ── Fare strip ── */}
             <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <View style={s.fareItem}>
                 <Text style={[s.fareLabel, { color: theme.hint }]}>FARE</Text>
@@ -558,13 +540,9 @@ export default function RideTrackingScreen({ route, navigation }) {
               </View>
             </View>
 
-            {/* ── Driver hero card with call button ── */}
             <DriverHeroCard ride={ride} theme={theme} accentColor={accentColor} />
-
-            {/* ── Route card ── */}
             <RouteCard ride={ride} theme={theme} />
 
-            {/* ── Safety chip (InDrive-style) ── */}
             <View style={[s.safetyChip, { backgroundColor: '#5DAA7212', borderColor: '#5DAA7230' }]}>
               <Ionicons name="shield-checkmark-outline" size={13} color="#5DAA72" />
               <Text style={[s.safetyTxt, { color: '#5DAA72' }]}>

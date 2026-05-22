@@ -34,40 +34,39 @@ const callPhone = (phone) => {
     .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
 };
 
-// ── Delivery status timeline steps ──────────────────────────────────────────
+// ── Delivery status timeline entries ─────────────────────────────────────────
 const TIMELINE = [
-  { key: 'PENDING',    label: 'Finding Partner', icon: 'search-outline'           },
-  { key: 'ASSIGNED',   label: 'Heading to Pickup', icon: 'navigate-outline'       },
-  { key: 'PICKED_UP',  label: 'Package Picked', icon: 'cube-outline'              },
-  { key: 'IN_TRANSIT', label: 'In Transit',      icon: 'car-sport-outline'        },
-  { key: 'DELIVERED',  label: 'Delivered',        icon: 'checkmark-circle-outline' },
+  { key: 'PENDING',    label: 'Finding Partner',   icon: 'search-outline'            },
+  { key: 'ASSIGNED',   label: 'Heading to Pickup', icon: 'navigate-outline'          },
+  { key: 'PICKED_UP',  label: 'Package Picked',    icon: 'cube-outline'              },
+  { key: 'IN_TRANSIT', label: 'In Transit',         icon: 'car-sport-outline'        },
+  { key: 'DELIVERED',  label: 'Delivered',           icon: 'checkmark-circle-outline' },
 ];
 
 const STATUS_CONFIG = {
-  PENDING:    { label: 'Finding a delivery partner', sublabel: 'Matching with nearest courier', color: '#4E8DBD', icon: 'time-outline'              },
-  ASSIGNED:   { label: 'Partner on the way',         sublabel: 'Heading to pick up your package', color: COURIER_ACCENT, icon: 'bicycle-outline'   },
-  PICKED_UP:  { label: 'Package picked up',          sublabel: 'Your package is in safe hands', color: '#FFB800', icon: 'cube-outline'             },
-  IN_TRANSIT: { label: 'Package in transit',         sublabel: 'On the way to the destination', color: '#A78BFA', icon: 'navigate-outline'         },
-  DELIVERED:  { label: 'Package delivered!',         sublabel: 'Delivery completed successfully', color: COURIER_ACCENT, icon: 'checkmark-circle-outline' },
-  CANCELLED:  { label: 'Delivery cancelled',         sublabel: '', color: '#E05555', icon: 'close-circle-outline'                                   },
+  PENDING:    { label: 'Finding a delivery partner', sublabel: 'Matching with nearest courier',       color: '#4E8DBD',     icon: 'time-outline'              },
+  ASSIGNED:   { label: 'Partner on the way',         sublabel: 'Heading to pick up your package',    color: COURIER_ACCENT, icon: 'bicycle-outline'           },
+  PICKED_UP:  { label: 'Package picked up',          sublabel: 'Your package is in safe hands',      color: '#FFB800',     icon: 'cube-outline'              },
+  IN_TRANSIT: { label: 'Package in transit',         sublabel: 'On the way to the destination',      color: '#A78BFA',     icon: 'navigate-outline'          },
+  DELIVERED:  { label: 'Package delivered!',         sublabel: 'Delivery completed successfully',    color: COURIER_ACCENT, icon: 'checkmark-circle-outline'  },
+  CANCELLED:  { label: 'Delivery cancelled',         sublabel: '',                                   color: '#E05555',     icon: 'close-circle-outline'      },
 };
 
-// ── Package Timeline — vertical step tracker (unique to delivery) ─────────────
+// ── PackageTimeline — `step` map variable renamed to `entry` ─────────────────
 const PackageTimeline = ({ status, theme }) => {
   const currentIdx = TIMELINE.findIndex(t => t.key === status);
 
   return (
     <View style={[pt.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
       <Text style={[pt.heading, { color: theme.hint }]}>DELIVERY PROGRESS</Text>
-      {TIMELINE.map((step, i) => {
+      {TIMELINE.map((entry, i) => {
         const done    = i < currentIdx;
         const current = i === currentIdx;
         const future  = i > currentIdx;
         const color   = done || current ? COURIER_ACCENT : theme.border;
 
         return (
-          <View key={step.key} style={pt.stepRow}>
-            {/* Connector line */}
+          <View key={entry.key} style={pt.stepRow}>
             <View style={pt.lineCol}>
               {i > 0 && <View style={[pt.lineTop, { backgroundColor: done || current ? COURIER_ACCENT : theme.border }]} />}
               <View style={[pt.dot, {
@@ -77,19 +76,18 @@ const PackageTimeline = ({ status, theme }) => {
               }]}>
                 {done
                   ? <Ionicons name="checkmark" size={9} color="#080C18" />
-                  : <Ionicons name={step.icon} size={9} color={current ? COURIER_ACCENT : theme.border} />
+                  : <Ionicons name={entry.icon} size={9} color={current ? COURIER_ACCENT : theme.border} />
                 }
               </View>
               {i < TIMELINE.length - 1 && (
                 <View style={[pt.lineBottom, { backgroundColor: done ? COURIER_ACCENT : theme.border }]} />
               )}
             </View>
-            {/* Label */}
             <Text style={[pt.stepLabel, {
               color:      future ? theme.hint : theme.foreground,
               fontWeight: current ? '800' : '500',
               opacity:    future ? 0.5 : 1,
-            }]}>{step.label}</Text>
+            }]}>{entry.label}</Text>
           </View>
         );
       })}
@@ -107,7 +105,7 @@ const pt = StyleSheet.create({
   stepLabel: { fontSize: 13, flex: 1 },
 });
 
-// ── PartnerHeroCard — courier info + call button ──────────────────────────────
+// ── PartnerHeroCard ───────────────────────────────────────────────────────────
 const PartnerHeroCard = ({ delivery, theme }) => {
   const partner = delivery?.partner;
   if (!partner) return null;
@@ -115,7 +113,6 @@ const PartnerHeroCard = ({ delivery, theme }) => {
 
   return (
     <View style={[ph.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-      {/* Avatar */}
       <View style={[ph.avatarWrap, { borderColor: COURIER_ACCENT + '60' }]}>
         <View style={[ph.avatar, { backgroundColor: COURIER_ACCENT + '22' }]}>
           <Text style={[ph.initials, { color: COURIER_ACCENT }]}>
@@ -124,7 +121,6 @@ const PartnerHeroCard = ({ delivery, theme }) => {
         </View>
       </View>
 
-      {/* Info */}
       <View style={{ flex: 1 }}>
         <Text style={[ph.name, { color: theme.foreground }]}>
           {partner.firstName} {partner.lastName}
@@ -149,7 +145,6 @@ const PartnerHeroCard = ({ delivery, theme }) => {
         </View>
       </View>
 
-      {/* Call button */}
       {partner.phone && (
         <TouchableOpacity
           style={[ph.callBtn, { backgroundColor: COURIER_ACCENT, shadowColor: COURIER_ACCENT }]}
@@ -177,7 +172,7 @@ const ph = StyleSheet.create({
   callBtn:         { width: 46, height: 46, borderRadius: 15, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 6 },
 });
 
-// ── Package detail card ───────────────────────────────────────────────────────
+// ── PackageDetailCard ─────────────────────────────────────────────────────────
 const PackageDetailCard = ({ delivery, theme }) => (
   <View style={[pd.card, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '25' }]}>
     <View style={pd.row}>
@@ -379,7 +374,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* ── MAP — same SmartMapView import as RequestRideScreen ── */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -389,11 +383,9 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         showsCompass={false}
         toolbarEnabled={false}
       >
-        {/* Partner pin */}
         {partnerLocation && (
           <Marker coordinate={partnerLocation} anchor={{ x: 0.5, y: 1 }} pinColor={statusCfg.color} />
         )}
-        {/* Pickup landmark */}
         {pickupLat && (
           <Marker
             coordinate={{ latitude: pickupLat, longitude: pickupLng }}
@@ -401,7 +393,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
             pinColor={COURIER_ACCENT}
           />
         )}
-        {/* Dropoff landmark */}
         {dropoffLat && (
           <Marker
             coordinate={{ latitude: dropoffLat, longitude: dropoffLng }}
@@ -409,7 +400,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
             pinColor="#E05555"
           />
         )}
-        {/* Route */}
         {pickupLat && dropoffLat && (
           <Polyline
             coordinates={[
@@ -419,7 +409,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
             strokeColor={COURIER_ACCENT} strokeWidth={3} lineDashPattern={[8, 5]}
           />
         )}
-        {/* Partner en-route to pickup */}
         {partnerLocation && pickupLat && status === 'ASSIGNED' && (
           <Polyline
             coordinates={[partnerLocation, { latitude: pickupLat, longitude: pickupLng }]}
@@ -438,7 +427,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         <Ionicons name="arrow-back" size={20} color="#fff" />
       </TouchableOpacity>
 
-      {/* Status pill */}
       <Animated.View style={[s.statusPill, {
         backgroundColor: statusCfg.color + '20',
         borderColor:     statusCfg.color + '60',
@@ -448,7 +436,6 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
       </Animated.View>
 
-      {/* ── Bottom sheet ── */}
       <Animated.View style={[s.sheet, {
         backgroundColor: theme.background,
         borderColor:     theme.border,
@@ -462,13 +449,11 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         <Animated.View style={{ height: scrollHeightAnim, overflow: 'hidden' }}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
 
-            {/* Header */}
             <View style={s.sheetHeader}>
               <Text style={[s.statusTitle, { color: theme.foreground }]}>{statusCfg.label}</Text>
               <Text style={[s.statusSub, { color: theme.hint }]}>{statusCfg.sublabel}</Text>
             </View>
 
-            {/* Fee strip */}
             <View style={[s.feeStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <View style={s.feeItem}>
                 <Text style={[s.feeLabel, { color: theme.hint }]}>FEE</Text>
@@ -490,13 +475,8 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
               </View>
             </View>
 
-            {/* Partner hero card with call button */}
             <PartnerHeroCard delivery={delivery} theme={theme} />
-
-            {/* Package detail */}
             <PackageDetailCard delivery={delivery} theme={theme} />
-
-            {/* Package timeline — unique to this screen */}
             <PackageTimeline status={status} theme={theme} />
 
             {canCancel && (
