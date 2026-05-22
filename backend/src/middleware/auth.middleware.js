@@ -1,18 +1,4 @@
 // backend/src/middleware/auth.middleware.js
-//
-// authenticate  — verifies JWT, attaches req.user (includes adminDepartment)
-// authorize     — role check (e.g. authorize('ADMIN','SUPER_ADMIN'))
-// requireScope  — department check ON TOP of role
-//                 requireScope('RIDES') passes if:
-//                   • role === 'SUPER_ADMIN'
-//                   • role === 'ADMIN' && (adminDepartment === null || adminDepartment === 'RIDES')
-//                   • specified role matches scope
-//
-// DEPARTMENT MAP
-//   null          → general admin, access to everything under ADMIN role
-//   'RIDES'       → drivers + rides management only
-//   'DELIVERIES'  → partners + deliveries management only
-//   'SUPPORT'     → support tickets + read-only user lookup
 
 'use strict';
 const jwt    = require('jsonwebtoken');
@@ -28,18 +14,26 @@ const authenticate = async (req, res, next) => {
     const token   = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true, email: true, phone: true,
-        firstName: true, lastName: true,
-        role: true, isVerified: true, isActive: true,
-        adminDepartment: true,   // ← department scope
-      },
-    });
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: {
+          id: true, email: true, phone: true,
+          firstName: true, lastName: true,
+          role: true, isVerified: true, isActive: true,
+          adminDepartment: true,
+          passwordChangedAt: true,
+        },
+      });
 
-    if (!user)          return res.status(401).json({ success: false, message: 'Invalid token. User not found.' });
+if (!user)          return res.status(401).json({ success: false, message: 'Invalid token. User not found.' });
     if (!user.isActive) return res.status(403).json({ success: false, message: 'Account is deactivated.' });
+
+    if (user.passwordChangedAt) {
+      const changedAt = Math.floor(user.passwordChangedAt.getTime() / 1000);
+      if (decoded.iat < changedAt) {
+        return res.status(401).json({ success: false, message: 'Password was changed. Please log in again.' });
+      }
+    }
 
     req.user = user;
     next();

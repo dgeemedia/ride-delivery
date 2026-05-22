@@ -32,6 +32,7 @@ model User {
   adminDepartment      String?
   twoFactorEnabled     Boolean                 @default(false)
   twoFactorMethod      String?
+  passwordChangedAt    DateTime?               @db.Timestamptz(6)
   activityLogs         ActivityLog[]
   adminProfile         AdminProfile?
   appFeedback          AppFeedback[]

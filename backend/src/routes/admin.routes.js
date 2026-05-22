@@ -1,4 +1,3 @@
-// backend/src/routes/admin.routes.js
 'use strict';
 const express = require('express');
 const { body, param } = require('express-validator');
@@ -23,8 +22,59 @@ router.get('/dashboard/stats', adminController.getDashboardStats);
 
 // ─────────────────────────────────────────────
 // USER MANAGEMENT
+// NOTE: Static routes (/create-admin) MUST come before dynamic routes (/:id)
 // ─────────────────────────────────────────────
 router.get('/users', adminController.getUsers);
+
+// ✅ FIX: Moved BEFORE /users/:id so 'create-admin' isn't swallowed as a UUID param
+router.post('/users/create-admin',
+  authorize('SUPER_ADMIN'),
+  [
+    body('email').isEmail().normalizeEmail(),
+    // ✅ FIX 1: was isMobilePhone() — fails Nigerian +234 numbers without a locale
+    body('phone').isMobilePhone('any'),
+    body('password').isLength({ min: 8 }),
+    body('firstName').trim().notEmpty(),
+    body('lastName').trim().notEmpty(),
+    body('role').isIn(['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'MODERATOR', 'CUSTOMER', 'DRIVER', 'DELIVERY_PARTNER']),
+
+    // ✅ FIX 2: optional({ nullable: true }) so sending null for general admin doesn't fail validation
+    body('adminDepartment')
+      .optional({ nullable: true })
+      .if(body('adminDepartment').notEmpty())
+      .isIn(['RIDES', 'DELIVERIES', 'SUPPORT']),
+
+    // Driver fields
+    body('licenseNumber')
+      .if(body('role').equals('DRIVER'))
+      .notEmpty().withMessage('License number required for drivers'),
+    body('vehicleType')
+      .if(body('role').equals('DRIVER'))
+      .isIn(['BIKE', 'CAR', 'MOTORCYCLE', 'VAN', 'TRICYCLE']),
+    body('vehicleMake')
+      .if(body('role').equals('DRIVER'))
+      .notEmpty(),
+    body('vehicleModel')
+      .if(body('role').equals('DRIVER'))
+      .notEmpty(),
+    body('vehicleYear')
+      .if(body('role').equals('DRIVER'))
+      .isInt({ min: 2000, max: new Date().getFullYear() + 1 }),
+    body('vehicleColor')
+      .if(body('role').equals('DRIVER'))
+      .notEmpty(),
+    body('vehiclePlate')
+      .if(body('role').equals('DRIVER'))
+      .notEmpty(),
+
+    // Delivery partner fields
+    body('vehicleType')
+      .if(body('role').equals('DELIVERY_PARTNER'))
+      .isIn(['BIKE', 'CAR', 'MOTORCYCLE', 'VAN', 'TRICYCLE']),
+  ],
+  validate,
+  adminController.createAdminUser
+);
 
 router.get('/users/:id',
   param('id').isUUID(),
@@ -52,23 +102,6 @@ router.delete('/users/:id',
   authorize('SUPER_ADMIN'),
   validate,
   adminController.deleteUser
-);
-
-// Create admin/staff users — SUPER_ADMIN only
-// Kept as /users/create-admin (POST never conflicts with GET /users/:id)
-router.post('/users/create-admin',
-  authorize('SUPER_ADMIN'),
-  [
-    body('email').isEmail().normalizeEmail(),
-    body('phone').isMobilePhone(),
-    body('password').isLength({ min: 8 }),
-    body('firstName').trim().notEmpty(),
-    body('lastName').trim().notEmpty(),
-    body('role').isIn(['ADMIN', 'SUPPORT', 'MODERATOR']),
-    body('adminDepartment').optional().isIn(['RIDES', 'DELIVERIES', 'SUPPORT']),
-  ],
-  validate,
-  adminController.createAdminUser
 );
 
 // ─────────────────────────────────────────────
@@ -248,6 +281,7 @@ router.get('/analytics/user-growth',
 // SETTINGS
 // SUPER_ADMIN only for write operations.
 // /batch and /invalidate-cache before /:key to prevent being swallowed as a key param.
+// ✅ FIX 3: Removed duplicate /settings/invalidate-cache route (was registered twice)
 // ─────────────────────────────────────────────
 router.get('/settings',
   authorize('ADMIN', 'SUPER_ADMIN'),
@@ -259,16 +293,6 @@ router.patch('/settings/batch',
   adminController.updateSettingsBatch
 );
 
-router.post('/settings/invalidate-cache',
-  authorize('SUPER_ADMIN'),
-  (req, res) => {
-    const { invalidateFareCache } = require('../utils/fareEngine');
-    invalidateFareCache();
-    res.json({ success: true, message: 'Fare cache cleared' });
-  }
-);
-
-// Dedicated cache-bust endpoint — no DB write, no junk key stored
 router.post('/settings/invalidate-cache',
   authorize('SUPER_ADMIN'),
   (req, res) => {

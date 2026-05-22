@@ -123,3 +123,104 @@ exports.sendOtp = async (toEmail, code, expiryMinutes = 10) => {
 exports.sendTransactionHistory = async ({ to, subject, html }) => {
   await _send({ to, subject, html });
 };
+
+/** Email-address verification link */
+exports.sendVerificationEmail = async (toEmail, firstName, verifyToken) => {
+  const appUrl  = process.env.APP_URL ?? 'https://diakite.onrender.com';
+  const link    = `${appUrl}/api/auth/verify-email/${verifyToken}`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8"/></head>
+    <body style="font-family:Arial,sans-serif;padding:40px;color:#111;max-width:520px;margin:0 auto">
+      <h1 style="font-size:24px;font-weight:900;margin:0 0 24px">Diakite</h1>
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:8px">Verify your email</h2>
+      <p style="color:#555;line-height:1.7;margin-bottom:28px">
+        Hi <strong>${firstName}</strong>, welcome aboard! Click the button below to
+        activate your account. The link expires in <strong>24 hours</strong>.
+      </p>
+      <a href="${link}"
+         style="display:inline-block;background:#111;color:#fff;text-decoration:none;
+                padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;
+                letter-spacing:0.3px;margin-bottom:28px">
+        Verify my email
+      </a>
+      <p style="color:#999;font-size:13px;line-height:1.6">
+        Or copy this link into your browser:<br/>
+        <a href="${link}" style="color:#555;word-break:break-all">${link}</a>
+      </p>
+      <p style="color:#aaa;font-size:12px;margin-top:28px">
+        If you didn't create an account you can safely ignore this email.
+      </p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      <p style="color:#ccc;font-size:11px">
+        © ${new Date().getFullYear()} Diakite. All rights reserved.
+      </p>
+    </body></html>
+  `;
+
+  await _send({
+    to:      toEmail,
+    subject: 'Verify your Diakite account',
+    html,
+    text: `Hi ${firstName}, verify your Diakite account here: ${link}\n\nThis link expires in 24 hours.`,
+  });
+};
+
+/** Password reset link email */
+exports.sendPasswordResetEmail = async (toEmail, firstName, resetToken) => {
+  const appUrl = process.env.APP_URL ?? 'https://diakite.onrender.com';
+  // Points to the GET handler that serves the HTML reset form (see auth.controller.js)
+  const link   = `${appUrl}/api/auth/reset-password/${resetToken}`;
+ 
+  const html = `
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8"/></head>
+    <body style="font-family:Arial,sans-serif;padding:40px;color:#111;max-width:520px;margin:0 auto">
+      <h1 style="font-size:24px;font-weight:900;margin:0 0 24px">Diakite</h1>
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:8px">Reset your password</h2>
+      <p style="color:#555;line-height:1.7;margin-bottom:8px">
+        Hi <strong>${firstName}</strong>, we received a request to reset the password on your account.
+      </p>
+      <p style="color:#555;line-height:1.7;margin-bottom:28px">
+        Click the button below to choose a new one.
+        This link expires in <strong>10 minutes</strong>.
+      </p>
+      <a href="${link}"
+         style="display:inline-block;background:#111;color:#fff;text-decoration:none;
+                padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;
+                letter-spacing:0.3px;margin-bottom:28px">
+        Reset my password
+      </a>
+      <p style="color:#999;font-size:13px;line-height:1.6">
+        Or copy this link into your browser:<br/>
+        <a href="${link}" style="color:#555;word-break:break-all">${link}</a>
+      </p>
+      <p style="color:#aaa;font-size:13px;margin-top:20px">
+        If you didn't request a password reset you can safely ignore this email —
+        your password will not change.
+      </p>
+      <hr style="border:none;border-top:1px solid #eee;margin:28px 0"/>
+      <p style="color:#ccc;font-size:11px">
+        © ${new Date().getFullYear()} Diakite. All rights reserved.
+      </p>
+    </body></html>
+  `;
+ 
+  await _send({
+    to:      toEmail,
+    subject: 'Reset your Diakite password',
+    html,
+    text: [
+      `Hi ${firstName},`,
+      '',
+      `We received a request to reset your Diakite password.`,
+      `Click or copy the link below to choose a new one (expires in 10 minutes):`,
+      '',
+      link,
+      '',
+      `If you didn't request this, you can safely ignore this email.`,
+    ].join('\n'),
+  });
+};
+ 

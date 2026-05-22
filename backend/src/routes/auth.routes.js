@@ -4,12 +4,31 @@ const { body } = require('express-validator');
 const authController = require('../controllers/auth.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
+const rateLimit = require('express-rate-limit');
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests, please try again later.' },
+});
+
+const otpLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many OTP requests, please try again later.' },
+});
+
 const router = express.Router();
 
 // ── Public ────────────────────────────────────────────────────────────────────
 
 router.post(
   '/register',
+  authLimiter,
   [
     body('email').isEmail().normalizeEmail(),
     // ✅ Accept Nigerian numbers: starts with 0, 7-10 digits, or international +234
@@ -26,6 +45,7 @@ router.post(
 
 router.post(
   '/login',
+  authLimiter,
   [
     body('email').optional().isEmail().normalizeEmail(),
     body('phone').optional().isMobilePhone(),
@@ -34,12 +54,6 @@ router.post(
   authController.login
 );
 
-/**
- * @route   POST /api/auth/verify-otp
- * @desc    Complete a 2FA-gated login by submitting the OTP
- * @body    { code: string, tempToken: string }
- * @access  Public (tempToken scopes the request to a single user)
- */
 router.post(
   '/verify-otp',
   [
@@ -49,20 +63,16 @@ router.post(
   authController.verifyOtp
 );
 
-/**
- * @route   POST /api/auth/resend-otp
- * @desc    Resend an OTP code within an existing 2FA session
- * @body    { tempToken: string }
- * @access  Public
- */
 router.post(
   '/resend-otp',
+  otpLimiter,
   [body('tempToken').notEmpty()],
   authController.resendOtp
 );
 
 router.post(
   '/forgot-password',
+  authLimiter,
   [body('email').isEmail().normalizeEmail()],
   authController.forgotPassword
 );
@@ -73,7 +83,9 @@ router.post(
   authController.resetPassword
 );
 
-router.post('/verify-email/:token', authController.verifyEmail);
+router.get('/reset-password/:token', authController.getResetPasswordForm);
+
+router.get('/verify-email/:token', authController.verifyEmail);
 
 // ── Private ───────────────────────────────────────────────────────────────────
 
@@ -83,14 +95,8 @@ router.post('/refresh', authenticate, authController.refreshToken);
 
 router.post('/logout', authenticate, authController.logout);
 
-router.post('/resend-verification', authenticate, authController.resendVerification);
+router.post('/resend-verification-email', authLimiter, [body('email').isEmail().normalizeEmail()], authController.resendVerificationByEmail);
 
-/**
- * @route   POST /api/auth/2fa/setup
- * @desc    Step 1 — send OTP to verify identity before enabling 2FA
- * @body    { method: 'SMS' | 'EMAIL' }
- * @access  Private
- */
 router.post(
   '/2fa/setup',
   authenticate,
@@ -98,12 +104,6 @@ router.post(
   authController.setupTwoFactor
 );
 
-/**
- * @route   POST /api/auth/2fa/confirm
- * @desc    Step 2 — confirm OTP and activate 2FA
- * @body    { code: string, tempToken: string, method: 'SMS' | 'EMAIL' }
- * @access  Private
- */
 router.post(
   '/2fa/confirm',
   authenticate,
@@ -115,12 +115,6 @@ router.post(
   authController.confirmSetupTwoFactor
 );
 
-/**
- * @route   POST /api/auth/2fa/disable
- * @desc    Disable 2FA (requires current password)
- * @body    { password: string }
- * @access  Private
- */
 router.post(
   '/2fa/disable',
   authenticate,

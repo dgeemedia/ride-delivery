@@ -1,12 +1,12 @@
 // admin-web/src/pages/Settings/GeneralSettings.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Save, Lock, DollarSign, Settings, Eye, EyeOff, Gift,
+  Save, Lock, DollarSign, Eye, EyeOff, Gift,
   Bell, Zap, ShieldAlert, ClipboardList, FileText,
   RefreshCw, ToggleLeft, ToggleRight, Search, ChevronDown,
-  Building2, Wallet, Shield, X, Plus, Trash2,
+  Building2, Wallet, Plus,
 } from 'lucide-react';
-import { Card, Input, Button, Alert } from '@/components/common';
+import { Input, Button, Alert } from '@/components/common';
 import { settingsAPI } from '@/services/api/settings';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
@@ -73,28 +73,25 @@ interface Recipient {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ACCENT PALETTE
-// Mirrors the Dashboard StatsCard pattern: solid filled square + white icon.
-// `bar`   — left accent stripe on the card
-// `solid` — solid bg for the icon box (matches Dashboard's `color` prop)
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface AccentConfig {
-  bar:   string; // left accent bar color (matches solid)
-  solid: string; // solid icon-box background — white icon sits on top
+  bar:   string;
+  solid: string;
 }
 
 const ACCENT: Record<string, AccentConfig> = {
-  platform:           { bar: '#185FA5', solid: '#185FA5' }, // blue
-  legal:              { bar: '#0F6E56', solid: '#0F6E56' }, // teal
-  pricing:            { bar: '#3B6D11', solid: '#3B6D11' }, // green
-  surge:              { bar: '#BA7517', solid: '#BA7517' }, // amber
-  notifications:      { bar: '#534AB7', solid: '#534AB7' }, // purple
-  wallet:             { bar: '#1D9E75', solid: '#1D9E75' }, // teal-mid
-  password:           { bar: '#5F5E5A', solid: '#5F5E5A' }, // gray
-  audit:              { bar: '#5F5E5A', solid: '#5F5E5A' }, // gray
-  'onboarding-bonus': { bar: '#993556', solid: '#993556' }, // pink
-  'custom-bonus':     { bar: '#993556', solid: '#993556' }, // pink
-  danger:             { bar: '#A32D2D', solid: '#A32D2D' }, // red
+  platform:           { bar: '#185FA5', solid: '#185FA5' },
+  legal:              { bar: '#0F6E56', solid: '#0F6E56' },
+  pricing:            { bar: '#3B6D11', solid: '#3B6D11' },
+  surge:              { bar: '#BA7517', solid: '#BA7517' },
+  notifications:      { bar: '#534AB7', solid: '#534AB7' },
+  wallet:             { bar: '#1D9E75', solid: '#1D9E75' },
+  password:           { bar: '#5F5E5A', solid: '#5F5E5A' },
+  audit:              { bar: '#5F5E5A', solid: '#5F5E5A' },
+  'onboarding-bonus': { bar: '#993556', solid: '#993556' },
+  'custom-bonus':     { bar: '#993556', solid: '#993556' },
+  danger:             { bar: '#A32D2D', solid: '#A32D2D' },
 };
 
 const DEFAULT_ACCENT: AccentConfig = { bar: '#5F5E5A', solid: '#5F5E5A' };
@@ -134,18 +131,12 @@ const SettingCard: React.FC<SettingCardProps> = ({
           : 'border-gray-200 hover:border-gray-300',
       )}
     >
-      {/* ── colored left accent bar ─────────────────────────────────────── */}
       <div className="flex">
         <div
           className="w-1 flex-shrink-0 rounded-l-xl transition-opacity duration-200"
-          style={{
-            background: accent.bar,
-            opacity: isOpen ? 1 : 0.55,
-          }}
+          style={{ background: accent.bar, opacity: isOpen ? 1 : 0.55 }}
         />
-
         <div className="flex-1 min-w-0">
-          {/* ── trigger ───────────────────────────────────────────────── */}
           <button
             type="button"
             onClick={() => onToggle(id)}
@@ -154,14 +145,12 @@ const SettingCard: React.FC<SettingCardProps> = ({
               isOpen ? 'bg-gray-50' : 'hover:bg-gray-50/60',
             )}
           >
-            {/* solid icon box — mirrors Dashboard StatsCard */}
             <span
               className="flex items-center justify-center w-10 h-10 rounded-lg flex-shrink-0 text-white"
               style={{ background: accent.solid }}
             >
               {icon}
             </span>
-
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-sm font-medium text-gray-900">{title}</h3>
@@ -169,7 +158,6 @@ const SettingCard: React.FC<SettingCardProps> = ({
               </div>
               <p className="text-xs text-gray-400 mt-0.5 truncate">{subtitle}</p>
             </div>
-
             <ChevronDown
               className={cn(
                 'h-4 w-4 text-gray-400 flex-shrink-0 transition-transform duration-200',
@@ -177,8 +165,6 @@ const SettingCard: React.FC<SettingCardProps> = ({
               )}
             />
           </button>
-
-          {/* ── body ──────────────────────────────────────────────────── */}
           <div
             ref={bodyRef}
             className={cn(
@@ -204,12 +190,6 @@ const SuperAdminBadge = () => (
   <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
     <Lock className="h-2.5 w-2.5" />Super Admin
   </span>
-);
-
-const SectionDivider: React.FC<{ label: string }> = ({ label }) => (
-  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mt-5 mb-2 col-span-full">
-    {label}
-  </p>
 );
 
 const getPasswordStrength = (pw: string) => {
@@ -354,7 +334,7 @@ const PlatformSection: React.FC = () => {
 
   const statusLabel = (() => {
     if (!form.maintenance) return null;
-    const now = new Date();
+    const now    = new Date();
     const starts = form.maintenanceStartsAt ? new Date(form.maintenanceStartsAt) : null;
     const ends   = form.maintenanceEndsAt   ? new Date(form.maintenanceEndsAt)   : null;
     if (starts && starts > now) return `Scheduled — starts ${starts.toLocaleString('en-NG')}`;
@@ -1014,7 +994,46 @@ const WalletLimitsSection: React.FC = () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PASSWORD SECTION
+// PwField is defined OUTSIDE PasswordSection so React doesn't recreate the
+// component type on every render — avoids losing focus after each keystroke.
 // ─────────────────────────────────────────────────────────────────────────────
+
+interface PwFieldProps {
+  label:    string;
+  name:     'currentPassword' | 'newPassword' | 'confirmPassword';
+  field:    'current' | 'next' | 'confirm';
+  hint?:    string;
+  value:    string;
+  show:     boolean;
+  onToggle: () => void;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}
+
+const PwField: React.FC<PwFieldProps> = ({ label, name, field, hint, value, show, onToggle, onChange }) => (
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+    <div className="relative">
+      <input
+        name={name}
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={onChange}
+        className="w-full px-3 py-2 pr-10 rounded-lg border border-gray-300 text-sm
+          focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+      />
+      <button
+        type="button"
+        onClick={onToggle}
+        tabIndex={-1}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+    {hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
+  </div>
+);
 
 const PasswordSection: React.FC = () => {
   const [form, setForm]       = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -1025,6 +1044,9 @@ const PasswordSection: React.FC = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+
+  const toggle = (field: 'current' | 'next' | 'confirm') =>
+    setShow(s => ({ ...s, [field]: !s[field] }));
 
   const handleSubmit = async () => {
     setError('');
@@ -1040,47 +1062,60 @@ const PasswordSection: React.FC = () => {
     } finally { setLoading(false); }
   };
 
-  const ToggleEye = ({ field }: { field: 'current' | 'next' | 'confirm' }) => (
-    <button type="button" onClick={() => setShow(s => ({ ...s, [field]: !s[field] }))}
-      className="text-gray-400 hover:text-gray-600 transition-colors">
-      {show[field] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-    </button>
-  );
-
   return (
     <div className="space-y-4 max-w-md">
       {error && <Alert variant="error">{error}</Alert>}
-      <div className="relative">
-        <Input label="Current password" name="currentPassword"
-          type={show.current ? 'text' : 'password'} value={form.currentPassword} onChange={handleChange} />
-        <span className="absolute right-3 top-[34px]"><ToggleEye field="current" /></span>
-      </div>
-      <div className="relative">
-        <Input label="New password" name="newPassword"
-          type={show.next ? 'text' : 'password'} value={form.newPassword}
-          onChange={handleChange} hint="Minimum 8 characters" />
-        <span className="absolute right-3 top-[34px]"><ToggleEye field="next" /></span>
+
+      <PwField
+        label="Current password"
+        name="currentPassword"
+        field="current"
+        value={form.currentPassword}
+        show={show.current}
+        onToggle={() => toggle('current')}
+        onChange={handleChange}
+      />
+
+      <div>
+        <PwField
+          label="New password"
+          name="newPassword"
+          field="next"
+          hint="Minimum 8 characters"
+          value={form.newPassword}
+          show={show.next}
+          onToggle={() => toggle('next')}
+          onChange={handleChange}
+        />
         {form.newPassword && (
           <div className="mt-2">
             <div className="flex gap-1 mb-1">
-              {[1,2,3,4,5].map(i => (
+              {[1, 2, 3, 4, 5].map(i => (
                 <div key={i} className={cn('h-1 flex-1 rounded-full transition-colors',
                   i <= strength.score ? strength.color : 'bg-gray-200')} />
               ))}
             </div>
             <p className={cn('text-xs font-medium',
-              strength.score <= 1 ? 'text-red-500' : strength.score === 2 ? 'text-orange-400' :
-              strength.score === 3 ? 'text-yellow-500' : 'text-green-600')}>
+              strength.score <= 1 ? 'text-red-500'
+              : strength.score === 2 ? 'text-orange-400'
+              : strength.score === 3 ? 'text-yellow-500'
+              : 'text-green-600')}>
               {strength.label}
             </p>
           </div>
         )}
       </div>
-      <div className="relative">
-        <Input label="Confirm new password" name="confirmPassword"
-          type={show.confirm ? 'text' : 'password'} value={form.confirmPassword} onChange={handleChange} />
-        <span className="absolute right-3 top-[34px]"><ToggleEye field="confirm" /></span>
-      </div>
+
+      <PwField
+        label="Confirm new password"
+        name="confirmPassword"
+        field="confirm"
+        value={form.confirmPassword}
+        show={show.confirm}
+        onToggle={() => toggle('confirm')}
+        onChange={handleChange}
+      />
+
       <Button loading={loading} onClick={handleSubmit}>
         <Save className="h-4 w-4" />Update password
       </Button>
@@ -1636,34 +1671,11 @@ const GeneralSettings: React.FC = () => {
       component: <LegalContentSection />,
     },
     {
-      id: 'pricing',
-      icon: <DollarSign className="h-4 w-4" />,
-      title: 'Fare pricing',
-      subtitle: 'Base fares, per-km rates, commissions — live on next fare request',
-      component: <PricingSection />,
-      wide: true,
-    },
-    {
-      id: 'surge',
-      icon: <Zap className="h-4 w-4" />,
-      title: 'Surge windows',
-      subtitle: 'Dynamic pricing schedules stored in DB',
-      component: <SurgeSection />,
-    },
-    {
       id: 'notifications',
       icon: <Bell className="h-4 w-4" />,
       title: 'Notifications',
       subtitle: 'Quiet hours and broadcast frequency limits',
       component: <NotificationsSection />,
-    },
-    {
-      id: 'wallet',
-      icon: <Wallet className="h-4 w-4" />,
-      title: 'Wallet limits',
-      subtitle: 'Min/max top-up amounts per transaction',
-      component: <WalletLimitsSection />,
-      superAdmin: true,
     },
     {
       id: 'password',
@@ -1684,8 +1696,33 @@ const GeneralSettings: React.FC = () => {
         id: 'onboarding-bonus',
         icon: <Gift className="h-4 w-4" />,
         title: 'Onboarding bonus',
-        subtitle: 'Credit approved drivers & partners who haven\'t received one yet',
+        subtitle: "Credit approved drivers & partners who haven't received one yet",
         component: <OnboardingBonusSection />,
+        superAdmin: true,
+      },
+      {
+        id: 'pricing',
+        icon: <DollarSign className="h-4 w-4" />,
+        title: 'Fare pricing',
+        subtitle: 'Base fares, per-km rates, commissions — live on next fare request',
+        component: <PricingSection />,
+        wide: true,
+        superAdmin: true,
+      },
+      {
+        id: 'surge',
+        icon: <Zap className="h-4 w-4" />,
+        title: 'Surge windows',
+        subtitle: 'Dynamic pricing schedules stored in DB',
+        component: <SurgeSection />,
+        superAdmin: true,
+      },
+      {
+        id: 'wallet',
+        icon: <Wallet className="h-4 w-4" />,
+        title: 'Wallet limits',
+        subtitle: 'Min/max top-up amounts per transaction',
+        component: <WalletLimitsSection />,
         superAdmin: true,
       },
       {
@@ -1730,8 +1767,6 @@ const GeneralSettings: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 px-1">
-
-      {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
         <p className="text-gray-500 mt-1 text-sm">
@@ -1739,12 +1774,10 @@ const GeneralSettings: React.FC = () => {
         </p>
       </div>
 
-      {/* Regular settings grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {regularCards.map(renderCard)}
       </div>
 
-      {/* Super Admin section */}
       {isSuperAdmin && (
         <div>
           <div className="flex items-center gap-3 mb-3">

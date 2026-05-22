@@ -3,13 +3,18 @@ import api from './index';
 import { ApiResponse, PaginatedResponse, User } from '@/types';
 
 export interface CreateAdminPayload {
-  email: string;
-  phone: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  role: 'ADMIN' | 'SUPPORT' | 'MODERATOR';
-  adminDepartment?: 'RIDES' | 'DELIVERIES' | 'SUPPORT' | null;
+  email: string; phone: string; password: string;
+  firstName: string; lastName: string;
+  role: 'SUPER_ADMIN'|'ADMIN'|'SUPPORT'|'MODERATOR'|'CUSTOMER'|'DRIVER'|'DELIVERY_PARTNER';
+  adminDepartment?: 'RIDES'|'DELIVERIES'|'SUPPORT' | null;
+  // Driver
+  licenseNumber?: string;
+  vehicleType?:   'BIKE'|'CAR'|'MOTORCYCLE'|'VAN'|'TRICYCLE';
+  vehicleMake?:   string;
+  vehicleModel?:  string;
+  vehicleYear?:   string;
+  vehicleColor?:  string;
+  vehiclePlate?:  string;
 }
 
 export const usersAPI = {

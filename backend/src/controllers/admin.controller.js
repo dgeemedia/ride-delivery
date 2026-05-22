@@ -1834,10 +1834,9 @@ exports.createAdminUser = async (req, res) => {
   } = req.body;
  
   // Only ADMIN, SUPPORT, MODERATOR can be created here (not CUSTOMER/DRIVER/etc.)
-  const allowedRoles = ['ADMIN', 'SUPPORT', 'MODERATOR'];
-  if (!allowedRoles.includes(role))
-    throw new AppError(`Role must be one of: ${allowedRoles.join(', ')}`, 400);
- 
+  const allowedRoles = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'MODERATOR', 'CUSTOMER', 'DRIVER', 'DELIVERY_PARTNER'];
+if (!allowedRoles.includes(role))
+  throw new AppError(`Role must be one of: ${allowedRoles.join(', ')}`, 400);
   const existing = await prisma.user.findFirst({
     where: { OR: [{ email }, { phone }] },
   });
@@ -1845,32 +1844,87 @@ exports.createAdminUser = async (req, res) => {
  
   const hashed = await bcrypt.hash(password, 10);
  
-  const user = await prisma.user.create({
+const user = await prisma.user.create({
+  data: {
+    email, phone, firstName, lastName,
+    password:        hashed,
+    role,
+    adminDepartment: ['ADMIN', 'SUPPORT', 'MODERATOR', 'SUPER_ADMIN'].includes(role)
+      ? (adminDepartment ?? null)
+      : null,
+    isVerified:      true,
+    isActive:        true,
+  },
+  select: {
+    id: true, email: true, phone: true, firstName: true, lastName: true,
+    role: true, adminDepartment: true, isActive: true, createdAt: true,
+  },
+});
+
+// Create wallet for all roles
+await prisma.wallet.create({
+  data: { userId: user.id, balance: 0, currency: 'NGN' },
+});
+
+// Create role-specific profile
+if (role === 'DRIVER') {
+  const {
+    licenseNumber, vehicleType, vehicleMake, vehicleModel,
+    vehicleYear, vehicleColor, vehiclePlate,
+  } = req.body;
+
+  // Check for duplicates
+  const [plateExists, licenseExists] = await Promise.all([
+    prisma.driverProfile.findUnique({ where: { vehiclePlate } }),
+    prisma.driverProfile.findUnique({ where: { licenseNumber } }),
+  ]);
+  if (plateExists)   throw new AppError('A driver with this vehicle plate already exists', 400);
+  if (licenseExists) throw new AppError('A driver with this license number already exists', 400);
+
+  await prisma.driverProfile.create({
     data: {
-      email, phone, firstName, lastName,
-      password:        hashed,
-      role,
-      adminDepartment: adminDepartment ?? null,
-      isVerified:      true,   // admin accounts are pre-verified
-      isActive:        true,
-    },
-    select: {
-      id: true, email: true, phone: true, firstName: true, lastName: true,
-      role: true, adminDepartment: true, isActive: true, createdAt: true,
+      userId:       user.id,
+      licenseNumber,
+      vehicleType,
+      vehicleMake,
+      vehicleModel,
+      vehicleYear:  parseInt(vehicleYear),
+      vehicleColor,
+      vehiclePlate,
+      isApproved:   true,
+      approvedBy:   req.user.id,
+      approvedAt:   new Date(),
     },
   });
- 
-  // Create wallet
-  await prisma.wallet.create({
-    data: { userId: user.id, balance: 0, currency: 'NGN' },
+}
+
+if (role === 'DELIVERY_PARTNER') {
+  const { vehicleType, vehiclePlate } = req.body;
+
+  await prisma.deliveryPartnerProfile.create({
+    data: {
+      userId:      user.id,
+      vehicleType,
+      vehiclePlate: vehiclePlate || null,
+      isApproved:   true,
+      approvedBy:   req.user.id,
+      approvedAt:   new Date(),
+    },
   });
+}
  
   await logActivity({
     userId: req.user.id,
     action: 'admin_user_created',
     entityType: 'User',
     entityId: user.id,
-    details: { role, adminDepartment, createdEmail: email },
+    details: {
+    role,
+    adminDepartment,
+    createdEmail: email,
+    ...(role === 'DRIVER'            && { vehiclePlate: req.body.vehiclePlate }),
+    ...(role === 'DELIVERY_PARTNER'  && { vehiclePlate: req.body.vehiclePlate }),
+  },
     req,
   });
  

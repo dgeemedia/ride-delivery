@@ -2,11 +2,6 @@
 const prisma = require('../lib/prisma');
 const { AppError } = require('../middleware/errorHandler');
 
-/**
- * @desc    Get all notifications for current user
- * @route   GET /api/notifications
- * @access  Private
- */
 exports.getNotifications = async (req, res) => {
   const { page = 1, limit = 20, unreadOnly } = req.query;
   const skip = (page - 1) * limit;
@@ -41,11 +36,6 @@ exports.getNotifications = async (req, res) => {
   });
 };
 
-/**
- * @desc    Mark a single notification as read
- * @route   PUT /api/notifications/:id/read
- * @access  Private
- */
 exports.markAsRead = async (req, res) => {
   const { id } = req.params;
 
@@ -65,11 +55,6 @@ exports.markAsRead = async (req, res) => {
   });
 };
 
-/**
- * @desc    Mark all notifications as read
- * @route   PUT /api/notifications/read-all
- * @access  Private
- */
 exports.markAllAsRead = async (req, res) => {
   const { count } = await prisma.notification.updateMany({
     where: { userId: req.user.id, isRead: false },
@@ -82,11 +67,6 @@ exports.markAllAsRead = async (req, res) => {
   });
 };
 
-/**
- * @desc    Delete a notification
- * @route   DELETE /api/notifications/:id
- * @access  Private
- */
 exports.deleteNotification = async (req, res) => {
   const { id } = req.params;
 
@@ -99,11 +79,6 @@ exports.deleteNotification = async (req, res) => {
   res.status(200).json({ success: true, message: 'Notification deleted' });
 };
 
-/**
- * @desc    Delete all notifications for current user
- * @route   DELETE /api/notifications
- * @access  Private
- */
 exports.clearAll = async (req, res) => {
   const { count } = await prisma.notification.deleteMany({
     where: { userId: req.user.id }
@@ -112,17 +87,16 @@ exports.clearAll = async (req, res) => {
   res.status(200).json({ success: true, message: `${count} notification(s) cleared` });
 };
 
-/**
- * @desc    Get unread notification count (for badge)
- * @route   GET /api/notifications/count
- * @access  Private
- */
 exports.getUnreadCount = async (req, res) => {
-  const count = await prisma.notification.count({
-    where: { userId: req.user.id, isRead: false }
-  });
-
-  res.status(200).json({ success: true, data: { count } });
+  try {
+    const count = await prisma.notification.count({
+      where: { userId: req.user.id, isRead: false }
+    });
+    res.status(200).json({ success: true, data: { count } });
+  } catch (err) {
+    console.error('[notifications] getUnreadCount error:', err.message, err.code);
+    res.status(503).json({ success: false, message: err.message });
+  }
 };
 
 module.exports = exports;

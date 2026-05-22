@@ -116,7 +116,7 @@ const sendOtp = async (user, code, method = 'SMS') => {
     message: `Your login code is: ${code}. It expires in ${OTP_EXPIRY_MIN} minutes. Do not share this code.`,
     type:    'OTP_CODE',
     data: {
-      ...(process.env.NODE_ENV !== 'production' && { code }),
+      ...(process.env.NODE_ENV === 'development' && { code }),
     },
   });
 };
