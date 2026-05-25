@@ -9,11 +9,6 @@ const notificationService = require('../services/notification.service');
 // PAYSTACK FLOWS
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Initialize Paystack transaction
- * @route   POST /api/payments/paystack/initialize
- * @access  Private
- */
 exports.paystackInitialize = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -43,11 +38,6 @@ exports.paystackInitialize = async (req, res) => {
   });
 };
 
-/**
- * @desc    Verify Paystack payment and record it
- * @route   POST /api/payments/paystack/verify
- * @access  Private
- */
 exports.paystackVerify = async (req, res) => {
   const { reference } = req.body;
   if (!reference) throw new AppError('Payment reference is required', 400);
@@ -89,11 +79,6 @@ exports.paystackVerify = async (req, res) => {
   res.status(201).json({ success: true, message: 'Payment verified and recorded', data: { payment } });
 };
 
-/**
- * @desc    Paystack webhook (called by Paystack server)
- * @route   POST /api/payments/paystack/webhook
- * @access  Public (HMAC-verified)
- */
 exports.paystackWebhook = async (req, res) => {
   const signature = req.headers['x-paystack-signature'];
   const isValid = paymentService.validatePaystackWebhook(signature, req.rawBody);
@@ -143,11 +128,6 @@ exports.paystackWebhook = async (req, res) => {
 // FLUTTERWAVE FLOWS
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Initialize Flutterwave payment
- * @route   POST /api/payments/flutterwave/initialize
- * @access  Private
- */
 exports.flutterwaveInitialize = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -174,11 +154,6 @@ exports.flutterwaveInitialize = async (req, res) => {
   res.status(200).json({ success: true, data: { paymentLink: transaction.link, txRef } });
 };
 
-/**
- * @desc    Verify Flutterwave payment
- * @route   POST /api/payments/flutterwave/verify
- * @access  Private
- */
 exports.flutterwaveVerify = async (req, res) => {
   const { transactionId } = req.body;
   if (!transactionId) throw new AppError('Transaction ID is required', 400);
@@ -219,11 +194,6 @@ exports.flutterwaveVerify = async (req, res) => {
   res.status(201).json({ success: true, message: 'Payment verified and recorded', data: { payment } });
 };
 
-/**
- * @desc    Flutterwave webhook
- * @route   POST /api/payments/flutterwave/webhook
- * @access  Public (hash-verified)
- */
 exports.flutterwaveWebhook = async (req, res) => {
   const signature = req.headers['verif-hash'];
   if (!paymentService.validateFlutterwaveWebhook(signature)) {
@@ -269,11 +239,6 @@ exports.flutterwaveWebhook = async (req, res) => {
 // CASH PAYMENT
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Record a cash payment
- * @route   POST /api/payments/cash
- * @access  Private
- */
 exports.processCash = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -308,11 +273,6 @@ exports.processCash = async (req, res) => {
 // WALLET PAYMENT
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Pay for a ride or delivery using wallet balance
- * @route   POST /api/payments/wallet
- * @access  Private
- */
 exports.processWalletPayment = async (req, res) => {
   const { rideId, deliveryId, amount } = req.body;
 
@@ -414,11 +374,6 @@ exports.processWalletPayment = async (req, res) => {
 // REFUND
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Request refund
- * @route   POST /api/payments/:id/refund
- * @access  Private
- */
 exports.requestRefund = async (req, res) => {
   const { id } = req.params;
   const { amount } = req.body;
@@ -483,21 +438,11 @@ exports.requestRefund = async (req, res) => {
 // BANK ACCOUNT UTILITIES
 // ─────────────────────────────────────────────
 
-/**
- * @desc    List Nigerian banks
- * @route   GET /api/payments/banks
- * @access  Private
- */
 exports.listBanks = async (req, res) => {
   const banks = await paymentService.paystackListBanks();
   res.status(200).json({ success: true, data: { banks } });
 };
 
-/**
- * @desc    Verify a Nigerian bank account
- * @route   POST /api/payments/verify-account
- * @access  Private
- */
 exports.verifyBankAccount = async (req, res) => {
   const { accountNumber, bankCode } = req.body;
   const account = await paymentService.paystackVerifyAccount(accountNumber, bankCode);
@@ -508,11 +453,6 @@ exports.verifyBankAccount = async (req, res) => {
 // HISTORY & STATS
 // ─────────────────────────────────────────────
 
-/**
- * @desc    Get payment history
- * @route   GET /api/payments/history
- * @access  Private
- */
 exports.getHistory = async (req, res) => {
   const { page = 1, limit = 10, status } = req.query;
   const skip = (page - 1) * limit;
@@ -539,11 +479,6 @@ exports.getHistory = async (req, res) => {
   });
 };
 
-/**
- * @desc    Get payment by ID
- * @route   GET /api/payments/:id
- * @access  Private
- */
 exports.getPaymentById = async (req, res) => {
   const { id } = req.params;
 
@@ -562,11 +497,6 @@ exports.getPaymentById = async (req, res) => {
   res.status(200).json({ success: true, data: { payment } });
 };
 
-/**
- * @desc    Get payment stats
- * @route   GET /api/payments/stats
- * @access  Private
- */
 exports.getStats = async (req, res) => {
   const { period = 'all' } = req.query;
   let dateFilter = {};

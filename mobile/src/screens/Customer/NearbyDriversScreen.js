@@ -270,7 +270,7 @@ const insets = useSafeAreaInsets();
       });
       onSuccess(res?.data?.ride ?? res?.ride);
     } catch (err) {
-      Alert.alert('Could not request', err?.response?.data?.message ?? 'Please try again.');
+      Alert.alert('Could not request', err?.message ?? err?.error ?? 'Please try again.');
       setRequesting(false);
     }
   };
