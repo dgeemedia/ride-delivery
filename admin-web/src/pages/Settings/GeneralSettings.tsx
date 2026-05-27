@@ -1662,6 +1662,7 @@ const GeneralSettings: React.FC = () => {
       title: 'Platform',
       subtitle: 'Brand name, contact info, and maintenance mode',
       component: <PlatformSection />,
+      wide: true,
     },
     {
       id: 'legal',

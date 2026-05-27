@@ -4,6 +4,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Alert, KeyboardAvoidingView, Platform, ScrollView,
   Animated, StatusBar, ActivityIndicator, Dimensions,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -61,7 +62,7 @@ function getStrength(pwd) {
   if (/[A-Z]/.test(pwd))        score++;
   if (/[0-9]/.test(pwd))        score++;
   if (/[^A-Za-z0-9]/.test(pwd)) score++;
-  return score; // 0–4
+  return score;
 }
 
 const STRENGTH_LABELS = ['', 'Weak', 'Fair', 'Good', 'Strong'];
@@ -100,6 +101,76 @@ const r = StyleSheet.create({
   txt: { fontSize: 12, fontWeight: '500' },
 });
 
+// ── Success Screen ────────────────────────────────────────────────────────────
+const SuccessScreen = ({ theme, onDone }) => {
+  const scaleA  = useRef(new Animated.Value(0.6)).current;
+  const fadeA   = useRef(new Animated.Value(0)).current;
+  const slideA  = useRef(new Animated.Value(30)).current;
+  const ringA   = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Icon bounces in
+    Animated.spring(scaleA, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }).start();
+    // Text fades + slides up with a slight delay
+    Animated.parallel([
+      Animated.timing(fadeA,  { toValue: 1, duration: 400, delay: 200, useNativeDriver: true }),
+      Animated.timing(slideA, { toValue: 0, duration: 400, delay: 200, useNativeDriver: true }),
+    ]).start();
+    // Ring pulses in
+    Animated.timing(ringA, { toValue: 1, duration: 600, delay: 100, useNativeDriver: true }).start();
+  }, []);
+
+  const ringScale  = ringA.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] });
+  const ringOpacity = ringA.interpolate({ inputRange: [0, 1], outputRange: [0, 0.18] });
+
+  return (
+    <View style={ss.root}>
+      {/* Outer decorative ring */}
+      <Animated.View style={[ss.ring, { borderColor: '#5DAA72', transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
+
+      {/* Icon circle */}
+      <Animated.View style={[ss.iconCircle, { backgroundColor: '#5DAA7218', borderColor: '#5DAA7235', transform: [{ scale: scaleA }] }]}>
+        <Ionicons name="checkmark-circle" size={64} color="#5DAA72" />
+      </Animated.View>
+
+      <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }], alignItems: 'center' }}>
+        <Text style={[ss.title, { color: theme.foreground }]}>Password Changed!</Text>
+        <Text style={[ss.sub, { color: theme.hint }]}>
+          Your password has been updated successfully.{'\n'}Keep it safe and don't share it with anyone.
+        </Text>
+
+        {/* Security tip card */}
+        <View style={[ss.tipCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+          <Ionicons name="shield-outline" size={15} color={theme.hint} style={{ marginTop: 1 }} />
+          <Text style={[ss.tipTxt, { color: theme.hint }]}>
+            You'll stay logged in on this device. Other sessions may require you to sign in again.
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={[ss.btn, { backgroundColor: theme.accent, shadowColor: theme.accent }]}
+          onPress={onDone}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="arrow-back-outline" size={18} color={theme.accentFg} />
+          <Text style={[ss.btnTxt, { color: theme.accentFg }]}>Back to Settings</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
+  );
+};
+const ss = StyleSheet.create({
+  root:       { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, paddingVertical: 40 },
+  ring:       { position: 'absolute', width: 200, height: 200, borderRadius: 100, borderWidth: 30 },
+  iconCircle: { width: 110, height: 110, borderRadius: 35, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', marginBottom: 28 },
+  title:      { fontSize: 26, fontWeight: '900', letterSpacing: -0.5, textAlign: 'center', marginBottom: 12 },
+  sub:        { fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: 24 },
+  tipCard:    { flexDirection: 'row', gap: 10, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 32, alignSelf: 'stretch' },
+  tipTxt:     { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '500' },
+  btn:        { borderRadius: 14, height: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, alignSelf: 'stretch', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 14, elevation: 8 },
+  btnTxt:     { fontSize: 16, fontWeight: '700' },
+});
+
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 export default function ChangePasswordScreen({ navigation }) {
   const { theme, mode } = useTheme();
@@ -108,15 +179,14 @@ export default function ChangePasswordScreen({ navigation }) {
   const [current, setCurrent] = useState('');
   const [next,    setNext]    = useState('');
   const [confirm, setConfirm] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [loading,    setLoading]    = useState(false);
+  const [success,    setSuccess]    = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [otpStep,     setOtpStep]     = useState(false);
   const [otpCode,     setOtpCode]     = useState('');
   const [tempToken,   setTempToken]   = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
   const [maskedPhone, setMaskedPhone] = useState('');
-  // KEY: measured header height drives kvoOffset for KeyboardAvoidingView
-  // — same pattern as SubmitTicketScreen.
   const [headerH, setHeaderH] = useState(56);
 
   const fadeA  = useRef(new Animated.Value(0)).current;
@@ -140,6 +210,17 @@ export default function ChangePasswordScreen({ navigation }) {
   const passwordsMatch = next === confirm && next.length > 0;
   const canSubmit      = current.length > 0 && allRulesMet && passwordsMatch;
 
+  // Pull-to-refresh just resets the form
+  const onRefresh = () => {
+    setRefreshing(true);
+    setCurrent('');
+    setNext('');
+    setConfirm('');
+    setOtpCode('');
+    setOtpStep(false);
+    setTimeout(() => setRefreshing(false), 600);
+  };
+
   const handleChange = async () => {
     if (!canSubmit) return;
     setLoading(true);
@@ -152,7 +233,6 @@ export default function ChangePasswordScreen({ navigation }) {
         setOtpStep(true);
       } else {
         setSuccess(true);
-        setTimeout(() => navigation.goBack(), 1600);
       }
     } catch (e) {
       Alert.alert('Error', e?.message ?? e?.error ?? 'Could not update password.');
@@ -167,7 +247,6 @@ export default function ChangePasswordScreen({ navigation }) {
     try {
       await userAPI.verifyPasswordChangeOtp({ code: otpCode, tempToken, newPassword: next });
       setSuccess(true);
-      setTimeout(() => navigation.goBack(), 1600);
     } catch (e) {
       Alert.alert('Error', e?.message ?? 'Invalid or expired code.');
     } finally {
@@ -175,18 +254,13 @@ export default function ChangePasswordScreen({ navigation }) {
     }
   };
 
-  // KEY: KVO offset = full header height (includes insets.top via paddingTop).
-  // Mirrors SubmitTicketScreen's kvoOffset so the keyboard never clips the
-  // scroll area on either platform.
   const kvoOffset = headerH;
 
   return (
-    // Root View — NOT a KAV. The KAV wraps only the scroll area below the
-    // header, same pattern as SubmitTicketScreen, so the header never jumps.
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
-      {/* ── Sticky header — measured for accurate kvoOffset ──────────────── */}
+      {/* ── Sticky header ──────────────────────────────────────────────────── */}
       <View
         style={[s.header, {
           paddingTop:        insets.top + 10,
@@ -204,145 +278,156 @@ export default function ChangePasswordScreen({ navigation }) {
           <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
         <Text style={[s.headerTitle, { color: theme.foreground }]}>Change Password</Text>
-        {/* Spacer mirrors backBtn width to keep title centred */}
         <View style={s.headerSpacer} />
       </View>
 
-      {/* ── KAV wraps ONLY the scroll container below the header ─────────── */}
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={kvoOffset}
-      >
-        <ScrollView
-          contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
+      {/* ── Success screen — rendered OUTSIDE the KAV/scroll so it fills the space ── */}
+      {success ? (
+        <SuccessScreen theme={theme} onDone={() => navigation.goBack()} />
+      ) : (
+        /* ── KAV wraps ONLY the scroll container below the header ─────────── */
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={kvoOffset}
         >
-          
-          {otpStep ? (
-          /* ── OTP verification step ── */
-          <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
-            <View style={[s.iconWrap, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '25' }]}>
-              <Ionicons name="shield-checkmark-outline" size={28} color={theme.accent} />
-            </View>
-            <Text style={[s.intro, { color: theme.foreground, fontWeight: '700', marginBottom: 6 }]}>
-              Verify it's you
-            </Text>
-            <Text style={[s.intro, { color: theme.hint }]}>
-              A code was sent to{' '}
-              {maskedEmail ? <Text style={{ color: theme.foreground }}>{maskedEmail}</Text> : null}
-              {maskedEmail && maskedPhone ? ' and ' : ''}
-              {maskedPhone ? <Text style={{ color: theme.foreground }}>{maskedPhone}</Text> : null}
-            </Text>
-
-            <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 12 }]}>VERIFICATION CODE</Text>
-            <Animated.View style={[s.inputBox, { backgroundColor: theme.backgroundAlt, borderColor: theme.accent }]}>
-              <Ionicons name="key-outline" size={16} color={theme.accent} style={s.inputIcon} />
-              <TextInput
-                style={[s.inputText, { color: theme.foreground, paddingTop: 4 }]}
-                value={otpCode}
-                onChangeText={setOtpCode}
-                keyboardType="number-pad"
-                maxLength={6}
-                placeholder="Enter 6-digit code"
-                placeholderTextColor={theme.hint}
-                autoFocus
+          <ScrollView
+            contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={theme.accent}
+                colors={[theme.accent]}
               />
-            </Animated.View>
-
-            <TouchableOpacity
-              style={[
-                s.submitBtn,
-                { backgroundColor: success ? '#5DAA72' : theme.accent, shadowColor: theme.accent },
-                (!otpCode.trim() || loading) && { opacity: 0.4 },
-              ]}
-              onPress={handleVerifyOtp}
-              disabled={!otpCode.trim() || loading || success}
-              activeOpacity={0.85}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <Ionicons name={success ? 'checkmark' : 'shield-checkmark-outline'} size={18} color="#FFFFFF" />
-                  <Text style={s.submitTxt}>{success ? 'Password Updated!' : 'Confirm Change'}</Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => setOtpStep(false)} style={{ alignItems: 'center', marginTop: 16 }}>
-              <Text style={{ color: theme.hint, fontSize: 13 }}>← Go back</Text>
-            </TouchableOpacity>
-          </Animated.View>
-
-        ) : (
-          <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
-
-            {/* Icon */}
-            <View style={[s.iconWrap, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '25' }]}>
-              <Ionicons name="lock-closed-outline" size={28} color={theme.accent} />
-            </View>
-            <Text style={[s.intro, { color: theme.hint }]}>
-              Choose a strong password you don't use elsewhere.
-            </Text>
-
-            {/* Current password */}
-            <Text style={[s.sectionLabel, { color: theme.hint }]}>CURRENT PASSWORD</Text>
-            <PwdInput label="Current Password" iconName="lock-closed-outline" value={current} onChangeText={setCurrent} />
-
-            {/* New password */}
-            <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 4 }]}>NEW PASSWORD</Text>
-            <PwdInput label="New Password"            iconName="key-outline" value={next}    onChangeText={setNext}    />
-            <StrengthBar password={next} theme={theme} />
-            <PwdInput label="Confirm New Password"    iconName="key-outline" value={confirm} onChangeText={setConfirm} />
-
-            {/* Match indicator */}
-            {confirm.length > 0 && (
-              <View style={s.matchRow}>
-                <Ionicons
-                  name={passwordsMatch ? 'checkmark-circle' : 'close-circle'}
-                  size={13}
-                  color={passwordsMatch ? '#5DAA72' : '#E05555'}
-                />
-                <Text style={[s.matchTxt, { color: passwordsMatch ? '#5DAA72' : '#E05555' }]}>
-                  {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
+            }
+          >
+            {otpStep ? (
+              /* ── OTP verification step ── */
+              <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
+                <View style={[s.iconWrap, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '25' }]}>
+                  <Ionicons name="shield-checkmark-outline" size={28} color={theme.accent} />
+                </View>
+                <Text style={[s.intro, { color: theme.foreground, fontWeight: '700', marginBottom: 6 }]}>
+                  Verify it's you
                 </Text>
-              </View>
+                <Text style={[s.intro, { color: theme.hint }]}>
+                  A code was sent to{' '}
+                  {maskedEmail ? <Text style={{ color: theme.foreground }}>{maskedEmail}</Text> : null}
+                  {maskedEmail && maskedPhone ? ' and ' : ''}
+                  {maskedPhone ? <Text style={{ color: theme.foreground }}>{maskedPhone}</Text> : null}
+                </Text>
+
+                <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 12 }]}>VERIFICATION CODE</Text>
+                <Animated.View style={[s.inputBox, { backgroundColor: theme.backgroundAlt, borderColor: theme.accent }]}>
+                  <Ionicons name="key-outline" size={16} color={theme.accent} style={s.inputIcon} />
+                  <TextInput
+                    style={[s.inputText, { color: theme.foreground, paddingTop: 4 }]}
+                    value={otpCode}
+                    onChangeText={setOtpCode}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    placeholder="Enter 6-digit code"
+                    placeholderTextColor={theme.hint}
+                    autoFocus
+                  />
+                </Animated.View>
+
+                <TouchableOpacity
+                  style={[
+                    s.submitBtn,
+                    { backgroundColor: theme.accent, shadowColor: theme.accent },
+                    (!otpCode.trim() || loading) && { opacity: 0.4 },
+                  ]}
+                  onPress={handleVerifyOtp}
+                  disabled={!otpCode.trim() || loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={theme.accentFg} size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="shield-checkmark-outline" size={18} color={theme.accentFg} />
+                      <Text style={[s.submitTxt, { color: theme.accentFg }]}>Confirm Change</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => setOtpStep(false)} style={{ alignItems: 'center', marginTop: 16 }}>
+                  <Text style={{ color: theme.hint, fontSize: 13 }}>← Go back</Text>
+                </TouchableOpacity>
+              </Animated.View>
+
+            ) : (
+              <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }] }}>
+
+                {/* Icon */}
+                <View style={[s.iconWrap, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '25' }]}>
+                  <Ionicons name="lock-closed-outline" size={28} color={theme.accent} />
+                </View>
+                <Text style={[s.intro, { color: theme.hint }]}>
+                  Choose a strong password you don't use elsewhere.
+                </Text>
+
+                {/* Current password */}
+                <Text style={[s.sectionLabel, { color: theme.hint }]}>CURRENT PASSWORD</Text>
+                <PwdInput label="Current Password" iconName="lock-closed-outline" value={current} onChangeText={setCurrent} />
+
+                {/* New password */}
+                <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 4 }]}>NEW PASSWORD</Text>
+                <PwdInput label="New Password"         iconName="key-outline" value={next}    onChangeText={setNext}    />
+                <StrengthBar password={next} theme={theme} />
+                <PwdInput label="Confirm New Password" iconName="key-outline" value={confirm} onChangeText={setConfirm} />
+
+                {/* Match indicator */}
+                {confirm.length > 0 && (
+                  <View style={s.matchRow}>
+                    <Ionicons
+                      name={passwordsMatch ? 'checkmark-circle' : 'close-circle'}
+                      size={13}
+                      color={passwordsMatch ? '#5DAA72' : '#E05555'}
+                    />
+                    <Text style={[s.matchTxt, { color: passwordsMatch ? '#5DAA72' : '#E05555' }]}>
+                      {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Rules */}
+                <View style={[s.rulesCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                  <Text style={[s.rulesTitle, { color: theme.hint }]}>PASSWORD REQUIREMENTS</Text>
+                  {rules.map(rule => <Rule key={rule.text} met={rule.met} text={rule.text} theme={theme} />)}
+                </View>
+
+                {/* Submit */}
+                <TouchableOpacity
+                  style={[
+                    s.submitBtn,
+                    { backgroundColor: theme.accent, shadowColor: theme.accent },
+                    !canSubmit && !loading && { opacity: 0.4 },
+                  ]}
+                  onPress={handleChange}
+                  disabled={!canSubmit || loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={theme.accentFg} size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="shield-checkmark-outline" size={18} color={theme.accentFg} />
+                      <Text style={[s.submitTxt, { color: theme.accentFg }]}>Update Password</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+              </Animated.View>
             )}
-
-            {/* Rules */}
-            <View style={[s.rulesCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Text style={[s.rulesTitle, { color: theme.hint }]}>PASSWORD REQUIREMENTS</Text>
-              {rules.map(rule => <Rule key={rule.text} met={rule.met} text={rule.text} theme={theme} />)}
-            </View>
-
-            {/* Submit */}
-            <TouchableOpacity
-              style={[
-                s.submitBtn,
-                { backgroundColor: success ? '#5DAA72' : theme.accent, shadowColor: theme.accent },
-                !canSubmit && !loading && { opacity: 0.4 },
-              ]}
-              onPress={handleChange}
-              disabled={!canSubmit || loading || success}
-              activeOpacity={0.85}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <Ionicons name={success ? 'checkmark' : 'shield-checkmark-outline'} size={18} color="#FFFFFF" />
-                  <Text style={s.submitTxt}>{success ? 'Password Updated!' : 'Update Password'}</Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-          </Animated.View>
-        )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      )}
     </View>
   );
 }
@@ -360,7 +445,7 @@ const s = StyleSheet.create({
   headerTitle:  { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700' },
   headerSpacer: { width: 38 },
 
-  // ── Scroll content ────────────────────────────────────────────────────────
+  // ── Scroll content ─────────────────────────────────────────────────────────
   scroll: { paddingHorizontal: 24, paddingTop: 28 },
 
   iconWrap:     { width: 66, height: 66, borderRadius: 20, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginBottom: 18 },
@@ -384,5 +469,5 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', gap: 10,
     shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 14, elevation: 8,
   },
-  submitTxt: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  submitTxt: { fontSize: 16, fontWeight: '700' },
 });

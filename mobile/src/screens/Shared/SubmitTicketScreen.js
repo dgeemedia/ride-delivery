@@ -34,15 +34,14 @@ export default function SubmitTicketScreen({ navigation }) {
   const fadeA           = useRef(new Animated.Value(0)).current;
   const messageRef      = useRef(null);
 
-  const [category,       setCategory]       = useState('');
-  const [priority,       setPriority]       = useState('medium');
-  const [subject,        setSubject]        = useState('');
-  const [message,        setMessage]        = useState('');
-  const [loading,        setLoading]        = useState(false);
-  // FIX 1: track whether the user has explicitly tapped Submit so we can
-  // show the validation hint even when they haven't typed anything yet.
+  const [category,        setCategory]        = useState('');
+  const [priority,        setPriority]        = useState('medium');
+  const [subject,         setSubject]         = useState('');
+  const [message,         setMessage]         = useState('');
+  const [loading,         setLoading]         = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  const [headerH,        setHeaderH]        = useState(56);
+  // KEY: measure real header height — same pattern as SupportScreen
+  const [headerH,         setHeaderH]         = useState(56);
 
   useEffect(() => {
     Animated.timing(fadeA, { toValue: 1, duration: 400, useNativeDriver: true }).start();
@@ -51,17 +50,10 @@ export default function SubmitTicketScreen({ navigation }) {
   const canSubmit = category && subject.trim().length >= 5 && message.trim().length >= 10;
 
   const handleSubmit = async () => {
-    // FIX 1: always mark that the user attempted a submit so the validation
-    // hint becomes visible even if no field has been touched yet.
-    if (!canSubmit) {
-      setSubmitAttempted(true);
-      return;
-    }
+    if (!canSubmit) { setSubmitAttempted(true); return; }
     if (loading) return;
-
     setLoading(true);
     try {
-      // FIX 4: use the plural endpoint to match getMyTickets / getTicketById.
       await supportAPI.submitTicket({
         category,
         priority,
@@ -71,12 +63,9 @@ export default function SubmitTicketScreen({ navigation }) {
       Alert.alert(
         'Ticket Submitted ✅',
         "Your request has been received. We'll get back to you within 24 hours.",
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
       );
     } catch (err) {
-      // FIX 2: the axios response interceptor in api.js already unwraps
-      // error.response.data, so `err` IS the data object.
-      // The old path  err?.response?.data?.message  was always undefined.
       Alert.alert(
         'Error',
         err?.message ?? err?.error ?? 'Failed to submit ticket. Please try again.',
@@ -86,26 +75,34 @@ export default function SubmitTicketScreen({ navigation }) {
     }
   };
 
+  // KEY: identical bounded-height formula to SupportScreen —
+  // headerH already includes insets.top (applied as paddingTop in the header),
+  // so we subtract it once here plus the bottom safe area.
   const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
   const SCROLL_H     = height - headerH - insets.bottom - EXTRA_BOTTOM;
-  const kvoOffset    = headerH;
 
-  // FIX 1: show the hint whenever canSubmit is false AND either the user
-  // has already interacted with a field OR they tapped the button.
+  // KEY: KAV offset = header height only (header already sits below the status
+  // bar, so we don't double-count insets.top the way the old code did).
+  const kvoOffset = headerH + (Platform.OS === 'android' ? 24 : 0);
+
   const showValidationHint =
     !canSubmit && (submitAttempted || subject.length > 0 || message.length > 0 || category);
 
   return (
+    // Root View — KAV wraps everything so the keyboard lifts the scroll area
     <View style={[s.root, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
 
-      {/* FIX 3: pointerEvents="none" so the ambient glow never absorbs taps. */}
+      {/* Ambient glow — pointerEvents="none" so it never swallows taps */}
       <View
         style={[s.ambientGlow, { backgroundColor: theme.accent }]}
         pointerEvents="none"
       />
 
-      {/* ── Sticky header ─────────────────────────────────────────────────── */}
+      {/* ── Sticky header — measured for pixel-perfect SCROLL_H ── */}
       <View
         style={[s.header, {
           paddingTop:        insets.top + 10,
@@ -126,180 +123,180 @@ export default function SubmitTicketScreen({ navigation }) {
         <View style={s.headerSpacer} />
       </View>
 
-      {/* ── KAV wraps only the scroll container ───────────────────────────── */}
+      {/* KEY: bounded pixel-height container — exactly like SupportScreen.
+           This gives the KAV + ScrollView a concrete vertical boundary so
+           both iOS and Android calculate the scroll area correctly.
+           The KAV lives inside so it only adjusts the scroll area, not the header. */}
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ height: SCROLL_H }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={kvoOffset}
       >
-        <View style={{ flex: 1 }}>
-          <ScrollView
-            contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-          >
-            <Animated.View style={{ opacity: fadeA }}>
+        <ScrollView
+          contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
+          <Animated.View style={{ opacity: fadeA }}>
 
-              {/* Hero */}
-              <View style={s.hero}>
-                <View style={[s.heroIcon, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '30' }]}>
-                  <Ionicons name="chatbubble-ellipses-outline" size={28} color={theme.accent} />
-                </View>
-                <Text style={[s.heroTitle, { color: theme.foreground }]}>How can we help?</Text>
-                <Text style={[s.heroSub, { color: theme.hint }]}>
-                  Describe your issue and our team will respond within 24 hours.
+            {/* Hero */}
+            <View style={s.hero}>
+              <View style={[s.heroIcon, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '30' }]}>
+                <Ionicons name="chatbubble-ellipses-outline" size={28} color={theme.accent} />
+              </View>
+              <Text style={[s.heroTitle, { color: theme.foreground }]}>How can we help?</Text>
+              <Text style={[s.heroSub, { color: theme.hint }]}>
+                Describe your issue and our team will respond within 24 hours.
+              </Text>
+            </View>
+
+            {/* Category */}
+            <Text style={[s.sectionLabel, { color: theme.hint }]}>CATEGORY</Text>
+            <View style={s.categoryGrid}>
+              {CATEGORIES.map(cat => {
+                const active = category === cat.value;
+                return (
+                  <TouchableOpacity
+                    key={cat.value}
+                    style={[s.categoryChip, {
+                      backgroundColor: active ? theme.accent : theme.backgroundAlt,
+                      borderColor:     active ? theme.accent : theme.border,
+                    }]}
+                    onPress={() => setCategory(cat.value)}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons
+                      name={cat.icon}
+                      size={15}
+                      color={active ? (theme.accentFg ?? '#111') : theme.hint}
+                    />
+                    <Text style={[s.categoryLabel, { color: active ? (theme.accentFg ?? '#111') : theme.foreground }]}>
+                      {cat.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Priority */}
+            <Text style={[s.sectionLabel, { color: theme.hint }]}>PRIORITY</Text>
+            <View style={[s.priorityRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              {PRIORITIES.map(p => {
+                const active = priority === p.value;
+                return (
+                  <TouchableOpacity
+                    key={p.value}
+                    style={[s.priorityPill, active && { backgroundColor: p.color + '20', borderColor: p.color }]}
+                    onPress={() => setPriority(p.value)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[s.priorityLabel, { color: active ? p.color : theme.hint }]}>{p.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Subject */}
+            <Text style={[s.sectionLabel, { color: theme.hint }]}>SUBJECT</Text>
+            <View style={[s.inputWrap, {
+              backgroundColor: theme.backgroundAlt,
+              borderColor: subject.trim().length >= 5 ? theme.accent + '60' : theme.border,
+            }]}>
+              <TextInput
+                style={[s.input, { color: theme.foreground }]}
+                placeholder="Brief description of your issue"
+                placeholderTextColor={theme.hint}
+                value={subject}
+                onChangeText={setSubject}
+                maxLength={200}
+                returnKeyType="next"
+                onSubmitEditing={() => messageRef.current?.focus()}
+                blurOnSubmit={false}
+              />
+            </View>
+            <Text style={[s.charCount, { color: subject.trim().length >= 5 ? theme.accent : theme.hint }]}>
+              {subject.length}/200{subject.trim().length < 5 && subject.length > 0 ? ' • min 5 chars' : ''}
+            </Text>
+
+            {/* Message */}
+            <Text style={[s.sectionLabel, { color: theme.hint }]}>DETAILS</Text>
+            <View style={[s.textareaWrap, {
+              backgroundColor: theme.backgroundAlt,
+              borderColor: message.trim().length >= 10 ? theme.accent + '60' : theme.border,
+            }]}>
+              <TextInput
+                ref={messageRef}
+                style={[s.textarea, { color: theme.foreground }]}
+                placeholder="Describe your issue in detail. Include any relevant information like order IDs, amounts, or error messages."
+                placeholderTextColor={theme.hint}
+                value={message}
+                onChangeText={setMessage}
+                multiline
+                numberOfLines={6}
+                textAlignVertical="top"
+                maxLength={2000}
+              />
+            </View>
+            <Text style={[s.charCount, { color: message.trim().length >= 10 ? theme.accent : theme.hint }]}>
+              {message.length}/2000{message.trim().length < 10 && message.length > 0 ? ' • min 10 chars' : ''}
+            </Text>
+
+            {/* Submit button */}
+            <TouchableOpacity
+              style={[s.submitBtn, {
+                backgroundColor: canSubmit ? theme.accent : theme.backgroundAlt,
+                borderColor:     canSubmit ? theme.accent : theme.border,
+                opacity:         canSubmit ? 1 : 0.55,
+              }]}
+              onPress={handleSubmit}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <ActivityIndicator
+                  color={canSubmit ? (theme.accentFg ?? '#111') : theme.hint}
+                  size="small"
+                />
+              ) : (
+                <>
+                  <Ionicons
+                    name="send-outline"
+                    size={17}
+                    color={canSubmit ? (theme.accentFg ?? '#111') : theme.hint}
+                  />
+                  <Text style={[s.submitLabel, { color: canSubmit ? (theme.accentFg ?? '#111') : theme.hint }]}>
+                    Submit Ticket
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Validation hint */}
+            {showValidationHint && (
+              <View style={[s.validationHint, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                <Ionicons name="information-circle-outline" size={14} color={theme.hint} />
+                <Text style={[s.validationTxt, { color: theme.hint }]}>
+                  {!category
+                    ? 'Select a category to continue'
+                    : subject.trim().length < 5
+                    ? 'Subject needs at least 5 characters'
+                    : 'Details need at least 10 characters'}
                 </Text>
               </View>
+            )}
 
-              {/* Category */}
-              <Text style={[s.sectionLabel, { color: theme.hint }]}>CATEGORY</Text>
-              <View style={s.categoryGrid}>
-                {CATEGORIES.map(cat => {
-                  const active = category === cat.value;
-                  return (
-                    <TouchableOpacity
-                      key={cat.value}
-                      style={[s.categoryChip, {
-                        backgroundColor: active ? theme.accent : theme.backgroundAlt,
-                        borderColor:     active ? theme.accent : theme.border,
-                      }]}
-                      onPress={() => setCategory(cat.value)}
-                      activeOpacity={0.75}
-                    >
-                      <Ionicons
-                        name={cat.icon}
-                        size={15}
-                        color={active ? (theme.accentFg ?? '#111') : theme.hint}
-                      />
-                      <Text style={[s.categoryLabel, { color: active ? (theme.accentFg ?? '#111') : theme.foreground }]}>
-                        {cat.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+            {/* View existing */}
+            <TouchableOpacity
+              style={s.viewExisting}
+              onPress={() => navigation.navigate('MyTickets')}
+              activeOpacity={0.7}
+            >
+              <Text style={[s.viewExistingTxt, { color: theme.accent }]}>View my existing tickets</Text>
+              <Ionicons name="chevron-forward" size={14} color={theme.accent} />
+            </TouchableOpacity>
 
-              {/* Priority */}
-              <Text style={[s.sectionLabel, { color: theme.hint }]}>PRIORITY</Text>
-              <View style={[s.priorityRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-                {PRIORITIES.map(p => {
-                  const active = priority === p.value;
-                  return (
-                    <TouchableOpacity
-                      key={p.value}
-                      style={[s.priorityPill, active && { backgroundColor: p.color + '20', borderColor: p.color }]}
-                      onPress={() => setPriority(p.value)}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={[s.priorityLabel, { color: active ? p.color : theme.hint }]}>{p.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* Subject */}
-              <Text style={[s.sectionLabel, { color: theme.hint }]}>SUBJECT</Text>
-              <View style={[s.inputWrap, {
-                backgroundColor: theme.backgroundAlt,
-                borderColor: subject.trim().length >= 5 ? theme.accent + '60' : theme.border,
-              }]}>
-                <TextInput
-                  style={[s.input, { color: theme.foreground }]}
-                  placeholder="Brief description of your issue"
-                  placeholderTextColor={theme.hint}
-                  value={subject}
-                  onChangeText={setSubject}
-                  maxLength={200}
-                  returnKeyType="next"
-                  onSubmitEditing={() => messageRef.current?.focus()}
-                  blurOnSubmit={false}
-                />
-              </View>
-              <Text style={[s.charCount, { color: subject.trim().length >= 5 ? theme.accent : theme.hint }]}>
-                {subject.length}/200{subject.trim().length < 5 && subject.length > 0 ? ' • min 5 chars' : ''}
-              </Text>
-
-              {/* Message */}
-              <Text style={[s.sectionLabel, { color: theme.hint }]}>DETAILS</Text>
-              <View style={[s.textareaWrap, {
-                backgroundColor: theme.backgroundAlt,
-                borderColor: message.trim().length >= 10 ? theme.accent + '60' : theme.border,
-              }]}>
-                <TextInput
-                  ref={messageRef}
-                  style={[s.textarea, { color: theme.foreground }]}
-                  placeholder="Describe your issue in detail. Include any relevant information like order IDs, amounts, or error messages."
-                  placeholderTextColor={theme.hint}
-                  value={message}
-                  onChangeText={setMessage}
-                  multiline
-                  numberOfLines={6}
-                  textAlignVertical="top"
-                  maxLength={2000}
-                />
-              </View>
-              <Text style={[s.charCount, { color: message.trim().length >= 10 ? theme.accent : theme.hint }]}>
-                {message.length}/2000{message.trim().length < 10 && message.length > 0 ? ' • min 10 chars' : ''}
-              </Text>
-
-              {/* Submit button — never disabled so it always stays in the touch tree */}
-              <TouchableOpacity
-                style={[s.submitBtn, {
-                  backgroundColor: canSubmit ? theme.accent : theme.backgroundAlt,
-                  borderColor:     canSubmit ? theme.accent : theme.border,
-                  opacity:         canSubmit ? 1 : 0.55,
-                }]}
-                onPress={handleSubmit}
-                activeOpacity={0.85}
-              >
-                {loading ? (
-                  <ActivityIndicator
-                    color={canSubmit ? (theme.accentFg ?? '#111') : theme.hint}
-                    size="small"
-                  />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="send-outline"
-                      size={17}
-                      color={canSubmit ? (theme.accentFg ?? '#111') : theme.hint}
-                    />
-                    <Text style={[s.submitLabel, { color: canSubmit ? (theme.accentFg ?? '#111') : theme.hint }]}>
-                      Submit Ticket
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {/* FIX 1: validation hint — visible as soon as the user taps Submit
-                   OR after they've started filling in any field. */}
-              {showValidationHint && (
-                <View style={[s.validationHint, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-                  <Ionicons name="information-circle-outline" size={14} color={theme.hint} />
-                  <Text style={[s.validationTxt, { color: theme.hint }]}>
-                    {!category
-                      ? 'Select a category to continue'
-                      : subject.trim().length < 5
-                      ? 'Subject needs at least 5 characters'
-                      : 'Details need at least 10 characters'}
-                  </Text>
-                </View>
-              )}
-
-              {/* View existing */}
-              <TouchableOpacity
-                style={s.viewExisting}
-                onPress={() => navigation.navigate('MyTickets')}
-                activeOpacity={0.7}
-              >
-                <Text style={[s.viewExistingTxt, { color: theme.accent }]}>View my existing tickets</Text>
-                <Ionicons name="chevron-forward" size={14} color={theme.accent} />
-              </TouchableOpacity>
-
-            </Animated.View>
-          </ScrollView>
-        </View>
+          </Animated.View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
@@ -313,6 +310,7 @@ const s = StyleSheet.create({
     alignSelf: 'center', opacity: 0.05,
   },
 
+  // ── Sticky header ─────────────────────────────────────────────────────────
   header: {
     flexDirection: 'row', alignItems: 'flex-end',
     paddingHorizontal: 16, paddingBottom: 12,
@@ -322,6 +320,7 @@ const s = StyleSheet.create({
   headerTitle:  { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
   headerSpacer: { width: 38 },
 
+  // ── Scroll content ────────────────────────────────────────────────────────
   scroll: { paddingHorizontal: 24, paddingTop: 24 },
 
   hero:      { alignItems: 'center', paddingBottom: 24 },

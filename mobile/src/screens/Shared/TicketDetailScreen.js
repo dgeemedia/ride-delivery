@@ -7,11 +7,12 @@ import {
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';   // <-- ADDED
 import { useTheme }          from '../../context/ThemeContext';
 import { useAuth }           from '../../context/AuthContext';
 import { supportAPI }        from '../../services/api';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const STATUS_META = {
   open:        { label: 'Open',        color: '#C9A96E' },
@@ -23,37 +24,35 @@ const STATUS_META = {
 const formatTime = (iso) => {
   const d = new Date(iso);
   return d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) +
-    ' · ' + d.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
+    ' • ' + d.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
 };
 
 // ── Message bubble ─────────────────────────────────────────────────────────────
-const Bubble = ({ message, isAdmin, theme }) => {
-  return (
-    <View style={[bu.row, isAdmin && bu.rowReverse]}>
-      <View style={[bu.avatar, { backgroundColor: isAdmin ? theme.accent + '20' : theme.backgroundAlt, borderColor: theme.border }]}>
-        <Ionicons
-          name={isAdmin ? 'headset-outline' : 'person-outline'}
-          size={13}
-          color={isAdmin ? theme.accent : theme.hint}
-        />
-      </View>
-      <View style={[bu.wrap, { maxWidth: width * 0.72 }]}>
-        <Text style={[bu.sender, { color: theme.hint }]}>
-          {isAdmin ? 'Support Agent' : 'You'}
-        </Text>
-        <View style={[
-          bu.bubble,
-          isAdmin
-            ? { backgroundColor: theme.accent + '18', borderColor: theme.accent + '30' }
-            : { backgroundColor: theme.backgroundAlt, borderColor: theme.border },
-        ]}>
-          <Text style={[bu.text, { color: theme.foreground }]}>{message.message}</Text>
-        </View>
-        <Text style={[bu.time, { color: theme.hint }]}>{formatTime(message.createdAt)}</Text>
-      </View>
+const Bubble = ({ message, isAdmin, theme }) => (
+  <View style={[bu.row, isAdmin && bu.rowReverse]}>
+    <View style={[bu.avatar, { backgroundColor: isAdmin ? theme.accent + '20' : theme.backgroundAlt, borderColor: theme.border }]}>
+      <Ionicons
+        name={isAdmin ? 'headset-outline' : 'person-outline'}
+        size={13}
+        color={isAdmin ? theme.accent : theme.hint}
+      />
     </View>
-  );
-};
+    <View style={[bu.wrap, { maxWidth: width * 0.72 }]}>
+      <Text style={[bu.sender, { color: theme.hint }]}>
+        {isAdmin ? 'Support Agent' : 'You'}
+      </Text>
+      <View style={[
+        bu.bubble,
+        isAdmin
+          ? { backgroundColor: theme.accent + '18', borderColor: theme.accent + '30' }
+          : { backgroundColor: theme.backgroundAlt, borderColor: theme.border },
+      ]}>
+        <Text style={[bu.text, { color: theme.foreground }]}>{message.message}</Text>
+      </View>
+      <Text style={[bu.time, { color: theme.hint }]}>{formatTime(message.createdAt)}</Text>
+    </View>
+  </View>
+);
 
 const bu = StyleSheet.create({
   row:        { flexDirection: 'row', gap: 8, marginBottom: 16, alignItems: 'flex-end' },
@@ -91,11 +90,13 @@ const om = StyleSheet.create({
   date:    { fontSize: 11 },
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
 export default function TicketDetailScreen({ navigation, route }) {
   const { ticketId }    = route.params;
   const { theme, mode } = useTheme();
   const { user }        = useAuth();
   const insets          = useSafeAreaInsets();
+  const tabBarHeight    = useBottomTabBarHeight();                         // <-- ADDED
 
   const [ticket,     setTicket]     = useState(null);
   const [loading,    setLoading]    = useState(true);
@@ -123,7 +124,6 @@ export default function TicketDetailScreen({ navigation, route }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Poll for new replies every 15 s when ticket is open or in_progress
   useEffect(() => {
     if (!ticket) return;
     if (['resolved', 'closed'].includes(ticket.status)) return;
@@ -149,19 +149,21 @@ export default function TicketDetailScreen({ navigation, route }) {
 
   const status = ticket ? (STATUS_META[ticket.status] ?? STATUS_META.open) : null;
 
-  // KEY: KVO offset = safeArea top + measured header height
-  const kvoOffset = insets.top + headerH + (Platform.OS === 'android' ? 16 : 0);
+  // KEY: bounded-height formula – now subtracts tabBarHeight so reply bar
+  // does not get hidden behind the bottom tab navigator.
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+  const BODY_H       = height - headerH - insets.bottom - EXTRA_BOTTOM - tabBarHeight;
+
+  const kvoOffset = headerH + (Platform.OS === 'android' ? 24 : 0);
 
   return (
-    // KEY: KAV as root with flex:1 — owns the entire screen height
-    <KeyboardAvoidingView
-      style={[s.root, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={kvoOffset}
-    >
-      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+    <View style={[s.root, { backgroundColor: theme.background }]}>
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.background}
+      />
 
-      {/* ── Header — fixed at top, measured for KVO offset accuracy ── */}
+      {/* Sticky header */}
       <View
         style={[s.header, { paddingTop: insets.top + 14, borderBottomColor: theme.border }]}
         onLayout={e => setHeaderH(e.nativeEvent.layout.height)}
@@ -179,135 +181,132 @@ export default function TicketDetailScreen({ navigation, route }) {
           </Text>
           {status && (
             <Text style={[s.statusLine, { color: status.color }]}>
-              {ticket?.ticketNumber} · {status.label}
+              {ticket?.ticketNumber} • {status.label}
             </Text>
           )}
         </View>
       </View>
 
-      {/* ── Body — flex:1 fills everything below the header ── */}
       {loading ? (
-        <View style={s.center}><ActivityIndicator color={theme.accent} size="large" /></View>
+        <View style={[s.center, { height: BODY_H }]}>
+          <ActivityIndicator color={theme.accent} size="large" />
+        </View>
       ) : !ticket ? (
-        <View style={s.center}>
+        <View style={[s.center, { height: BODY_H }]}>
           <Text style={[s.notFound, { color: theme.hint }]}>Ticket not found.</Text>
         </View>
       ) : (
-        // KEY: flex:1 wrapper distributes height between ScrollView and reply bar.
-        // Without this, ScrollView tries to size itself to content and reply bar
-        // either overlaps or gets pushed off screen.
-        <View style={{ flex: 1 }}>
-
-          {/* KEY: flex:1 on ScrollView itself — fills the View above, leaving
-                room for the reply bar below. This is the mirror of ProfileScreen's
-                bounded-height container approach. */}
-          <Animated.ScrollView
-            ref={scrollRef}
-            style={{ flex: 1, opacity: fadeA }}
-            contentContainerStyle={[s.scroll, { paddingBottom: isClosed ? insets.bottom + 20 : 16 }]}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={() => load(true)}
-                tintColor={theme.accent}
-                colors={[theme.accent]}
-              />
-            }
-          >
-            <OriginalMessage ticket={ticket} theme={theme} />
-
-            {/* Replies */}
-            {(ticket.replies ?? []).length > 0 ? (
-              ticket.replies.map(r => (
-                <Bubble
-                  key={r.id}
-                  message={r}
-                  isAdmin={r.isAdmin}
-                  theme={theme}
+        <KeyboardAvoidingView
+          style={{ height: BODY_H }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={kvoOffset}
+        >
+          <View style={{ flex: 1 }}>
+            <Animated.ScrollView
+              ref={scrollRef}
+              style={{ flex: 1, opacity: fadeA }}
+              contentContainerStyle={[
+                s.scroll,
+                { paddingBottom: isClosed ? insets.bottom + 20 : 16 },
+              ]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={() => load(true)}
+                  tintColor={theme.accent}
+                  colors={[theme.accent]}
                 />
-              ))
-            ) : (
-              <View style={[s.awaitingWrap, { backgroundColor: theme.backgroundAlt + '80', borderColor: theme.border }]}>
-                <Ionicons name="time-outline" size={18} color={theme.hint} />
-                <Text style={[s.awaitingTxt, { color: theme.hint }]}>
-                  Awaiting a response from our team. We typically reply within 24 hours.
-                </Text>
-              </View>
-            )}
+              }
+            >
+              <OriginalMessage ticket={ticket} theme={theme} />
 
-            {/* Resolved notice */}
-            {isClosed && (
-              <View style={[s.resolvedWrap, { backgroundColor: '#5DAA7215', borderColor: '#5DAA7230' }]}>
-                <Ionicons name="checkmark-circle-outline" size={18} color="#5DAA72" />
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.resolvedTitle, { color: '#5DAA72' }]}>
-                    {ticket.status === 'resolved' ? 'Ticket Resolved' : 'Ticket Closed'}
+              {(ticket.replies ?? []).length > 0 ? (
+                ticket.replies.map(r => (
+                  <Bubble
+                    key={r.id}
+                    message={r}
+                    isAdmin={r.isAdmin}
+                    theme={theme}
+                  />
+                ))
+              ) : (
+                <View style={[s.awaitingWrap, { backgroundColor: theme.backgroundAlt + '80', borderColor: theme.border }]}>
+                  <Ionicons name="time-outline" size={18} color={theme.hint} />
+                  <Text style={[s.awaitingTxt, { color: theme.hint }]}>
+                    Awaiting a response from our team. We typically reply within 24 hours.
                   </Text>
-                  {ticket.resolution ? (
-                    <Text style={[s.resolvedSub, { color: theme.hint }]}>{ticket.resolution}</Text>
-                  ) : null}
                 </View>
+              )}
+
+              {isClosed && (
+                <View style={[s.resolvedWrap, { backgroundColor: '#5DAA7215', borderColor: '#5DAA7230' }]}>
+                  <Ionicons name="checkmark-circle-outline" size={18} color="#5DAA72" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.resolvedTitle, { color: '#5DAA72' }]}>
+                      {ticket.status === 'resolved' ? 'Ticket Resolved' : 'Ticket Closed'}
+                    </Text>
+                    {ticket.resolution ? (
+                      <Text style={[s.resolvedSub, { color: theme.hint }]}>{ticket.resolution}</Text>
+                    ) : null}
+                  </View>
+                </View>
+              )}
+            </Animated.ScrollView>
+
+            {!isClosed && (
+              <View style={[s.replyBar, {
+                backgroundColor: theme.backgroundAlt,
+                borderTopColor:  theme.border,
+                paddingBottom:   insets.bottom + 8,
+              }]}>
+                <TextInput
+                  style={[s.replyInput, {
+                    color:           theme.foreground,
+                    backgroundColor: theme.background,
+                    borderColor:     theme.border,
+                  }]}
+                  placeholder="Add a follow-up message..."
+                  placeholderTextColor={theme.hint}
+                  value={reply}
+                  onChangeText={setReply}
+                  multiline
+                  maxLength={1000}
+                  onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)}
+                />
+                <TouchableOpacity
+                  style={[s.sendBtn, { backgroundColor: reply.trim() ? theme.accent : theme.border }]}
+                  onPress={handleSend}
+                  disabled={!reply.trim() || sending}
+                  activeOpacity={0.8}
+                >
+                  {sending
+                    ? <ActivityIndicator size="small" color={theme.accentFg ?? '#111'} />
+                    : <Ionicons name="send" size={16} color={reply.trim() ? (theme.accentFg ?? '#111') : theme.hint} />
+                  }
+                </TouchableOpacity>
               </View>
             )}
-          </Animated.ScrollView>
-
-          {/* ── Reply bar — sits BELOW the ScrollView inside the flex:1 View.
-                It never overlaps content; the ScrollView shrinks to make room.
-                paddingBottom uses insets.bottom for home-indicator clearance. ── */}
-          {!isClosed && (
-            <View style={[s.replyBar, {
-              backgroundColor: theme.backgroundAlt,
-              borderTopColor: theme.border,
-              paddingBottom: insets.bottom + 8,
-            }]}>
-              <TextInput
-                style={[s.replyInput, {
-                  color: theme.foreground,
-                  backgroundColor: theme.background,
-                  borderColor: theme.border,
-                }]}
-                placeholder="Add a follow-up message..."
-                placeholderTextColor={theme.hint}
-                value={reply}
-                onChangeText={setReply}
-                multiline
-                maxLength={1000}
-              />
-              <TouchableOpacity
-                style={[s.sendBtn, { backgroundColor: reply.trim() ? theme.accent : theme.border }]}
-                onPress={handleSend}
-                disabled={!reply.trim() || sending}
-                activeOpacity={0.8}
-              >
-                {sending
-                  ? <ActivityIndicator size="small" color={theme.accentFg ?? '#111'} />
-                  : <Ionicons name="send" size={16} color={reply.trim() ? (theme.accentFg ?? '#111') : theme.hint} />
-                }
-              </TouchableOpacity>
-            </View>
-          )}
-
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       )}
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  // KEY: flex:1 on root — KAV needs this to fill the screen
-  root:   { flex: 1 },
+  root: { flex: 1 },
 
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1, gap: 12 },
-  backBtn:{ width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  title:  { fontSize: 15, fontWeight: '800' },
+  header:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1, gap: 12 },
+  backBtn:    { width: 42, height: 42, borderRadius: 13, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  title:      { fontSize: 15, fontWeight: '800' },
   statusLine: { fontSize: 11, fontWeight: '600', marginTop: 2 },
 
-  scroll:   { paddingHorizontal: 20, paddingTop: 16 },
-  center:   { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  notFound: { fontSize: 14 },
+  scroll:      { paddingHorizontal: 20, paddingTop: 16 },
+  center:      { justifyContent: 'center', alignItems: 'center' },
+  notFound:    { fontSize: 14 },
 
   awaitingWrap: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 16 },
   awaitingTxt:  { flex: 1, fontSize: 13, lineHeight: 19 },
@@ -316,7 +315,6 @@ const s = StyleSheet.create({
   resolvedTitle: { fontSize: 13, fontWeight: '800', marginBottom: 3 },
   resolvedSub:   { fontSize: 12, lineHeight: 18 },
 
-  // KEY: reply bar is in-flow (not absolute), so it pushes ScrollView up naturally
   replyBar:   { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1 },
   replyInput: { flex: 1, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, maxHeight: 100 },
   sendBtn:    { width: 44, height: 44, borderRadius: 13, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
