@@ -1,12 +1,4 @@
 // mobile/src/components/SmartMapView.js
-//
-// Changes from previous version:
-//   • Circle exported — mapped to OsmCircle for OSM, or react-native-maps Circle for Google
-//   • Imperative ref now forwards: startRadar, stopRadar, setDriverPins, setCircles
-//     (these call into OsmMapView's Leaflet command bridge when OSM is active;
-//      they are no-ops when Google Maps is active since Google uses React children)
-//   • FORCE_OSM_MAP = true kept (set false when Google Maps key is ready)
-
 import React, {
   forwardRef,
   useImperativeHandle,
