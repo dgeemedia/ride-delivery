@@ -95,6 +95,8 @@ exports.getDashboardStats = async (req, res) => {
     todayRevenue, yesterdayRevenue, monthRevenue, totalWalletBalance,
     pendingDrivers, pendingPartners, openTickets,
     newUsersToday, newUsersYesterday,
+    suspendedDriversCount, suspendedPartnersCount,
+    suspendedDriversList, suspendedPartnersList,
   ] = await Promise.all([
     prisma.user.count({ where: { role: 'CUSTOMER' } }),
     prisma.user.count({ where: { role: 'DRIVER' } }),
@@ -130,8 +132,24 @@ exports.getDashboardStats = async (req, res) => {
  
     // New users today (for delta)
     prisma.user.count({ where: { createdAt: { gte: todayStart } } }),
-    // New users yesterday (for delta)
+// New users yesterday (for delta)
     prisma.user.count({ where: { createdAt: { gte: yesterdayStart, lt: todayStart } } }),
+
+    // Suspended drivers count + list (dashboard widget)
+    prisma.user.count({ where: { role: 'DRIVER', isSuspended: true } }),
+    prisma.user.count({ where: { role: 'DELIVERY_PARTNER', isSuspended: true } }),
+    prisma.user.findMany({
+      where: { role: 'DRIVER', isSuspended: true },
+      select: { id: true, firstName: true, lastName: true, email: true, phone: true, suspendedAt: true, suspensionReason: true },
+      orderBy: { suspendedAt: 'desc' },
+      take: 10,
+    }),
+    prisma.user.findMany({
+      where: { role: 'DELIVERY_PARTNER', isSuspended: true },
+      select: { id: true, firstName: true, lastName: true, email: true, phone: true, suspendedAt: true, suspensionReason: true },
+      orderBy: { suspendedAt: 'desc' },
+      take: 10,
+    }),
   ]);
  
   // ── Revenue delta (today vs yesterday) ──────────────────────────────────────
@@ -169,7 +187,13 @@ exports.getDashboardStats = async (req, res) => {
       wallet:  { totalBalance: totalWalletBalance._sum.balance ?? 0 },
       pending: { drivers: pendingDrivers, partners: pendingPartners },
       support: { openTickets },
-      deltas:  { revenue: revenueDelta, users: userDelta }, // surfaced separately for convenience
+      deltas:  { revenue: revenueDelta, users: userDelta },
+      suspended: {
+        driversCount:  suspendedDriversCount,
+        partnersCount: suspendedPartnersCount,
+        driversList:   suspendedDriversList,
+        partnersList:  suspendedPartnersList,
+      },
     },
   });
 };

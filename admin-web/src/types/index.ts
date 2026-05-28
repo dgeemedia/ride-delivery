@@ -241,9 +241,23 @@ export interface DashboardStats {
   wallet: {
     totalBalance: number;
   };
-  pending: {
+    pending: {
     drivers:  number;
     partners: number;
+  };
+  suspended: {
+    driversCount:  number;
+    partnersCount: number;
+    driversList: Array<{
+      id: string; firstName: string; lastName: string;
+      email: string; phone: string;
+      suspendedAt?: string; suspensionReason?: string;
+    }>;
+    partnersList: Array<{
+      id: string; firstName: string; lastName: string;
+      email: string; phone: string;
+      suspendedAt?: string; suspensionReason?: string;
+    }>;
   };
   support: {
     openTickets: number;

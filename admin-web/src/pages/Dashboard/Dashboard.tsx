@@ -1,13 +1,13 @@
 // admin-web/src/pages/Dashboard/Dashboard.tsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Car, Package, DollarSign, TrendingUp, Activity, Shield } from 'lucide-react';
+import { Users, Car, Package, DollarSign, TrendingUp, Activity, Shield, Clock, UserX } from 'lucide-react';
 import { Card, Spinner } from '@/components/common';
 import { LineChart, BarChart } from '@/components/charts';
 import { analyticsAPI } from '@/services/api/analytics';
 import api from '@/services/api';
 import { DashboardStats, RevenueAnalytics } from '@/types';
-import { formatCurrency } from '@/utils/helpers';
+import { formatCurrency, formatDate } from '@/utils/helpers';
 import toast from 'react-hot-toast';
 
 // ─── Feature flags ──────────────────────────────────────────────────────────
@@ -67,13 +67,12 @@ const Dashboard: React.FC = () => {
   const revenueDelta = formatDelta(stats.revenue?.revenueDelta ?? stats.deltas?.revenue);
   const userDelta    = formatDelta(stats.deltas?.users);
 
-  const statCards = [
+const statCards = [
     {
       title:    'Total Customers',
       value:    stats.users.total.toLocaleString(),
       icon:     Users,
       color:    'bg-primary-500',
-      // Show today's new signups if available; delta if we have a baseline
       subLabel: stats.users.newToday !== undefined
         ? userDelta
           ? { label: userDelta.label, positive: userDelta.positive }
@@ -82,11 +81,50 @@ const Dashboard: React.FC = () => {
       onClick:  () => navigate('/users'),
     },
     {
+      title:    'Total Drivers',
+      value:    stats.users.drivers.toLocaleString(),
+      icon:     Car,
+      color:    'bg-blue-500',
+      subLabel: stats.suspended?.driversCount
+        ? { label: `${stats.suspended.driversCount} suspended`, positive: false }
+        : null,
+      onClick:  () => navigate('/drivers'),
+    },
+    {
+      title:    'Total Delivery Partners',
+      value:    stats.users.partners.toLocaleString(),
+      icon:     Package,
+      color:    'bg-indigo-500',
+      subLabel: stats.suspended?.partnersCount
+        ? { label: `${stats.suspended.partnersCount} suspended`, positive: false }
+        : null,
+      onClick:  () => navigate('/partners'),
+    },
+    {
+      title:    'Pending Driver Approvals',
+      value:    stats.pending.drivers.toLocaleString(),
+      icon:     Clock,
+      color:    stats.pending.drivers > 0 ? 'bg-amber-500' : 'bg-success-500',
+      subLabel: stats.pending.drivers === 0
+        ? { label: 'All approvals up to date', positive: true }
+        : { label: 'Awaiting review', positive: false },
+      onClick:  () => navigate('/drivers?status=pending'),
+    },
+    {
+      title:    'Pending Partner Approvals',
+      value:    stats.pending.partners.toLocaleString(),
+      icon:     Clock,
+      color:    stats.pending.partners > 0 ? 'bg-amber-500' : 'bg-success-500',
+      subLabel: stats.pending.partners === 0
+        ? { label: 'All approvals up to date', positive: true }
+        : { label: 'Awaiting review', positive: false },
+      onClick:  () => navigate('/partners?status=pending'),
+    },
+    {
       title:    'Active Rides',
       value:    stats.rides.active.toLocaleString(),
       icon:     Car,
       color:    'bg-success-500',
-      // "X total completed" is factual, not a guess
       subLabel: stats.rides.total > 0
         ? { label: `${stats.rides.total.toLocaleString()} completed total`, positive: true }
         : null,
@@ -107,7 +145,6 @@ const Dashboard: React.FC = () => {
       value:    formatCurrency(stats.revenue.today),
       icon:     DollarSign,
       color:    'bg-error-500',
-      // Real delta vs yesterday, or nothing if no yesterday data
       subLabel: revenueDelta,
       onClick:  undefined as (() => void) | undefined,
     },
@@ -133,9 +170,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${
-        ENABLE_SHIELD ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
-      }`}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((stat) => (
           <Card
             key={stat.title}
@@ -249,6 +284,103 @@ const Dashboard: React.FC = () => {
           </Card>
         )}
       </div>
+{/* Suspended Users */}
+      {((stats.suspended?.driversList?.length ?? 0) > 0 ||
+        (stats.suspended?.partnersList?.length ?? 0) > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+          {/* Suspended Drivers */}
+          <Card>
+            <div className="flex items-center gap-2 mb-4">
+              <UserX className="h-5 w-5 text-error-500" />
+              <h3 className="text-lg font-semibold">
+                Suspended Drivers
+                {(stats.suspended?.driversCount ?? 0) > 0 && (
+                  <span className="ml-2 text-sm font-normal text-error-500">
+                    ({stats.suspended.driversCount})
+                  </span>
+                )}
+              </h3>
+            </div>
+            {(stats.suspended?.driversList?.length ?? 0) === 0 ? (
+              <p className="text-sm text-gray-400">No suspended drivers.</p>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {stats.suspended.driversList.map(d => (
+                  <div
+                    key={d.id}
+                    className="py-3 flex items-start justify-between gap-3 cursor-pointer hover:bg-gray-50 px-1 rounded"
+                    onClick={() => navigate(`/drivers/${d.id}`)}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {d.firstName} {d.lastName}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">{d.email}</p>
+                      {d.suspensionReason && (
+                        <p className="text-xs text-error-500 mt-0.5 truncate">
+                          {d.suspensionReason}
+                        </p>
+                      )}
+                    </div>
+                    {d.suspendedAt && (
+                      <span className="text-xs text-gray-400 flex-shrink-0">
+                        {formatDate(d.suspendedAt)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Suspended Delivery Partners */}
+          <Card>
+            <div className="flex items-center gap-2 mb-4">
+              <UserX className="h-5 w-5 text-error-500" />
+              <h3 className="text-lg font-semibold">
+                Suspended Delivery Partners
+                {(stats.suspended?.partnersCount ?? 0) > 0 && (
+                  <span className="ml-2 text-sm font-normal text-error-500">
+                    ({stats.suspended.partnersCount})
+                  </span>
+                )}
+              </h3>
+            </div>
+            {(stats.suspended?.partnersList?.length ?? 0) === 0 ? (
+              <p className="text-sm text-gray-400">No suspended partners.</p>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {stats.suspended.partnersList.map(p => (
+                  <div
+                    key={p.id}
+                    className="py-3 flex items-start justify-between gap-3 cursor-pointer hover:bg-gray-50 px-1 rounded"
+                    onClick={() => navigate(`/partners/${p.id}`)}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {p.firstName} {p.lastName}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">{p.email}</p>
+                      {p.suspensionReason && (
+                        <p className="text-xs text-error-500 mt-0.5 truncate">
+                          {p.suspensionReason}
+                        </p>
+                      )}
+                    </div>
+                    {p.suspendedAt && (
+                      <span className="text-xs text-gray-400 flex-shrink-0">
+                        {formatDate(p.suspendedAt)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+        </div>
+      )}
     </div>
   );
 };
