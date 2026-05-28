@@ -1,5 +1,5 @@
 // mobile/src/screens/Customer/NearbyDriversScreen.js
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   StatusBar, Dimensions, Animated, ActivityIndicator,
@@ -10,6 +10,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Location from 'expo-location';
 import { useTheme } from '../../context/ThemeContext';
 import { rideAPI } from '../../services/api';
+import SmartMapView, { Marker } from '../../components/SmartMapView';
 
 const { width, height } = Dimensions.get('window');
 
@@ -119,7 +120,7 @@ const DriverCard = ({ driver, onPress, theme }) => {
             <Text style={[dc.vehicleLine, { color: theme.hint }]}>
               {driver.vehicleColor} {driver.vehicleMake} {driver.vehicleModel}
             </Text>
-            <Text style={[dc.plate, { color: fareColor }]}>{driver.vehiclePlate}</Text>
+            <Text style={[dc.plate, { color: theme.foreground }]}>{driver.vehiclePlate}</Text>
           </View>
           <View style={dc.fareBlock}>
             {/* Total = effectiveFare + bookingFee — exactly what backend will charge */}
@@ -176,15 +177,27 @@ const sgS = StyleSheet.create({
 
 // ─── LocationSearchSheet ──────────────────────────────────────────────────────
 const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, theme }) => {
-  const [query,   setQuery]   = useState('');
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [query,     setQuery]     = useState('');
+  const [results,   setResults]   = useState([]);
+  const [loading,   setLoading]   = useState(false);
+  const [tab,       setTab]       = useState('search'); // 'search' | 'map'
+  const [mapPin,    setMapPin]    = useState(null);     // { lat, lng, address }
+  const [geocoding, setGeocoding] = useState(false);
   const searchTimer = useRef(null);
   const slideA      = useRef(new Animated.Value(height)).current;
 
+  const isPickup = type === 'pickup';
+  const accent   = isPickup ? C.brand : C.red;
+
+  // Seed map pin from pickupCoords when opening dropoff
+  const initialRegion = useMemo(() => {
+    if (pickupCoords) return { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.02, longitudeDelta: 0.02 };
+    return { latitude: 6.5244, longitude: 3.3792, latitudeDelta: 0.05, longitudeDelta: 0.05 };
+  }, [pickupCoords]);
+
   useEffect(() => {
     if (visible) {
-      setQuery(''); setResults([]);
+      setQuery(''); setResults([]); setMapPin(null); setTab('search');
       Animated.spring(slideA, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }).start();
     } else {
       Animated.timing(slideA, { toValue: height, duration: 220, useNativeDriver: true }).start();
@@ -205,8 +218,8 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
         const res  = await fetch(url, { headers: { 'User-Agent': 'DiakiteApp/1.0' } });
         const data = await res.json();
         setResults(
-          (data.features ?? []).map(f => ({
-            id:          `${f.geometry.coordinates[0]}_${f.geometry.coordinates[1]}`,
+          (data.features ?? []).map((f, i) => ({
+            id:          `${f.geometry.coordinates[0]}_${f.geometry.coordinates[1]}_${i}`,
             description: [f.properties.name, f.properties.street, f.properties.city, f.properties.country].filter(Boolean).join(', '),
             main:        f.properties.name ?? f.properties.street ?? '',
             secondary:   [f.properties.city, f.properties.country].filter(Boolean).join(', '),
@@ -219,8 +232,20 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
     }, 400);
   };
 
-  const isPickup = type === 'pickup';
-  const accent   = isPickup ? C.brand : C.red;
+  const handleMapPress = async (e) => {
+    const { latitude: lat, longitude: lng } = e.nativeEvent?.coordinate ?? {};
+    if (!lat || !lng) return;
+    setGeocoding(true);
+    const address = await reverseGeocode(lat, lng);
+    setMapPin({ lat, lng, address });
+    setGeocoding(false);
+  };
+
+  const confirmMapPin = () => {
+    if (!mapPin) return;
+    onSelect({ lat: mapPin.lat, lng: mapPin.lng, description: mapPin.address });
+    onClose();
+  };
 
   if (!visible) return null;
 
@@ -230,6 +255,8 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
         <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} activeOpacity={1} />
         <Animated.View style={[lss.sheet, { backgroundColor: theme.background, borderColor: theme.border, transform: [{ translateY: slideA }] }]}>
           <View style={[lss.handle, { backgroundColor: theme.hint + '44' }]} />
+
+          {/* Header */}
           <View style={lss.header}>
             <View style={[lss.dotWrap, { backgroundColor: accent + '18' }]}>
               <View style={[lss.dot, { backgroundColor: accent }]} />
@@ -244,46 +271,113 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
             </TouchableOpacity>
           </View>
 
-          <View style={[lss.inputWrap, { backgroundColor: theme.backgroundAlt, borderColor: accent + '50' }]}>
-            <Ionicons name="search" size={16} color={accent} style={{ marginRight: 8 }} />
-            <TextInput
-              style={[lss.input, { color: theme.foreground }]}
-              placeholder={isPickup ? 'Search pickup location…' : 'Search drop-off location…'}
-              placeholderTextColor={theme.hint}
-              value={query}
-              onChangeText={search}
-              autoFocus
-              autoCapitalize="none"
-            />
-            {loading && <ActivityIndicator size="small" color={accent} />}
-            {query.length > 0 && !loading && (
-              <TouchableOpacity onPress={() => { setQuery(''); setResults([]); }}>
-                <Ionicons name="close-circle" size={16} color={theme.hint} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {results.map(item => (
+          {/* Tab toggle */}
+          <View style={[lss.tabs, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+            {['search', 'map'].map(t => (
               <TouchableOpacity
-                key={item.id}
-                style={[lss.resultRow, { borderBottomColor: theme.border }]}
-                onPress={() => { onSelect(item); onClose(); }}
-                activeOpacity={0.75}
+                key={t}
+                style={[lss.tab, tab === t && { backgroundColor: accent, borderRadius: 10 }]}
+                onPress={() => setTab(t)}
               >
-                <View style={[lss.resultIcon, { backgroundColor: accent + '12' }]}>
-                  <Ionicons name="location-outline" size={14} color={accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[lss.resultMain, { color: theme.foreground }]} numberOfLines={1}>{item.main}</Text>
-                  <Text style={[lss.resultSub, { color: theme.hint }]} numberOfLines={1}>{item.secondary}</Text>
-                </View>
+                <Ionicons
+                  name={t === 'search' ? 'search' : 'map-outline'}
+                  size={14}
+                  color={tab === t ? '#fff' : theme.hint}
+                />
+                <Text style={[lss.tabTxt, { color: tab === t ? '#fff' : theme.hint }]}>
+                  {t === 'search' ? 'Search' : 'Map'}
+                </Text>
               </TouchableOpacity>
             ))}
-            {results.length === 0 && query.length >= 3 && !loading && (
-              <Text style={[lss.noResults, { color: theme.hint }]}>No results found</Text>
-            )}
-          </ScrollView>
+          </View>
+
+          {tab === 'search' ? (
+            <>
+              <View style={[lss.inputWrap, { backgroundColor: theme.backgroundAlt, borderColor: accent + '50' }]}>
+                <Ionicons name="search" size={16} color={accent} style={{ marginRight: 8 }} />
+                <TextInput
+                  style={[lss.input, { color: theme.foreground }]}
+                  placeholder={isPickup ? 'Search pickup location…' : 'Search drop-off location…'}
+                  placeholderTextColor={theme.hint}
+                  value={query}
+                  onChangeText={search}
+                  autoFocus
+                  autoCapitalize="none"
+                />
+                {loading && <ActivityIndicator size="small" color={accent} />}
+                {query.length > 0 && !loading && (
+                  <TouchableOpacity onPress={() => { setQuery(''); setResults([]); }}>
+                    <Ionicons name="close-circle" size={16} color={theme.hint} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                {results.map(item => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[lss.resultRow, { borderBottomColor: theme.border }]}
+                    onPress={() => { onSelect(item); onClose(); }}
+                    activeOpacity={0.75}
+                  >
+                    <View style={[lss.resultIcon, { backgroundColor: accent + '12' }]}>
+                      <Ionicons name="location-outline" size={14} color={accent} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[lss.resultMain, { color: theme.foreground }]} numberOfLines={1}>{item.main}</Text>
+                      <Text style={[lss.resultSub,  { color: theme.hint }]}      numberOfLines={1}>{item.secondary}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                {results.length === 0 && query.length >= 3 && !loading && (
+                  <Text style={[lss.noResults, { color: theme.hint }]}>No results found</Text>
+                )}
+              </ScrollView>
+            </>
+          ) : (
+            /* ── Map tab ── */
+            <View style={{ flex: 1 }}>
+              <Text style={[lss.mapHint, { color: theme.hint }]}>
+                Tap anywhere on the map to place a pin
+              </Text>
+              <View style={{ flex: 1 }}>
+                <SmartMapView
+                  style={StyleSheet.absoluteFillObject}
+                  initialRegion={initialRegion}
+                  showsUserLocation
+                  onPress={handleMapPress}
+                >
+                  {mapPin && (
+                    <Marker
+                      coordinate={{ latitude: mapPin.lat, longitude: mapPin.lng }}
+                      pinColor={accent}
+                    />
+                  )}
+                </SmartMapView>
+                {geocoding && (
+                  <View style={lss.geocodingOverlay}>
+                    <ActivityIndicator color={accent} />
+                    <Text style={[lss.geocodingTxt, { color: theme.foreground }]}>Getting address…</Text>
+                  </View>
+                )}
+              </View>
+              {mapPin && (
+                <View style={[lss.mapConfirm, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[lss.mapConfirmLabel, { color: theme.hint }]}>SELECTED</Text>
+                    <Text style={[lss.mapConfirmAddr, { color: theme.foreground }]} numberOfLines={2}>
+                      {mapPin.address}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[lss.mapConfirmBtn, { backgroundColor: accent }]}
+                    onPress={confirmMapPin}
+                  >
+                    <Text style={lss.mapConfirmBtnTxt}>Confirm</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
         </Animated.View>
       </View>
     </Modal>
@@ -305,6 +399,17 @@ const lss = StyleSheet.create({
   resultMain: { fontSize: T.base, fontWeight: '600', marginBottom: 2 },
   resultSub:  { fontSize: T.sm, fontWeight: '400' },
   noResults:  { textAlign: 'center', paddingVertical: 24, fontSize: T.sm },
+  tabs:            { flexDirection: 'row', marginHorizontal: 20, marginBottom: 12, borderRadius: 12, borderWidth: 1, padding: 3, gap: 3 },
+  tab:             { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8 },
+  tabTxt:          { fontSize: 13, fontWeight: '700' },
+  mapHint:         { fontSize: 11, textAlign: 'center', paddingVertical: 6, fontWeight: '500' },
+  geocodingOverlay:{ position: 'absolute', top: '45%', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
+  geocodingTxt:    { fontSize: 13, fontWeight: '600', color: '#fff' },
+  mapConfirm:      { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderTopWidth: 1 },
+  mapConfirmLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 1.5, marginBottom: 2 },
+  mapConfirmAddr:  { fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  mapConfirmBtn:   { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14 },
+  mapConfirmBtnTxt:{ fontSize: 14, fontWeight: '800', color: '#000' },
 });
 
 // ─── ConfirmSheet ─────────────────────────────────────────────────────────────
@@ -449,7 +554,7 @@ const ConfirmSheet = ({ driver, routeParams, onClose, onSuccess, theme }) => {
                   <Text style={[csS.dName, { color: theme.foreground }]}>{driver.firstName} {driver.lastName}</Text>
                   <Text style={[csS.dVehicle, { color: theme.hint }]}>
                     {driver.vehicleColor} {driver.vehicleMake} •{' '}
-                    <Text style={{ color: accent, fontWeight: '800' }}>{driver.vehiclePlate}</Text>
+                    <Text style={{ color: theme.foreground, fontWeight: '800' }}>{driver.vehiclePlate}</Text>
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 4 }}>

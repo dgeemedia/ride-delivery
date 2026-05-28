@@ -568,6 +568,9 @@ function buildHTML({ initialRegion, showsUserLocation, markers, polylines, circl
     clearTimeout(moveTimer);
     moveTimer = setTimeout(function() { postMsg('regionChangeComplete'); }, 80);
   });
+  map.on('click', function(e) {
+    postMsg('mapPress', { coordinate: { latitude: e.latlng.lat, longitude: e.latlng.lng } });
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // Command handler — called from React Native via injectJavaScript
@@ -667,7 +670,7 @@ function makeRef({ sendCmd, isWeb, iframeRef, webViewRef }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const WebMapView = forwardRef(function WebMapView(
   { style, initialRegion, showsUserLocation, onMapReady,
-    onRegionChange, onRegionChangeComplete, onMessage: _onMessage, children },
+    onRegionChange, onRegionChangeComplete, onMessage: _onMessage, onPress, children },
   ref
 ) {
   const iframeRef = useRef(null);
@@ -695,6 +698,7 @@ const WebMapView = forwardRef(function WebMapView(
         if (msg.type === 'regionChange')         onRegionChange?.(msg.region);
         if (msg.type === 'regionChangeComplete') onRegionChangeComplete?.(msg.region);
         if (msg.type === 'markerPress')          _onMessage?.({ nativeEvent: { data: JSON.stringify(msg) } });
+        if (msg.type === 'mapPress')             onPress?.({ nativeEvent: { coordinate: msg.coordinate } });
       } catch {}
     };
     window.addEventListener('message', handler);
@@ -726,7 +730,7 @@ const webStyles = {
 // ─────────────────────────────────────────────────────────────────────────────
 const NativeMapView = forwardRef(function NativeMapView(
   { style, initialRegion, showsUserLocation, onMapReady,
-    onRegionChange, onRegionChangeComplete, onMessage: _onMessage, children },
+    onRegionChange, onRegionChangeComplete, onMessage: _onMessage, onPress, children },
   ref
 ) {
   const webViewRef = useRef(null);
@@ -755,6 +759,7 @@ const NativeMapView = forwardRef(function NativeMapView(
       if (msg.type === 'ready')                onMapReady?.();
       if (msg.type === 'regionChange')         onRegionChange?.(msg.region);
       if (msg.type === 'regionChangeComplete') onRegionChangeComplete?.(msg.region);
+      if (msg.type === 'mapPress')             onPress?.({ nativeEvent: { coordinate: msg.coordinate } });
       _onMessage?.(event);
     } catch {}
   };

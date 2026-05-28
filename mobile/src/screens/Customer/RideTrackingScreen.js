@@ -111,7 +111,7 @@ const sr = StyleSheet.create({
 });
 
 // ── DriverHeroCard ────────────────────────────────────────────────────────────
-const DriverHeroCard = ({ ride, theme, accentColor }) => {
+const DriverHeroCard = ({ ride, theme, accentColor, accentFg }) => {
   const driver = ride?.driver;
   if (!driver) return null;
   const dp    = driver.driverProfile;
@@ -164,7 +164,7 @@ const DriverHeroCard = ({ ride, theme, accentColor }) => {
           onPress={() => callPhone(driver.phone)}
           activeOpacity={0.75}
         >
-          <Ionicons name="call" size={18} color="#080C18" />
+          <Ionicons name="call" size={18} color={accentFg} />
         </TouchableOpacity>
       )}
     </View>
@@ -540,7 +540,7 @@ export default function RideTrackingScreen({ route, navigation }) {
               </View>
             </View>
 
-            <DriverHeroCard ride={ride} theme={theme} accentColor={accentColor} />
+            <DriverHeroCard ride={ride} theme={theme} accentColor={accentColor} accentFg={accentFg} />
             <RouteCard ride={ride} theme={theme} />
 
             <View style={[s.safetyChip, { backgroundColor: '#5DAA7212', borderColor: '#5DAA7230' }]}>
