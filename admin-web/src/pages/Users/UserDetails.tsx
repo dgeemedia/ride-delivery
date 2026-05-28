@@ -1,7 +1,7 @@
 // admin-web/src/pages/Users/UserDetails.tsx
 // FIX: removed unused 'formatDate' import, removed unused 'isAdminAccount' variable
 import React, { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Mail, Phone, Calendar, Shield, User,
   DollarSign, CheckCircle, XCircle, AlertTriangle, Trash2,
@@ -33,6 +33,8 @@ const DEPT_LABELS: Record<string, string> = {
 const UserDetails: React.FC = () => {
   const { id }   = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const backTo   = (location.state as any)?.from ?? '/users';
   const { user: currentUser } = useAuthStore();
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
@@ -104,7 +106,7 @@ const UserDetails: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={() => navigate('/users')}><ArrowLeft className="h-5 w-5" /></Button>
+          <Button variant="ghost" onClick={() => navigate(backTo)}><ArrowLeft className="h-5 w-5" /></Button>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-lg">
               {user.firstName[0]}{user.lastName[0]}

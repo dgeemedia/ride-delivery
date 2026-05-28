@@ -65,7 +65,7 @@ const UserList: React.FC = () => {
         </div>
         {isSuperAdmin && (
           <Button onClick={() => navigate('/users/create-admin')}>
-            <UserPlus className="h-4 w-4" />Create Admin
+            <UserPlus className="h-4 w-4" />Create User
           </Button>
         )}
       </div>

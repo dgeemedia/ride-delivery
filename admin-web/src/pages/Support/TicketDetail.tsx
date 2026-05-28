@@ -141,7 +141,7 @@ const TicketDetail: React.FC = () => {
               </div>
               {ticket.user && (
                 <button
-                  onClick={() => navigate(`/users/${ticket.user!.id}`)}
+                  onClick={() => navigate(`/users/${ticket.user!.id}`, { state: { from: `/support/tickets/${id}` } })}
                   className="ml-auto text-xs text-primary-600 hover:underline flex items-center gap-1"
                 >
                   <ExternalLink className="h-3 w-3" />View profile
@@ -262,7 +262,7 @@ const TicketDetail: React.FC = () => {
                 <p className="text-xs mt-1"><Badge variant="default">{ticket.user.role}</Badge></p>
               </div>
               <button
-                onClick={() => navigate(`/users/${ticket.user!.id}`)}
+                onClick={() => navigate(`/users/${ticket.user!.id}`, { state: { from: `/support/tickets/${id}` } })}
                 className="mt-3 text-xs text-primary-600 hover:underline flex items-center gap-1"
               >
                 <ExternalLink className="h-3 w-3" />View full profile
