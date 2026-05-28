@@ -1694,14 +1694,6 @@ const GeneralSettings: React.FC = () => {
     },
     ...(isSuperAdmin ? [
       {
-        id: 'onboarding-bonus',
-        icon: <Gift className="h-4 w-4" />,
-        title: 'Onboarding bonus',
-        subtitle: "Credit approved drivers & partners who haven't received one yet",
-        component: <OnboardingBonusSection />,
-        superAdmin: true,
-      },
-      {
         id: 'pricing',
         icon: <DollarSign className="h-4 w-4" />,
         title: 'Fare pricing',
@@ -1732,6 +1724,15 @@ const GeneralSettings: React.FC = () => {
         title: 'Custom bonus',
         subtitle: 'Credit specific drivers or partners a custom amount',
         component: <CustomBonusSection />,
+        wide: true,
+        superAdmin: true,
+      },
+      {
+        id: 'onboarding-bonus',
+        icon: <Gift className="h-4 w-4" />,
+        title: 'Onboarding bonus',
+        subtitle: "Credit approved drivers & partners who haven't received one yet",
+        component: <OnboardingBonusSection />,
         superAdmin: true,
       },
       {
