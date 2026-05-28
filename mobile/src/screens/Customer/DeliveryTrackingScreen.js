@@ -323,12 +323,13 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         text: 'Cancel', style: 'destructive',
         onPress: async () => {
           setCancelling(true);
-          try {
-            await deliveryAPI.cancelDelivery(delivery.id, { reason: 'Customer cancelled from tracking screen' });
-            goHome(navigation);
-          } catch (err) {
-            Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel.');
-          } finally { setCancelling(false); }
+try {
+  await deliveryAPI.cancelDelivery(delivery.id, { reason: 'Customer cancelled from tracking screen' });
+  goHome(navigation);
+} catch (err) {
+  const msg = err?.response?.data?.message ?? err?.data?.message ?? err?.message ?? 'Could not cancel.';
+  Alert.alert('Error', msg);
+} finally { setCancelling(false); }
         },
       },
     ]);

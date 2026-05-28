@@ -364,23 +364,28 @@ export default function RideTrackingScreen({ route, navigation }) {
     };
   }, [rideId]);
 
-  const handleCancel = () => {
-    Alert.alert('Cancel Ride?', 'Are you sure you want to cancel?', [
-      { text: 'Keep Ride', style: 'cancel' },
-      {
-        text: 'Cancel Ride', style: 'destructive',
-        onPress: async () => {
-          setCancelling(true);
-          try {
-            await rideAPI.cancelRide(rideId, { reason: 'Customer cancelled from tracking screen' });
-            goHome(navigation);
-          } catch (err) {
-            Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel.');
-          } finally { setCancelling(false); }
-        },
+const handleCancel = () => {
+  if (!ride?.id) {
+    Alert.alert('Error', 'No active ride found.');
+    return;
+  }
+  Alert.alert('Cancel Ride?', 'Are you sure you want to cancel?', [
+    { text: 'Keep Ride', style: 'cancel' },
+    {
+      text: 'Cancel Ride', style: 'destructive',
+      onPress: async () => {
+        setCancelling(true);
+        try {
+          await rideAPI.cancelRide(ride.id, { reason: 'Customer cancelled from tracking screen' });
+          goHome(navigation);
+        } catch (err) {
+          const msg = err?.response?.data?.message ?? err?.data?.message ?? err?.message ?? 'Could not cancel.';
+          Alert.alert('Error', msg);
+        } finally { setCancelling(false); }
       },
-    ]);
-  };
+    },
+  ]);
+};
 
   const status     = ride?.status ?? 'REQUESTED';
   const statusCfg  = STATUS_CONFIG[status] ?? STATUS_CONFIG.ACCEPTED;

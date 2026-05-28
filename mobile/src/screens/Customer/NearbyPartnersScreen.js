@@ -4,7 +4,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   StatusBar, Dimensions, Animated, ActivityIndicator,
   Alert, RefreshControl, ScrollView,
-  Modal, PanResponder, TextInput,
+  Modal, PanResponder, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -231,124 +231,127 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
     onClose();
   };
 
-  if (!visible) return null;
+if (!visible) return null;
 
-  return (
-    <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
-      <View style={lss.overlay}>
-        <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} activeOpacity={1} />
-        <Animated.View style={[lss.sheet, { backgroundColor: theme.background, borderColor: theme.border, transform: [{ translateY: slideA }] }]}>
-          <View style={[lss.handle, { backgroundColor: theme.hint + '44' }]} />
+return (
+  <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
+    <KeyboardAvoidingView
+      style={lss.overlay}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} activeOpacity={1} />
+      <Animated.View style={[lss.sheet, { backgroundColor: theme.background, borderColor: theme.border, transform: [{ translateY: slideA }] }]}>
+        <View style={[lss.handle, { backgroundColor: theme.hint + '44' }]} />
 
-          <View style={lss.header}>
-            <View style={[lss.dotWrap, { backgroundColor: accent + '18' }]}>
-              <View style={[lss.dot, { backgroundColor: accent }]} />
+        <View style={lss.header}>
+          <View style={[lss.dotWrap, { backgroundColor: accent + '18' }]}>
+            <View style={[lss.dot, { backgroundColor: accent }]} />
+          </View>
+          <Text style={[lss.title, { color: theme.foreground }]}>
+            {isPickup ? 'Set Pickup' : 'Set Drop-off'}
+          </Text>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <View style={[lss.closeBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+              <Ionicons name="close" size={16} color={theme.hint} />
             </View>
-            <Text style={[lss.title, { color: theme.foreground }]}>
-              {isPickup ? 'Set Pickup' : 'Set Drop-off'}
-            </Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <View style={[lss.closeBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-                <Ionicons name="close" size={16} color={theme.hint} />
-              </View>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[lss.tabs, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+          {['search', 'map'].map(t => (
+            <TouchableOpacity
+              key={t}
+              style={[lss.tab, tab === t && { backgroundColor: accent, borderRadius: 10 }]}
+              onPress={() => setTab(t)}
+            >
+              <Ionicons name={t === 'search' ? 'search' : 'map-outline'} size={14} color={tab === t ? '#fff' : theme.hint} />
+              <Text style={[lss.tabTxt, { color: tab === t ? '#fff' : theme.hint }]}>
+                {t === 'search' ? 'Search' : 'Map'}
+              </Text>
             </TouchableOpacity>
-          </View>
+          ))}
+        </View>
 
-          <View style={[lss.tabs, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            {['search', 'map'].map(t => (
-              <TouchableOpacity
-                key={t}
-                style={[lss.tab, tab === t && { backgroundColor: accent, borderRadius: 10 }]}
-                onPress={() => setTab(t)}
-              >
-                <Ionicons name={t === 'search' ? 'search' : 'map-outline'} size={14} color={tab === t ? '#fff' : theme.hint} />
-                <Text style={[lss.tabTxt, { color: tab === t ? '#fff' : theme.hint }]}>
-                  {t === 'search' ? 'Search' : 'Map'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {tab === 'search' ? (
-            <>
-              <View style={[lss.inputWrap, { backgroundColor: theme.backgroundAlt, borderColor: accent + '50' }]}>
-                <Ionicons name="search" size={16} color={accent} style={{ marginRight: 8 }} />
-                <TextInput
-                  style={[lss.input, { color: theme.foreground }]}
-                  placeholder={isPickup ? 'Search pickup location…' : 'Search drop-off location…'}
-                  placeholderTextColor={theme.hint}
-                  value={query}
-                  onChangeText={search}
-                  autoFocus
-                  autoCapitalize="none"
-                />
-                {loading && <ActivityIndicator size="small" color={accent} />}
-                {query.length > 0 && !loading && (
-                  <TouchableOpacity onPress={() => { setQuery(''); setResults([]); }}>
-                    <Ionicons name="close-circle" size={16} color={theme.hint} />
-                  </TouchableOpacity>
-                )}
-              </View>
-              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                {results.map(item => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[lss.resultRow, { borderBottomColor: theme.border }]}
-                    onPress={() => { onSelect(item); onClose(); }}
-                    activeOpacity={0.75}
-                  >
-                    <View style={[lss.resultIcon, { backgroundColor: accent + '12' }]}>
-                      <Ionicons name="location-outline" size={14} color={accent} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[lss.resultMain, { color: theme.foreground }]} numberOfLines={1}>{item.main}</Text>
-                      <Text style={[lss.resultSub,  { color: theme.hint }]}      numberOfLines={1}>{item.secondary}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-                {results.length === 0 && query.length >= 3 && !loading && (
-                  <Text style={[lss.noResults, { color: theme.hint }]}>No results found</Text>
-                )}
-              </ScrollView>
-            </>
-          ) : (
-            <View style={{ flex: 1 }}>
-              <Text style={[lss.mapHint, { color: theme.hint }]}>Tap anywhere on the map to place a pin</Text>
-              <View style={{ flex: 1 }}>
-                <SmartMapView
-                  style={StyleSheet.absoluteFillObject}
-                  initialRegion={initialRegion}
-                  showsUserLocation
-                  onPress={handleMapPress}
+        {tab === 'search' ? (
+          <>
+            <View style={[lss.inputWrap, { backgroundColor: theme.backgroundAlt, borderColor: accent + '50' }]}>
+              <Ionicons name="search" size={16} color={accent} style={{ marginRight: 8 }} />
+              <TextInput
+                style={[lss.input, { color: theme.foreground }]}
+                placeholder={isPickup ? 'Search pickup location…' : 'Search drop-off location…'}
+                placeholderTextColor={theme.hint}
+                value={query}
+                onChangeText={search}
+                autoFocus
+                autoCapitalize="none"
+              />
+              {loading && <ActivityIndicator size="small" color={accent} />}
+              {query.length > 0 && !loading && (
+                <TouchableOpacity onPress={() => { setQuery(''); setResults([]); }}>
+                  <Ionicons name="close-circle" size={16} color={theme.hint} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {results.map(item => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[lss.resultRow, { borderBottomColor: theme.border }]}
+                  onPress={() => { onSelect(item); onClose(); }}
+                  activeOpacity={0.75}
                 >
-                  {mapPin && (
-                    <Marker coordinate={{ latitude: mapPin.lat, longitude: mapPin.lng }} pinColor={accent} />
-                  )}
-                </SmartMapView>
-                {geocoding && (
-                  <View style={lss.geocodingOverlay}>
-                    <ActivityIndicator color={accent} />
-                    <Text style={[lss.geocodingTxt, { color: '#fff' }]}>Getting address…</Text>
+                  <View style={[lss.resultIcon, { backgroundColor: accent + '12' }]}>
+                    <Ionicons name="location-outline" size={14} color={accent} />
                   </View>
-                )}
-              </View>
-              {mapPin && (
-                <View style={[lss.mapConfirm, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[lss.mapConfirmLabel, { color: theme.hint }]}>SELECTED</Text>
-                    <Text style={[lss.mapConfirmAddr, { color: theme.foreground }]} numberOfLines={2}>{mapPin.address}</Text>
+                    <Text style={[lss.resultMain, { color: theme.foreground }]} numberOfLines={1}>{item.main}</Text>
+                    <Text style={[lss.resultSub,  { color: theme.hint }]}      numberOfLines={1}>{item.secondary}</Text>
                   </View>
-                  <TouchableOpacity style={[lss.mapConfirmBtn, { backgroundColor: accent }]} onPress={confirmMapPin}>
-                    <Text style={lss.mapConfirmBtnTxt}>Confirm</Text>
-                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+              {results.length === 0 && query.length >= 3 && !loading && (
+                <Text style={[lss.noResults, { color: theme.hint }]}>No results found</Text>
+              )}
+            </ScrollView>
+          </>
+        ) : (
+          <View style={{ flex: 1 }}>
+            <Text style={[lss.mapHint, { color: theme.hint }]}>Tap anywhere on the map to place a pin</Text>
+            <View style={{ flex: 1 }}>
+              <SmartMapView
+                style={StyleSheet.absoluteFillObject}
+                initialRegion={initialRegion}
+                showsUserLocation
+                onPress={handleMapPress}
+              >
+                {mapPin && (
+                  <Marker coordinate={{ latitude: mapPin.lat, longitude: mapPin.lng }} pinColor={accent} />
+                )}
+              </SmartMapView>
+              {geocoding && (
+                <View style={lss.geocodingOverlay}>
+                  <ActivityIndicator color={accent} />
+                  <Text style={[lss.geocodingTxt, { color: '#fff' }]}>Getting address…</Text>
                 </View>
               )}
             </View>
-          )}
-        </Animated.View>
-      </View>
-    </Modal>
-  );
+            {mapPin && (
+              <View style={[lss.mapConfirm, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[lss.mapConfirmLabel, { color: theme.hint }]}>SELECTED</Text>
+                  <Text style={[lss.mapConfirmAddr, { color: theme.foreground }]} numberOfLines={2}>{mapPin.address}</Text>
+                </View>
+                <TouchableOpacity style={[lss.mapConfirmBtn, { backgroundColor: accent }]} onPress={confirmMapPin}>
+                  <Text style={lss.mapConfirmBtnTxt}>Confirm</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+      </Animated.View>
+    </KeyboardAvoidingView>
+  </Modal>
+);
 };
 const lss = StyleSheet.create({
   overlay:          { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
