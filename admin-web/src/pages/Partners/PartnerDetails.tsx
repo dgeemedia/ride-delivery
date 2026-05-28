@@ -7,6 +7,7 @@ import {
   MapPin, Package,
 } from 'lucide-react';
 import { partnersAPI } from '@/services/api/partners';
+import { getPartnerDocDefs } from './PartnerApproval';
 import { DeliveryPartner } from '@/types';
 import { Card, Button, Badge, Spinner, Alert } from '@/components/common';
 import { formatDate, formatDateTime } from '@/utils/helpers';
@@ -161,13 +162,24 @@ const PartnerDetails: React.FC = () => {
             <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
               <FileText className="h-4 w-4 text-indigo-500" />Documents
             </h3>
-            {!(partner.idImageUrl && partner.vehicleImageUrl) && (
-              <Alert variant="warning" className="mb-4">Some documents are missing.</Alert>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <DocImage label="Government ID" url={partner.idImageUrl}      />
-              <DocImage label="Vehicle Photo" url={partner.vehicleImageUrl} />
-            </div>
+            {(() => {
+              const defs = getPartnerDocDefs(partner.vehicleType);
+              const uploaded = defs.filter(({ field }) => (partner as any)[field]).length;
+              return (
+                <>
+                  {uploaded < defs.length && (
+                    <Alert variant="warning" className="mb-4">
+                      {uploaded}/{defs.length} documents uploaded — some are missing.
+                    </Alert>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {defs.map(({ field, label }) => (
+                      <DocImage key={field} label={label} url={(partner as any)[field]} />
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
           </Card>
 
           {/* ── Rejection notice ── */}

@@ -6,6 +6,7 @@ import {
   User, DollarSign, CheckCircle, XCircle, Clock, AlertTriangle,
 } from 'lucide-react';
 import { driversAPI } from '@/services/api/drivers';
+import { getDriverDocDefs } from './DriverApproval';
 import { Driver } from '@/types';
 import { Card, Button, Badge, Spinner, Alert } from '@/components/common';
 import { formatDate, formatDateTime } from '@/utils/helpers';
@@ -137,14 +138,24 @@ const DriverDetails: React.FC = () => {
           {/* Documents */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2"><FileText className="h-4 w-4 text-indigo-500" />Documents</h3>
-            {!(driver.licenseImageUrl && driver.vehicleRegUrl && driver.insuranceUrl) && (
-              <Alert variant="warning" className="mb-4">Some documents are missing.</Alert>
-            )}
-            <div className="grid grid-cols-3 gap-4">
-              <DocImage label="Driver License"       url={driver.licenseImageUrl} />
-              <DocImage label="Vehicle Registration" url={driver.vehicleRegUrl}   />
-              <DocImage label="Insurance"            url={driver.insuranceUrl}    />
-            </div>
+            {(() => {
+              const defs = getDriverDocDefs(driver.vehicleType);
+              const uploaded = defs.filter(({ field }) => (driver as any)[field]).length;
+              return (
+                <>
+                  {uploaded < defs.length && (
+                    <Alert variant="warning" className="mb-4">
+                      {uploaded}/{defs.length} documents uploaded — some are missing.
+                    </Alert>
+                  )}
+                  <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
+                    {defs.map(({ field, label }) => (
+                      <DocImage key={field} label={label} url={(driver as any)[field]} />
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
           </Card>
 
           {/* ── Rejection notice — shown after Documents card ── */}

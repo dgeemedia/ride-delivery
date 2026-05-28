@@ -11,6 +11,71 @@ import { useAuthStore } from '@/store/authStore';
 import { formatDate } from '@/utils/helpers';
 import toast from 'react-hot-toast';
 
+// ─── Vehicle-type-aware required document definitions ────────────────────────
+type DriverDocDef = { field: keyof Driver; label: string; icon: React.ReactNode };
+
+const DRIVER_DOC_DEFINITIONS: Record<string, DriverDocDef[]> = {
+  CAR: [
+    { field: 'applicantPhotoUrl',       label: 'Applicant Photo',            icon: <FileText className="h-3 w-3" /> },
+    { field: 'govtIdUrl',               label: 'Government ID',              icon: <FileText className="h-3 w-3" /> },
+    { field: 'proofOfAddressUrl',       label: 'Proof of Address',           icon: <FileText className="h-3 w-3" /> },
+    { field: 'licenseImageUrl',         label: "Driver's Licence",           icon: <FileText className="h-3 w-3" /> },
+    { field: 'vehicleRegUrl',           label: 'Vehicle Registration',       icon: <Car className="h-3 w-3" /> },
+    { field: 'insuranceUrl',            label: 'Insurance Certificate',      icon: <Shield className="h-3 w-3" /> },
+    { field: 'roadWorthinessUrl',       label: 'Road Worthiness Cert',       icon: <Shield className="h-3 w-3" /> },
+    { field: 'vehicleInspectionUrl',    label: 'Vehicle Inspection Report',  icon: <Car className="h-3 w-3" /> },
+    { field: 'hackneyCertUrl',          label: 'Hackney / Commercial Permit',icon: <FileText className="h-3 w-3" /> },
+    { field: 'vehiclePhotoExteriorUrl', label: 'Vehicle Photo (Exterior)',   icon: <Car className="h-3 w-3" /> },
+    { field: 'vehiclePhotoInteriorUrl', label: 'Vehicle Photo (Interior)',   icon: <Car className="h-3 w-3" /> },
+  ],
+  MOTORCYCLE: [
+    { field: 'applicantPhotoUrl',       label: 'Applicant Photo',            icon: <FileText className="h-3 w-3" /> },
+    { field: 'govtIdUrl',               label: 'Government ID',              icon: <FileText className="h-3 w-3" /> },
+    { field: 'proofOfAddressUrl',       label: 'Proof of Address',           icon: <FileText className="h-3 w-3" /> },
+    { field: 'licenseImageUrl',         label: "Driver's Licence",           icon: <FileText className="h-3 w-3" /> },
+    { field: 'vehicleRegUrl',           label: 'Vehicle Registration',       icon: <Car className="h-3 w-3" /> },
+    { field: 'insuranceUrl',            label: 'Insurance Certificate',      icon: <Shield className="h-3 w-3" /> },
+    { field: 'roadWorthinessUrl',       label: 'Road Worthiness Cert',       icon: <Shield className="h-3 w-3" /> },
+    { field: 'vehiclePhotoExteriorUrl', label: 'Vehicle Photo (Exterior)',   icon: <Car className="h-3 w-3" /> },
+    { field: 'vehiclePhotoInteriorUrl', label: 'Vehicle Photo (Interior)',   icon: <Car className="h-3 w-3" /> },
+    { field: 'riderCardUrl',            label: "Rider's Card / Union Card",  icon: <FileText className="h-3 w-3" /> },
+    { field: 'helmetPhotoUrl',          label: 'Helmet Photo',               icon: <FileText className="h-3 w-3" /> },
+    { field: 'guarantorLetterUrl',      label: 'Guarantor Letter',           icon: <FileText className="h-3 w-3" /> },
+    { field: 'guarantorIdUrl',          label: "Guarantor's ID",             icon: <FileText className="h-3 w-3" /> },
+  ],
+  BIKE: [
+    { field: 'applicantPhotoUrl',       label: 'Applicant Photo',            icon: <FileText className="h-3 w-3" /> },
+    { field: 'govtIdUrl',               label: 'Government ID',              icon: <FileText className="h-3 w-3" /> },
+    { field: 'proofOfAddressUrl',       label: 'Proof of Address',           icon: <FileText className="h-3 w-3" /> },
+    { field: 'licenseImageUrl',         label: "Driver's Licence",           icon: <FileText className="h-3 w-3" /> },
+    { field: 'insuranceUrl',            label: 'Insurance Certificate',      icon: <Shield className="h-3 w-3" /> },
+    { field: 'roadWorthinessUrl',       label: 'Road Worthiness Cert',       icon: <Shield className="h-3 w-3" /> },
+    { field: 'vehiclePhotoExteriorUrl', label: 'Vehicle Photo (Exterior)',   icon: <Car className="h-3 w-3" /> },
+    { field: 'vehiclePhotoInteriorUrl', label: 'Vehicle Photo (Interior)',   icon: <Car className="h-3 w-3" /> },
+    { field: 'dispatchPermitUrl',       label: 'Dispatch / Courier Permit',  icon: <FileText className="h-3 w-3" /> },
+    { field: 'guarantorLetterUrl',      label: 'Guarantor Letter',           icon: <FileText className="h-3 w-3" /> },
+    { field: 'guarantorIdUrl',          label: "Guarantor's ID",             icon: <FileText className="h-3 w-3" /> },
+  ],
+  TRICYCLE: [
+    { field: 'applicantPhotoUrl',       label: 'Applicant Photo',            icon: <FileText className="h-3 w-3" /> },
+    { field: 'govtIdUrl',               label: 'Government ID',              icon: <FileText className="h-3 w-3" /> },
+    { field: 'proofOfAddressUrl',       label: 'Proof of Address',           icon: <FileText className="h-3 w-3" /> },
+    { field: 'licenseImageUrl',         label: "Driver's Licence",           icon: <FileText className="h-3 w-3" /> },
+    { field: 'vehicleRegUrl',           label: 'Vehicle Registration',       icon: <Car className="h-3 w-3" /> },
+    { field: 'insuranceUrl',            label: 'Insurance Certificate',      icon: <Shield className="h-3 w-3" /> },
+    { field: 'roadWorthinessUrl',       label: 'Road Worthiness Cert',       icon: <Shield className="h-3 w-3" /> },
+    { field: 'vehiclePhotoExteriorUrl', label: 'Vehicle Photo (Exterior)',   icon: <Car className="h-3 w-3" /> },
+    { field: 'vehiclePhotoInteriorUrl', label: 'Vehicle Photo (Interior)',   icon: <Car className="h-3 w-3" /> },
+    { field: 'operatorPermitUrl',       label: 'Tricycle Operator Permit',   icon: <FileText className="h-3 w-3" /> },
+    { field: 'guarantorLetterUrl',      label: 'Guarantor Letter',           icon: <FileText className="h-3 w-3" /> },
+    { field: 'guarantorIdUrl',          label: "Guarantor's ID",             icon: <FileText className="h-3 w-3" /> },
+  ],
+};
+DRIVER_DOC_DEFINITIONS.VAN = DRIVER_DOC_DEFINITIONS.CAR;
+
+export function getDriverDocDefs(vehicleType?: string): DriverDocDef[] {
+  return DRIVER_DOC_DEFINITIONS[vehicleType?.toUpperCase() ?? ''] ?? DRIVER_DOC_DEFINITIONS.CAR;
+}
 // ─── Document viewer sub-component ───────────────────────────────────────────
 const DocImage: React.FC<{ label: string; url?: string; icon: React.ReactNode }> = ({ label, url, icon }) => (
   <div className="space-y-2">
@@ -64,19 +129,21 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ driver, isSuperAdmin, onC
   const [showReject,   setShowReject]   = useState(false);
   const [loading,      setLoading]      = useState(false);
 
-  // ── Use the backend-derived documentStatus when available, fall back to field check
-  const documentStatus = driver.documentStatus ??
-    (driver.licenseImageUrl && driver.vehicleRegUrl && driver.insuranceUrl
-      ? 'COMPLETE' : driver.licenseImageUrl || driver.vehicleRegUrl || driver.insuranceUrl
-      ? 'PARTIAL' : 'NONE');
+const docDefs = getDriverDocDefs(driver.vehicleType);
+  const uploadedCount = docDefs.filter(d => driver[d.field]).length;
+
+  const documentStatus = driver.documentStatus ?? (
+    uploadedCount === docDefs.length ? 'COMPLETE' :
+    uploadedCount > 0 ? 'PARTIAL' : 'NONE'
+  );
 
   const docStatusVariant =
     documentStatus === 'COMPLETE' ? 'success' :
     documentStatus === 'PARTIAL'  ? 'warning' : 'error';
 
   const docStatusLabel =
-    documentStatus === 'COMPLETE' ? 'All 3 documents uploaded' :
-    documentStatus === 'PARTIAL'  ? 'Some documents missing' :
+    documentStatus === 'COMPLETE' ? `All ${docDefs.length} documents uploaded` :
+    documentStatus === 'PARTIAL'  ? `${uploadedCount}/${docDefs.length} documents uploaded` :
     'No documents uploaded yet';
 
   const handleApprove = async () => {
@@ -173,9 +240,9 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ driver, isSuperAdmin, onC
           )}
 
           <div className="grid grid-cols-3 gap-4">
-            <DocImage label="Driver License"        url={driver.licenseImageUrl} icon={<FileText className="h-3 w-3" />} />
-            <DocImage label="Vehicle Registration"  url={driver.vehicleRegUrl}   icon={<Car className="h-3 w-3" />} />
-            <DocImage label="Insurance Certificate" url={driver.insuranceUrl}    icon={<Shield className="h-3 w-3" />} />
+            {docDefs.map(({ field, label, icon }) => (
+              <DocImage key={field} label={label} url={driver[field] as string | undefined} icon={icon} />
+            ))}
           </div>
         </div>
 
@@ -304,12 +371,18 @@ const DriverApproval: React.FC = () => {
 
               {/* Docs status */}
               <div className="flex items-center gap-2">
-                <Badge variant={
-                  (driver.documentStatus ?? 'NONE') === 'COMPLETE' ? 'success' :
-                  (driver.documentStatus ?? 'NONE') === 'PARTIAL'  ? 'warning' : 'error'
-                }>
-                  {[driver.licenseImageUrl, driver.vehicleRegUrl, driver.insuranceUrl].filter(Boolean).length}/3 docs
-                </Badge>
+                {(() => {
+                  const defs = getDriverDocDefs(driver.vehicleType);
+                  const count = defs.filter(d => (driver as any)[d.field]).length;
+                  return (
+                    <Badge variant={
+                      (driver.documentStatus ?? 'NONE') === 'COMPLETE' ? 'success' :
+                      (driver.documentStatus ?? 'NONE') === 'PARTIAL'  ? 'warning' : 'error'
+                    }>
+                      {count}/{defs.length} docs
+                    </Badge>
+                  );
+                })()}
                 {driver.documentsUploadedAt && (
                   <span className="text-xs text-gray-400">
                     Uploaded {formatDate(driver.documentsUploadedAt)}

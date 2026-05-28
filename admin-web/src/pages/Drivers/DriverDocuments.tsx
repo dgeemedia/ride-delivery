@@ -1,8 +1,9 @@
 // admin-web/src/pages/Drivers/DriverDocuments.tsx
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Car, Shield, AlertTriangle, ExternalLink, CheckCircle } from 'lucide-react';
+import { ArrowLeft, FileText, AlertTriangle, ExternalLink, CheckCircle } from 'lucide-react';
 import { driversAPI } from '@/services/api/drivers';
+import { getDriverDocDefs } from './DriverApproval';
 import { Driver } from '@/types';
 import { Card, Button, Badge, Spinner, Alert } from '@/components/common';
 import { formatDate } from '@/utils/helpers';
@@ -124,9 +125,9 @@ const DriverDocuments: React.FC = () => {
     </div>
   );
 
-  const uploadedCount = [driver.licenseImageUrl, driver.vehicleRegUrl, driver.insuranceUrl].filter(Boolean).length;
-  const allUploaded   = uploadedCount === 3;
-
+  const docDefs       = getDriverDocDefs(driver.vehicleType);
+  const uploadedCount = docDefs.filter(({ field }) => (driver as any)[field]).length;
+  const allUploaded   = uploadedCount === docDefs.length;
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -144,13 +145,15 @@ const DriverDocuments: React.FC = () => {
                 {driver.user.firstName} {driver.user.lastName} — Documents
               </h1>
               <p className="text-sm text-gray-500 mt-0.5">
-                {uploadedCount}/3 documents uploaded · Joined {formatDate(driver.createdAt)}
+                {uploadedCount}/{docDefs.length} documents uploaded • Joined {formatDate(driver.createdAt)}
               </p>
             </div>
           </div>
         </div>
         <Badge variant={allUploaded ? 'success' : 'warning'}>
-          {allUploaded ? 'All documents submitted' : `${3 - uploadedCount} document${3 - uploadedCount !== 1 ? 's' : ''} missing`}
+          {allUploaded
+            ? 'All documents submitted'
+            : `${docDefs.length - uploadedCount} document${docDefs.length - uploadedCount !== 1 ? 's' : ''} missing`}
         </Badge>
       </div>
 
@@ -162,24 +165,19 @@ const DriverDocuments: React.FC = () => {
 
       {/* Document grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <DocumentCard
-          label="Driver's License"
-          url={driver.licenseImageUrl}
-          icon={<FileText className="h-4 w-4 text-primary-500" />}
-          description={`License No: ${driver.licenseNumber}`}
-        />
-        <DocumentCard
-          label="Vehicle Registration"
-          url={driver.vehicleRegUrl}
-          icon={<Car className="h-4 w-4 text-warning-500" />}
-          description={`${driver.vehicleMake} ${driver.vehicleModel} (${driver.vehicleYear}) · ${driver.vehiclePlate}`}
-        />
-        <DocumentCard
-          label="Insurance Certificate"
-          url={driver.insuranceUrl}
-          icon={<Shield className="h-4 w-4 text-green-500" />}
-          description="Third-party or comprehensive vehicle insurance"
-        />
+        {docDefs.map(({ field, label }) => (
+          <DocumentCard
+            key={field}
+            label={label}
+            url={(driver as any)[field]}
+            icon={<FileText className="h-4 w-4 text-primary-500" />}
+            description={
+              field === 'licenseImageUrl' ? `License No: ${driver.licenseNumber}` :
+              field === 'vehicleRegUrl'   ? `${driver.vehicleMake} ${driver.vehicleModel} (${driver.vehicleYear}) • ${driver.vehiclePlate}` :
+              undefined
+            }
+          />
+        ))}
       </div>
 
       {/* Back link */}

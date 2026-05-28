@@ -318,11 +318,27 @@ exports.getPendingDrivers = async (req, res) => {
 };
 
 // Helper — does NOT block approval, it's purely informational for the admin UI.
+function getRequiredDriverDocs(vehicleType) {
+  const base = [
+    'licenseImageUrl', 'vehicleRegUrl', 'insuranceUrl',
+    'roadWorthinessUrl', 'vehiclePhotoExteriorUrl', 'vehiclePhotoInteriorUrl',
+    'applicantPhotoUrl', 'govtIdUrl', 'proofOfAddressUrl',
+  ];
+  const byType = {
+    CAR:        [...base, 'vehicleInspectionUrl', 'hackneyCertUrl'],
+    VAN:        [...base, 'vehicleInspectionUrl', 'hackneyCertUrl'],
+    MOTORCYCLE: [...base, 'riderCardUrl', 'helmetPhotoUrl', 'guarantorLetterUrl', 'guarantorIdUrl'],
+    BIKE:       [...base, 'dispatchPermitUrl', 'guarantorLetterUrl', 'guarantorIdUrl'],
+    TRICYCLE:   [...base, 'operatorPermitUrl', 'guarantorLetterUrl', 'guarantorIdUrl'],
+  };
+  return byType[vehicleType?.toUpperCase()] ?? base;
+}
+
 function deriveDocumentStatus(profile) {
-  const uploaded = [profile.licenseImageUrl, profile.vehicleRegUrl, profile.insuranceUrl]
-    .filter(Boolean).length;
-  if (uploaded === 3) return 'COMPLETE';
-  if (uploaded > 0)  return 'PARTIAL';
+  const required = getRequiredDriverDocs(profile.vehicleType);
+  const uploaded = required.filter(f => profile[f]).length;
+  if (uploaded === required.length && required.length > 0) return 'COMPLETE';
+  if (uploaded > 0) return 'PARTIAL';
   return 'NONE';
 }
 
@@ -540,7 +556,13 @@ exports.getDriverById = async (req, res) => {
     take: 10,
   });
  
-  res.status(200).json({ success: true, data: { driver, recentRides } });
+  res.status(200).json({
+    success: true,
+    data: {
+      driver: { ...driver, documentStatus: deriveDocumentStatus(driver) },
+      recentRides,
+    },
+  });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -548,11 +570,27 @@ exports.getDriverById = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Helper — purely informational for the admin UI, does NOT block approval.
+function getRequiredPartnerDocs(vehicleType) {
+  const base = [
+    'idImageUrl', 'vehicleImageUrl', 'applicantPhotoUrl',
+    'govtIdUrl', 'proofOfAddressUrl', 'insuranceUrl',
+    'roadWorthinessUrl', 'vehiclePhotoExteriorUrl', 'vehiclePhotoInteriorUrl',
+  ];
+  const byType = {
+    CAR:        base,
+    VAN:        base,
+    MOTORCYCLE: [...base, 'riderCardUrl', 'helmetPhotoUrl', 'guarantorLetterUrl', 'guarantorIdUrl'],
+    BIKE:       [...base, 'dispatchPermitUrl', 'guarantorLetterUrl', 'guarantorIdUrl'],
+    TRICYCLE:   [...base, 'operatorPermitUrl', 'guarantorLetterUrl', 'guarantorIdUrl'],
+  };
+  return byType[vehicleType?.toUpperCase()] ?? base;
+}
+
 function derivePartnerDocumentStatus(profile) {
-  const uploaded = [profile.idImageUrl, profile.vehicleImageUrl]
-    .filter(Boolean).length;
-  if (uploaded === 2) return 'COMPLETE';
-  if (uploaded === 1) return 'PARTIAL';
+  const required = getRequiredPartnerDocs(profile.vehicleType);
+  const uploaded = required.filter(f => profile[f]).length;
+  if (uploaded === required.length && required.length > 0) return 'COMPLETE';
+  if (uploaded > 0) return 'PARTIAL';
   return 'NONE';
 }
 

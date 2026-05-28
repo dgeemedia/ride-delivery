@@ -32,9 +32,24 @@ export interface Driver {
   vehicleYear: number;
   vehicleColor: string;
   vehiclePlate: string;
-  licenseImageUrl: string;
-  vehicleRegUrl: string;
-  insuranceUrl: string;
+  licenseImageUrl?: string;
+  vehicleRegUrl?: string;
+  insuranceUrl?: string;
+  // ── Extended KYC docs ──────────────────────────────────────
+  applicantPhotoUrl?: string;
+  govtIdUrl?: string;
+  proofOfAddressUrl?: string;
+  roadWorthinessUrl?: string;
+  vehicleInspectionUrl?: string;
+  hackneyCertUrl?: string;
+  vehiclePhotoExteriorUrl?: string;
+  vehiclePhotoInteriorUrl?: string;
+  riderCardUrl?: string;
+  helmetPhotoUrl?: string;
+  dispatchPermitUrl?: string;
+  guarantorLetterUrl?: string;
+  guarantorIdUrl?: string;
+  operatorPermitUrl?: string;
   isApproved: boolean;
   isOnline: boolean;
   currentLat?: number;
@@ -61,7 +76,21 @@ export interface DeliveryPartner {
   vehiclePlate?: string;
   idImageUrl?: string;
   vehicleImageUrl?: string;
-  documentsUploadedAt?: string;       // ← NEW
+  documentsUploadedAt?: string;
+  // ── Extended KYC docs ──────────────────────────────────────
+  applicantPhotoUrl?: string;
+  govtIdUrl?: string;
+  proofOfAddressUrl?: string;
+  insuranceUrl?: string;
+  roadWorthinessUrl?: string;
+  vehiclePhotoExteriorUrl?: string;
+  vehiclePhotoInteriorUrl?: string;
+  dispatchPermitUrl?: string;
+  guarantorLetterUrl?: string;
+  guarantorIdUrl?: string;
+  riderCardUrl?: string;
+  helmetPhotoUrl?: string;
+  operatorPermitUrl?: string;
 
   /** Derived by backend — 'COMPLETE' | 'PARTIAL' | 'NONE' */
   documentStatus?: 'COMPLETE' | 'PARTIAL' | 'NONE';  // ← NEW
