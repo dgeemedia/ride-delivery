@@ -390,7 +390,7 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
   const [dropoffLng,     setDropoffLng]     = useState(routeParams.dropoffLng     ?? null);
   const [searchType,     setSearchType]     = useState(null);
 
-  // New editable fields for contacts, package, and notes
+  // Editable fields
   const [pickupContact,  setPickupContact]  = useState(routeParams.pickupContact      ?? '');
   const [dropoffContact, setDropoffContact] = useState(routeParams.dropoffContact     ?? '');
   const [pkgDescription, setPkgDescription] = useState(routeParams.packageDescription ?? '');
@@ -419,7 +419,6 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
     Animated.spring(slideInY, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }).start();
   }, [partner?.partnerId]);
 
-  // Keep in sync when routeParams change
   const prevPartnerRef = useRef(null);
   useEffect(() => {
     if (!partner) return;
@@ -431,7 +430,6 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
     setDropoffAddress(routeParams.dropoffAddress ?? '');
     setDropoffLat(routeParams.dropoffLat     ?? null);
     setDropoffLng(routeParams.dropoffLng     ?? null);
-    // Also reset the new fields when partner changes
     setPickupContact(routeParams.pickupContact      ?? '');
     setDropoffContact(routeParams.dropoffContact     ?? '');
     setPkgDescription(routeParams.packageDescription ?? '');
@@ -439,6 +437,27 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
     setNotes(routeParams.packageNotes ?? '');
   }, [partner?.partnerId]);
 
+  // Memoised InputRow – must be defined BEFORE any early return
+  const InputRow = useCallback(
+    ({ label, value, onChangeText, placeholder, keyboardType = 'default', multiline = false, maxLength }) => (
+      <View style={[inpS.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+        <Text style={[inpS.label, { color: theme.hint }]}>{label}</Text>
+        <TextInput
+          style={[inpS.input, { color: theme.foreground }]}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={theme.hint}
+          keyboardType={keyboardType}
+          multiline={multiline}
+          maxLength={maxLength}
+        />
+      </View>
+    ),
+    [theme]
+  );
+
+  // Early return only AFTER all hooks have been called
   if (!partner) return null;
 
   const feeEstimate = routeParams.feeEstimate ?? partner.effectiveFee ?? 0;
@@ -522,7 +541,7 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
     }
   };
 
-  // Location field row (unchanged)
+  // Location field row
   const LocationField = ({ label, value, accent: ac, onSearch }) => (
     <View style={[lfS.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
       <View style={[lfS.dot, { backgroundColor: ac }]} />
@@ -536,23 +555,6 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
         <Ionicons name="pencil-outline" size={13} color={ac} />
         <Text style={[lfS.btnTxt, { color: ac }]}>Change</Text>
       </TouchableOpacity>
-    </View>
-  );
-
-  // Generic input row for the new editable fields
-  const InputRow = ({ label, value, onChangeText, placeholder, keyboardType = 'default', multiline = false, maxLength }) => (
-    <View style={[inpS.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-      <Text style={[inpS.label, { color: theme.hint }]}>{label}</Text>
-      <TextInput
-        style={[inpS.input, { color: theme.foreground }]}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={theme.hint}
-        keyboardType={keyboardType}
-        multiline={multiline}
-        maxLength={maxLength}
-      />
     </View>
   );
 
@@ -577,8 +579,12 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={cs.scroll}>
-
+            <ScrollView
+              style={{ flex: 1 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={cs.scroll}
+            >
               {/* Courier card */}
               <View style={[cs.courierCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                 <View style={[cs.courierAvatar, { backgroundColor: C.brand + '18' }]}>
@@ -598,7 +604,7 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
                 </View>
               </View>
 
-              {/* --- NEW EDITABLE DETAILS SECTION --- */}
+              {/* Editable details section */}
               <Text style={[cs.sectionLabel, { color: theme.hint }]}>DETAILS</Text>
 
               <InputRow
@@ -606,21 +612,18 @@ const ConfirmSheet = ({ partner, routeParams, onClose, onSuccess, theme }) => {
                 value={pickupContact}
                 onChangeText={setPickupContact}
                 placeholder="Name or phone number"
-                keyboardType="default"
               />
               <InputRow
                 label="Drop-off Contact *"
                 value={dropoffContact}
                 onChangeText={setDropoffContact}
                 placeholder="Name or phone number"
-                keyboardType="default"
               />
               <InputRow
                 label="Package Description *"
                 value={pkgDescription}
                 onChangeText={setPkgDescription}
                 placeholder="e.g., documents, small box"
-                keyboardType="default"
               />
               <InputRow
                 label="Package Weight (kg)"
@@ -748,7 +751,6 @@ const lfS = StyleSheet.create({
   btnTxt: { fontSize: 11, fontWeight: '700' },
 });
 
-// New input styles for editable details
 const inpS = StyleSheet.create({
   wrap:   { borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8 },
   label:  { fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
@@ -768,7 +770,6 @@ const cs = StyleSheet.create({
   courierName:  { fontSize: T.md, fontWeight: '700', marginBottom: 3 },
   courierVehicle:{ fontSize: T.sm, fontWeight: '500' },
   courierEta:   { fontSize: T.xs, fontWeight: '500' },
-  // Removed old pkgCard styles – now using InputRow
   sectionLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 2, marginBottom: 8, marginTop: 12 },
   connector:    { width: 1.5, height: 8, marginLeft: 16, borderLeftWidth: 1.5, borderStyle: 'dashed', marginVertical: 2 },
   feeCard:      { borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },
