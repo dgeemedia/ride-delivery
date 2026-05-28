@@ -10,15 +10,53 @@ const paymentService = require('../services/payment.service');
 console.log('[PARTNER-CTRL] Prisma partner controller loaded');
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  All uploadable document fields for delivery partners
+// ─────────────────────────────────────────────────────────────────────────────
+const PARTNER_DOC_FIELDS = [
+  // ── Personal KYC ──────────────────────────────────────────
+  { field: 'applicantPhotoUrl',        label: 'Applicant Photo'              },
+  { field: 'govtIdUrl',                label: 'Government ID'                },
+  { field: 'proofOfAddressUrl',        label: 'Proof of Address'             },
+
+  // ── Vehicle / identity docs (pre-existing) ─────────────────
+  { field: 'idImageUrl',               label: 'ID Image'                     },
+  { field: 'vehicleImageUrl',          label: 'Vehicle Image'                },
+
+  // ── Vehicle condition docs ─────────────────────────────────
+  { field: 'insuranceUrl',             label: 'Insurance Certificate'        },
+  { field: 'roadWorthinessUrl',        label: 'Road Worthiness Cert'         },
+  { field: 'vehiclePhotoExteriorUrl',  label: 'Vehicle Photo (Exterior)'     },
+  { field: 'vehiclePhotoInteriorUrl',  label: 'Vehicle Photo (Interior)'     },
+
+  // ── Bike / Dispatch specific ───────────────────────────────
+  { field: 'dispatchPermitUrl',        label: 'Dispatch / Courier Permit'    },
+  { field: 'guarantorLetterUrl',       label: 'Guarantor Letter'             },
+  { field: 'guarantorIdUrl',           label: "Guarantor's ID"               },
+
+  // ── Motorcycle specific ────────────────────────────────────
+  { field: 'riderCardUrl',             label: "Rider's Card / Union Card"    },
+  { field: 'helmetPhotoUrl',           label: 'Helmet Photo'                 },
+
+  // ── Tricycle specific ──────────────────────────────────────
+  { field: 'operatorPermitUrl',        label: 'Tricycle Operator Permit'     },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/partners/profile — create or update vehicle info
 // ─────────────────────────────────────────────────────────────────────────────
 exports.createOrUpdateProfile = async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
+  if (!errors.isEmpty())
     return res.status(400).json({ success: false, errors: errors.array() });
-  }
 
-  const { vehicleType, vehiclePlate, idImageUrl, vehicleImageUrl } = req.body;
+  const {
+    vehicleType,
+    vehiclePlate,
+    idImageUrl,
+    vehicleImageUrl,
+    numberOfSeats,
+    vehicleSubType,
+  } = req.body;
 
   const existingProfile = await prisma.deliveryPartnerProfile.findUnique({
     where: { userId: req.user.id },
@@ -30,10 +68,12 @@ exports.createOrUpdateProfile = async (req, res) => {
     profile = await prisma.deliveryPartnerProfile.update({
       where: { userId: req.user.id },
       data: {
-        ...(vehicleType    !== undefined && { vehicleType }),
-        ...(vehiclePlate   !== undefined && { vehiclePlate }),
-        ...(idImageUrl     !== undefined && { idImageUrl }),
+        ...(vehicleType     !== undefined && { vehicleType }),
+        ...(vehiclePlate    !== undefined && { vehiclePlate }),
+        ...(idImageUrl      !== undefined && { idImageUrl }),
         ...(vehicleImageUrl !== undefined && { vehicleImageUrl }),
+        ...(numberOfSeats   !== undefined && { numberOfSeats: parseInt(numberOfSeats, 10) || null }),
+        ...(vehicleSubType  !== undefined && { vehicleSubType: vehicleSubType?.trim() || null }),
         ...(req.body.preferredFloorPrice !== undefined && {
           preferredFloorPrice: parseFloat(req.body.preferredFloorPrice) || null,
         }),
@@ -47,7 +87,7 @@ exports.createOrUpdateProfile = async (req, res) => {
     });
   }
 
-  // New profile — only vehicleType is required at registration
+  // New profile — vehicleType is required at registration
   profile = await prisma.deliveryPartnerProfile.create({
     data: {
       userId: req.user.id,
@@ -55,29 +95,29 @@ exports.createOrUpdateProfile = async (req, res) => {
       ...(vehiclePlate    && { vehiclePlate }),
       ...(idImageUrl      && { idImageUrl }),
       ...(vehicleImageUrl && { vehicleImageUrl }),
+      ...(numberOfSeats   && { numberOfSeats: parseInt(numberOfSeats, 10) || null }),
+      ...(vehicleSubType  && { vehicleSubType: vehicleSubType?.trim() || null }),
       ...(req.body.preferredFloorPrice !== undefined && {
         preferredFloorPrice: parseFloat(req.body.preferredFloorPrice) || null,
       }),
     },
   });
 
-  // Notify the partner
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Application Submitted 🔍',
-    message: 'Your courier application is under review. Upload your ID to speed up approval.',
+    message: 'Your courier application is under review. Upload your documents to speed up approval.',
     type:    'profile_submitted',
     data:    { profileId: profile.id },
   });
 
-  // Notify all admins
   const admins = await prisma.user.findMany({
     where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
     select: { id: true },
   });
 
   await Promise.allSettled(
-    admins.map(a =>
+    admins.map((a) =>
       notificationService.notify({
         userId:  a.id,
         title:   'New Courier Application 🛵',
@@ -123,9 +163,8 @@ exports.getProfile = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.updateStatus = async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
+  if (!errors.isEmpty())
     return res.status(400).json({ success: false, errors: errors.array() });
-  }
 
   const { isOnline, currentLat, currentLng } = req.body;
 
@@ -134,14 +173,8 @@ exports.updateStatus = async (req, res) => {
   });
 
   if (!profile)           throw new AppError('Delivery partner profile not found.', 404);
-  if (profile.isRejected) throw new AppError(
-    'Your application was not approved. Please contact support.',
-    403
-  );
-  if (!profile.isApproved) throw new AppError(
-    'Your profile is still under review. You will be notified once approved.',
-    403
-  );
+  if (profile.isRejected) throw new AppError('Your application was not approved. Please contact support.', 403);
+  if (!profile.isApproved) throw new AppError('Your profile is still under review. You will be notified once approved.', 403);
 
   if (!isOnline) {
     const activeDelivery = await prisma.delivery.findFirst({
@@ -150,22 +183,17 @@ exports.updateStatus = async (req, res) => {
         status:    { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] },
       },
     });
-    if (activeDelivery) {
+    if (activeDelivery)
       throw new AppError('Cannot go offline with an active delivery in progress.', 400);
-    }
   }
 
-  // AFTER
-const updatedProfile = await prisma.deliveryPartnerProfile.update({
-  where: { userId: req.user.id },
-  data: {
-    isOnline: Boolean(isOnline),
-    // Only overwrite coords when real values arrive — never null them out
-    ...(currentLat != null && currentLng != null
-      ? { currentLat, currentLng }
-      : {}),
-  },
-});
+  const updatedProfile = await prisma.deliveryPartnerProfile.update({
+    where: { userId: req.user.id },
+    data: {
+      isOnline: Boolean(isOnline),
+      ...(currentLat != null && currentLng != null ? { currentLat, currentLng } : {}),
+    },
+  });
 
   res.status(200).json({
     success: true,
@@ -230,11 +258,10 @@ exports.getEarnings = async (req, res) => {
       walletBalance:      wallet?.balance?.toFixed(2) || '0.00',
       totalDeliveries:    deliveries.length,
       averagePerDelivery: deliveries.length > 0
-        ? (totalNetEarnings / deliveries.length).toFixed(2)
-        : '0.00',
+        ? (totalNetEarnings / deliveries.length).toFixed(2) : '0.00',
       currency: 'NGN',
       period,
-      deliveries: deliveries.map(d => ({
+      deliveries: deliveries.map((d) => ({
         id:                 d.id,
         deliveredAt:        d.deliveredAt,
         grossFee:           d.actualFee,
@@ -283,7 +310,12 @@ exports.getStats = async (req, res) => {
       isOnline:    profile.isOnline,
       isApproved:  profile.isApproved,
       isRejected:  profile.isRejected,
-      vehicleInfo: { type: profile.vehicleType, plate: profile.vehiclePlate },
+      vehicleInfo: {
+        type:         profile.vehicleType,
+        plate:        profile.vehiclePlate,
+        numberOfSeats: profile.numberOfSeats,
+        subType:      profile.vehicleSubType,
+      },
     },
   });
 };
@@ -295,8 +327,8 @@ exports.getNearbyRequests = async (req, res) => {
   const profile = await prisma.deliveryPartnerProfile.findUnique({
     where: { userId: req.user.id },
   });
-  if (!profile)               throw new AppError('Partner profile not found', 404);
-  if (!profile.isOnline)      throw new AppError('You must be online to see requests', 400);
+  if (!profile)                             throw new AppError('Partner profile not found', 404);
+  if (!profile.isOnline)                    throw new AppError('You must be online to see requests', 400);
   if (!profile.currentLat || !profile.currentLng)
     throw new AppError('Current location not set', 400);
 
@@ -322,57 +354,59 @@ exports.getNearbyRequests = async (req, res) => {
 // POST /api/partners/documents — upload / refresh document URLs
 // ─────────────────────────────────────────────────────────────────────────────
 exports.uploadDocuments = async (req, res) => {
-  const { idImageUrl, vehicleImageUrl } = req.body;
-
-  const hasAnyDocument = [idImageUrl, vehicleImageUrl].some(
-    v => v !== undefined && v !== null && String(v).trim() !== ''
-  );
-  if (!hasAnyDocument) {
-    throw new AppError('At least one document URL is required.', 400);
-  }
-
   const profile = await prisma.deliveryPartnerProfile.findUnique({
     where: { userId: req.user.id },
   });
   if (!profile) throw new AppError('Partner profile not found.', 404);
 
+  // Build update payload from any recognised document field
   const updateData = { documentsUploadedAt: new Date() };
 
-  if (idImageUrl      && String(idImageUrl).trim())
-    updateData.idImageUrl      = String(idImageUrl).trim();
-  if (vehicleImageUrl && String(vehicleImageUrl).trim())
-    updateData.vehicleImageUrl = String(vehicleImageUrl).trim();
+  for (const { field } of PARTNER_DOC_FIELDS) {
+    const val = req.body[field];
+    if (val !== undefined && val !== null && String(val).trim() !== '') {
+      updateData[field] = String(val).trim();
+    }
+  }
+
+  const uploadedCount = Object.keys(updateData).filter((k) => k !== 'documentsUploadedAt').length;
+  if (uploadedCount === 0)
+    throw new AppError('At least one document URL is required.', 400);
 
   const updatedProfile = await prisma.deliveryPartnerProfile.update({
     where: { userId: req.user.id },
     data:  updateData,
   });
 
-  // Notify the partner
+  const uploadedLabels = PARTNER_DOC_FIELDS
+    .filter(({ field }) => updateData[field])
+    .map(({ label }) => label)
+    .join(', ');
+
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Documents Uploaded ✅',
-    message: 'Your documents have been received. Our team will review them shortly.',
+    message: `Received: ${uploadedLabels}. Our team will review them shortly.`,
     type:    'documents_uploaded',
     data:    { profileId: profile.id },
   });
 
-  // Notify all admins
   const admins = await prisma.user.findMany({
     where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
     select: { id: true },
   });
 
   await Promise.allSettled(
-    admins.map(a =>
+    admins.map((a) =>
       notificationService.notify({
         userId:  a.id,
         title:   'Courier Documents Uploaded 📄',
-        message: `${req.user.firstName} ${req.user.lastName} has uploaded their documents. You can now review and approve their application.`,
+        message: `${req.user.firstName} ${req.user.lastName} uploaded: ${uploadedLabels}.`,
         type:    'partner_documents_uploaded',
         data:    {
           partnerUserId:    req.user.id,
           partnerProfileId: profile.id,
+          documents:        Object.keys(updateData).filter((k) => k !== 'documentsUploadedAt'),
         },
       })
     )
@@ -390,9 +424,8 @@ exports.uploadDocuments = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.requestPayout = async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
+  if (!errors.isEmpty())
     return res.status(400).json({ success: false, errors: errors.array() });
-  }
 
   const { amount, accountNumber, bankCode, accountName } = req.body;
 
@@ -453,7 +486,7 @@ exports.requestPayout = async (req, res) => {
   });
 
   await Promise.allSettled(
-    admins.map(a =>
+    admins.map((a) =>
       notificationService.notify({
         userId:  a.id,
         title:   'New Withdrawal Request 💸',
@@ -498,13 +531,15 @@ exports.getPayoutHistory = async (req, res) => {
   });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/partners/floor-price
+// ─────────────────────────────────────────────────────────────────────────────
 exports.setFloorMultiplier = async (req, res) => {
   const { floorMultiplier } = req.body;
   const multiplier = parseFloat(floorMultiplier);
 
-  if (isNaN(multiplier) || multiplier < 1.0 || multiplier > 2.0) {
+  if (isNaN(multiplier) || multiplier < 1.0 || multiplier > 2.0)
     throw new AppError('Floor multiplier must be between 1.0 and 2.0', 400);
-  }
 
   const profile = await prisma.deliveryPartnerProfile.update({
     where: { userId: req.user.id },

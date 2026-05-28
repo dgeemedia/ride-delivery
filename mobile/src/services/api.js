@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/constants';
 import { emitForceLogout } from './authEvents';
 import * as FileSystem from 'expo-file-system/legacy';
+import { toBase64DataUri } from '../utils/toBase64DataUri';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -17,10 +18,10 @@ const uploadApi = axios.create({
 });
 
 uploadApi.interceptors.request.use(async (config) => {
-  const token = await AsyncStorage.getItem('authToken');
+  const token    = await AsyncStorage.getItem('authToken');
   const deviceId = await AsyncStorage.getItem('deviceId');
 
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (token)    config.headers.Authorization = `Bearer ${token}`;
   if (deviceId) config.headers['X-Device-ID'] = deviceId;
 
   return config;
@@ -28,7 +29,7 @@ uploadApi.interceptors.request.use(async (config) => {
 
 uploadApi.interceptors.response.use(
   (response) => response.data,
-  (error) => Promise.reject(error.response?.data ?? error)
+  (error)    => Promise.reject(error.response?.data ?? error)
 );
 
 // ── Device ID helper ──────────────────────────────────────────────────────────
@@ -48,7 +49,7 @@ const getOrCreateDeviceId = async () => {
   }
 };
 
-// ── Request interceptor — attach auth token + device ID ───────────────────────
+// ── Request interceptor — attach auth token + device ID ──────────────────────
 api.interceptors.request.use(
   async (config) => {
     const [token, deviceId] = await Promise.all([
@@ -71,7 +72,6 @@ api.interceptors.response.use(
       const reason = error.response?.data?.code ?? 'session_expired';
       emitForceLogout(reason);
     }
-
     return Promise.reject(error.response?.data ?? error);
   }
 );
@@ -80,41 +80,41 @@ api.interceptors.response.use(
 // AUTH
 // ─────────────────────────────────────────────────────────────────────────────
 export const authAPI = {
-  register:         (data) => api.post('/auth/register', data),
-  login:            (data) => api.post('/auth/login', data),
-  getCurrentUser:   ()     => api.get('/auth/me'),
-  logout:           ()     => api.post('/auth/logout'),
+  register:       (data) => api.post('/auth/register', data),
+  login:          (data) => api.post('/auth/login', data),
+  getCurrentUser: ()     => api.get('/auth/me'),
+  logout:         ()     => api.post('/auth/logout'),
 
-  // ── Password reset ────────────────────────────────────────────────────────
-  forgotPassword:   (data) => api.post('/auth/forgot-password', data),
-  resetPassword:    (data) => api.post('/auth/reset-password', data),
+  // ── Password reset ─────────────────────────────────────────────────────────
+  forgotPassword: (data) => api.post('/auth/forgot-password', data),
+  resetPassword:  (data) => api.post('/auth/reset-password', data),
 
   // ── 2FA ───────────────────────────────────────────────────────────────────
-  verifyOtp:        (data) => api.post('/auth/verify-otp', data),
-  resendOtp:        (data) => api.post('/auth/resend-otp', data),
-  setup2FA:         (data) => api.post('/auth/2fa/setup', data),
-  confirm2FA:       (data) => api.post('/auth/2fa/confirm', data),
-  disable2FA:       (data) => api.post('/auth/2fa/disable', data),
+  verifyOtp:  (data) => api.post('/auth/verify-otp', data),
+  resendOtp:  (data) => api.post('/auth/resend-otp', data),
+  setup2FA:   (data) => api.post('/auth/2fa/setup', data),
+  confirm2FA: (data) => api.post('/auth/2fa/confirm', data),
+  disable2FA: (data) => api.post('/auth/2fa/disable', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RIDE
 // ─────────────────────────────────────────────────────────────────────────────
 export const rideAPI = {
-  getEstimate:           (params)     => api.get('/rides/estimate', { params }),
-  requestRide:           (data)       => api.post('/rides/request', data),
-  getActiveRide:         ()           => api.get('/rides/active'),
-  getRideHistory:        (params)     => api.get('/rides/history', { params }),
-  getRideById:           (id)         => api.get(`/rides/${id}`),
-  acceptRide:            (id)         => api.put(`/rides/${id}/accept`),
-  arrivedAtPickup:       (id)         => api.put(`/rides/${id}/arrived`),
-  startRide:             (id)         => api.put(`/rides/${id}/start`),
-  completeRide:          (id, data)   => api.put(`/rides/${id}/complete`, data),
-  cancelRide:            (id, data)   => api.put(`/rides/${id}/cancel`, data),
-  getNearbyDrivers:      (params)     => api.get('/rides/nearby-drivers', { params }),
-  requestSpecificDriver: (data)       => api.post('/rides/request-driver', data),
-  rateRide:              (id, data)   => api.post(`/rides/${id}/rate`, data),
-  getPlatformRates:      ()           => api.get('/rides/platform-rates'),
+  getEstimate:           (params)   => api.get('/rides/estimate', { params }),
+  requestRide:           (data)     => api.post('/rides/request', data),
+  getActiveRide:         ()         => api.get('/rides/active'),
+  getRideHistory:        (params)   => api.get('/rides/history', { params }),
+  getRideById:           (id)       => api.get(`/rides/${id}`),
+  acceptRide:            (id)       => api.put(`/rides/${id}/accept`),
+  arrivedAtPickup:       (id)       => api.put(`/rides/${id}/arrived`),
+  startRide:             (id)       => api.put(`/rides/${id}/start`),
+  completeRide:          (id, data) => api.put(`/rides/${id}/complete`, data),
+  cancelRide:            (id, data) => api.put(`/rides/${id}/cancel`, data),
+  getNearbyDrivers:      (params)   => api.get('/rides/nearby-drivers', { params }),
+  requestSpecificDriver: (data)     => api.post('/rides/request-driver', data),
+  rateRide:              (id, data) => api.post(`/rides/${id}/rate`, data),
+  getPlatformRates:      ()         => api.get('/rides/platform-rates'),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,12 +139,12 @@ export const deliveryAPI = {
 // USER
 // ─────────────────────────────────────────────────────────────────────────────
 export const userAPI = {
-  getProfile:               ()     => api.get('/users/profile'),
-  updateProfile:            (data) => api.put('/users/profile', data),
-  updatePassword:           (data) => api.put('/users/password', data),
-  verifyPasswordChangeOtp:  (data) => api.post('/users/password/verify-otp', data),
-  getStats:                 ()     => api.get('/users/stats'),
-  submitFeedback:           (data) => api.post('/users/feedback', data),
+  getProfile:              ()     => api.get('/users/profile'),
+  updateProfile:           (data) => api.put('/users/profile', data),
+  updatePassword:          (data) => api.put('/users/password', data),
+  verifyPasswordChangeOtp: (data) => api.post('/users/password/verify-otp', data),
+  getStats:                ()     => api.get('/users/stats'),
+  submitFeedback:          (data) => api.post('/users/feedback', data),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -296,6 +296,8 @@ export const duopayAPI = {
 // ─────────────────────────────────────────────────────────────────────────────
 // FILE UPLOADS
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Low-level multipart helper ────────────────────────────────────────────────
 const uploadSingle = async (url, fieldName, file) => {
   const [token, deviceId] = await Promise.all([
     AsyncStorage.getItem('authToken'),
@@ -305,10 +307,10 @@ const uploadSingle = async (url, fieldName, file) => {
   const uploadUrl = `${API_BASE_URL}${url}`;
 
   const result = await FileSystem.uploadAsync(uploadUrl, file.uri, {
-    httpMethod:  'POST',
-    uploadType:  'multipart',
+    httpMethod: 'POST',
+    uploadType: 'multipart',
     fieldName,
-    mimeType:    file.mimeType ?? file.type ?? 'image/jpeg',
+    mimeType: file.mimeType ?? file.type ?? 'image/jpeg',
     headers: {
       ...(token    && { Authorization: `Bearer ${token}` }),
       ...(deviceId && { 'X-Device-ID': deviceId }),
@@ -326,14 +328,120 @@ const uploadSingle = async (url, fieldName, file) => {
   return body;
 };
 
+// ── Helper — extract URL from any Cloudinary/upload response shape ────────────
+const extractUrl = (res) =>
+  res?.data?.url        ??
+  res?.data?.secure_url ??
+  res?.url              ??
+  res?.secure_url       ??
+  null;
+
+// ── Base64 fallback — converts asset to data-URI then POSTs to /upload/base64 ─
+const uploadViaBase64 = async (asset, folder) => {
+  const dataUri = await toBase64DataUri(asset.uri);
+  return api.post('/upload/base64', { base64Data: dataUri, folder });
+};
+
+// ── Generic upload with automatic base64 fallback ────────────────────────────
+//    Tries multipart first; falls back to base64 if multipart fails.
+//    Returns the resolved URL string (throws if both methods fail).
+const uploadWithFallback = async (multipartUrl, fieldName, asset, folder) => {
+  let url = null;
+
+  try {
+    url = extractUrl(await uploadSingle(multipartUrl, fieldName, asset));
+  } catch (err) {
+    console.warn(`[uploadAPI] multipart failed for ${multipartUrl}, trying base64:`, err?.message);
+  }
+
+  if (!url) {
+    url = extractUrl(await uploadViaBase64(asset, folder));
+  }
+
+  if (!url) throw new Error('Upload succeeded but no URL was returned. Check Cloudinary config.');
+  return url;
+};
+
 export const uploadAPI = {
-  uploadDriverLicense:       (image) => uploadSingle('/upload/driver/license',              'license',      image),
-  uploadVehicleRegistration: (image) => uploadSingle('/upload/driver/vehicle-registration', 'registration', image),
-  uploadInsurance:           (image) => uploadSingle('/upload/driver/insurance',            'insurance',    image),
-  uploadPartnerId:           (image) => uploadSingle('/upload/partner/id',      'id',      image),
-  uploadPartnerVehicle:      (image) => uploadSingle('/upload/partner/vehicle', 'vehicle', image),
-  uploadProfileImage:        (image) => uploadSingle('/upload/profile-image',   'image',   image),
-  uploadBase64:              (base64, folder) => api.post('/upload/base64', { base64Data: base64, folder }),
+  // ── Pre-existing driver document uploads ────────────────────────────────────
+  uploadDriverLicense: (image) =>
+    uploadSingle('/upload/driver/license', 'license', image),
+
+  uploadVehicleRegistration: (image) =>
+    uploadSingle('/upload/driver/vehicle-registration', 'registration', image),
+
+  uploadInsurance: (image) =>
+    uploadSingle('/upload/driver/insurance', 'insurance', image),
+
+  // ── Pre-existing partner document uploads ───────────────────────────────────
+  uploadPartnerId: (image) =>
+    uploadSingle('/upload/partner/id', 'id', image),
+
+  uploadPartnerVehicle: (image) =>
+    uploadSingle('/upload/partner/vehicle', 'vehicle', image),
+
+  // ── Profile image ───────────────────────────────────────────────────────────
+  uploadProfileImage: (image) =>
+    uploadSingle('/upload/profile-image', 'image', image),
+
+  // ── Raw base64 upload (used as a direct fallback) ───────────────────────────
+  uploadBase64: (base64, folder) =>
+    api.post('/upload/base64', { base64Data: base64, folder }),
+
+  // ── KYC — Personal identity ─────────────────────────────────────────────────
+  uploadApplicantPhoto: (image) =>
+    uploadWithFallback('/upload/kyc/applicant-photo', 'photo', image, 'duoride/kyc/photos'),
+
+  uploadGovtId: (image) =>
+    uploadWithFallback('/upload/kyc/govt-id', 'id', image, 'duoride/kyc/ids'),
+
+  uploadProofOfAddress: (image) =>
+    uploadWithFallback('/upload/kyc/proof-of-address', 'address', image, 'duoride/kyc/address'),
+
+  // ── KYC — Vehicle condition ─────────────────────────────────────────────────
+  uploadRoadWorthiness: (image) =>
+    uploadWithFallback('/upload/kyc/road-worthiness', 'doc', image, 'duoride/kyc/roadworthy'),
+
+  uploadVehicleInspection: (image) =>
+    uploadWithFallback('/upload/kyc/vehicle-inspection', 'doc', image, 'duoride/kyc/inspection'),
+
+  uploadHackneyCert: (image) =>
+    uploadWithFallback('/upload/kyc/hackney-cert', 'doc', image, 'duoride/kyc/permits'),
+
+  uploadVehicleExterior: (image) =>
+    uploadWithFallback('/upload/kyc/vehicle-exterior', 'photo', image, 'duoride/kyc/vehicles'),
+
+  uploadVehicleInterior: (image) =>
+    uploadWithFallback('/upload/kyc/vehicle-interior', 'photo', image, 'duoride/kyc/vehicles'),
+
+  // ── KYC — Motorcycle / Bike ─────────────────────────────────────────────────
+  uploadRiderCard: (image) =>
+    uploadWithFallback('/upload/kyc/rider-card', 'doc', image, 'duoride/kyc/permits'),
+
+  uploadHelmetPhoto: (image) =>
+    uploadWithFallback('/upload/kyc/helmet', 'photo', image, 'duoride/kyc/helmet'),
+
+  uploadDispatchPermit: (image) =>
+    uploadWithFallback('/upload/kyc/dispatch-permit', 'doc', image, 'duoride/kyc/permits'),
+
+  uploadGuarantorLetter: (image) =>
+    uploadWithFallback('/upload/kyc/guarantor-letter', 'doc', image, 'duoride/kyc/guarantor'),
+
+  uploadGuarantorId: (image) =>
+    uploadWithFallback('/upload/kyc/guarantor-id', 'id', image, 'duoride/kyc/guarantor'),
+
+  // ── KYC — Tricycle ──────────────────────────────────────────────────────────
+  uploadOperatorPermit: (image) =>
+    uploadWithFallback('/upload/kyc/operator-permit', 'doc', image, 'duoride/kyc/permits'),
+
+  // ── Convenience wrapper used by document screens ────────────────────────────
+  //    Accepts an asset object and a Cloudinary folder string.
+  //    Always resolves to the uploaded URL string (never an axios response object).
+  uploadBase64AndReturn: async (asset, folder) => {
+    const url = extractUrl(await uploadViaBase64(asset, folder));
+    if (!url) throw new Error('Upload succeeded but no URL was returned. Check Cloudinary config.');
+    return url;
+  },
 };
 
 export default api;

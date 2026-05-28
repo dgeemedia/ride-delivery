@@ -8,6 +8,41 @@ const paymentService = require('../services/payment.service');
 
 console.log('[DRIVER-CTRL] Prisma driver controller loaded');
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  All uploadable document fields mapped to their Prisma field name
+//  and a human-readable label for notifications.
+// ─────────────────────────────────────────────────────────────────────────────
+const DRIVER_DOC_FIELDS = [
+  // ── Personal KYC ──────────────────────────────────────────
+  { field: 'applicantPhotoUrl',        label: 'Applicant Photo'            },
+  { field: 'govtIdUrl',                label: 'Government ID'              },
+  { field: 'proofOfAddressUrl',        label: 'Proof of Address'           },
+
+  // ── Licence & registration (pre-existing) ─────────────────
+  { field: 'licenseImageUrl',          label: "Driver's Licence"           },
+  { field: 'vehicleRegUrl',            label: 'Vehicle Registration'       },
+  { field: 'insuranceUrl',             label: 'Insurance Certificate'      },
+
+  // ── Vehicle condition docs ─────────────────────────────────
+  { field: 'roadWorthinessUrl',        label: 'Road Worthiness Cert'       },
+  { field: 'vehicleInspectionUrl',     label: 'Vehicle Inspection Report'  },
+  { field: 'hackneyCertUrl',           label: 'Hackney / Commercial Permit'},
+  { field: 'vehiclePhotoExteriorUrl',  label: 'Vehicle Photo (Exterior)'   },
+  { field: 'vehiclePhotoInteriorUrl',  label: 'Vehicle Photo (Interior)'   },
+
+  // ── Motorcycle / Bike specific ─────────────────────────────
+  { field: 'riderCardUrl',             label: "Rider's / Operator Card"    },
+  { field: 'helmetPhotoUrl',           label: 'Helmet Photo'               },
+  { field: 'dispatchPermitUrl',        label: 'Dispatch / Courier Permit'  },
+  { field: 'guarantorLetterUrl',       label: 'Guarantor Letter'           },
+  { field: 'guarantorIdUrl',           label: "Guarantor's ID"             },
+];
+
+const DRIVER_DOC_FIELD_NAMES = DRIVER_DOC_FIELDS.map((d) => d.field);
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 function toOptionalTrimmedString(value) {
   if (value === undefined || value === null) return undefined;
   const trimmed = String(value).trim();
@@ -17,45 +52,35 @@ function toOptionalTrimmedString(value) {
 function buildProfileData(body) {
   const data = {};
 
-  if (body.licenseNumber !== undefined) {
+  if (body.licenseNumber !== undefined)
     data.licenseNumber = String(body.licenseNumber).trim().toUpperCase();
-  }
 
-  if (body.vehicleType !== undefined) {
-    data.vehicleType = body.vehicleType;
-  }
+  if (body.vehicleType !== undefined) data.vehicleType = body.vehicleType;
+  if (body.vehicleMake !== undefined) data.vehicleMake = String(body.vehicleMake).trim();
+  if (body.vehicleModel !== undefined) data.vehicleModel = String(body.vehicleModel).trim();
+  if (body.vehicleYear !== undefined) data.vehicleYear = parseInt(body.vehicleYear, 10);
+  if (body.vehicleColor !== undefined) data.vehicleColor = String(body.vehicleColor).trim();
 
-  if (body.vehicleMake !== undefined) {
-    data.vehicleMake = String(body.vehicleMake).trim();
-  }
-
-  if (body.vehicleModel !== undefined) {
-    data.vehicleModel = String(body.vehicleModel).trim();
-  }
-
-  if (body.vehicleYear !== undefined) {
-    data.vehicleYear = parseInt(body.vehicleYear, 10);
-  }
-
-  if (body.vehicleColor !== undefined) {
-    data.vehicleColor = String(body.vehicleColor).trim();
-  }
-
-  if (body.vehiclePlate !== undefined) {
+  if (body.vehiclePlate !== undefined)
     data.vehiclePlate = String(body.vehiclePlate).trim().toUpperCase();
-  }
 
-  if (body.licenseImageUrl !== undefined) {
+  // Vehicle metadata
+  if (body.numberOfSeats !== undefined)
+    data.numberOfSeats = parseInt(body.numberOfSeats, 10) || null;
+
+  if (body.vehicleSubType !== undefined)
+    data.vehicleSubType = toOptionalTrimmedString(body.vehicleSubType);
+
+  if (body.payloadCapacityKg !== undefined)
+    data.payloadCapacityKg = parseFloat(body.payloadCapacityKg) || null;
+
+  // Legacy document URL fields (kept for backward compat)
+  if (body.licenseImageUrl !== undefined)
     data.licenseImageUrl = toOptionalTrimmedString(body.licenseImageUrl);
-  }
-
-  if (body.vehicleRegUrl !== undefined) {
+  if (body.vehicleRegUrl !== undefined)
     data.vehicleRegUrl = toOptionalTrimmedString(body.vehicleRegUrl);
-  }
-
-  if (body.insuranceUrl !== undefined) {
+  if (body.insuranceUrl !== undefined)
     data.insuranceUrl = toOptionalTrimmedString(body.insuranceUrl);
-  }
 
   return data;
 }
@@ -65,11 +90,11 @@ function buildProfileData(body) {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.createOrUpdateProfile = async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
+  if (!errors.isEmpty())
     return res.status(400).json({ success: false, errors: errors.array() });
-  }
 
   const profileData = buildProfileData(req.body);
+
   const existingProfile = await prisma.driverProfile.findUnique({
     where: { userId: req.user.id },
   });
@@ -99,6 +124,9 @@ exports.createOrUpdateProfile = async (req, res) => {
       vehicleYear: profileData.vehicleYear,
       vehicleColor: profileData.vehicleColor,
       vehiclePlate: profileData.vehiclePlate,
+      numberOfSeats: profileData.numberOfSeats ?? null,
+      vehicleSubType: profileData.vehicleSubType ?? null,
+      payloadCapacityKg: profileData.payloadCapacityKg ?? null,
       licenseImageUrl: profileData.licenseImageUrl ?? null,
       vehicleRegUrl: profileData.vehicleRegUrl ?? null,
       insuranceUrl: profileData.insuranceUrl ?? null,
@@ -109,7 +137,7 @@ exports.createOrUpdateProfile = async (req, res) => {
     userId: req.user.id,
     title: 'Application Submitted 🔍',
     message:
-      'Your driver application is under review. You can upload your documents to speed up approval.',
+      'Your driver application is under review. Upload your documents to speed up approval.',
     type: 'profile_submitted',
     data: { profileId: profile.id },
   });
@@ -129,11 +157,6 @@ exports.createOrUpdateProfile = async (req, res) => {
         data: {
           driverUserId: req.user.id,
           driverProfileId: profile.id,
-          hasDocuments: !!(
-            profileData.licenseImageUrl ||
-            profileData.vehicleRegUrl ||
-            profileData.insuranceUrl
-          ),
         },
       })
     )
@@ -168,10 +191,7 @@ exports.getProfile = async (req, res) => {
 
   if (!profile) throw new AppError('Driver profile not found', 404);
 
-  res.status(200).json({
-    success: true,
-    data: { profile },
-  });
+  res.status(200).json({ success: true, data: { profile } });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -179,9 +199,8 @@ exports.getProfile = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.updateStatus = async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
+  if (!errors.isEmpty())
     return res.status(400).json({ success: false, errors: errors.array() });
-  }
 
   const { isOnline, currentLat, currentLng } = req.body;
 
@@ -191,10 +210,7 @@ exports.updateStatus = async (req, res) => {
 
   if (!profile) throw new AppError('Driver profile not found.', 404);
   if (profile.isRejected)
-    throw new AppError(
-      'Your application was not approved. Please contact support.',
-      403
-    );
+    throw new AppError('Your application was not approved. Please contact support.', 403);
   if (!profile.isApproved)
     throw new AppError(
       'Your profile is still under review. You will be notified once approved.',
@@ -208,10 +224,8 @@ exports.updateStatus = async (req, res) => {
         status: { in: ['ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] },
       },
     });
-
-    if (activeRide) {
+    if (activeRide)
       throw new AppError('Cannot go offline with an active ride in progress.', 400);
-    }
   }
 
   const updatedProfile = await prisma.driverProfile.update({
@@ -261,12 +275,7 @@ exports.getEarnings = async (req, res) => {
     },
     include: {
       payment: {
-        select: {
-          amount: true,
-          method: true,
-          driverEarnings: true,
-          platformFee: true,
-        },
+        select: { amount: true, method: true, driverEarnings: true, platformFee: true },
       },
     },
     orderBy: { completedAt: 'desc' },
@@ -320,7 +329,6 @@ exports.getStats = async (req, res) => {
   const profile = await prisma.driverProfile.findUnique({
     where: { userId: req.user.id },
   });
-
   if (!profile) throw new AppError('Driver profile not found', 404);
 
   const [completedRides, cancelledRides, totalRides] = await Promise.all([
@@ -354,6 +362,8 @@ exports.getStats = async (req, res) => {
         year: profile.vehicleYear,
         plate: profile.vehiclePlate,
         color: profile.vehicleColor,
+        numberOfSeats: profile.numberOfSeats,
+        subType: profile.vehicleSubType,
       },
     },
   });
@@ -369,9 +379,8 @@ exports.getNearbyRequests = async (req, res) => {
 
   if (!profile) throw new AppError('Driver profile not found', 404);
   if (!profile.isOnline) throw new AppError('You must be online to see requests', 400);
-  if (profile.currentLat == null || profile.currentLng == null) {
+  if (profile.currentLat == null || profile.currentLng == null)
     throw new AppError('Current location not set', 400);
-  }
 
   const requestedRides = await prisma.ride.findMany({
     where: { status: 'REQUESTED' },
@@ -402,48 +411,41 @@ exports.getNearbyRequests = async (req, res) => {
 // POST /api/drivers/documents — upload / refresh document URLs
 // ─────────────────────────────────────────────────────────────────────────────
 exports.uploadDocuments = async (req, res) => {
-  const { licenseImageUrl, vehicleRegUrl, insuranceUrl } = req.body;
-
-  const hasAnyDocument =
-    [licenseImageUrl, vehicleRegUrl, insuranceUrl].some(
-      (v) => v !== undefined && v !== null && String(v).trim() !== ''
-    );
-
-  if (!hasAnyDocument) {
-    throw new AppError('At least one document URL is required.', 400);
-  }
-
   const profile = await prisma.driverProfile.findUnique({
     where: { userId: req.user.id },
   });
-
   if (!profile) throw new AppError('Driver profile not found.', 404);
 
-  const updateData = {
-    documentsUploadedAt: new Date(),
-  };
+  // Build update payload from any recognised document field
+  const updateData = { documentsUploadedAt: new Date() };
 
-  if (licenseImageUrl !== undefined && String(licenseImageUrl).trim() !== '') {
-    updateData.licenseImageUrl = String(licenseImageUrl).trim();
+  for (const { field } of DRIVER_DOC_FIELDS) {
+    const val = req.body[field];
+    if (val !== undefined && val !== null && String(val).trim() !== '') {
+      updateData[field] = String(val).trim();
+    }
   }
 
-  if (vehicleRegUrl !== undefined && String(vehicleRegUrl).trim() !== '') {
-    updateData.vehicleRegUrl = String(vehicleRegUrl).trim();
-  }
-
-  if (insuranceUrl !== undefined && String(insuranceUrl).trim() !== '') {
-    updateData.insuranceUrl = String(insuranceUrl).trim();
-  }
+  // Must have uploaded at least one actual document URL
+  const uploadedCount = Object.keys(updateData).filter((k) => k !== 'documentsUploadedAt').length;
+  if (uploadedCount === 0)
+    throw new AppError('At least one document URL is required.', 400);
 
   const updatedProfile = await prisma.driverProfile.update({
     where: { userId: req.user.id },
     data: updateData,
   });
 
+  // Figure out which docs were uploaded for the notification message
+  const uploadedLabels = DRIVER_DOC_FIELDS
+    .filter(({ field }) => updateData[field])
+    .map(({ label }) => label)
+    .join(', ');
+
   await notificationService.notify({
     userId: req.user.id,
     title: 'Documents Uploaded ✅',
-    message: 'Your documents have been received. Our team will review them shortly.',
+    message: `Received: ${uploadedLabels}. Our team will review them shortly.`,
     type: 'documents_uploaded',
     data: { profileId: profile.id },
   });
@@ -458,11 +460,12 @@ exports.uploadDocuments = async (req, res) => {
       notificationService.notify({
         userId: a.id,
         title: 'Driver Documents Uploaded 📄',
-        message: `${req.user.firstName} ${req.user.lastName} has uploaded their documents. You can now review and approve their application.`,
+        message: `${req.user.firstName} ${req.user.lastName} uploaded: ${uploadedLabels}.`,
         type: 'driver_documents_uploaded',
         data: {
           driverUserId: req.user.id,
           driverProfileId: profile.id,
+          documents: Object.keys(updateData).filter((k) => k !== 'documentsUploadedAt'),
         },
       })
     )
@@ -480,9 +483,8 @@ exports.uploadDocuments = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.requestPayout = async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
+  if (!errors.isEmpty())
     return res.status(400).json({ success: false, errors: errors.array() });
-  }
 
   const { amount, accountNumber, bankCode, accountName } = req.body;
 
@@ -495,10 +497,8 @@ exports.requestPayout = async (req, res) => {
   const accountVerify = await paymentService
     .paystackVerifyAccount(accountNumber, bankCode)
     .catch(() => null);
-
-  if (!accountVerify) {
+  if (!accountVerify)
     throw new AppError('Unable to verify bank account. Please check details.', 400);
-  }
 
   const resolvedAccountName = accountName || accountVerify.account_name;
   const reference = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
@@ -563,8 +563,7 @@ exports.requestPayout = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message:
-      'Withdrawal request submitted. Our team will process it within 1–2 business days.',
+    message: 'Withdrawal request submitted. Our team will process it within 1–2 business days.',
     data: { reference, amount },
   });
 };
@@ -591,35 +590,34 @@ exports.getPayoutHistory = async (req, res) => {
     success: true,
     data: {
       payouts,
-      pagination: {
-        total,
-        page: parseInt(page, 10),
-        pages: Math.ceil(total / limit),
-      },
+      pagination: { total, page: parseInt(page, 10), pages: Math.ceil(total / limit) },
     },
   });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/drivers/floor-price
+// ─────────────────────────────────────────────────────────────────────────────
 exports.setFloorMultiplier = async (req, res) => {
   const { floorMultiplier } = req.body;
   const multiplier = parseFloat(floorMultiplier);
- 
-  if (isNaN(multiplier) || multiplier < 1.0 || multiplier > 2.0) {
+
+  if (isNaN(multiplier) || multiplier < 1.0 || multiplier > 2.0)
     throw new AppError('Floor multiplier must be between 1.0 (no floor) and 2.0 (+100%)', 400);
-  }
- 
+
   const profile = await prisma.driverProfile.update({
     where: { userId: req.user.id },
-    data:  { floorMultiplier: multiplier },
+    data: { floorMultiplier: multiplier },
   });
- 
+
   const pctAbove = Math.round((multiplier - 1) * 100);
   res.status(200).json({
     success: true,
-    message: pctAbove === 0
-      ? 'Floor price removed — you will accept base fare.'
-      : `Floor price set to +${pctAbove}% above base fare.`,
-    data:    { floorMultiplier: profile.floorMultiplier },
+    message:
+      pctAbove === 0
+        ? 'Floor price removed — you will accept base fare.'
+        : `Floor price set to +${pctAbove}% above base fare.`,
+    data: { floorMultiplier: profile.floorMultiplier },
   });
 };
 

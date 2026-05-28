@@ -83,36 +83,52 @@ model OtpVerification {
 }
 
 model DriverProfile {
-  id                  String      @id @default(dbgenerated("(gen_random_uuid())::text"))
-  userId              String      @unique
-  licenseNumber       String      @unique
-  vehicleType         VehicleType
-  vehicleMake         String
-  vehicleModel        String
-  vehicleYear         Int
-  vehicleColor        String
-  vehiclePlate        String      @unique
-  isApproved          Boolean     @default(false)
-  isOnline            Boolean     @default(false)
-  currentLat          Float?
-  currentLng          Float?
-  totalRides          Int         @default(0)
-  rating              Float       @default(0)
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @default(now()) @updatedAt
-  preferredFloorPrice Float?
-  insuranceUrl        String?     @map("insurance_url")
-  licenseImageUrl     String?     @map("license_image_url")
-  vehicleRegUrl       String?     @map("vehicle_reg_url")
-  approvedAt          DateTime?
-  approvedBy          String?
-  documentsUploadedAt DateTime?
-  isRejected          Boolean     @default(false)
-  rejectedAt          DateTime?
-  rejectedBy          String?
-  rejectionReason     String?
-  floorMultiplier     Float       @default(1.0)
-  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                      String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId                  String      @unique
+  licenseNumber           String      @unique
+  vehicleType             VehicleType
+  vehicleMake             String
+  vehicleModel            String
+  vehicleYear             Int
+  vehicleColor            String
+  vehiclePlate            String      @unique
+  isApproved              Boolean     @default(false)
+  isOnline                Boolean     @default(false)
+  currentLat              Float?
+  currentLng              Float?
+  totalRides              Int         @default(0)
+  rating                  Float       @default(0)
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @default(now()) @updatedAt
+  preferredFloorPrice     Float?
+  insuranceUrl            String?     @map("insurance_url")
+  licenseImageUrl         String?     @map("license_image_url")
+  vehicleRegUrl           String?     @map("vehicle_reg_url")
+  approvedAt              DateTime?
+  approvedBy              String?
+  documentsUploadedAt     DateTime?
+  isRejected              Boolean     @default(false)
+  rejectedAt              DateTime?
+  rejectedBy              String?
+  rejectionReason         String?
+  floorMultiplier         Float       @default(1.0)
+  applicantPhotoUrl       String?     @map("applicant_photo_url")
+  govtIdUrl               String?     @map("govt_id_url")
+  proofOfAddressUrl       String?     @map("proof_of_address_url")
+  roadWorthinessUrl       String?     @map("road_worthiness_url")
+  vehicleInspectionUrl    String?     @map("vehicle_inspection_url")
+  hackneyCertUrl          String?     @map("hackney_cert_url")
+  vehiclePhotoExteriorUrl String?     @map("vehicle_photo_exterior_url")
+  vehiclePhotoInteriorUrl String?     @map("vehicle_photo_interior_url")
+  riderCardUrl            String?     @map("rider_card_url")
+  helmetPhotoUrl          String?     @map("helmet_photo_url")
+  dispatchPermitUrl       String?     @map("dispatch_permit_url")
+  guarantorLetterUrl      String?     @map("guarantor_letter_url")
+  guarantorIdUrl          String?     @map("guarantor_id_url")
+  numberOfSeats           Int?        @map("number_of_seats")
+  vehicleSubType          String?     @map("vehicle_sub_type")
+  payloadCapacityKg       Float?      @map("payload_capacity_kg")
+  user                    User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([isApproved])
   @@index([isRejected])
@@ -120,30 +136,45 @@ model DriverProfile {
 }
 
 model DeliveryPartnerProfile {
-  id                  String      @id @default(dbgenerated("(gen_random_uuid())::text"))
-  userId              String      @unique
-  vehicleType         VehicleType
-  vehiclePlate        String?
-  idImageUrl          String?
-  vehicleImageUrl     String?
-  isApproved          Boolean     @default(false)
-  isOnline            Boolean     @default(false)
-  currentLat          Float?
-  currentLng          Float?
-  totalDeliveries     Int         @default(0)
-  rating              Float       @default(0)
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @default(now()) @updatedAt
-  preferredFloorPrice Float?
-  approvedAt          DateTime?
-  approvedBy          String?
-  documentsUploadedAt DateTime?
-  isRejected          Boolean     @default(false)
-  rejectedAt          DateTime?
-  rejectedBy          String?
-  rejectionReason     String?
-  floorMultiplier     Float       @default(1.0)
-  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                      String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId                  String      @unique
+  vehicleType             VehicleType
+  vehiclePlate            String?
+  idImageUrl              String?
+  vehicleImageUrl         String?
+  isApproved              Boolean     @default(false)
+  isOnline                Boolean     @default(false)
+  currentLat              Float?
+  currentLng              Float?
+  totalDeliveries         Int         @default(0)
+  rating                  Float       @default(0)
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @default(now()) @updatedAt
+  preferredFloorPrice     Float?
+  approvedAt              DateTime?
+  approvedBy              String?
+  documentsUploadedAt     DateTime?
+  isRejected              Boolean     @default(false)
+  rejectedAt              DateTime?
+  rejectedBy              String?
+  rejectionReason         String?
+  floorMultiplier         Float       @default(1.0)
+  applicantPhotoUrl       String?     @map("applicant_photo_url")
+  govtIdUrl               String?     @map("govt_id_url")
+  proofOfAddressUrl       String?     @map("proof_of_address_url")
+  insuranceUrl            String?     @map("insurance_url")
+  roadWorthinessUrl       String?     @map("road_worthiness_url")
+  vehiclePhotoExteriorUrl String?     @map("vehicle_photo_exterior_url")
+  vehiclePhotoInteriorUrl String?     @map("vehicle_photo_interior_url")
+  dispatchPermitUrl       String?     @map("dispatch_permit_url")
+  guarantorLetterUrl      String?     @map("guarantor_letter_url")
+  guarantorIdUrl          String?     @map("guarantor_id_url")
+  riderCardUrl            String?     @map("rider_card_url")
+  helmetPhotoUrl          String?     @map("helmet_photo_url")
+  operatorPermitUrl       String?     @map("operator_permit_url")
+  numberOfSeats           Int?        @map("number_of_seats")
+  vehicleSubType          String?     @map("vehicle_sub_type")
+  user                    User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([isApproved])
   @@index([isRejected])
