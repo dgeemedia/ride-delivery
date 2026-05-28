@@ -88,11 +88,13 @@ exports.getDashboardStats = async (req, res) => {
   const todayStart     = new Date(); todayStart.setHours(0, 0, 0, 0);
   const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
   const monthStart     = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
- 
+  const weekStart      = new Date(); weekStart.setDate(weekStart.getDate() - 7); weekStart.setHours(0, 0, 0, 0);
+  const yearStart      = new Date(new Date().getFullYear(), 0, 1);
+
   const [
     totalUsers, totalDrivers, totalPartners,
     totalRides, totalDeliveries, activeRides, activeDeliveries,
-    todayRevenue, yesterdayRevenue, monthRevenue, totalWalletBalance,
+    todayRevenue, yesterdayRevenue, monthRevenue, weekRevenue, yearRevenue, totalWalletBalance,
     pendingDrivers, pendingPartners, openTickets,
     newUsersToday, newUsersYesterday,
     suspendedDriversCount, suspendedPartnersCount,
@@ -116,12 +118,19 @@ exports.getDashboardStats = async (req, res) => {
       where: { status: 'COMPLETED', createdAt: { gte: yesterdayStart, lt: todayStart } },
       _sum: { amount: true },
     }),
-    // Month revenue
     prisma.payment.aggregate({
       where: { status: 'COMPLETED', createdAt: { gte: monthStart } },
       _sum: { amount: true },
     }),
- 
+    prisma.payment.aggregate({
+      where: { status: 'COMPLETED', createdAt: { gte: weekStart } },
+      _sum: { amount: true },
+    }),
+    prisma.payment.aggregate({
+      where: { status: 'COMPLETED', createdAt: { gte: yearStart } },
+      _sum: { amount: true },
+    }),
+
     prisma.wallet.aggregate({
       where: { user: { role: { in: ['CUSTOMER', 'DRIVER', 'DELIVERY_PARTNER'] }, isActive: true } },
       _sum: { balance: true },
@@ -132,7 +141,7 @@ exports.getDashboardStats = async (req, res) => {
  
     // New users today (for delta)
     prisma.user.count({ where: { createdAt: { gte: todayStart } } }),
-// New users yesterday (for delta)
+    // New users yesterday (for delta)
     prisma.user.count({ where: { createdAt: { gte: yesterdayStart, lt: todayStart } } }),
 
     // Suspended drivers count + list (dashboard widget)
@@ -181,8 +190,10 @@ exports.getDashboardStats = async (req, res) => {
         today:         todayRev,
         yesterday:     yesterdayRev,
         month:         monthRevenue._sum.amount ?? 0,
+        week:          weekRevenue._sum.amount ?? 0,
+        year:          yearRevenue._sum.amount ?? 0,
         currency:      'NGN',
-        revenueDelta,  // % change today vs yesterday, or null if no baseline
+        revenueDelta,
       },
       wallet:  { totalBalance: totalWalletBalance._sum.balance ?? 0 },
       pending: { drivers: pendingDrivers, partners: pendingPartners },

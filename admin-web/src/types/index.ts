@@ -234,7 +234,9 @@ export interface DashboardStats {
   revenue: {
     today:         number;
     yesterday?:    number;
+    week:          number;
     month:         number;
+    year:          number;
     currency:      string;
     revenueDelta?: number | null;
   };

@@ -238,7 +238,7 @@ const statCards = [
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
         <Card>
           <div className="flex items-center">
             <TrendingUp className="h-8 w-8 text-success-500" />
@@ -263,8 +263,28 @@ const statCards = [
           <div className="flex items-center">
             <Activity className="h-8 w-8 text-primary-500" />
             <div className="ml-4">
+              <p className="text-sm text-gray-600">Week Revenue</p>
+              <p className="text-xl font-bold">{formatCurrency(stats.revenue.week)}</p>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-center">
+            <Activity className="h-8 w-8 text-indigo-500" />
+            <div className="ml-4">
               <p className="text-sm text-gray-600">Month Revenue</p>
               <p className="text-xl font-bold">{formatCurrency(stats.revenue.month)}</p>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-center">
+            <DollarSign className="h-8 w-8 text-emerald-500" />
+            <div className="ml-4">
+              <p className="text-sm text-gray-600">Year Revenue</p>
+              <p className="text-xl font-bold">{formatCurrency(stats.revenue.year)}</p>
             </div>
           </div>
         </Card>
