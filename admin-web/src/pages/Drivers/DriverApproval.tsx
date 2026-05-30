@@ -235,7 +235,7 @@ const docDefs = getDriverDocDefs(driver.vehicleType);
           )}
           {documentStatus === 'COMPLETE' && (
             <Alert variant="success" className="mb-3">
-              All 3 documents have been uploaded and are ready for review.
+              All documents have been uploaded and are ready for review.
             </Alert>
           )}
 

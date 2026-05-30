@@ -6,6 +6,10 @@
 //   3. Theme contrast — accent buttons use theme.accentFg instead of hardcoded '#fff'
 //   4. (Email SMTP) — see email.service.js fix; frontend shows the server's error message
 //   5. PDF now includes the user's full name in the header and summary block
+//   6. DatePickerModal — KeyboardAvoidingView prevents keyboard from hiding "Set Date" button
+//   7. DatePickerModal — autoFocus on TextInput for immediate keyboard open
+//   8. DatePickerModal — maxHeight on card prevents overflow when keyboard is up
+//   9. DatePickerModal — thicker border on input for better dark-theme visibility
 
 import React, {
   useState, useEffect, useRef, useCallback, useMemo,
@@ -14,6 +18,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   StatusBar, Animated, ActivityIndicator, Alert,
   TextInput, Platform, Dimensions, Modal,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,10 +28,10 @@ import { walletAPI }         from '../../services/api';
 
 // Lazy-load native-only deps so web doesn't crash
 let Sharing, Print, DateTimePicker, FileSystem;
-try { Sharing       = require('expo-sharing');                                        } catch {}
-try { Print         = require('expo-print');                                          } catch {}
-try { DateTimePicker = require('@react-native-community/datetimepicker').default;     } catch {}
-try { FileSystem    = require('expo-file-system');                                    } catch {}
+try { Sharing        = require('expo-sharing').default ?? require('expo-sharing');                } catch {}
+try { Print          = require('expo-print');                                                     } catch {}
+try { DateTimePicker = require('@react-native-community/datetimepicker').default;                } catch {}
+try { FileSystem     = require('expo-file-system');                                               } catch {}
 
 const { height } = Dimensions.get('window');
 const PAGE_SIZE  = 30;
@@ -56,12 +61,13 @@ const defaultRange = () => {
 // DatePickerModal
 // ─────────────────────────────────────────────────────────────────────────────
 const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, label }) => {
-  const [local,       setLocal]       = useState(value);
-  const [dateString,  setDateString]  = useState(value.toISOString().split('T')[0]);
-  const [dateError,   setDateError]   = useState('');
+  const [local,      setLocal]      = useState(value);
+  const [dateString, setDateString] = useState(value.toISOString().split('T')[0]);
+  const [dateError,  setDateError]  = useState('');
 
   if (!visible) return null;
 
+  // ── Web branch ──────────────────────────────────────────────────────────────
   if (Platform.OS === 'web') {
     return (
       <Modal transparent animationType="fade" onRequestClose={onClose}>
@@ -96,6 +102,7 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
     );
   }
 
+  // ── Native DateTimePicker branch ────────────────────────────────────────────
   if (DateTimePicker) {
     return (
       <Modal transparent animationType="slide" onRequestClose={onClose}>
@@ -127,6 +134,11 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
     );
   }
 
+  // ── Fallback: manual TextInput branch ──────────────────────────────────────
+  // FIX #6 — wrapped in KeyboardAvoidingView so "Set Date" button stays visible
+  // FIX #7 — autoFocus opens keyboard immediately
+  // FIX #8 — maxHeight on card prevents overflow
+  // FIX #9 — borderWidth: 1.5 for better dark-theme contrast
   const handleManualSet = () => {
     const parsed = new Date(dateString);
     if (isNaN(parsed.getTime())) {
@@ -140,35 +152,48 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <View style={dp.overlay}>
-        <View style={[dp.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-          <Text style={[dp.title, { color: theme.foreground }]}>{label}</Text>
-          <Text style={[dp.hint, { color: theme.hint }]}>Enter date (YYYY-MM-DD)</Text>
-          <View style={[dp.inputRow, { borderColor: theme.border, backgroundColor: theme.background }]}>
-            <TextInput
-              style={[dp.textInput, { color: theme.foreground }]}
-              value={dateString}
-              onChangeText={(v) => { setDateString(v); setDateError(''); }}
-              placeholder="2024-01-31"
-              placeholderTextColor={theme.hint}
-              keyboardType="numbers-and-punctuation"
-              maxLength={10}
-            />
-          </View>
-          {dateError ? <Text style={[dp.errorTxt, { color: '#E05555' }]}>{dateError}</Text> : null}
-          <View style={dp.btns}>
-            <TouchableOpacity style={[dp.btn, { borderColor: theme.border }]} onPress={onClose}>
-              <Text style={[dp.btnTxt, { color: theme.hint }]}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[dp.btnAccent, { backgroundColor: accent }]}
-              onPress={handleManualSet}
-            >
-              <Text style={[dp.btnTxt, { color: theme.accentFg }]}>Set Date</Text>
-            </TouchableOpacity>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={dp.overlay}>
+          <View style={[dp.card, dp.cardCapped, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+            <Text style={[dp.title, { color: theme.foreground }]}>{label}</Text>
+            <Text style={[dp.hint, { color: theme.hint }]}>Enter date (YYYY-MM-DD)</Text>
+            <View style={[
+              dp.inputRow,
+              {
+                borderColor: theme.border,
+                backgroundColor: theme.background,
+                borderWidth: 1.5,
+              },
+            ]}>
+              <TextInput
+                style={[dp.textInput, { color: theme.foreground }]}
+                value={dateString}
+                onChangeText={(v) => { setDateString(v); setDateError(''); }}
+                placeholder="2024-01-31"
+                placeholderTextColor={theme.hint}
+                keyboardType="numbers-and-punctuation"
+                maxLength={10}
+                autoFocus
+              />
+            </View>
+            {dateError ? <Text style={[dp.errorTxt, { color: '#E05555' }]}>{dateError}</Text> : null}
+            <View style={dp.btns}>
+              <TouchableOpacity style={[dp.btn, { borderColor: theme.border }]} onPress={onClose}>
+                <Text style={[dp.btnTxt, { color: theme.hint }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dp.btnAccent, { backgroundColor: accent }]}
+                onPress={handleManualSet}
+              >
+                <Text style={[dp.btnTxt, { color: theme.accentFg }]}>Set Date</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
@@ -176,9 +201,11 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
 const dp = StyleSheet.create({
   overlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   card:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: 1, padding: 24 },
+  // FIX #8 — cap height so card never overflows when keyboard is visible
+  cardCapped: { maxHeight: '80%' },
   title:     { fontSize: 15, fontWeight: '800', marginBottom: 16, textAlign: 'center' },
   hint:      { fontSize: 12, marginBottom: 8, textAlign: 'center' },
-  inputRow:  { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 4 },
+  inputRow:  { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 4 },
   textInput: { fontSize: 16 },
   errorTxt:  { fontSize: 12, marginTop: 4, marginBottom: 8 },
   btns:      { flexDirection: 'row', gap: 10, marginTop: 16 },
@@ -444,6 +471,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
       setShowEmailBox(false);
       Alert.alert('Sent! 📧', `Transaction history sent to ${email}.`);
     } catch (err) {
+      // FIX #4 — show the server's error message
       Alert.alert('Failed', err?.message ?? 'Could not send email. Check your connection and try again.');
     } finally {
       setEmailing(false);
