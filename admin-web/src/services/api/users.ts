@@ -7,14 +7,42 @@ export interface CreateAdminPayload {
   firstName: string; lastName: string;
   role: 'SUPER_ADMIN'|'ADMIN'|'SUPPORT'|'MODERATOR'|'CUSTOMER'|'DRIVER'|'DELIVERY_PARTNER';
   adminDepartment?: 'RIDES'|'DELIVERIES'|'SUPPORT' | null;
-  // Driver
+
+  // ── Driver vehicle ────────────────────────────────────────────────────────
   licenseNumber?: string;
   vehicleType?:   'BIKE'|'CAR'|'MOTORCYCLE'|'VAN'|'TRICYCLE';
   vehicleMake?:   string;
   vehicleModel?:  string;
-  vehicleYear?:   string;
+  vehicleYear?:   number;
   vehicleColor?:  string;
   vehiclePlate?:  string;
+  numberOfSeats?: number;
+  vehicleSubType?: string;
+
+  // ── Shared KYC document URLs ──────────────────────────────────────────────
+  applicantPhotoUrl?:       string;
+  govtIdUrl?:               string;
+  proofOfAddressUrl?:       string;
+
+  // ── Driver document URLs ──────────────────────────────────────────────────
+  licenseImageUrl?:         string;
+  vehicleRegUrl?:           string;
+  insuranceUrl?:            string;
+  roadWorthinessUrl?:       string;
+  vehicleInspectionUrl?:    string;
+  hackneyCertUrl?:          string;
+  vehiclePhotoExteriorUrl?: string;
+  vehiclePhotoInteriorUrl?: string;
+  riderCardUrl?:            string;
+  helmetPhotoUrl?:          string;
+  dispatchPermitUrl?:       string;
+  guarantorLetterUrl?:      string;
+  guarantorIdUrl?:          string;
+  operatorPermitUrl?:       string;
+
+  // ── Partner-specific document URLs ────────────────────────────────────────
+  idImageUrl?:              string;
+  vehicleImageUrl?:         string;
 }
 
 export const usersAPI = {
@@ -47,7 +75,7 @@ export const usersAPI = {
     return response.data;
   },
 
-  /** Create admin / support / moderator account — SUPER_ADMIN only */
+  /** Create any user account — SUPER_ADMIN only */
   createAdminUser: async (
     payload: CreateAdminPayload
   ): Promise<ApiResponse<{ user: User }>> => {

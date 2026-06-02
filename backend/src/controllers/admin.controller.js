@@ -1954,36 +1954,76 @@ if (role === 'DRIVER') {
   if (plateExists)   throw new AppError('A driver with this vehicle plate already exists', 400);
   if (licenseExists) throw new AppError('A driver with this license number already exists', 400);
 
-  await prisma.driverProfile.create({
-    data: {
-      userId:       user.id,
-      licenseNumber,
-      vehicleType,
-      vehicleMake,
-      vehicleModel,
-      vehicleYear:  parseInt(vehicleYear),
-      vehicleColor,
-      vehiclePlate,
-      isApproved:   true,
-      approvedBy:   req.user.id,
-      approvedAt:   new Date(),
-    },
-  });
+  // DRIVER profile — add document URLs
+await prisma.driverProfile.create({
+  data: {
+    userId:       user.id,
+    licenseNumber,
+    vehicleType,
+    vehicleMake,
+    vehicleModel,
+    vehicleYear:  parseInt(vehicleYear),
+    vehicleColor,
+    vehiclePlate,
+    isApproved:   true,
+    approvedBy:   req.user.id,
+    approvedAt:   new Date(),
+    // ── Document URLs (all optional) ──────────────────────
+    ...(req.body.vehicleSubType        && { vehicleSubType:        req.body.vehicleSubType }),
+    ...(req.body.numberOfSeats         && { numberOfSeats:         parseInt(req.body.numberOfSeats) }),
+    ...(req.body.applicantPhotoUrl     && { applicantPhotoUrl:     req.body.applicantPhotoUrl }),
+    ...(req.body.govtIdUrl             && { govtIdUrl:             req.body.govtIdUrl }),
+    ...(req.body.proofOfAddressUrl     && { proofOfAddressUrl:     req.body.proofOfAddressUrl }),
+    ...(req.body.licenseImageUrl       && { licenseImageUrl:       req.body.licenseImageUrl }),
+    ...(req.body.vehicleRegUrl         && { vehicleRegUrl:         req.body.vehicleRegUrl }),
+    ...(req.body.insuranceUrl          && { insuranceUrl:          req.body.insuranceUrl }),
+    ...(req.body.roadWorthinessUrl     && { roadWorthinessUrl:     req.body.roadWorthinessUrl }),
+    ...(req.body.vehicleInspectionUrl  && { vehicleInspectionUrl:  req.body.vehicleInspectionUrl }),
+    ...(req.body.hackneyCertUrl        && { hackneyCertUrl:        req.body.hackneyCertUrl }),
+    ...(req.body.vehiclePhotoExteriorUrl && { vehiclePhotoExteriorUrl: req.body.vehiclePhotoExteriorUrl }),
+    ...(req.body.vehiclePhotoInteriorUrl && { vehiclePhotoInteriorUrl: req.body.vehiclePhotoInteriorUrl }),
+    ...(req.body.riderCardUrl          && { riderCardUrl:          req.body.riderCardUrl }),
+    ...(req.body.helmetPhotoUrl        && { helmetPhotoUrl:        req.body.helmetPhotoUrl }),
+    ...(req.body.dispatchPermitUrl     && { dispatchPermitUrl:     req.body.dispatchPermitUrl }),
+    ...(req.body.guarantorLetterUrl    && { guarantorLetterUrl:    req.body.guarantorLetterUrl }),
+    ...(req.body.guarantorIdUrl        && { guarantorIdUrl:        req.body.guarantorIdUrl }),
+    ...(req.body.operatorPermitUrl     && { operatorPermitUrl:     req.body.operatorPermitUrl }),
+  },
+});
 }
 
 if (role === 'DELIVERY_PARTNER') {
   const { vehicleType, vehiclePlate } = req.body;
 
-  await prisma.deliveryPartnerProfile.create({
-    data: {
-      userId:      user.id,
-      vehicleType,
-      vehiclePlate: vehiclePlate || null,
-      isApproved:   true,
-      approvedBy:   req.user.id,
-      approvedAt:   new Date(),
-    },
-  });
+  // DELIVERY_PARTNER profile — add document URLs
+await prisma.deliveryPartnerProfile.create({
+  data: {
+    userId:      user.id,
+    vehicleType,
+    vehiclePlate: vehiclePlate || null,
+    isApproved:   true,
+    approvedBy:   req.user.id,
+    approvedAt:   new Date(),
+    // ── Document URLs (all optional) ──────────────────────
+    ...(req.body.vehicleSubType        && { vehicleSubType:        req.body.vehicleSubType }),
+    ...(req.body.numberOfSeats         && { numberOfSeats:         parseInt(req.body.numberOfSeats) }),
+    ...(req.body.applicantPhotoUrl     && { applicantPhotoUrl:     req.body.applicantPhotoUrl }),
+    ...(req.body.govtIdUrl             && { govtIdUrl:             req.body.govtIdUrl }),
+    ...(req.body.proofOfAddressUrl     && { proofOfAddressUrl:     req.body.proofOfAddressUrl }),
+    ...(req.body.idImageUrl            && { idImageUrl:            req.body.idImageUrl }),
+    ...(req.body.vehicleImageUrl       && { vehicleImageUrl:       req.body.vehicleImageUrl }),
+    ...(req.body.insuranceUrl          && { insuranceUrl:          req.body.insuranceUrl }),
+    ...(req.body.roadWorthinessUrl     && { roadWorthinessUrl:     req.body.roadWorthinessUrl }),
+    ...(req.body.vehiclePhotoExteriorUrl && { vehiclePhotoExteriorUrl: req.body.vehiclePhotoExteriorUrl }),
+    ...(req.body.vehiclePhotoInteriorUrl && { vehiclePhotoInteriorUrl: req.body.vehiclePhotoInteriorUrl }),
+    ...(req.body.riderCardUrl          && { riderCardUrl:          req.body.riderCardUrl }),
+    ...(req.body.helmetPhotoUrl        && { helmetPhotoUrl:        req.body.helmetPhotoUrl }),
+    ...(req.body.dispatchPermitUrl     && { dispatchPermitUrl:     req.body.dispatchPermitUrl }),
+    ...(req.body.guarantorLetterUrl    && { guarantorLetterUrl:    req.body.guarantorLetterUrl }),
+    ...(req.body.guarantorIdUrl        && { guarantorIdUrl:        req.body.guarantorIdUrl }),
+    ...(req.body.operatorPermitUrl     && { operatorPermitUrl:     req.body.operatorPermitUrl }),
+  },
+});
 }
  
   await logActivity({
