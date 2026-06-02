@@ -8,14 +8,12 @@ import { Card, Input, Button, Spinner, Alert } from '@/components/common';
 import toast from 'react-hot-toast';
 import api from '@/services/api';
 
-// Extended user type including optional driver/partner profiles (returned by admin user detail)
 interface UserWithProfiles extends User {
   driverProfile?: Driver;
   deliveryPartnerProfile?: DeliveryPartner;
 }
 
 const VEHICLE_TYPES = ['BIKE', 'CAR', 'MOTORCYCLE', 'VAN', 'TRICYCLE'];
-
 const VEHICLE_SUB_TYPES: Record<string, string[]> = {
   CAR:        ['Sedan', 'SUV', 'Hatchback', 'Minivan', 'Coupe'],
   VAN:        ['Panel Van', 'Minibus', 'Pickup Truck', 'Box Truck'],
@@ -32,14 +30,7 @@ const UserEdit: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Basic fields
-  const [form, setForm] = useState({
-    firstName: '',
-    lastName: '',
-    phone: '',
-  });
-
-  // Driver fields (only used if role === DRIVER)
+  const [form, setForm] = useState({ firstName: '', lastName: '', phone: '' });
   const [driverForm, setDriverForm] = useState({
     licenseNumber: '',
     vehicleType: 'CAR',
@@ -51,8 +42,6 @@ const UserEdit: React.FC = () => {
     numberOfSeats: '',
     vehicleSubType: '',
   });
-
-  // Partner fields (only used if role === DELIVERY_PARTNER)
   const [partnerForm, setPartnerForm] = useState({
     vehicleType: 'MOTORCYCLE',
     vehiclePlate: '',
@@ -66,7 +55,6 @@ const UserEdit: React.FC = () => {
       setUser(u);
       setForm({ firstName: u.firstName, lastName: u.lastName, phone: u.phone });
 
-      // Populate driver fields if present
       if (u.driverProfile) {
         const d = u.driverProfile;
         setDriverForm({
@@ -77,12 +65,11 @@ const UserEdit: React.FC = () => {
           vehicleYear: d.vehicleYear ? String(d.vehicleYear) : '',
           vehicleColor: d.vehicleColor || '',
           vehiclePlate: d.vehiclePlate || '',
-          numberOfSeats: d.numberOfSeats ? String(d.numberOfSeats) : '',
-          vehicleSubType: d.vehicleSubType || '',
+          numberOfSeats: d.numberOfSeats ? String(d.numberOfSeats) : '',   // ← now works
+          vehicleSubType: d.vehicleSubType || '',                         // ← now works
         });
       }
 
-      // Populate partner fields if present
       if (u.deliveryPartnerProfile) {
         const p = u.deliveryPartnerProfile;
         setPartnerForm({
@@ -92,9 +79,7 @@ const UserEdit: React.FC = () => {
       }
     } catch {
       toast.error('Failed to load user');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -105,16 +90,13 @@ const UserEdit: React.FC = () => {
       toast.error('First and last name are required');
       return;
     }
-
     setSaving(true);
     try {
-      // Build payload – the backend admin route should accept these extra fields
       const payload: any = {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         phone: form.phone.trim(),
       };
-
       if (user?.role === 'DRIVER') {
         const year = parseInt(driverForm.vehicleYear, 10);
         payload.driverData = {
@@ -129,31 +111,24 @@ const UserEdit: React.FC = () => {
           vehicleSubType: driverForm.vehicleSubType || undefined,
         };
       }
-
       if (user?.role === 'DELIVERY_PARTNER') {
         payload.partnerData = {
           vehicleType: partnerForm.vehicleType,
           vehiclePlate: partnerForm.vehiclePlate.trim().toUpperCase() || undefined,
         };
       }
-
-      // Uses the same profile update endpoint – the backend should handle driver/partner data if present
       await api.put(`/admin/users/${id}/profile`, payload);
       toast.success('User updated');
       navigate(`/users/${id}`);
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Failed to update');
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const setBasic = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [field]: e.target.value }));
-
   const setDriver = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setDriverForm(f => ({ ...f, [field]: e.target.value }));
-
   const setPartner = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setPartnerForm(f => ({ ...f, [field]: e.target.value }));
 
@@ -177,7 +152,6 @@ const UserEdit: React.FC = () => {
 
       <Card>
         <form onSubmit={handleSave} className="space-y-4">
-          {/* Basic Info */}
           <div className="grid grid-cols-2 gap-4">
             <Input label="First Name" value={form.firstName} onChange={setBasic('firstName')} required />
             <Input label="Last Name" value={form.lastName} onChange={setBasic('lastName')} required />
@@ -189,20 +163,11 @@ const UserEdit: React.FC = () => {
             <p className="text-xs text-gray-500 mt-0.5">Role: <span className="font-medium">{user.role}</span></p>
           </div>
 
-          {/* ── Driver fields ── */}
           {user.role === 'DRIVER' && (
             <div className="border-t pt-4 mt-2">
               <h2 className="text-sm font-semibold text-gray-700 mb-3">Driver & Vehicle Details</h2>
+              <Input label="Licence Number" value={driverForm.licenseNumber} onChange={setDriver('licenseNumber')} placeholder="e.g. ABC123456" required />
 
-              <Input
-                label="Licence Number"
-                value={driverForm.licenseNumber}
-                onChange={setDriver('licenseNumber')}
-                placeholder="e.g. ABC123456"
-                required
-              />
-
-              {/* Vehicle Type */}
               <label className="block text-sm font-medium text-gray-700 mt-4 mb-1">Vehicle Type</label>
               <div className="flex flex-wrap gap-2 mb-3">
                 {VEHICLE_TYPES.map(vt => (
@@ -210,9 +175,7 @@ const UserEdit: React.FC = () => {
                     key={vt}
                     type="button"
                     className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
-                      driverForm.vehicleType === vt
-                        ? 'bg-primary-100 border-primary-500 text-primary-700'
-                        : 'border-gray-300 text-gray-600 hover:border-gray-400'
+                      driverForm.vehicleType === vt ? 'bg-primary-100 border-primary-500 text-primary-700' : 'border-gray-300 text-gray-600 hover:border-gray-400'
                     }`}
                     onClick={() => setDriverForm(f => ({ ...f, vehicleType: vt, vehicleSubType: '' }))}
                   >
@@ -221,7 +184,6 @@ const UserEdit: React.FC = () => {
                 ))}
               </div>
 
-              {/* Sub-type */}
               {VEHICLE_SUB_TYPES[driverForm.vehicleType]?.length > 0 && (
                 <>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Sub‑type (optional)</label>
@@ -231,9 +193,7 @@ const UserEdit: React.FC = () => {
                         key={st}
                         type="button"
                         className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
-                          driverForm.vehicleSubType === st
-                            ? 'bg-primary-100 border-primary-500 text-primary-700'
-                            : 'border-gray-300 text-gray-600 hover:border-gray-400'
+                          driverForm.vehicleSubType === st ? 'bg-primary-100 border-primary-500 text-primary-700' : 'border-gray-300 text-gray-600 hover:border-gray-400'
                         }`}
                         onClick={() => setDriverForm(f => ({ ...f, vehicleSubType: st }))}
                       >
@@ -257,11 +217,9 @@ const UserEdit: React.FC = () => {
             </div>
           )}
 
-          {/* ── Delivery Partner fields ── */}
           {user.role === 'DELIVERY_PARTNER' && (
             <div className="border-t pt-4 mt-2">
               <h2 className="text-sm font-semibold text-gray-700 mb-3">Partner Vehicle Details</h2>
-
               <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
               <div className="flex flex-wrap gap-2 mb-4">
                 {VEHICLE_TYPES.map(vt => (
@@ -269,9 +227,7 @@ const UserEdit: React.FC = () => {
                     key={vt}
                     type="button"
                     className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
-                      partnerForm.vehicleType === vt
-                        ? 'bg-primary-100 border-primary-500 text-primary-700'
-                        : 'border-gray-300 text-gray-600 hover:border-gray-400'
+                      partnerForm.vehicleType === vt ? 'bg-primary-100 border-primary-500 text-primary-700' : 'border-gray-300 text-gray-600 hover:border-gray-400'
                     }`}
                     onClick={() => setPartnerForm(f => ({ ...f, vehicleType: vt }))}
                   >
@@ -279,13 +235,7 @@ const UserEdit: React.FC = () => {
                   </button>
                 ))}
               </div>
-
-              <Input
-                label="Vehicle Plate (optional)"
-                value={partnerForm.vehiclePlate}
-                onChange={setPartner('vehiclePlate')}
-                placeholder="ABC123XY"
-              />
+              <Input label="Vehicle Plate (optional)" value={partnerForm.vehiclePlate} onChange={setPartner('vehiclePlate')} placeholder="ABC123XY" />
             </div>
           )}
 

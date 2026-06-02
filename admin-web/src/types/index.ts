@@ -50,6 +50,8 @@ export interface Driver {
   guarantorLetterUrl?: string;
   guarantorIdUrl?: string;
   operatorPermitUrl?: string;
+  numberOfSeats?: number;       // ← new
+  vehicleSubType?: string;      // ← new
   isApproved: boolean;
   isOnline: boolean;
   currentLat?: number;
@@ -91,6 +93,8 @@ export interface DeliveryPartner {
   riderCardUrl?: string;
   helmetPhotoUrl?: string;
   operatorPermitUrl?: string;
+  numberOfSeats?: number;       // ← new
+  vehicleSubType?: string;      // ← new
 
   /** Derived by backend — 'COMPLETE' | 'PARTIAL' | 'NONE' */
   documentStatus?: 'COMPLETE' | 'PARTIAL' | 'NONE';  // ← NEW
