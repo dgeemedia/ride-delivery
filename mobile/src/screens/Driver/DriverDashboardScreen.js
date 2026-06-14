@@ -5,7 +5,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, Dimensions, Animated,
   ActivityIndicator, Alert, Image, ScrollView,
-  RefreshControl,                               // ← ADDED
+  RefreshControl,
 } from 'react-native';
 import MapView                                 from '../../components/SmartMapView';
 import { Ionicons }                            from '@expo/vector-icons';
@@ -260,7 +260,7 @@ export default function DriverDashboardScreen({ navigation }) {
   const [walletBalance,     setWalletBalance]     = useState(null);
   const [todayEarnings,     setTodayEarnings]     = useState(0);
   const [loading,           setLoading]           = useState(true);
-  const [refreshing,        setRefreshing]        = useState(false); // ← ADDED
+  const [refreshing,        setRefreshing]        = useState(false);
   const [activeRide,        setActiveRide]        = useState(null);
   const [floorPriceActive,  setFloorPriceActive]  = useState(false);
   const [activeFloorAmount, setActiveFloorAmount] = useState(0);
@@ -275,7 +275,6 @@ export default function DriverDashboardScreen({ navigation }) {
   const isApproved     = profile?.isApproved ?? false;
   const isRejected     = profile?.isRejected ?? false;
 
-  // ── fetchData: accepts a flag so pull-to-refresh skips the entry animation ──
   const fetchData = useCallback(async (isPullRefresh = false) => {
     try {
       const [profileRes, statsRes, walletRes, earningsRes, activeRideRes] = await Promise.allSettled([
@@ -306,9 +305,7 @@ export default function DriverDashboardScreen({ navigation }) {
     } catch {}
     finally {
       setLoading(false);
-      setRefreshing(false); // ← ADDED: always clear the spinner
-
-      // Only run the entry animation on first load, not on pull-to-refresh
+      setRefreshing(false);
       if (!isPullRefresh) {
         Animated.parallel([
           Animated.timing(fadeA,  { toValue: 1, duration: 500, useNativeDriver: true }),
@@ -324,10 +321,9 @@ export default function DriverDashboardScreen({ navigation }) {
     return unsub;
   }, [navigation, fetchData]);
 
-  // ── Pull-to-refresh handler ──────────────────────────────────────────────
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchData(true); // true = is a pull-refresh, skip entry animation
+    fetchData(true);
   }, [fetchData]);
 
   useEffect(() => {
@@ -427,10 +423,12 @@ export default function DriverDashboardScreen({ navigation }) {
   const goToWithdraw  = () => navigation.getParent()?.navigate('EarningsTab', { screen: 'Withdrawal' });
   const goToProfile   = () => navigation.getParent()?.navigate('ProfileTab');
   const goToDocuments = () => navigation.navigate('DriverDocuments');
+  // ── History now navigates within DashboardStack ──────────────────────────
+  const goToHistory   = () => navigation.navigate('DriverHistory');
 
   const quickActions = [
     { Icon: EarningsIcon,    label: 'Earnings',     color: theme.accent, onPress: goToEarnings },
-    { Icon: RideHistoryIcon, label: 'Ride History', color: '#A78BFA',    onPress: () => navigation.getParent()?.navigate('EarningsTab', { screen: 'DriverHistory' }) },
+    { Icon: RideHistoryIcon, label: 'Ride History', color: '#A78BFA',    onPress: goToHistory },  // ← updated
     { Icon: FloorPriceIcon,  label: 'Floor Price',  color: PURPLE,       onPress: () => navigation.navigate('FloorPrice') },
     { Icon: DocumentsIcon,   label: 'Documents',    color: '#4E8DBD',    onPress: goToDocuments },
     { Icon: SupportIcon,     label: 'Support',      color: theme.accent, onPress: () => navigation.navigate('Support') },
@@ -497,7 +495,6 @@ export default function DriverDashboardScreen({ navigation }) {
           <View style={[s.handle, { backgroundColor: darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.13)' }]} />
         </View>
 
-        {/* ── PULL-TO-REFRESH: RefreshControl added to ScrollView ── */}
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[s.sheetScroll, { paddingBottom: insets.bottom + TAB_H + 20 }]}

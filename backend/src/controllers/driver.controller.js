@@ -597,26 +597,28 @@ exports.getPayoutHistory = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUT /api/drivers/floor-price
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 exports.setFloorMultiplier = async (req, res) => {
   const { floorMultiplier } = req.body;
   const multiplier = parseFloat(floorMultiplier);
 
-  if (isNaN(multiplier) || multiplier < 1.0 || multiplier > 2.0)
-    throw new AppError('Floor multiplier must be between 1.0 (no floor) and 2.0 (+100%)', 400);
+  if (isNaN(multiplier) || multiplier < 1.0 || multiplier > 1.30)
+    throw new AppError(
+      'Floor multiplier must be between 1.0 (no floor) and 1.30 (+30% max)',
+      400
+    );
 
   const profile = await prisma.driverProfile.update({
     where: { userId: req.user.id },
-    data: { floorMultiplier: multiplier },
+    data:  { floorMultiplier: multiplier },
   });
 
   const pctAbove = Math.round((multiplier - 1) * 100);
   res.status(200).json({
     success: true,
-    message:
-      pctAbove === 0
-        ? 'Floor price removed — you will accept base fare.'
-        : `Floor price set to +${pctAbove}% above base fare.`,
+    message: pctAbove === 0
+      ? 'Floor price removed — you will accept base fare.'
+      : `Floor price set to +${pctAbove}% above base fare.`,
     data: { floorMultiplier: profile.floorMultiplier },
   });
 };

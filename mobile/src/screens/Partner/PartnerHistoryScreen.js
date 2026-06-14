@@ -2,14 +2,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, Animated, ActivityIndicator, RefreshControl,
+  StatusBar, Animated, ActivityIndicator, Platform, Dimensions,
 } from 'react-native';
 import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }    from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }    from '../../context/ThemeContext';
 import { useScrollY }  from '../../context/ScrollContext';
 import { deliveryAPI } from '../../services/api';
+
+const { height } = Dimensions.get('window');
 
 const TEAL  = '#34D399';
 const GREEN = '#5DAA72';
@@ -21,12 +23,15 @@ const STATUS_CFG = {
   CANCELLED: { color: RED,   icon: 'close-circle-outline',     label: 'Cancelled' },
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DeliveryCard
+// ─────────────────────────────────────────────────────────────────────────────
 const DeliveryCard = ({ item, theme }) => {
   const cfg  = STATUS_CFG[item.status] ?? STATUS_CFG.DELIVERED;
   const date = new Date(item.requestedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
   const time = new Date(item.requestedAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
-  const gross = item.actualFee ?? item.estimatedFee ?? 0;
-  const net   = item.payment?.driverEarnings ?? 0;
+  const gross   = item.actualFee ?? item.estimatedFee ?? 0;
+  const net     = item.payment?.driverEarnings ?? 0;
   const platFee = gross - net;
 
   return (
@@ -140,6 +145,7 @@ const DeliveryCard = ({ item, theme }) => {
     </View>
   );
 };
+
 const dc = StyleSheet.create({
   card:          { borderRadius: 18, borderWidth: 1, borderLeftWidth: 3, padding: 16, marginBottom: 12 },
   header:        { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
@@ -168,21 +174,29 @@ const dc = StyleSheet.create({
   metaTxt:       { fontSize: 11 },
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 export default function PartnerHistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const scrollY         = useScrollY();
+  const insets          = useSafeAreaInsets();
 
-  // Reanimated scroll handler — feeds shared scrollY for tab-bar hiding
+  const TAB_H          = 54;
+  const EXTRA_BOTTOM   = Platform.OS === 'android' ? 16 : 0;
+  const HEADER_INNER_H = 92;
+  const HEADER_H       = insets.top + HEADER_INNER_H;
+  const SCROLL_H       = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
+
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => { scrollY.value = event.contentOffset.y; },
   });
 
-  const [deliveries, setDeliveries] = useState([]);
-  const [page,       setPage]       = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [loadingMore,setLoadingMore]= useState(false);
+  const [deliveries,  setDeliveries]  = useState([]);
+  const [page,        setPage]        = useState(1);
+  const [totalPages,  setTotalPages]  = useState(1);
+  const [loading,     setLoading]     = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const fadeA = useRef(new Animated.Value(0)).current;
 
@@ -205,21 +219,42 @@ export default function PartnerHistoryScreen({ navigation }) {
       setPage(reset ? 2 : p + 1);
     } catch {}
     finally {
-      setLoading(false); setRefreshing(false); setLoadingMore(false);
+      setLoading(false);
+      setLoadingMore(false);
       Animated.timing(fadeA, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     }
   }, [page, totalPages]);
 
   useEffect(() => { load(true); }, []);
 
+  const handleScroll = (event) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const isNearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 160;
+    if (isNearBottom && !loadingMore && page <= totalPages) {
+      load();
+    }
+  };
+
+  // ── Back: works from both DashboardStack and EarningsStack ───────────────
+  const goBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.getParent()?.navigate('DashboardTab');
+    }
+  };
+
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+
+      {/* ── Sticky header + summary strip ── */}
       <SafeAreaView edges={['top', 'left', 'right']}>
         <View style={[s.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-            onPress={() => navigation.navigate('DashboardTab')}  // ← was navigation.goBack()
+            onPress={goBack}
+            activeOpacity={0.8}
           >
             <Ionicons name="arrow-back" size={18} color={theme.foreground} />
           </TouchableOpacity>
@@ -251,47 +286,43 @@ export default function PartnerHistoryScreen({ navigation }) {
         )}
       </SafeAreaView>
 
-      {loading ? (
-        <View style={s.center}><ActivityIndicator color={TEAL} size="large" /></View>
-      ) : (
-        <Animated.View style={[{ flex: 1 }, { opacity: fadeA }]}>
-          <AnimatedRN.FlatList
-            data={deliveries}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => <DeliveryCard item={item} theme={theme} />}
-            contentContainerStyle={s.list}
-            showsVerticalScrollIndicator={false}
-            scrollEventThrottle={16}
-            onScroll={scrollHandler}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={() => { setRefreshing(true); load(true); }}
-                tintColor={TEAL}
-              />
-            }
-            onEndReached={() => {
-              if (!loadingMore && page <= totalPages) {
-                setLoadingMore(true);
-                load().finally(() => setLoadingMore(false));
-              }
-            }}
-            onEndReachedThreshold={0.4}
-            ListFooterComponent={
-              loadingMore
-                ? <ActivityIndicator color={TEAL} style={{ marginVertical: 16 }} />
-                : null
-            }
-            ListEmptyComponent={
-              <View style={s.empty}>
-                <Ionicons name="cube-outline" size={48} color={theme.hint} />
-                <Text style={[s.emptyTitle, { color: theme.foreground }]}>No deliveries yet</Text>
-                <Text style={[s.emptySub, { color: theme.hint }]}>Your completed deliveries will appear here</Text>
-              </View>
-            }
-          />
-        </Animated.View>
-      )}
+      {/* ── Scrollable body ── */}
+      <View style={{ height: SCROLL_H }}>
+        {loading ? (
+          <View style={s.center}><ActivityIndicator color={TEAL} size="large" /></View>
+        ) : (
+          <Animated.View style={[{ flex: 1 }, { opacity: fadeA }]}>
+            <AnimatedRN.ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={s.list}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                scrollHandler(e);
+                handleScroll(e);
+              }}
+              bounces
+              overScrollMode="always"
+              keyboardShouldPersistTaps="handled"
+            >
+              {deliveries.length === 0 ? (
+                <View style={s.empty}>
+                  <Ionicons name="cube-outline" size={48} color={theme.hint} />
+                  <Text style={[s.emptyTitle, { color: theme.foreground }]}>No deliveries yet</Text>
+                  <Text style={[s.emptySub, { color: theme.hint }]}>Your completed deliveries will appear here</Text>
+                </View>
+              ) : (
+                deliveries.map(item => (
+                  <DeliveryCard key={item.id} item={item} theme={theme} />
+                ))
+              )}
+
+              {loadingMore && (
+                <ActivityIndicator color={TEAL} style={{ marginVertical: 16 }} />
+              )}
+            </AnimatedRN.ScrollView>
+          </Animated.View>
+        )}
+      </View>
     </View>
   );
 }

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { ScrollProvider } from '../context/ScrollContext';
 import AnimatedTabBar from '../components/AnimatedTabBar';
+
 import DriverDashboardScreen from '../screens/Driver/DriverDashboardScreen';
 import IncomingRideQueueScreen from '../screens/Driver/IncomingRideQueueScreen';
 import ActiveRideScreen from '../screens/Driver/ActiveRideScreen';
@@ -28,54 +29,70 @@ import TicketDetailScreen from '../screens/Shared/TicketDetailScreen';
 import AppFeedbackScreen from '../screens/Shared/AppFeedbackScreen';
 import LegalScreen from '../screens/Shared/LegalScreen';
 import TransactionHistoryScreen from '../screens/Shared/TransactionHistoryScreen';
+import RateRideScreen from '../screens/Customer/RateRideScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
 const DashboardStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="DriverDashboard"  component={DriverDashboardScreen} />
-    <Stack.Screen name="IncomingRideQueue" component={IncomingRideQueueScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
-    <Stack.Screen name="ActiveRide"      component={ActiveRideScreen}      />
-    <Stack.Screen name="FloorPrice"      component={FloorPriceScreen}      />
-    <Stack.Screen name="Notifications"   component={NotificationsScreen}   />
-    <Stack.Screen name="DriverDocuments" component={DriverDocumentsScreen} />
-    <Stack.Screen name="Support"         component={SupportScreen}         />
-    <Stack.Screen name="SubmitTicket"    component={SubmitTicketScreen}    />
-    <Stack.Screen name="MyTickets"       component={MyTicketsScreen}       />
-    <Stack.Screen name="TicketDetail"    component={TicketDetailScreen}    />
-    <Stack.Screen name="Legal"           component={LegalScreen}           />
+    <Stack.Screen name="DriverDashboard"   component={DriverDashboardScreen}   />
+    <Stack.Screen
+      name="IncomingRideQueue"
+      component={IncomingRideQueueScreen}
+      options={{ presentation: 'fullScreenModal', gestureEnabled: false }}
+    />
+    <Stack.Screen name="ActiveRide"        component={ActiveRideScreen}        />
+    <Stack.Screen name="FloorPrice"        component={FloorPriceScreen}        />
+    <Stack.Screen name="Notifications"     component={NotificationsScreen}     />
+    <Stack.Screen name="DriverDocuments"   component={DriverDocumentsScreen}   />
+    <Stack.Screen name="DriverHistory"     component={DriverHistoryScreen}     />
+    <Stack.Screen
+      name="RateRide"
+      component={RateRideScreen}
+      options={{ presentation: 'modal' }}
+    />
+    <Stack.Screen name="Support"           component={SupportScreen}           />
+    <Stack.Screen name="SubmitTicket"      component={SubmitTicketScreen}      />
+    <Stack.Screen name="MyTickets"         component={MyTicketsScreen}         />
+    <Stack.Screen name="TicketDetail"      component={TicketDetailScreen}      />
+    <Stack.Screen name="Legal"             component={LegalScreen}             />
   </Stack.Navigator>
 );
 
 const EarningsStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="EarningsHome"  component={EarningsScreen}        />
-    <Stack.Screen name="DriverHistory" component={DriverHistoryScreen}   />
-    <Stack.Screen name="WalletTopUp"   component={WalletTopUpScreen}     />
-    <Stack.Screen name="Withdrawal"    component={WithdrawalScreen}      />
-    <Stack.Screen name="TransactionHistory"  component={TransactionHistoryScreen}  />
-    <Stack.Screen name="Support"       component={SupportScreen}         />
-    <Stack.Screen name="SubmitTicket"  component={SubmitTicketScreen}    />
-    <Stack.Screen name="MyTickets"     component={MyTicketsScreen}       />
-    <Stack.Screen name="TicketDetail"  component={TicketDetailScreen}    />
-    <Stack.Screen name="Legal"         component={LegalScreen}           />
+    <Stack.Screen name="EarningsHome"       component={EarningsScreen}           />
+    <Stack.Screen name="DriverHistory"      component={DriverHistoryScreen}      />
+    <Stack.Screen
+      name="RateRide"
+      component={RateRideScreen}
+      options={{ presentation: 'modal' }}
+    />
+    <Stack.Screen name="WalletTopUp"        component={WalletTopUpScreen}        />
+    <Stack.Screen name="Withdrawal"         component={WithdrawalScreen}         />
+    <Stack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
+    <Stack.Screen name="Support"            component={SupportScreen}            />
+    <Stack.Screen name="SubmitTicket"       component={SubmitTicketScreen}       />
+    <Stack.Screen name="MyTickets"          component={MyTicketsScreen}          />
+    <Stack.Screen name="TicketDetail"       component={TicketDetailScreen}       />
+    <Stack.Screen name="Legal"              component={LegalScreen}              />
   </Stack.Navigator>
 );
 
 const ProfileStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="ProfileHome"    component={ProfileScreen}         />
-    <Stack.Screen name="EditProfile"    component={EditProfileScreen}     />
-    <Stack.Screen name="Notifications"  component={NotificationsScreen}   />
-    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen}  />
-    <Stack.Screen name="FloorPrice"     component={FloorPriceScreen}      />
-    <Stack.Screen name="AppFeedback"    component={AppFeedbackScreen}     />
-    <Stack.Screen name="Support"        component={SupportScreen}         />
-    <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}    />
-    <Stack.Screen name="MyTickets"      component={MyTicketsScreen}       />
-    <Stack.Screen name="TicketDetail"   component={TicketDetailScreen}    />
-    <Stack.Screen name="Legal"          component={LegalScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="ProfileHome"    component={ProfileScreen}        />
+    <Stack.Screen name="EditProfile"    component={EditProfileScreen}    />
+    <Stack.Screen name="Notifications"  component={NotificationsScreen}  />
+    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+    <Stack.Screen name="FloorPrice"     component={FloorPriceScreen}     />
+    <Stack.Screen name="AppFeedback"    component={AppFeedbackScreen}    />
+    <Stack.Screen name="Support"        component={SupportScreen}        />
+    <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}   />
+    <Stack.Screen name="MyTickets"      component={MyTicketsScreen}      />
+    <Stack.Screen name="TicketDetail"   component={TicketDetailScreen}   />
+    <Stack.Screen name="Legal"          component={LegalScreen}          options={{ headerShown: false }} />
   </Stack.Navigator>
 );
 
@@ -84,8 +101,8 @@ const DriverNavigator = () => {
   const insets = useSafeAreaInsets();
 
   const TAB_CONTENT_H = 54;
-  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
-  const tabBarHeight = TAB_CONTENT_H + insets.bottom + EXTRA_BOTTOM;
+  const EXTRA_BOTTOM  = Platform.OS === 'android' ? 16 : 0;
+  const tabBarHeight  = TAB_CONTENT_H + insets.bottom + EXTRA_BOTTOM;
 
   return (
     <ScrollProvider>
@@ -104,13 +121,13 @@ const DriverNavigator = () => {
           tabBarActiveTintColor:   theme.accent,
           tabBarInactiveTintColor: theme.hint,
           tabBarStyle: {
-            position: 'absolute',
+            position:        'absolute',
             backgroundColor: theme.background,
-            borderTopColor: theme.border,
-            borderTopWidth: 1,
-            height: tabBarHeight,
-            paddingBottom: EXTRA_BOTTOM + 4,
-            paddingTop: 8,
+            borderTopColor:  theme.border,
+            borderTopWidth:  1,
+            height:          tabBarHeight,
+            paddingBottom:   EXTRA_BOTTOM + 4,
+            paddingTop:      8,
           },
           tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
         })}

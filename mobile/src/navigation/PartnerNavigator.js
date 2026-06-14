@@ -29,59 +29,71 @@ import TicketDetailScreen from '../screens/Shared/TicketDetailScreen';
 import AppFeedbackScreen from '../screens/Shared/AppFeedbackScreen';
 import LegalScreen from '../screens/Shared/LegalScreen';
 import TransactionHistoryScreen from '../screens/Shared/TransactionHistoryScreen';
+import RateDeliveryScreen from '../screens/Customer/RateDeliveryScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
 const DashboardStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Dashboard"        component={PartnerDashboardScreen}  />
+    <Stack.Screen name="Dashboard"           component={PartnerDashboardScreen}     />
     <Stack.Screen
       name="IncomingDeliveryQueue"
       component={IncomingDeliveryQueueScreen}
       options={{ presentation: 'fullScreenModal', gestureEnabled: false }}
     />
-    <Stack.Screen name="ActiveDelivery"   component={ActiveDeliveryScreen}    />
-    <Stack.Screen name="FloorPrice"       component={CourierFloorPriceScreen} />
-    <Stack.Screen name="PartnerDocuments" component={PartnerDocumentsScreen}  />
-    <Stack.Screen name="AppFeedback"      component={AppFeedbackScreen}       />
-    <Stack.Screen name="Notifications"    component={NotificationsScreen}     />
-    <Stack.Screen name="Support"          component={SupportScreen}           />
-    <Stack.Screen name="SubmitTicket"     component={SubmitTicketScreen}      />
-    <Stack.Screen name="MyTickets"        component={MyTicketsScreen}         />
-    <Stack.Screen name="TicketDetail"     component={TicketDetailScreen}      />
-    <Stack.Screen name="Legal"            component={LegalScreen}             />
+    <Stack.Screen name="ActiveDelivery"      component={ActiveDeliveryScreen}       />
+    <Stack.Screen name="FloorPrice"          component={CourierFloorPriceScreen}    />
+    <Stack.Screen name="PartnerDocuments"    component={PartnerDocumentsScreen}     />
+    <Stack.Screen name="PartnerHistory"      component={PartnerHistoryScreen}       />
+    <Stack.Screen name="AppFeedback"         component={AppFeedbackScreen}          />
+    <Stack.Screen name="Notifications"       component={NotificationsScreen}        />
+    <Stack.Screen
+      name="RateDelivery"
+      component={RateDeliveryScreen}
+      options={{ presentation: 'modal' }}
+    />
+    <Stack.Screen name="Support"             component={SupportScreen}              />
+    <Stack.Screen name="SubmitTicket"        component={SubmitTicketScreen}         />
+    <Stack.Screen name="MyTickets"           component={MyTicketsScreen}            />
+    <Stack.Screen name="TicketDetail"        component={TicketDetailScreen}         />
+    <Stack.Screen name="Legal"               component={LegalScreen}                />
   </Stack.Navigator>
 );
 
 const EarningsStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="EarningsHome"   component={PartnerEarningsScreen}   />
-    <Stack.Screen name="PartnerHistory" component={PartnerHistoryScreen}    />
-    <Stack.Screen name="WalletTopUp"    component={WalletTopUpScreen}       />
-    <Stack.Screen name="Withdrawal"     component={WithdrawalScreen}        />
-    <Stack.Screen name="TransactionHistory"  component={TransactionHistoryScreen}  />
-    <Stack.Screen name="Support"        component={SupportScreen}           />
-    <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}      />
-    <Stack.Screen name="MyTickets"      component={MyTicketsScreen}         />
-    <Stack.Screen name="TicketDetail"   component={TicketDetailScreen}      />
-    <Stack.Screen name="Legal"          component={LegalScreen}             />
+    <Stack.Screen name="EarningsHome"        component={PartnerEarningsScreen}      />
+    <Stack.Screen name="PartnerHistory"      component={PartnerHistoryScreen}       />
+    <Stack.Screen
+      name="RateDelivery"
+      component={RateDeliveryScreen}
+      options={{ presentation: 'modal' }}
+    />
+    <Stack.Screen name="WalletTopUp"         component={WalletTopUpScreen}          />
+    <Stack.Screen name="Withdrawal"          component={WithdrawalScreen}           />
+    <Stack.Screen name="TransactionHistory"  component={TransactionHistoryScreen}   />
+    <Stack.Screen name="Support"             component={SupportScreen}              />
+    <Stack.Screen name="SubmitTicket"        component={SubmitTicketScreen}         />
+    <Stack.Screen name="MyTickets"           component={MyTicketsScreen}            />
+    <Stack.Screen name="TicketDetail"        component={TicketDetailScreen}         />
+    <Stack.Screen name="Legal"               component={LegalScreen}                />
   </Stack.Navigator>
 );
 
 const ProfileStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="ProfileHome"    component={ProfileScreen}            />
-    <Stack.Screen name="EditProfile"    component={EditProfileScreen}        />
-    <Stack.Screen name="Notifications"  component={NotificationsScreen}      />
-    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen}     />
-    <Stack.Screen name="FloorPrice"     component={CourierFloorPriceScreen}  />
-    <Stack.Screen name="AppFeedback"    component={AppFeedbackScreen}        />
-    <Stack.Screen name="Support"        component={SupportScreen}            />
-    <Stack.Screen name="SubmitTicket"   component={SubmitTicketScreen}       />
-    <Stack.Screen name="MyTickets"      component={MyTicketsScreen}          />
-    <Stack.Screen name="TicketDetail"   component={TicketDetailScreen}       />
-    <Stack.Screen name="Legal"          component={LegalScreen} options={{ headerShown: false }} />
+    <Stack.Screen name="ProfileHome"         component={ProfileScreen}              />
+    <Stack.Screen name="EditProfile"         component={EditProfileScreen}          />
+    <Stack.Screen name="Notifications"       component={NotificationsScreen}        />
+    <Stack.Screen name="ChangePassword"      component={ChangePasswordScreen}       />
+    <Stack.Screen name="FloorPrice"          component={CourierFloorPriceScreen}    />
+    <Stack.Screen name="AppFeedback"         component={AppFeedbackScreen}          />
+    <Stack.Screen name="Support"             component={SupportScreen}              />
+    <Stack.Screen name="SubmitTicket"        component={SubmitTicketScreen}         />
+    <Stack.Screen name="MyTickets"           component={MyTicketsScreen}            />
+    <Stack.Screen name="TicketDetail"        component={TicketDetailScreen}         />
+    <Stack.Screen name="Legal"               component={LegalScreen}                options={{ headerShown: false }} />
   </Stack.Navigator>
 );
 
@@ -90,8 +102,8 @@ const PartnerNavigator = () => {
   const insets = useSafeAreaInsets();
 
   const TAB_CONTENT_H = 54;
-  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
-  const tabBarHeight = TAB_CONTENT_H + insets.bottom + EXTRA_BOTTOM;
+  const EXTRA_BOTTOM  = Platform.OS === 'android' ? 16 : 0;
+  const tabBarHeight  = TAB_CONTENT_H + insets.bottom + EXTRA_BOTTOM;
 
   return (
     <ScrollProvider>
@@ -110,13 +122,13 @@ const PartnerNavigator = () => {
           tabBarActiveTintColor:   theme.accent,
           tabBarInactiveTintColor: theme.hint,
           tabBarStyle: {
-            position: 'absolute',
+            position:        'absolute',
             backgroundColor: theme.background,
-            borderTopColor: theme.border,
-            borderTopWidth: 1,
-            height: tabBarHeight,
-            paddingBottom: EXTRA_BOTTOM + 4,
-            paddingTop: 8,
+            borderTopColor:  theme.border,
+            borderTopWidth:  1,
+            height:          tabBarHeight,
+            paddingBottom:   EXTRA_BOTTOM + 4,
+            paddingTop:      8,
           },
           tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
         })}

@@ -2,16 +2,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Animated, Dimensions, StatusBar,
+  ActivityIndicator, Animated, Dimensions, StatusBar, Platform,
 } from 'react-native';
 import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }     from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }     from '../../context/ThemeContext';
 import { useScrollY }   from '../../context/ScrollContext';
 import { rideAPI }      from '../../services/api';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const GREEN  = '#34C759';
 const RED    = '#E05555';
 const AMBER  = '#FFB800';
@@ -93,17 +93,24 @@ const rc = StyleSheet.create({
 export default function DriverHistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const scrollY         = useScrollY();
+  const insets          = useSafeAreaInsets();
 
-  // All hooks at top level — scrollHandler must not be called inside render
+  const TAB_H        = 54;
+  const EXTRA_BOTTOM = Platform.OS === 'android' ? 16 : 0;
+  const HEADER_INNER_H = 78;
+  const HEADER_H       = insets.top + HEADER_INNER_H;
+  const SCROLL_H       = height - HEADER_H - TAB_H - insets.bottom - EXTRA_BOTTOM;
+
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => { scrollY.value = event.contentOffset.y; },
   });
 
-  const [rides,   setRides]   = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [page,    setPage]    = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [filter,  setFilter]  = useState('ALL');
+  const [rides,       setRides]       = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [page,        setPage]        = useState(1);
+  const [hasMore,     setHasMore]     = useState(true);
+  const [filter,      setFilter]      = useState('ALL');
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const fadeA  = useRef(new Animated.Value(0)).current;
   const slideA = useRef(new Animated.Value(16)).current;
@@ -128,6 +135,7 @@ export default function DriverHistoryScreen({ navigation }) {
       console.warn('[DriverHistory] fetch error:', err?.message);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
       Animated.parallel([
         Animated.timing(fadeA,  { toValue: 1, duration: 450, useNativeDriver: true }),
         Animated.timing(slideA, { toValue: 0, duration: 450, useNativeDriver: true }),
@@ -144,10 +152,17 @@ export default function DriverHistoryScreen({ navigation }) {
   }, [filter]);
 
   const loadMore = () => {
-    if (!hasMore || loading) return;
+    if (!hasMore || loading || loadingMore) return;
     const next = page + 1;
     setPage(next);
+    setLoadingMore(true);
     fetchRides(next, filter, true);
+  };
+
+  const handleScroll = (event) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const isNearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 120;
+    if (isNearBottom) loadMore();
   };
 
   const handleRidePress = (item) => {
@@ -156,8 +171,14 @@ export default function DriverHistoryScreen({ navigation }) {
     }
   };
 
-  // ── Back → Dashboard home tab ─────────────────────────────────────────────
-  const goHome = () => navigation.getParent()?.navigate('DashboardTab');
+  // ── Back: works from both DashboardStack and EarningsStack ───────────────
+  const goBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.getParent()?.navigate('DashboardTab');
+    }
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -172,7 +193,7 @@ export default function DriverHistoryScreen({ navigation }) {
         <View style={[s.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={[s.backBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
-            onPress={goHome}
+            onPress={goBack}
             activeOpacity={0.8}
           >
             <Ionicons name="arrow-back" size={18} color={theme.foreground} />
@@ -208,54 +229,62 @@ export default function DriverHistoryScreen({ navigation }) {
         </View>
       </SafeAreaView>
 
-      {loading && rides.length === 0 ? (
-        <View style={s.loadingWrap}>
-          <ActivityIndicator color={GREEN} size="large" />
-        </View>
-      ) : (
-        <Animated.View style={[{ flex: 1 }, { opacity: fadeA, transform: [{ translateY: slideA }] }]}>
-          <AnimatedRN.FlatList
-            data={rides}
-            keyExtractor={(item, i) => item.id ?? String(i)}
-            renderItem={({ item }) => (
-              <RideCard item={item} theme={theme} onPress={handleRidePress} />
-            )}
-            contentContainerStyle={s.list}
-            showsVerticalScrollIndicator={false}
-            scrollEventThrottle={16}
-            onScroll={scrollHandler}
-            overScrollMode="never"
-            onEndReached={loadMore}
-            onEndReachedThreshold={0.4}
-            ListFooterComponent={
-              loading && rides.length > 0
-                ? <ActivityIndicator color={GREEN} style={{ marginVertical: 16 }} />
-                : hasMore && !loading
-                  ? (
-                    <TouchableOpacity
-                      style={[s.loadMoreBtn, { borderColor: theme.border }]}
-                      onPress={loadMore}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[s.loadMoreTxt, { color: theme.hint }]}>Load more</Text>
-                    </TouchableOpacity>
-                  )
-                  : null
-            }
-            ListEmptyComponent={
-              <View style={s.empty}>
-                <Ionicons name="car-outline" size={40} color={theme.hint} />
-                <Text style={[s.emptyTitle, { color: theme.foreground }]}>No rides yet</Text>
-                <Text style={[s.emptySub, { color: theme.hint }]}>
-                  {filter !== 'ALL'
-                    ? `No ${filter.toLowerCase()} rides found.`
-                    : 'Your ride history will appear here.'}
-                </Text>
-              </View>
-            }
-          />
-        </Animated.View>
-      )}
+      {/* ── Scrollable body ── */}
+      <View style={{ height: SCROLL_H }}>
+        {loading && rides.length === 0 ? (
+          <View style={s.loadingWrap}>
+            <ActivityIndicator color={GREEN} size="large" />
+          </View>
+        ) : (
+          <Animated.View style={[{ flex: 1 }, { opacity: fadeA, transform: [{ translateY: slideA }] }]}>
+            <AnimatedRN.ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={s.list}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                scrollHandler(e);
+                handleScroll(e);
+              }}
+              overScrollMode="never"
+              bounces
+            >
+              {rides.length === 0 ? (
+                <View style={s.empty}>
+                  <Ionicons name="car-outline" size={40} color={theme.hint} />
+                  <Text style={[s.emptyTitle, { color: theme.foreground }]}>No rides yet</Text>
+                  <Text style={[s.emptySub, { color: theme.hint }]}>
+                    {filter !== 'ALL'
+                      ? `No ${filter.toLowerCase()} rides found.`
+                      : 'Your ride history will appear here.'}
+                  </Text>
+                </View>
+              ) : (
+                rides.map((item, i) => (
+                  <RideCard
+                    key={item.id ?? String(i)}
+                    item={item}
+                    theme={theme}
+                    onPress={handleRidePress}
+                  />
+                ))
+              )}
+
+              {loadingMore && (
+                <ActivityIndicator color={GREEN} style={{ marginVertical: 16 }} />
+              )}
+              {!loadingMore && hasMore && rides.length > 0 && (
+                <TouchableOpacity
+                  style={[s.loadMoreBtn, { borderColor: theme.border }]}
+                  onPress={loadMore}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.loadMoreTxt, { color: theme.hint }]}>Load more</Text>
+                </TouchableOpacity>
+              )}
+            </AnimatedRN.ScrollView>
+          </Animated.View>
+        )}
+      </View>
     </View>
   );
 }

@@ -62,6 +62,22 @@ exports.requestDelivery = async (req, res) => {
   const feeResult    = await fareEngine.calculateDeliveryFee(distance, packageWeight || 0);
   let   estimatedFee = feeResult.estimatedFee;
 
+  let partnerFloorResult = null;
+  if (selectedPartnerId) {
+    const selectedPartnerProfile = await prisma.deliveryPartnerProfile.findUnique({
+      where:  { userId: selectedPartnerId },
+      select: { floorMultiplier: true },
+    });
+    const floorMultiplier = parseFloat(selectedPartnerProfile?.floorMultiplier ?? 1.0);
+    if (floorMultiplier > 1.0) {
+      partnerFloorResult = fareEngine.applyDriverFloor(
+        estimatedFee * floorMultiplier,
+        estimatedFee,
+      );
+      estimatedFee = partnerFloorResult.adjustedFare;
+    }
+  }
+
   let appliedPromo = null;
   if (promoCode) {
     appliedPromo = await prisma.promoCode.findFirst({
@@ -148,7 +164,7 @@ exports.requestDelivery = async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'Delivery requested successfully. Looking for nearby delivery partners...',
-    data: { delivery, feeBreakdown: feeResult, promoApplied: !!appliedPromo }
+    data: { delivery, feeBreakdown: feeResult, partnerFloorApplied: !!partnerFloorResult, promoApplied: !!appliedPromo }
   });
 };
 
