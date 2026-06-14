@@ -4,7 +4,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   StatusBar, Dimensions, Animated, ActivityIndicator,
   Alert, RefreshControl, ScrollView,
-  Modal, PanResponder, TextInput, KeyboardAvoidingView, Platform,
+  Modal, PanResponder, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -235,10 +235,7 @@ if (!visible) return null;
 
 return (
   <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
-    <KeyboardAvoidingView
-      style={lss.overlay}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <View style={lss.overlay}>
       <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} activeOpacity={1} />
       <Animated.View style={[lss.sheet, { backgroundColor: theme.background, borderColor: theme.border, transform: [{ translateY: slideA }] }]}>
         <View style={[lss.handle, { backgroundColor: theme.hint + '44' }]} />
@@ -349,7 +346,7 @@ return (
           </View>
         )}
       </Animated.View>
-    </KeyboardAvoidingView>
+    </View>
   </Modal>
 );
 };
