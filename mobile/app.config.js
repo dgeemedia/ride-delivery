@@ -55,6 +55,7 @@ module.exports = {
           'Diakite needs your location to find nearby drivers and show your position on the map.',
         NSLocationAlwaysAndWhenInUseUsageDescription:
           'Diakite uses your location to track your ride in real time.',
+        ITSAppUsesNonExemptEncryption: false,
       },
       config: {
         googleMapsApiKey: IOS_KEY,
