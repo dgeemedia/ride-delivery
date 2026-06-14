@@ -64,7 +64,8 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
   const [local,      setLocal]      = useState(value);
   const [dateString, setDateString] = useState(value.toISOString().split('T')[0]);
   const [dateError,  setDateError]  = useState('');
-
+  const insets = useSafeAreaInsets();
+  
   if (!visible) return null;
 
   // ── Web branch ──────────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
     return (
       <Modal transparent animationType="fade" onRequestClose={onClose}>
         <View style={dp.overlay}>
-          <View style={[dp.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+          <View style={[dp.centeredCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <Text style={[dp.title, { color: theme.foreground }]}>{label}</Text>
             {/* eslint-disable-next-line react-native/no-raw-text */}
             <input
@@ -105,17 +106,18 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
   // ── Native DateTimePicker branch ────────────────────────────────────────────
   if (DateTimePicker) {
     return (
-      <Modal transparent animationType="slide" onRequestClose={onClose}>
+      <Modal transparent animationType="fade" onRequestClose={onClose}>
         <View style={dp.overlay}>
-          <View style={[dp.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+          <View style={[dp.centeredCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <Text style={[dp.title, { color: theme.foreground }]}>{label}</Text>
             <DateTimePicker
               value={local}
               mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              display="spinner"
               maximumDate={new Date()}
               onChange={(_, d) => d && setLocal(d)}
               textColor={theme.foreground}
+              style={Platform.OS === 'android' ? { alignSelf: 'center', marginVertical: 8 } : undefined}
             />
             <View style={dp.btns}>
               <TouchableOpacity style={[dp.btn, { borderColor: theme.border }]} onPress={onClose}>
@@ -154,10 +156,11 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
     <Modal transparent animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={insets.bottom + 24}
       >
         <View style={dp.overlay}>
-          <View style={[dp.card, dp.cardCapped, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+          <View style={[dp.centeredCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <Text style={[dp.title, { color: theme.foreground }]}>{label}</Text>
             <Text style={[dp.hint, { color: theme.hint }]}>Enter date (YYYY-MM-DD)</Text>
             <View style={[
@@ -199,19 +202,17 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
 };
 
 const dp = StyleSheet.create({
-  overlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  card:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: 1, padding: 24 },
-  // FIX #8 — cap height so card never overflows when keyboard is visible
-  cardCapped: { maxHeight: '80%' },
-  title:     { fontSize: 15, fontWeight: '800', marginBottom: 16, textAlign: 'center' },
-  hint:      { fontSize: 12, marginBottom: 8, textAlign: 'center' },
-  inputRow:  { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 4 },
-  textInput: { fontSize: 16 },
-  errorTxt:  { fontSize: 12, marginTop: 4, marginBottom: 8 },
-  btns:      { flexDirection: 'row', gap: 10, marginTop: 16 },
-  btn:       { flex: 1, height: 48, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  btnAccent: { flex: 1, height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  btnTxt:    { fontSize: 14, fontWeight: '700' },
+  overlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  centeredCard: { width: '100%', borderRadius: 20, borderWidth: 1, padding: 24 },
+  title:        { fontSize: 15, fontWeight: '800', marginBottom: 16, textAlign: 'center' },
+  hint:         { fontSize: 12, marginBottom: 8, textAlign: 'center' },
+  inputRow:     { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 4 },
+  textInput:    { fontSize: 16 },
+  errorTxt:     { fontSize: 12, marginTop: 4, marginBottom: 8 },
+  btns:         { flexDirection: 'row', gap: 10, marginTop: 16 },
+  btn:          { flex: 1, height: 48, borderRadius: 12, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  btnAccent:    { flex: 1, height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  btnTxt:       { fontSize: 14, fontWeight: '700' },
 });
 
 // ── TxRow ─────────────────────────────────────────────────────────────────────
