@@ -39,6 +39,7 @@ import CompanyList        from '@/pages/Corporate/CompanyList';
 import CompanyDetails     from '@/pages/Corporate/CompanyDetails';
 import DuoPayMonitor      from '@/pages/DuoPay/DuoPayMonitor';
 import DuoPayDefaults     from '@/pages/DuoPay/DuoPayDefaults';
+import PrivacyPolicy      from '@/pages/Legal/PrivacyPolicy';
 
 // ─── Feature flags (set in admin-web/.env) ────────────────────────────────────
 const ENABLE_SHIELD    = import.meta.env.VITE_ENABLE_SHIELD    === 'true';
@@ -92,16 +93,16 @@ function App() {
           <Route path="/rides/:id"  element={<ProtectedRoute><RideDetails /></ProtectedRoute>} />
 
           {/* Deliveries */}
-          <Route path="/deliveries"     element={<ProtectedRoute><DeliveryList /></ProtectedRoute>} />
+          <Route path="/deliveries"      element={<ProtectedRoute><DeliveryList /></ProtectedRoute>} />
           <Route path="/deliveries/live" element={<ProtectedRoute><LiveDeliveries /></ProtectedRoute>} />
-          <Route path="/deliveries/:id" element={<ProtectedRoute><DeliveryDetails /></ProtectedRoute>} />
-          
-          {/* wallet management */}
+          <Route path="/deliveries/:id"  element={<ProtectedRoute><DeliveryDetails /></ProtectedRoute>} />
+
+          {/* Wallet management */}
           <Route path="/wallets" element={<ProtectedRoute><PayoutManagement /></ProtectedRoute>} />
 
           {/* Feedback */}
           <Route path="/feedback" element={<ProtectedRoute><AppFeedbackList /></ProtectedRoute>} />
-          
+
           {/* Support */}
           <Route path="/support/tickets"     element={<ProtectedRoute><TicketList /></ProtectedRoute>} />
           <Route path="/support/tickets/:id" element={<ProtectedRoute><TicketDetail /></ProtectedRoute>} />
@@ -137,6 +138,9 @@ function App() {
           <Route path="/payments"  element={<ProtectedRoute><PaymentList /></ProtectedRoute>} />
           <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
           <Route path="/settings"  element={<ProtectedRoute><GeneralSettings /></ProtectedRoute>} />
+
+          {/* Legal — public, no auth required */}
+          <Route path="/privacy" element={<PrivacyPolicy />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
