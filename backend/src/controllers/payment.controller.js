@@ -87,40 +87,49 @@ exports.paystackWebhook = async (req, res) => {
   const { event, data } = req.body;
 
   if (event === 'charge.success') {
-    const { metadata, reference, amount } = data;
-    const { userId, rideId, deliveryId } = metadata || {};
+    const { reference } = data;
 
     const existing = await prisma.payment.findFirst({ where: { transactionId: reference } });
 
-    if (!existing && userId) {
-      const amountNGN = amount / 100;
+    if (!existing) {
+      let verified;
+      try {
+        verified = await paymentService.paystackVerify(reference);
+      } catch (err) {
+        console.error('[paystackWebhook] verification failed:', err.message);
+        return res.sendStatus(200);
+      }
 
-      await prisma.payment.create({
-        data: {
+      const { userId, rideId, deliveryId } = verified.metadata || {};
+      const amountNGN = verified.amount / 100;
+
+      if (userId) {
+        await prisma.payment.create({
+          data: {
+            userId,
+            ...(rideId && { rideId }),
+            ...(deliveryId && { deliveryId }),
+            amount: amountNGN,
+            currency: 'NGN',
+            method: 'CARD',
+            status: 'COMPLETED',
+            transactionId: reference,
+            platformFee: amountNGN * 0.20,
+            driverEarnings: amountNGN * 0.80
+          }
+        });
+
+        await notificationService.notify({
           userId,
-          ...(rideId && { rideId }),
-          ...(deliveryId && { deliveryId }),
-          amount: amountNGN,
-          currency: 'NGN',
-          method: 'CARD',
-          status: 'COMPLETED',
-          transactionId: reference,
-          platformFee: amountNGN * 0.20,
-          driverEarnings: amountNGN * 0.80
-        }
-      });
-
-      await notificationService.notify({
-        userId,
-        title: 'Payment Received ✅',
-        message: `Your payment of ₦${amountNGN.toFixed(2)} was received.`,
-        type: notificationService.TYPES.PAYMENT_RECEIVED,
-        data: { reference, amount: amountNGN }
-      });
+          title: 'Payment Received ✅',
+          message: `Your payment of ₦${amountNGN.toFixed(2)} was received.`,
+          type: notificationService.TYPES.PAYMENT_RECEIVED,
+          data: { reference, amount: amountNGN }
+        });
+      }
     }
   }
 
-  // Always return 200 to Paystack immediately
   res.sendStatus(200);
 };
 
@@ -203,32 +212,44 @@ exports.flutterwaveWebhook = async (req, res) => {
   const { event, data } = req.body;
 
   if (event === 'charge.completed' && data.status === 'successful') {
-    const { userId, rideId, deliveryId } = data.meta || {};
     const existing = await prisma.payment.findFirst({ where: { transactionId: String(data.id) } });
 
-    if (!existing && userId) {
-      await prisma.payment.create({
-        data: {
-          userId,
-          ...(rideId && { rideId }),
-          ...(deliveryId && { deliveryId }),
-          amount: data.amount,
-          currency: 'NGN',
-          method: 'CARD',
-          status: 'COMPLETED',
-          transactionId: String(data.id),
-          platformFee: data.amount * 0.20,
-          driverEarnings: data.amount * 0.80
-        }
-      });
+    if (!existing) {
+      let verified;
+      try {
+        verified = await paymentService.flutterwaveVerify(data.id);
+      } catch (err) {
+        console.error('[flutterwaveWebhook] verification failed:', err.message);
+        return res.sendStatus(200);
+      }
 
-      await notificationService.notify({
-        userId,
-        title: 'Payment Received ✅',
-        message: `Your payment of ₦${data.amount.toFixed(2)} was received.`,
-        type: notificationService.TYPES.PAYMENT_RECEIVED,
-        data: { transactionId: data.id, amount: data.amount }
-      });
+      const { userId, rideId, deliveryId } = verified.meta || {};
+      const amount = verified.amount;
+
+      if (userId) {
+        await prisma.payment.create({
+          data: {
+            userId,
+            ...(rideId && { rideId }),
+            ...(deliveryId && { deliveryId }),
+            amount,
+            currency: 'NGN',
+            method: 'CARD',
+            status: 'COMPLETED',
+            transactionId: String(data.id),
+            platformFee: amount * 0.20,
+            driverEarnings: amount * 0.80
+          }
+        });
+
+        await notificationService.notify({
+          userId,
+          title: 'Payment Received ✅',
+          message: `Your payment of ₦${amount.toFixed(2)} was received.`,
+          type: notificationService.TYPES.PAYMENT_RECEIVED,
+          data: { transactionId: data.id, amount }
+        });
+      }
     }
   }
 
