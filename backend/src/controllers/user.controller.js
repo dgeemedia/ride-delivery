@@ -81,25 +81,30 @@ exports.updatePassword = async (req, res) => {
   if (!isPasswordValid) throw new AppError('Current password is incorrect', 400);
 
   // ── OTP gate — flip ENABLE_PASSWORD_CHANGE_OTP=true once provider keys are in ──
-  if (process.env.ENABLE_PASSWORD_CHANGE_OTP === 'true' &&
+if (process.env.ENABLE_PASSWORD_CHANGE_OTP === 'true' &&
       process.env.ENABLE_OTP_DELIVERY        === 'true') {
 
     const { code, tempToken } = await otpService.createOtp(user.id, 'CHANGE_PASSWORD');
 
-    // Send to both email AND SMS
-    await Promise.allSettled([
-      otpService.sendOtp(user, code, 'EMAIL'),
-      otpService.sendOtp(user, code, 'SMS'),
-    ]);
+    // FIX: only send via SMS if it's actually enabled. Email always sends
+    // since it's the platform default here.
+    const smsEnabled = process.env.ENABLE_SMS_DELIVERY === 'true';
+
+    const sendPromises = [otpService.sendOtp(user, code, 'EMAIL')];
+    if (smsEnabled) sendPromises.push(otpService.sendOtp(user, code, 'SMS'));
+
+    await Promise.allSettled(sendPromises);
 
     return res.status(200).json({
       success:     true,
       requiresOtp: true,
-      message:     'A verification code has been sent to your email and phone.',
+      message:     smsEnabled
+        ? 'A verification code has been sent to your email and phone.'
+        : 'A verification code has been sent to your email.',
       data: {
         tempToken,
         maskedEmail: otpService.maskEmail(user.email),
-        maskedPhone: otpService.maskPhone(user.phone),
+        ...(smsEnabled && { maskedPhone: otpService.maskPhone(user.phone) }),
       },
     });
   }

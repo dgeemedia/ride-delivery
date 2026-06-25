@@ -228,7 +228,7 @@ exports.resendOtp = async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: record.userId } });
   if (!user) throw new AppError('User not found', 404);
 
-  const method = user.twoFactorMethod || 'SMS';
+  const method = user.twoFactorMethod || process.env.OTP_DEFAULT_METHOD || 'SMS';
   const { code, tempToken: newTempToken } = await otpService.createOtp(user.id, record.purpose);
   await otpService.sendOtp(user, code, method);
 

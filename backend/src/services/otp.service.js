@@ -5,9 +5,7 @@ const crypto = require('crypto');
 const prisma  = require('../lib/prisma');
 const notificationService = require('./notification.service');
 const emailService        = require('./email.service');
-// TODO: import your SMS provider when ready
-// const termiiService = require('./termii.service');
-// const twilioService = require('./twilio.service');
+const termiiService       = require('./termii.service');
 
 const OTP_LENGTH       = 6;
 const OTP_EXPIRY_MIN   = 10;
