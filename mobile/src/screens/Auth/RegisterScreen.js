@@ -464,12 +464,26 @@ export default function RegisterScreen({ navigation }) {
         role:      roleId,
       });
       if (!res.success) { Alert.alert('Registration Failed', res.message || 'Please try again.'); return; }
+
+      // ✅ Email verification required
+      if (res.requiresVerification) {
+        Alert.alert(
+          'Check Your Email 📧',
+          `We sent a verification link to ${res.email}. Please verify your email before logging in.`,
+          [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
+        );
+        return;
+      }
+
+      // ✅ OTP required
       if (res.requiresOtp) {
         navigation.navigate('OtpVerification', {
           tempToken: res.tempToken, method: res.method, maskedContact: res.maskedContact, purpose: 'REGISTER',
         });
         return;
       }
+
+      // ✅ Immediate token (all gates off)
       Alert.alert('Welcome to Diakite 🎉', 'Your account has been created!');
     } catch (err) {
       Alert.alert('Error', err?.message || 'Something went wrong. Please try again.');

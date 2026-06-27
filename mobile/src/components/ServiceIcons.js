@@ -434,7 +434,6 @@ export const RegisterHeroIllustration = ({ width = 280, height = 160, selectedRo
         ) : (
           <Circle cx="49" cy="120" r="5" fill="none" stroke="#AFA9EC" strokeWidth="1.5" />
         )}
-        <SvgText x="49" y="145" textAnchor="middle" fontSize="9" fontWeight="500" fill={riderSel ? '#3C3489' : '#888780'} fontFamily="system-ui">Customer</SvgText>
 
         {/* ── DRIVER card (center, elevated) ── */}
         <Rect x="103" y="22" width="74" height="116" rx="12"
@@ -462,7 +461,6 @@ export const RegisterHeroIllustration = ({ width = 280, height = 160, selectedRo
         ) : (
           <Circle cx="140" cy="112" r="5" fill="none" stroke="#97C459" strokeWidth="1.5" />
         )}
-        <SvgText x="140" y="133" textAnchor="middle" fontSize="9" fontWeight="500" fill={driverSel ? '#173404' : '#888780'} fontFamily="system-ui">Driver</SvgText>
 
         {/* ── COURIER card ── */}
         <Rect x="194" y="34" width="74" height="104" rx="12"
@@ -491,7 +489,6 @@ export const RegisterHeroIllustration = ({ width = 280, height = 160, selectedRo
         ) : (
           <Circle cx="231" cy="120" r="5" fill="none" stroke="#FAC775" strokeWidth="1.5" />
         )}
-        <SvgText x="231" y="141" textAnchor="middle" fontSize="9" fontWeight="500" fill={courierSel ? '#412402' : '#888780'} fontFamily="system-ui">Courier</SvgText>
 
         {/* ── Connector lines between cards ── */}
         <Line x1="86"  y1="86" x2="103" y2="86" stroke="#B4B2A9" strokeWidth="0.8" strokeDasharray="3,3" opacity="0.55" />

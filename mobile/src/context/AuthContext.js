@@ -25,9 +25,9 @@ const getOrCreateDeviceId = async () => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user,            setUser]           = useState(null);
-  const [token,           setToken]          = useState(null);
-  const [loading,         setLoading]        = useState(true);
+  const [user,            setUser]            = useState(null);
+  const [token,           setToken]           = useState(null);
+  const [loading,         setLoading]         = useState(true);
   const [biometricLocked, setBiometricLocked] = useState(false);
 
   const logoutRef = useRef(null);
@@ -70,12 +70,11 @@ export const AuthProvider = ({ children }) => {
   // biometricLogin
   // ─────────────────────────────────────────────────────────────────────────
   const biometricLogin = async (secureToken) => {
-    suppressForceLogout(true);         
+    suppressForceLogout(true);
     try {
       await AsyncStorage.setItem('authToken', secureToken);
       const response = await authAPI.getCurrentUser();
 
-      // Safely extract user regardless of whether backend wraps in { data: {} }
       const u = response?.data?.user ?? response?.user ?? null;
 
       if (!u) {
@@ -92,13 +91,12 @@ export const AuthProvider = ({ children }) => {
           : error.message || 'Biometric login failed.';
       return { success: false, message };
     } finally {
-      suppressForceLogout(false);       // ← always restore, even on throw
+      suppressForceLogout(false);
     }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
   // biometricUnlock — alias for biometricLogin (returns boolean for simplicity)
-  // Used by BiometricLockScreen to restore session after biometric prompt.
   // ─────────────────────────────────────────────────────────────────────────
   const biometricUnlock = async (secureToken) => {
     const result = await biometricLogin(secureToken);
@@ -113,13 +111,13 @@ export const AuthProvider = ({ children }) => {
       const deviceId = await getOrCreateDeviceId();
       const response = await authAPI.login({ ...credentials, deviceId });
 
-      if (response.requiresOtp) {
+      if (response.requiresOtp || response.data?.requiresOtp) {
         return {
           success:       true,
           requiresOtp:   true,
-          tempToken:     response.data.tempToken,
-          method:        response.data.method,
-          maskedContact: response.data.maskedContact,
+          tempToken:     response.data?.tempToken     ?? response.tempToken,
+          method:        response.data?.method        ?? response.method,
+          maskedContact: response.data?.maskedContact ?? response.maskedContact,
         };
       }
 
@@ -175,25 +173,34 @@ export const AuthProvider = ({ children }) => {
       const deviceId = await getOrCreateDeviceId();
       const response = await authAPI.register({ ...userData, deviceId });
 
-      // Handle OTP-gated registration (if enabled)
-      if (response.requiresOtp) {
+      // ✅ Handle email verification gate
+      if (response.requiresVerification || response.data?.requiresVerification) {
         return {
           success: true,
-          requiresOtp: true,
-          tempToken: response.data.tempToken,
-          method: response.data.method,
-          maskedContact: response.data.maskedContact,
+          requiresVerification: true,
+          email: response.data?.email ?? response.email,
         };
       }
 
+      // ✅ Handle OTP gate
+      if (response.requiresOtp || response.data?.requiresOtp) {
+        return {
+          success:       true,
+          requiresOtp:   true,
+          tempToken:     response.data?.tempToken     ?? response.tempToken,
+          method:        response.data?.method        ?? response.method,
+          maskedContact: response.data?.maskedContact ?? response.maskedContact,
+        };
+      }
+
+      // ✅ Default: token issued immediately
       const { user: u, token: t } = response.data;
       await _persistSession(u, t);
       return { success: true, token: t };
+
     } catch (error) {
-      // error is already the unwrapped backend payload thanks to the interceptor
       let message = 'Registration failed';
       if (error.errors && Array.isArray(error.errors)) {
-        // Join all validation messages into one string
         message = error.errors.map(e => e.msg).join('\n');
       } else if (error.message) {
         message = error.message;
@@ -205,8 +212,7 @@ export const AuthProvider = ({ children }) => {
   // ─────────────────────────────────────────────────────────────────────────
   // Biometric lock / unlock (simple state toggles)
   // ─────────────────────────────────────────────────────────────────────────
-  const biometricLock   = () => setBiometricLocked(true);
-
+  const biometricLock      = () => setBiometricLocked(true);
   const biometricUnlockState = () => setBiometricLocked(false);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -249,7 +255,7 @@ export const AuthProvider = ({ children }) => {
       biometricLogin,
       verifyOtp, resendOtp,
       biometricLock,
-      biometricUnlock,       
+      biometricUnlock,
     }}>
       {children}
     </AuthContext.Provider>
