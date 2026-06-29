@@ -13,17 +13,16 @@ import { useAuth }         from '../../context/AuthContext';
 import { useTheme }        from '../../context/ThemeContext';
 import { useBiometric }    from '../../hooks/useBiometric';
 import { LoginHeroIllustration } from '../../components/ServiceIcons';
+import { authAPI }         from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
 const LOGO = require('../../../assets/diakite_dark.png');
 
 // ─── Responsive breakpoints ───────────────────────────────────────────────────
-const TINY   = height < 650;   // iPhone 5/SE 1st gen
-const SMALL  = height < 720;   // iPhone SE 2nd/3rd, 8
-const MEDIUM = height < 820;   // iPhone X, 11 Pro, 12 Mini
-// >= 820 → large (iPhone 12/13/14/15, Plus, Pro Max)
+const TINY   = height < 650;
+const SMALL  = height < 720;
+const MEDIUM = height < 820;
 
-// Scale a size relative to iPhone 13 (812pt) — never exceeds original
 const rs = (size, min) => {
   const scaled = Math.round(size * (height / 812));
   return min !== undefined ? Math.max(scaled, min) : scaled;
@@ -34,7 +33,7 @@ const G = {
   border: (mode) => mode === 'dark' ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
 };
 
-// ── Float Input (unchanged logic, responsive height) ─────────────────────────
+// ── Float Input ───────────────────────────────────────────────────────────────
 const INPUT_H = TINY ? 48 : SMALL ? 52 : MEDIUM ? 56 : 60;
 
 const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secureTextEntry }) => {
@@ -93,6 +92,7 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, secure
     </Animated.View>
   );
 };
+
 const fi = StyleSheet.create({
   box:   { flexDirection: 'row', alignItems: 'center', borderRadius: 13, borderWidth: 1.5, marginBottom: SMALL ? 8 : 10, paddingHorizontal: 13, overflow: 'hidden' },
   icon:  { marginRight: 9 },
@@ -126,42 +126,75 @@ export default function LoginScreen({ navigation }) {
   const [loading,    setLoading]    = useState(false);
   const [bioLoading, setBioLoading] = useState(false);
 
+  // ── ADDED: verification banner state ─────────────────────────────────────
+  const [verificationBlocked, setVerificationBlocked] = useState(false);
+  const [resendLoading,        setResendLoading]       = useState(false);
+  const [resendCooldown,       setResendCooldown]      = useState(0);
+  const [blockedEmail,         setBlockedEmail]        = useState('');
+
   // Entrance animations
-  const hdrO = useRef(new Animated.Value(0)).current;
-  const hdrY = useRef(new Animated.Value(-24)).current;
+  const hdrO  = useRef(new Animated.Value(0)).current;
+  const hdrY  = useRef(new Animated.Value(-24)).current;
   const illoO = useRef(new Animated.Value(0)).current;
   const illoS = useRef(new Animated.Value(0.94)).current;
-  const frmO = useRef(new Animated.Value(0)).current;
-  const frmY = useRef(new Animated.Value(24)).current;
+  const frmO  = useRef(new Animated.Value(0)).current;
+  const frmY  = useRef(new Animated.Value(24)).current;
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(hdrO,  { toValue: 1, duration: 600,             useNativeDriver: true }),
       Animated.timing(hdrY,  { toValue: 0, duration: 600,             useNativeDriver: true }),
       Animated.timing(illoO, { toValue: 1, duration: 700, delay: 80,  useNativeDriver: true }),
-      Animated.spring(illoS, { toValue: 1,                delay: 80, tension: 60, friction: 10, useNativeDriver: true }),
+      Animated.spring(illoS, { toValue: 1,                delay: 80,  tension: 60, friction: 10, useNativeDriver: true }),
       Animated.timing(frmO,  { toValue: 1, duration: 600, delay: 200, useNativeDriver: true }),
       Animated.timing(frmY,  { toValue: 0, duration: 600, delay: 200, useNativeDriver: true }),
     ]).start();
   }, []);
 
-  // ── Login handlers (all original logic preserved) ─────────────────────────
+  // ── ADDED: cooldown ticker ────────────────────────────────────────────────
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
+  // ── Login handler — UPDATED to catch verification block ──────────────────
   const handleLogin = async () => {
     if (!email.trim() || !password) {
       Alert.alert('Missing Fields', 'Please fill in all fields.');
       return;
     }
+
+    // Reset banner on every fresh attempt
+    setVerificationBlocked(false);
+
     setLoading(true);
     const res = await login({ email: email.trim(), password });
     setLoading(false);
+
     if (!res.success) {
+      // Check if blocked specifically because email isn't verified
+      if (
+        res.message?.toLowerCase().includes('verify your email') ||
+        res.message?.toLowerCase().includes('verification')
+      ) {
+        setBlockedEmail(email.trim());
+        setVerificationBlocked(true);
+        return;
+      }
       Alert.alert('Login Failed', res.message ?? 'Please check your credentials.');
       return;
     }
+
     if (res.requiresOtp) {
-      navigation.navigate('OtpVerification', { tempToken: res.tempToken, method: res.method, maskedContact: res.maskedContact });
+      navigation.navigate('OtpVerification', {
+        tempToken:     res.tempToken,
+        method:        res.method,
+        maskedContact: res.maskedContact,
+      });
       return;
     }
+
     if (res.token) await updateSecureToken(res.token);
     if (bioAvailable && !bioEnabled && res.token) {
       Alert.alert(
@@ -172,6 +205,27 @@ export default function LoginScreen({ navigation }) {
           { text: 'Enable', onPress: () => enableBiometric(res.token) },
         ]
       );
+    }
+  };
+
+  // ── ADDED: resend verification handler ───────────────────────────────────
+  const handleResendVerification = async () => {
+    if (resendCooldown > 0 || resendLoading) return;
+    setResendLoading(true);
+    try {
+      await authAPI.resendVerification(blockedEmail);
+      setResendCooldown(60);
+      Alert.alert(
+        'Email Sent ✉️',
+        `A new verification link has been sent to ${blockedEmail}. Check your inbox.`
+      );
+    } catch (err) {
+      Alert.alert(
+        'Could not send',
+        err?.message ?? 'Please try again later.'
+      );
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -204,12 +258,10 @@ export default function LoginScreen({ navigation }) {
   const LOGO_IMG = TINY ? { width: 38, height: 26 } : SMALL ? { width: 44, height: 30 } : { width: 50, height: 34 };
   const BTN_H    = TINY ? 44 : SMALL ? 48 : 52;
 
-  // Illustration: scales with remaining space, hidden on tiny screens
   const illoWidth  = width - H_PAD * 2;
   const illoHeight = TINY ? 0 : Math.round(illoWidth * (SMALL ? 0.42 : MEDIUM ? 0.50 : 0.56));
   const showIllo   = !TINY && illoHeight > 60;
 
-  // Vertical padding — derived from safe area
   const topPad = Math.max(insets.top, TINY ? 12 : SMALL ? 16 : 20);
   const botPad = Math.max(insets.bottom, 8);
 
@@ -235,12 +287,10 @@ export default function LoginScreen({ navigation }) {
 
           {/* ── Header ──────────────────────────────────────────────────── */}
           <Animated.View style={[s.header, { opacity: hdrO, transform: [{ translateY: hdrY }] }]}>
-            {/* Logo badge */}
             <View style={[s.logoBadge, { width: LOGO_SZ, height: LOGO_SZ, borderRadius: LOGO_R }]}>
               <Image source={LOGO} style={LOGO_IMG} resizeMode="contain" />
             </View>
 
-            {/* Pill + title row: side by side on tiny screens */}
             <View style={[s.pillTitleRow, { marginTop: TINY ? 10 : 14 }]}>
               <View style={{ flex: 1 }}>
                 <View style={[s.pill, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}>
@@ -282,6 +332,48 @@ export default function LoginScreen({ navigation }) {
             >
               <Text style={[s.forgotTxt, { color: theme.hint, fontSize: TINY ? 11 : 12 }]}>Forgot password?</Text>
             </TouchableOpacity>
+
+            {/* ── ADDED: Email verification banner ─────────────────────── */}
+            {verificationBlocked && (
+              <View style={[
+                vb.banner,
+                {
+                  backgroundColor: darkMode ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.10)',
+                  borderColor:     darkMode ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.40)',
+                  marginBottom:    SMALL ? 14 : 18,
+                },
+              ]}>
+                <Ionicons name="mail-unread-outline" size={20} color="#F59E0B" style={{ marginTop: 2 }} />
+                <View style={{ flex: 1, gap: 8 }}>
+                  <Text style={[vb.title, { color: darkMode ? '#FCD34D' : '#92400E' }]}>
+                    Email not verified
+                  </Text>
+                  <Text style={[vb.body, { color: darkMode ? 'rgba(252,211,77,0.80)' : 'rgba(146,64,14,0.80)' }]}>
+                    Your account exists but hasn't been verified yet.
+                    Check your inbox or request a new link below.
+                  </Text>
+                  <TouchableOpacity
+                    style={[vb.resendBtn, { opacity: (resendLoading || resendCooldown > 0) ? 0.5 : 1 }]}
+                    onPress={handleResendVerification}
+                    disabled={resendLoading || resendCooldown > 0}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons
+                      name={resendLoading ? 'hourglass-outline' : 'send-outline'}
+                      size={13}
+                      color="#F59E0B"
+                    />
+                    <Text style={vb.resendTxt}>
+                      {resendLoading
+                        ? 'Sending…'
+                        : resendCooldown > 0
+                        ? `Resend in ${resendCooldown}s`
+                        : 'Resend verification email'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
 
             {/* Sign In */}
             <TouchableOpacity
@@ -360,6 +452,7 @@ export default function LoginScreen({ navigation }) {
                 <Text style={[s.regBold, { color: theme.foreground }]}>Create Account</Text>
               </Text>
             </TouchableOpacity>
+
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -374,7 +467,6 @@ const s = StyleSheet.create({
   orb2:  { position: 'absolute', width: width * 0.7, height: width * 0.7, borderRadius: width * 0.35, bottom: -width * 0.2, left: -width * 0.1 },
   scroll: { flexGrow: 1 },
 
-  // Header
   header:       { marginBottom: TINY ? 14 : SMALL ? 18 : 22 },
   logoBadge:    { justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#E5E5E5', borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10, shadowRadius: 12, elevation: 5 },
   pillTitleRow: { flexDirection: 'row', alignItems: 'flex-start' },
@@ -384,10 +476,8 @@ const s = StyleSheet.create({
   title:        { fontWeight: '900', letterSpacing: -0.8 },
   subtitle:     { fontWeight: '300' },
 
-  // Illustration
   illoWrap: { borderRadius: 18, borderWidth: 1, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
 
-  // Form
   forgot:    { alignSelf: 'flex-end' },
   forgotTxt: { fontWeight: '500' },
 
@@ -399,11 +489,42 @@ const s = StyleSheet.create({
   bioBtn: { borderRadius: 14, borderWidth: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 9 },
   bioTxt: { fontWeight: '700' },
 
-  divRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  divLine:{ flex: 1, height: 1 },
-  divTxt: { fontSize: 12 },
+  divRow:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  divLine: { flex: 1, height: 1 },
+  divTxt:  { fontSize: 12 },
 
-  regBtn: { borderRadius: 14, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  regTxt: {},
-  regBold:{ fontWeight: '700' },
+  regBtn:  { borderRadius: 14, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  regTxt:  {},
+  regBold: { fontWeight: '700' },
+});
+
+// ── ADDED: verification banner styles ─────────────────────────────────────────
+const vb = StyleSheet.create({
+  banner: {
+    flexDirection: 'row',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+  },
+  title: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  body: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '400',
+  },
+  resendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  resendTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#F59E0B',
+  },
 });

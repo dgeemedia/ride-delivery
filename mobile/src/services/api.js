@@ -95,6 +95,8 @@ export const authAPI = {
   setup2FA:   (data) => api.post('/auth/2fa/setup', data),
   confirm2FA: (data) => api.post('/auth/2fa/confirm', data),
   disable2FA: (data) => api.post('/auth/2fa/disable', data),
+
+  resendVerification: (email) => api.post('/auth/resend-verification-email', { email }),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
