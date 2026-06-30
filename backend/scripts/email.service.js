@@ -1,81 +1,81 @@
 // backend/src/services/email.service.js
 //
-// Email delivery via Brevo's HTTP API (https://api.brevo.com/v3/smtp/email)
-// instead of SMTP. SMTP ports (25/465/587) are blocked on Render's free tier;
-// the HTTP API runs over standard HTTPS (443), which is never blocked.
+// FIX #3 — SMTP config is validated at startup so missing env vars produce a
+//           clear error rather than "connect ECONNREFUSED ::1:587" at send time.
 'use strict';
+const nodemailer = require('nodemailer');
 
-const BREVO_API_KEY = process.env.BREVO_API_KEY;
-const BREVO_API_URL  = 'https://api.brevo.com/v3/smtp/email';
+// ── Guard: warn loudly if SMTP is not configured ──────────────────────────────
+const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_PORT = parseInt(process.env.SMTP_PORT ?? '587', 10);
+const SMTP_USER = process.env.SMTP_USER;
+const SMTP_PASS = process.env.SMTP_PASS;
 
-// Parses "Name <email@domain.com>" or a bare email into Brevo's { email, name } shape
-const parseSender = (raw) => {
-  const fallback = { email: 'noreply@diakite.com', name: 'Diakite' };
-  if (!raw) return fallback;
-  const match = raw.match(/^"?([^"<]*)"?\s*<(.+)>$/);
-  if (match) return { name: match[1].trim() || fallback.name, email: match[2].trim() };
-  return { email: raw.trim(), name: fallback.name };
-};
-
-const FROM = parseSender(process.env.SMTP_FROM ?? process.env.EMAIL_FROM);
-
-if (!BREVO_API_KEY) {
+if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+  // Log once at boot — does not crash the server but every send() will throw
+  // with a readable message instead of ECONNREFUSED.
   console.warn(
-    '[email.service] WARNING: BREVO_API_KEY is not set.\n' +
-    '  Get an API key (starts with "xkeysib-") from Brevo → Settings → API Keys.\n' +
-    '  This is DIFFERENT from your SMTP_PASS key — set BREVO_API_KEY in .env.'
+    '[email.service] WARNING: SMTP is not fully configured.\n' +
+    `  SMTP_HOST = ${SMTP_HOST ?? '(missing)'}\n` +
+    `  SMTP_USER = ${SMTP_USER ?? '(missing)'}\n` +
+    `  SMTP_PASS = ${SMTP_PASS ? '(set)' : '(missing)'}\n` +
+    '  Set these in your .env file to enable email delivery.'
   );
 }
 
+// ── Transporter — created once, reused for all sends ─────────────────────────
+const transporter = nodemailer.createTransport({
+  host:   SMTP_HOST ?? 'localhost',
+  port:   SMTP_PORT,
+  secure: process.env.SMTP_SECURE === 'true', // true for 465, false for 587
+  auth:   SMTP_USER && SMTP_PASS
+    ? { user: SMTP_USER, pass: SMTP_PASS }
+    : undefined,
+  // Give a cleaner error if the server is unreachable instead of hanging
+  connectionTimeout: 10_000,
+  greetingTimeout:   10_000,
+  socketTimeout:     15_000,
+});
+
+const FROM = process.env.SMTP_FROM ?? '"Diakite" <noreply@diakite.com>';
+
 // ── Internal send helper ──────────────────────────────────────────────────────
 const _send = async ({ to, subject, html, text }) => {
-  if (!BREVO_API_KEY) {
+  // Provide a readable error when SMTP is not configured rather than
+  // exposing "ECONNREFUSED ::1:587" to the client.
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
     throw new Error(
       'Email delivery is not configured on this server. ' +
       'Please contact support or try again later.'
     );
   }
 
-  let response;
   try {
-    response = await fetch(BREVO_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'api-key': BREVO_API_KEY,
-      },
-      body: JSON.stringify({
-        sender: FROM,
-        to: [{ email: to }],
-        subject,
-        htmlContent: html,
-        ...(text && { textContent: text }),
-      }),
+    await transporter.sendMail({
+      from: FROM,
+      to,
+      subject,
+      html,
+      ...(text && { text }),
     });
   } catch (err) {
-    // Network-level failure (DNS, connection refused, timeout, etc.)
-    console.error('[email.service] Brevo API request failed:', err.message);
-    throw new Error('Could not reach the email provider. Please try again later.');
-  }
+    // Rethrow with a friendlier message; preserve original for server logs.
+    console.error('[email.service] sendMail failed:', err.message);
 
-  if (!response.ok) {
-    let body;
-    try { body = await response.json(); } catch { body = null; }
-    const reason = body?.message || `HTTP ${response.status}`;
-    console.error('[email.service] Brevo API rejected the request:', reason, body);
-
-    if (response.status === 401) {
-      throw new Error('Email provider rejected the API key. Check BREVO_API_KEY in your environment configuration.');
+    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+      throw new Error(
+        `Could not connect to mail server (${SMTP_HOST}:${SMTP_PORT}). ` +
+        'Check SMTP_HOST and SMTP_PORT in your environment configuration.'
+      );
     }
-    if (response.status === 400) {
-      throw new Error(`Email provider rejected the request: ${reason}`);
+    if (err.responseCode >= 500) {
+      throw new Error(`Mail server error (${err.responseCode}): ${err.response}`);
     }
-    throw new Error(`Mail server error (${response.status}): ${reason}`);
+    throw new Error(err.message ?? 'Failed to send email.');
   }
 };
 
-// ── Public API (signatures unchanged — no caller code needs to change) ───────
+// ── Public API ────────────────────────────────────────────────────────────────
 
 /** Generic HTML email */
 exports.sendEmail = async ({ to, subject, html, text }) => {
@@ -126,8 +126,8 @@ exports.sendTransactionHistory = async ({ to, subject, html }) => {
 
 /** Email-address verification link */
 exports.sendVerificationEmail = async (toEmail, firstName, verifyToken) => {
-  const appUrl = process.env.APP_URL ?? 'https://diakite.onrender.com';
-  const link   = `${appUrl}/api/auth/verify-email/${verifyToken}`;
+  const appUrl  = process.env.APP_URL ?? 'https://diakite.onrender.com';
+  const link    = `${appUrl}/api/auth/verify-email/${verifyToken}`;
 
   const html = `
     <!DOCTYPE html>
@@ -170,8 +170,9 @@ exports.sendVerificationEmail = async (toEmail, firstName, verifyToken) => {
 /** Password reset link email */
 exports.sendPasswordResetEmail = async (toEmail, firstName, resetToken) => {
   const appUrl = process.env.APP_URL ?? 'https://diakite.onrender.com';
+  // Points to the GET handler that serves the HTML reset form (see auth.controller.js)
   const link   = `${appUrl}/api/auth/reset-password/${resetToken}`;
-
+ 
   const html = `
     <!DOCTYPE html>
     <html><head><meta charset="utf-8"/></head>
@@ -205,7 +206,7 @@ exports.sendPasswordResetEmail = async (toEmail, firstName, resetToken) => {
       </p>
     </body></html>
   `;
-
+ 
   await _send({
     to:      toEmail,
     subject: 'Reset your Diakite password',
@@ -222,3 +223,4 @@ exports.sendPasswordResetEmail = async (toEmail, firstName, resetToken) => {
     ].join('\n'),
   });
 };
+ 
