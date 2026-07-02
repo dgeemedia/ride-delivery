@@ -93,6 +93,7 @@ export const authAPI = {
   verifyOtp:  (data) => api.post('/auth/verify-otp', data),
   resendOtp:  (data) => api.post('/auth/resend-otp', data),
   setup2FA:   (data) => api.post('/auth/2fa/setup', data),
+  enable2FA:  (data) => api.post('/auth/2fa/enable', data),
   confirm2FA: (data) => api.post('/auth/2fa/confirm', data),
   disable2FA: (data) => api.post('/auth/2fa/disable', data),
 

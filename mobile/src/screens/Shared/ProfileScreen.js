@@ -309,7 +309,6 @@ export default function ProfileScreen({ navigation }) {
   const [twoFaEnabled,    setTwoFaEnabled]    = useState(user?.twoFactorEnabled ?? false);
   const [twoFaMethod,     setTwoFaMethod]     = useState(user?.twoFactorMethod  ?? 'SMS');
   const [twoFaLoading,    setTwoFaLoading]    = useState(false);
-  const [showMethodModal, setShowMethodModal] = useState(false);
   const [bioLoading,      setBioLoading]      = useState(false);
 
   const fadeA = useRef(new Animated.Value(0)).current;
@@ -399,7 +398,21 @@ export default function ProfileScreen({ navigation }) {
 
   const handle2faToggle = async (value) => {
     if (value) {
-      setShowMethodModal(true);
+      setTwoFaLoading(true);
+      try {
+        await authAPI.enable2FA({ method: 'EMAIL' });
+        setTwoFaEnabled(true);
+        setTwoFaMethod('EMAIL');
+        updateUser?.({ twoFactorEnabled: true, twoFactorMethod: 'EMAIL' });
+        Alert.alert(
+          '2FA Enabled',
+          "Two-factor authentication is on. From now on, you'll get a code by email each time you log in."
+        );
+      } catch (err) {
+        Alert.alert('Error', err?.response?.data?.message ?? 'Could not enable 2FA. Try again.');
+      } finally {
+        setTwoFaLoading(false);
+      }
     } else {
       if (Platform.OS === 'web') {
         const pwd = window.prompt('Enter your password to disable 2FA:');
@@ -411,29 +424,6 @@ export default function ProfileScreen({ navigation }) {
         ], 'secure-text');
       }
     }
-  };
-
-  const enable2FA = async (method) => {
-    setShowMethodModal(false);
-    setTwoFaLoading(true);
-    try {
-      const res = await authAPI.setup2FA({ method });
-      if (res?.data) {
-        navigation.navigate('OtpVerification', {
-          tempToken:     res.data.tempToken,
-          method:        res.data.method,
-          maskedContact: res.data.maskedContact,
-          purpose:       'SETUP_2FA',
-          onSuccess: () => {
-            setTwoFaEnabled(true);
-            setTwoFaMethod(method);
-            updateUser?.({ twoFactorEnabled: true, twoFactorMethod: method });
-          },
-        });
-      }
-    } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message ?? 'Could not start 2FA setup. Try again.');
-    } finally { setTwoFaLoading(false); }
   };
 
   const disable2FA = async (password) => {
@@ -757,13 +747,6 @@ export default function ProfileScreen({ navigation }) {
           </Animated.View>
         </ScrollView>
       </View>
-
-      <MethodModal
-        visible={showMethodModal}
-        onSelect={enable2FA}
-        onDismiss={() => setShowMethodModal(false)}
-        theme={theme}
-      />
     </View>
   );
 }

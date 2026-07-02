@@ -268,6 +268,31 @@ exports.setupTwoFactor = async (req, res) => {
   });
 };
 
+exports.enableTwoFactor = async (req, res) => {
+  const { method = 'EMAIL' } = req.body;
+  if (!['EMAIL'].includes(method))
+    throw new AppError('Only email 2FA is currently supported', 400);
+
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  if (user.twoFactorEnabled) throw new AppError('2FA is already enabled', 400);
+
+  await prisma.user.update({
+    where: { id: req.user.id },
+    data:  { twoFactorEnabled: true, twoFactorMethod: method },
+  });
+
+  await notificationService.notify({
+    userId:  req.user.id,
+    title:   '🔐 Two-Factor Authentication enabled',
+    message: `2FA is now active via ${method}. You'll be asked for a code each time you sign in.`,
+    type:    'SECURITY_CHANGE',
+    data:    {},
+  });
+
+  res.status(200).json({ success: true, message: 'Two-factor authentication enabled.' });
+};
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Confirm 2FA setup  (step 2 — verify OTP and enable 2FA)
 // ─────────────────────────────────────────────────────────────────────────────

@@ -105,6 +105,14 @@ router.post(
 );
 
 router.post(
+  '/2fa/enable',
+  authLimiter,
+  authenticate,
+  [body('method').optional().isIn(['EMAIL'])],
+  authController.enableTwoFactor
+);
+
+router.post(
   '/2fa/confirm',
   authenticate,
   [
