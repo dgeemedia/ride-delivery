@@ -9,6 +9,7 @@
     "migrate": "npx prisma migrate dev",
     "migrate:deploy": "npx prisma migrate deploy",
     "generate": "npx prisma generate",
+    "studio": "npx prisma studio",
     "seed": "node prisma/seed.js",
     "test": "jest --coverage",
     "test:watch": "jest --watch",

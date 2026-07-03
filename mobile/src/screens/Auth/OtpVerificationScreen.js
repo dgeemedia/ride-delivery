@@ -71,7 +71,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
   const [loading,      setLoading]      = useState(false);
   const [resending,    setResending]    = useState(false);
   const [currentToken, setCurrentToken] = useState(tempToken);
-  const [cooldown,     setCooldown]     = useState(0);
+  const [cooldown,     setCooldown]     = useState(RESEND_COOLDOWN);
   const inputRef = useRef(null);
 
   const frmO = useRef(new Animated.Value(0)).current;
@@ -82,8 +82,12 @@ export default function OtpVerificationScreen({ navigation, route }) {
       Animated.timing(frmO, { toValue: 1, duration: 600, useNativeDriver: true }),
       Animated.timing(frmY, { toValue: 0, duration: 600, useNativeDriver: true }),
     ]).start();
-    inputRef.current?.focus();
-  }, []);
+
+    const unsubscribe = navigation.addListener('transitionEnd', () => {
+      inputRef.current?.focus();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   // ── Resend cooldown ticker ─────────────────────────────────────────────────
   useEffect(() => {
@@ -209,6 +213,11 @@ export default function OtpVerificationScreen({ navigation, route }) {
         maxLength={OTP_LENGTH}
         style={s.hiddenInput}
         caretHidden
+        textContentType="oneTimeCode"
+        autoComplete="one-time-code"
+        importantForAutofill="yes"
+        autoFocus={false}
+        blurOnSubmit={false}
       />
 
       <Animated.View style={[s.container, { opacity: frmO, transform: [{ translateY: frmY }] }]}>
@@ -238,20 +247,24 @@ export default function OtpVerificationScreen({ navigation, route }) {
           <Text style={{ color: theme.foreground, fontWeight: '600' }}>{maskedContact}</Text>
         </Text>
 
-        {/* OTP boxes */}
-        <TouchableOpacity activeOpacity={1} onPress={() => inputRef.current?.focus()}>
-          <View style={s.boxRow}>
-            {digits.map((d, i) => (
+        {/* OTP boxes — each one is individually tappable */}
+        <View style={s.boxRow}>
+          {digits.map((d, i) => (
+            <TouchableOpacity
+              key={i}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+              onPress={() => inputRef.current?.focus()}
+            >
               <DigitBox
-                key={i}
                 value={d}
                 focused={i === code.length && i < OTP_LENGTH}
                 mode={mode}
                 theme={theme}
               />
-            ))}
-          </View>
-        </TouchableOpacity>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         {/* Verify button */}
         <TouchableOpacity
@@ -288,7 +301,7 @@ const s = StyleSheet.create({
   root: { flex: 1, justifyContent: 'center' },
   orb:  { position: 'absolute', width: width * 1.2, height: width * 1.2, borderRadius: width * 0.6, top: -width * 0.75, alignSelf: 'center' },
 
-  hiddenInput: { position: 'absolute', opacity: 0, width: 0, height: 0 },
+  hiddenInput: { position: 'absolute', opacity: 0, width: 1, height: 1 },
 
   container: { paddingHorizontal: 32 },
 

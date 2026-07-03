@@ -126,6 +126,8 @@ export default function LoginScreen({ navigation }) {
   const [loading,    setLoading]    = useState(false);
   const [bioLoading, setBioLoading] = useState(false);
 
+  const submitLockRef = useRef(false);
+
   // ── ADDED: verification banner state ─────────────────────────────────────
   const [verificationBlocked, setVerificationBlocked] = useState(false);
   const [resendLoading,        setResendLoading]       = useState(false);
@@ -158,53 +160,60 @@ export default function LoginScreen({ navigation }) {
     return () => clearTimeout(t);
   }, [resendCooldown]);
 
-  // ── Login handler — UPDATED to catch verification block ──────────────────
+// ── Login handler — UPDATED to catch verification block + prevent double-submit ──
   const handleLogin = async () => {
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+
     if (!email.trim() || !password) {
       Alert.alert('Missing Fields', 'Please fill in all fields.');
+      submitLockRef.current = false;
       return;
     }
 
     // Reset banner on every fresh attempt
     setVerificationBlocked(false);
-
     setLoading(true);
-    const res = await login({ email: email.trim(), password });
-    setLoading(false);
 
-    if (!res.success) {
-      // Check if blocked specifically because email isn't verified
-      if (
-        res.message?.toLowerCase().includes('verify your email') ||
-        res.message?.toLowerCase().includes('verification')
-      ) {
-        setBlockedEmail(email.trim());
-        setVerificationBlocked(true);
+    try {
+      const res = await login({ email: email.trim(), password });
+      setLoading(false);
+
+      if (!res.success) {
+        if (
+          res.message?.toLowerCase().includes('verify your email') ||
+          res.message?.toLowerCase().includes('verification')
+        ) {
+          setBlockedEmail(email.trim());
+          setVerificationBlocked(true);
+          return;
+        }
+        Alert.alert('Login Failed', res.message ?? 'Please check your credentials.');
         return;
       }
-      Alert.alert('Login Failed', res.message ?? 'Please check your credentials.');
-      return;
-    }
 
-    if (res.requiresOtp) {
-      navigation.navigate('OtpVerification', {
-        tempToken:     res.tempToken,
-        method:        res.method,
-        maskedContact: res.maskedContact,
-      });
-      return;
-    }
+      if (res.requiresOtp) {
+        navigation.navigate('OtpVerification', {
+          tempToken:     res.tempToken,
+          method:        res.method,
+          maskedContact: res.maskedContact,
+        });
+        return;
+      }
 
-    if (res.token) await updateSecureToken(res.token);
-    if (bioAvailable && !bioEnabled && res.token) {
-      Alert.alert(
-        `Enable ${bioLabel} Login?`,
-        'Sign in faster next time without typing your password.',
-        [
-          { text: 'Not Now', style: 'cancel' },
-          { text: 'Enable', onPress: () => enableBiometric(res.token) },
-        ]
-      );
+      if (res.token) await updateSecureToken(res.token);
+      if (bioAvailable && !bioEnabled && res.token) {
+        Alert.alert(
+          `Enable ${bioLabel} Login?`,
+          'Sign in faster next time without typing your password.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Enable', onPress: () => enableBiometric(res.token) },
+          ]
+        );
+      }
+    } finally {
+      submitLockRef.current = false;
     }
   };
 

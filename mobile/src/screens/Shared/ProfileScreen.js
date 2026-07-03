@@ -653,15 +653,9 @@ export default function ProfileScreen({ navigation }) {
 
             {/* Security */}
             <Section title="SECURITY" theme={theme}>
-              <ToggleRow
-                icon="shield-checkmark-outline"
-                label="Two-Factor Authentication"
-                sublabel={twoFaEnabled ? `Active • ${twoFaMethod === 'EMAIL' ? 'Email' : 'SMS'} verification` : 'Adds an extra login step via SMS or Email'}
-                value={twoFaEnabled}
-                onValueChange={handle2faToggle}
-                theme={theme}
-                loading={twoFaLoading}
-              />
+              {/* 2FA temporarily hidden — code kept intact in handle2faToggle/disable2FA
+                  for when we're ready to ship it. Re-add the ToggleRow above biometric
+                  to bring it back. */}
               {isAvailable && (
                 <ToggleRow
                   icon={biometricIcon}
