@@ -21,6 +21,16 @@ const ensureWallet = async (userId) => {
   return wallet;
 };
 
+// Failed email should never block or roll back an already-committed wallet
+// operation — the DB write is the source of truth.
+const safeSendEmail = async (fn, label) => {
+  try {
+    await fn();
+  } catch (err) {
+    console.error(`[wallet.controller] ${label} email failed to send:`, err.message);
+  }
+};
+
 // ─────────────────────────────────────────────
 // WALLET INFO
 // ─────────────────────────────────────────────
@@ -322,14 +332,6 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
   res.status(200).json({ success: true, message: 'Wallet topped up successfully', data: { wallet: updatedWallet, transaction: walletTx } });
 };
 
-// ─────────────────────────────────────────────
-// TRANSFER  (PENDING → Admin approval)
-//
-// FIX: Stores sender/recipient IDs in the new `Transfer` table so that
-// adminApproveTransfer and adminRejectTransfer can look up the recipient
-// by ID instead of regex-parsing the description string.
-// ─────────────────────────────────────────────
-
 exports.transfer = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
@@ -350,13 +352,11 @@ exports.transfer = async (req, res) => {
 
   const reference = `TRF-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
-  // Deduct from sender immediately (hold) — create Transfer record + PENDING DEBIT
   await prisma.$transaction([
     prisma.wallet.update({
       where: { userId: req.user.id },
       data:  { balance: { decrement: amount } },
     }),
-    // FIX: store structured Transfer row (no more description-parsing)
     prisma.transfer.create({
       data: {
         reference,
@@ -367,7 +367,6 @@ exports.transfer = async (req, res) => {
         status:      'PENDING',
       },
     }),
-    // Sender DEBIT — description is human-readable only, not load-bearing
     prisma.walletTransaction.create({
       data: {
         walletId:    senderWallet.id,
@@ -380,7 +379,6 @@ exports.transfer = async (req, res) => {
     }),
   ]);
 
-  // Notify sender
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Transfer Pending ⏳',
@@ -389,7 +387,18 @@ exports.transfer = async (req, res) => {
     data:    { amount, recipientId: recipient.id, reference },
   });
 
-  // Notify admins
+  if (req.user.email) {
+    await safeSendEmail(
+      () => emailService.sendTransferPendingEmail(req.user.email, req.user.firstName, {
+        amount,
+        recipientName: `${recipient.firstName} ${recipient.lastName}`,
+        reference,
+        note,
+      }),
+      'Transfer pending'
+    );
+  }
+
   const admins = await prisma.user.findMany({
     where:  { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
     select: { id: true },
@@ -430,6 +439,9 @@ exports.withdraw = async (req, res) => {
 
   const reference = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
+  // Auto-resolved from whichever provider is currently active — no client change needed.
+  const bankName = await paymentService.resolveBankName(bankCode);
+
   await prisma.$transaction([
     prisma.wallet.update({ where: { userId: req.user.id }, data: { balance: { decrement: amount } } }),
     prisma.walletTransaction.create({
@@ -437,7 +449,7 @@ exports.withdraw = async (req, res) => {
         walletId:    wallet.id,
         type:        'WITHDRAWAL',
         amount,
-        description: `Withdrawal request to ${accountName} — ${accountNumber} (${bankCode})`,
+        description: `Withdrawal request to ${accountName} — ${accountNumber} (${bankName || bankCode})`,
         status:      'PENDING',
         reference,
       },
@@ -448,6 +460,7 @@ exports.withdraw = async (req, res) => {
         amount,
         accountNumber,
         bankCode,
+        bankName,
         accountName,
         status:        'PENDING',
         reference,
@@ -463,6 +476,15 @@ exports.withdraw = async (req, res) => {
     data:    { amount, accountNumber: `****${accountNumber.slice(-4)}`, bankCode, reference },
   });
 
+  if (req.user.email) {
+    await safeSendEmail(
+      () => emailService.sendWithdrawalUnderReviewEmail(req.user.email, req.user.firstName, {
+        amount, reference, accountName, accountNumber,
+      }),
+      'Withdrawal under review'
+    );
+  }
+
   res.status(200).json({
     success: true,
     message: 'Withdrawal request submitted. Our team will process it within 1–2 business days.',
@@ -474,7 +496,7 @@ exports.verifyBankAccount = async (req, res) => {
   const { accountNumber, bankCode } = req.query;
   if (!accountNumber || !bankCode) throw new AppError('Account number and bank code required', 400);
 
-  const result = await paymentService.paystackVerifyAccount(accountNumber, bankCode);
+  const result = await paymentService.verifyBankAccountUnified(accountNumber, bankCode);
   if (!result) throw new AppError('Account not found', 404);
 
   res.status(200).json({
@@ -522,25 +544,24 @@ exports.adminApprovePayout = async (req, res) => {
 
   let transferCode  = null;
   let transferError = null;
-  let paystackOk    = false;
+  let providerOk    = false;
+  let provider      = paymentService.getActivePayoutProvider();
 
   try {
-    const recipient = await paymentService.paystackCreateTransferRecipient({
-      name:          payout.accountName,
+    const result = await paymentService.initiatePayoutTransfer({
+      amount:        payout.amount,
       accountNumber: payout.accountNumber,
       bankCode:      payout.bankCode,
+      accountName:   payout.accountName,
+      reason:        `Wallet withdrawal — ${payout.user.firstName} ${payout.user.lastName}`,
+      reference:     payout.reference,
     });
-    const transfer = await paymentService.paystackInitiateTransfer({
-      amount:    payout.amount * 100,
-      recipient: recipient.recipient_code,
-      reason:    `Wallet withdrawal — ${payout.user.firstName} ${payout.user.lastName}`,
-      reference: payout.reference,
-    });
-    transferCode = transfer.transfer_code ?? null;
-    paystackOk   = true;
+    transferCode = result.transferCode;
+    provider     = result.provider;
+    providerOk   = true;
   } catch (err) {
-    transferError = err?.response?.data?.message ?? err.message ?? 'Unknown Paystack error';
-    console.error('[adminApprovePayout] Paystack transfer error:', transferError);
+    transferError = err?.response?.data?.message ?? err.message ?? 'Unknown transfer error';
+    console.error(`[adminApprovePayout] ${provider} transfer error:`, transferError);
   }
 
   await prisma.$transaction([
@@ -563,19 +584,33 @@ exports.adminApprovePayout = async (req, res) => {
     userId:  payout.userId,
     title:   'Withdrawal Approved ✅',
     message: `Your withdrawal of ₦${payout.amount.toLocaleString('en-NG')} to ${payout.accountName} has been approved${
-      paystackOk ? ' and is on its way' : ' — bank transfer will be retried shortly'
+      providerOk ? ' and is on its way' : ' — bank transfer will be retried shortly'
     }.${note ? ` Note: ${note}` : ''}`,
     type:    notificationService.TYPES.WALLET_WITHDRAWAL,
     data:    { payoutId: id, amount: payout.amount, reference: payout.reference },
   });
 
+  if (providerOk && payout.user.email) {
+    await safeSendEmail(
+      () => emailService.sendWithdrawalApprovedEmail(payout.user.email, payout.user.firstName, {
+        amount: payout.amount,
+        reference: payout.reference,
+        accountName: payout.accountName,
+        accountNumber: payout.accountNumber,
+        bankName: payout.bankName || payout.bankCode,
+      }),
+      'Withdrawal approved'
+    );
+  }
+
   res.status(200).json({
     success:  true,
-    message:  paystackOk
-      ? 'Payout approved and bank transfer initiated'
-      : 'Payout approved but Paystack transfer failed — ops retry required',
+    message:  providerOk
+      ? `Payout approved and ${provider} transfer initiated`
+      : `Payout approved but ${provider} transfer failed — ops retry required`,
     data: {
-      paystack:    paystackOk ? 'ok' : 'failed',
+      provider,
+      [provider]: providerOk ? 'ok' : 'failed',
       transferCode,
       ...(transferError && { transferError }),
     },
@@ -586,7 +621,7 @@ exports.adminRejectPayout = async (req, res) => {
   const { id }     = req.params;
   const { reason } = req.body;
 
-  const payout = await prisma.payout.findUnique({ where: { id } });
+  const payout = await prisma.payout.findUnique({ where: { id }, include: { user: true } });
   if (!payout)                      throw new AppError('Payout not found', 404);
   if (payout.status !== 'PENDING')  throw new AppError('Payout is not in PENDING status', 400);
 
@@ -615,6 +650,17 @@ exports.adminRejectPayout = async (req, res) => {
     type:    notificationService.TYPES.WALLET_CREDITED,
     data:    { payoutId: id, amount: payout.amount, reason },
   });
+
+  if (payout.user.email) {
+    await safeSendEmail(
+      () => emailService.sendWithdrawalRejectedEmail(payout.user.email, payout.user.firstName, {
+        amount: payout.amount,
+        reference: payout.reference,
+        reason,
+      }),
+      'Withdrawal rejected'
+    );
+  }
 
   res.status(200).json({ success: true, message: 'Payout rejected and wallet refunded' });
 };
@@ -653,14 +699,10 @@ exports.adminGetTransfers = async (req, res) => {
   });
 };
 
-/**
- * FIX: look up Transfer row by reference — no regex on description.
- */
 exports.adminApproveTransfer = async (req, res) => {
   const { reference } = req.params;
   const { note }      = req.body;
 
-  // FIX: structured lookup via Transfer table
   const transfer = await prisma.transfer.findUnique({
     where:   { reference },
     include: {
@@ -675,16 +717,12 @@ exports.adminApproveTransfer = async (req, res) => {
   const recipientWallet = await ensureWallet(transfer.recipientId);
 
   await prisma.$transaction([
-    // Mark Transfer COMPLETED
     prisma.transfer.update({ where: { reference }, data: { status: 'COMPLETED' } }),
-    // Mark sender DEBIT tx COMPLETED
     prisma.walletTransaction.updateMany({
       where: { reference, type: 'DEBIT', status: 'PENDING' },
       data:  { status: 'COMPLETED' },
     }),
-    // Credit recipient wallet
     prisma.wallet.update({ where: { userId: transfer.recipientId }, data: { balance: { increment: transfer.amount } } }),
-    // Create recipient CREDIT tx
     prisma.walletTransaction.create({
       data: {
         walletId:    recipientWallet.id,
@@ -714,38 +752,58 @@ exports.adminApproveTransfer = async (req, res) => {
     }),
   ]);
 
+  await Promise.allSettled([
+    transfer.sender.email
+      ? safeSendEmail(
+          () => emailService.sendTransferApprovedEmail(transfer.sender.email, transfer.sender.firstName, {
+            amount: transfer.amount,
+            recipientName: `${transfer.recipient.firstName} ${transfer.recipient.lastName}`,
+            reference,
+            note,
+          }),
+          'Transfer approved (sender)'
+        )
+      : Promise.resolve(),
+    transfer.recipient.email
+      ? safeSendEmail(
+          () => emailService.sendMoneyReceivedEmail(transfer.recipient.email, transfer.recipient.firstName, {
+            amount: transfer.amount,
+            senderName: `${transfer.sender.firstName} ${transfer.sender.lastName}`,
+            reference,
+            note,
+          }),
+          'Money received (recipient)'
+        )
+      : Promise.resolve(),
+  ]);
+
   res.status(200).json({ success: true, message: 'Transfer approved. Recipient has been credited.' });
 };
 
-/**
- * FIX: look up Transfer row by reference — no regex on description.
- */
 exports.adminRejectTransfer = async (req, res) => {
   const { reference } = req.params;
   const { reason }    = req.body;
 
-  // FIX: structured lookup via Transfer table
   const transfer = await prisma.transfer.findUnique({
     where:   { reference },
-    include: { sender: { include: { wallet: true } } },
+    include: {
+      sender:    { include: { wallet: true } },
+      recipient: true,
+    },
   });
   if (!transfer)                    throw new AppError('Transfer not found', 404);
   if (transfer.status !== 'PENDING') throw new AppError('Transfer already processed', 400);
 
   await prisma.$transaction([
-    // Mark Transfer FAILED
     prisma.transfer.update({ where: { reference }, data: { status: 'FAILED' } }),
-    // Refund sender balance
     prisma.wallet.update({
       where: { userId: transfer.senderId },
       data:  { balance: { increment: transfer.amount } },
     }),
-    // Mark sender DEBIT tx FAILED
     prisma.walletTransaction.updateMany({
       where: { reference, type: 'DEBIT', status: 'PENDING' },
       data:  { status: 'FAILED' },
     }),
-    // Create REFUND tx for sender
     prisma.walletTransaction.create({
       data: {
         walletId:    transfer.sender.wallet.id,
@@ -765,6 +823,18 @@ exports.adminRejectTransfer = async (req, res) => {
     type:    notificationService.TYPES.WALLET_CREDITED,
     data:    { reference, amount: transfer.amount, reason },
   });
+
+  if (transfer.sender.email) {
+    await safeSendEmail(
+      () => emailService.sendTransferRejectedEmail(transfer.sender.email, transfer.sender.firstName, {
+        amount: transfer.amount,
+        recipientName: `${transfer.recipient.firstName} ${transfer.recipient.lastName}`,
+        reference,
+        reason,
+      }),
+      'Transfer rejected'
+    );
+  }
 
   res.status(200).json({ success: true, message: 'Transfer rejected. Sender wallet has been refunded.' });
 };
@@ -832,10 +902,9 @@ exports.emailTransactionHistory = async (req, res) => {
 
   if (!email || !email.includes('@')) throw new AppError('Valid email address is required', 400);
 
-  // ── Build date range ──
   const fromDate = from ? new Date(from) : (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d; })();
   const toDate   = to   ? new Date(to)   : new Date();
-  toDate.setHours(23, 59, 59, 999); // include full end day
+  toDate.setHours(23, 59, 59, 999);
 
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   if (!wallet) throw new AppError('Wallet not found', 404);
@@ -849,93 +918,19 @@ exports.emailTransactionHistory = async (req, res) => {
   const transactions = await prisma.walletTransaction.findMany({
     where,
     orderBy: { createdAt: 'desc' },
-    take: 1000, // hard cap — PDF gets unwieldy beyond this
+    take: 1000,
   });
 
-  // ── Summary figures ──
-  const totalIn  = transactions.filter(t => t.type === 'CREDIT' || t.type === 'REFUND').reduce((s, t) => s + Number(t.amount), 0);
-  const totalOut = transactions.filter(t => t.type !== 'CREDIT' && t.type !== 'REFUND').reduce((s, t) => s + Number(t.amount), 0);
-  const fmt      = (n) => Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const fmtDate  = (d) => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
-
-  // ── Build HTML for PDF ──
-  const TX_COLORS = { CREDIT: '#5DAA72', DEBIT: '#E05555', WITHDRAWAL: '#FFB800', REFUND: '#A78BFA' };
-  const TX_SIGN   = { CREDIT: '+', DEBIT: '-', WITHDRAWAL: '-', REFUND: '+' };
-
-  const rows = transactions.map(t => `
-    <tr>
-      <td>${fmtDate(t.createdAt)}</td>
-      <td>${t.description || t.type}</td>
-      <td style="color:${TX_COLORS[t.type] ?? '#333'};font-weight:700">
-        ${TX_SIGN[t.type] ?? ''}₦${fmt(t.amount)}
-      </td>
-      <td>${t.type}</td>
-      <td style="color:${t.status === 'COMPLETED' ? '#5DAA72' : '#FFB800'}">${t.status}</td>
-      <td style="font-size:10px;color:#888">${t.reference ?? '—'}</td>
-    </tr>`).join('');
-
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"/>
-<style>
-  body  { font-family: Arial, sans-serif; color: #111; padding: 32px; }
-  h1    { font-size: 22px; margin-bottom: 4px; }
-  .sub  { color: #666; font-size: 12px; margin-bottom: 24px; }
-  .summary { display: flex; gap: 24px; margin-bottom: 24px; }
-  .sum-box { background: #f5f5f5; border-radius: 10px; padding: 14px 20px; min-width: 130px; }
-  .sum-lbl { font-size: 10px; color: #888; font-weight: 700; letter-spacing: 1.5px; margin-bottom: 4px; }
-  .sum-val { font-size: 18px; font-weight: 900; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th    { background: #111; color: #fff; padding: 10px 8px; text-align: left; font-size: 10px; letter-spacing: 1px; }
-  td    { padding: 10px 8px; border-bottom: 1px solid #eee; }
-  tr:nth-child(even) td { background: #fafafa; }
-  .footer { margin-top: 32px; font-size: 10px; color: #aaa; text-align: center; }
-</style></head>
-<body>
-<h1>Transaction History</h1>
-<div class="sub">
-  ${fmtDate(fromDate)} – ${fmtDate(toDate)}
-  ${type && type !== 'ALL' ? ` &nbsp;•&nbsp; Type: ${type}` : ''}
-  &nbsp;•&nbsp; ${transactions.length} transaction${transactions.length !== 1 ? 's' : ''}
-  &nbsp;•&nbsp; ${req.user.email}
-</div>
-<div class="summary">
-  <div class="sum-box">
-    <div class="sum-lbl">TOTAL IN</div>
-    <div class="sum-val" style="color:#5DAA72">+₦${fmt(totalIn)}</div>
-  </div>
-  <div class="sum-box">
-    <div class="sum-lbl">TOTAL OUT</div>
-    <div class="sum-val" style="color:#E05555">-₦${fmt(totalOut)}</div>
-  </div>
-  <div class="sum-box">
-    <div class="sum-lbl">NET</div>
-    <div class="sum-val">₦${fmt(totalIn - totalOut)}</div>
-  </div>
-</div>
-<table>
-  <thead>
-    <tr>
-      <th>DATE</th><th>DESCRIPTION</th><th>AMOUNT</th>
-      <th>TYPE</th><th>STATUS</th><th>REFERENCE</th>
-    </tr>
-  </thead>
-  <tbody>
-    ${rows || '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:32px">No transactions found</td></tr>'}
-  </tbody>
-</table>
-<div class="footer">
-  Generated ${new Date().toLocaleString('en-NG')} &nbsp;•&nbsp; Confidential — Do not distribute
-</div>
-</body></html>`;
-
-  // ── Send via your email service ──
-  // Swap this block for whichever mailer you use (Nodemailer, SendGrid, Resend, etc.)
-  const emailService = require('../services/email.service');
-  await emailService.sendEmail({
-    to:      email,
-    subject: `Your Transaction History — ${fmtDate(fromDate)} to ${fmtDate(toDate)}`,
-    html,
+  // All HTML generation now lives in email.service.js — controller just
+  // hands over the data.
+  await emailService.sendTransactionHistoryStatement(email, {
+    transactions,
+    fromDate,
+    toDate,
+    type: type || 'ALL',
   });
+
+  const fmtDate = (d) => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
 
   res.status(200).json({
     success: true,

@@ -18,15 +18,27 @@ interface PayoutUser {
 
 interface Payout {
   id: string; userId: string; user: PayoutUser;
-  amount: number; accountNumber: string; bankCode: string; accountName: string;
+  amount: number; accountNumber: string; bankCode: string; bankName?: string | null; accountName: string;
   status: string; reference: string; failureReason?: string;
   processedAt?: string; createdAt: string;
 }
 
+interface TransferUser {
+  id: string; firstName: string; lastName: string; email: string; phone: string;
+}
+
 interface Transfer {
-  id: string; walletId: string; type: string; amount: number;
-  description: string; status: string; reference: string; createdAt: string;
-  wallet: { user: PayoutUser };
+  id: string;
+  reference: string;
+  senderId: string;
+  recipientId: string;
+  amount: number;
+  note: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  sender: TransferUser;
+  recipient: TransferUser;
 }
 
 interface WalletStats {
@@ -119,7 +131,7 @@ const PayoutRow: React.FC<{
     <td className="px-4 py-4">
       <div className="text-sm font-semibold text-gray-800">{payout.accountName}</div>
       <div className="text-xs text-gray-500 font-mono">{payout.accountNumber}</div>
-      <div className="text-xs text-gray-400">Code: {payout.bankCode}</div>
+      <div className="text-xs text-gray-400">{payout.bankName || `Code: ${payout.bankCode}`}</div>
     </td>
     <td className="px-4 py-4">
       <StatusBadge status={payout.status} />
@@ -163,59 +175,58 @@ const TransferRow: React.FC<{
   transfer: Transfer;
   onApprove: (ref: string) => void;
   onReject: (ref: string) => void;
-}> = ({ transfer, onApprove, onReject }) => {
-  // Extract recipient info from description
-  const phoneMatch = transfer.description.match(/\((\d{10,11})\)/);
-  const recipientPhone = phoneMatch ? phoneMatch[1] : '—';
-
-  return (
-    <tr className="hover:bg-gray-50 transition-colors">
-      <td className="px-4 py-4">
-        <div className="font-semibold text-gray-900 text-sm">
-          {transfer.wallet.user.firstName} {transfer.wallet.user.lastName}
+}> = ({ transfer, onApprove, onReject }) => (
+  <tr className="hover:bg-gray-50 transition-colors">
+    <td className="px-4 py-4">
+      <div className="font-semibold text-gray-900 text-sm">
+        {transfer.sender.firstName} {transfer.sender.lastName}
+      </div>
+      <div className="text-xs text-gray-500">{transfer.sender.email}</div>
+      <div className="text-xs text-gray-400 font-mono">{transfer.sender.phone}</div>
+    </td>
+    <td className="px-4 py-4">
+      <div className="text-sm font-bold text-gray-800">
+        → {transfer.recipient.firstName} {transfer.recipient.lastName}
+      </div>
+      <div className="text-xs text-gray-500 font-mono">{transfer.recipient.phone}</div>
+      {transfer.note && (
+        <div className="text-xs text-gray-500 mt-1 max-w-[200px] truncate" title={transfer.note}>
+          Note: {transfer.note}
         </div>
-        <div className="text-xs text-gray-500">{transfer.wallet.user.email}</div>
-        <div className="text-xs text-gray-400 font-mono">{transfer.wallet.user.phone}</div>
-      </td>
-      <td className="px-4 py-4">
-        <div className="text-sm font-bold text-gray-800">→ {recipientPhone}</div>
-        <div className="text-xs text-gray-500 mt-1 max-w-[200px]" title={transfer.description}>
-          {transfer.description.replace('[PENDING] ', '').substring(0, 60)}…
+      )}
+    </td>
+    <td className="px-4 py-4">
+      <div className="font-bold text-gray-900">₦{transfer.amount.toLocaleString('en-NG')}</div>
+      <div className="text-xs text-gray-500 font-mono mt-0.5">{transfer.reference}</div>
+    </td>
+    <td className="px-4 py-4">
+      <StatusBadge status={transfer.status} />
+    </td>
+    <td className="px-4 py-4 text-xs text-gray-500">
+      {new Date(transfer.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+    </td>
+    <td className="px-4 py-4">
+      {transfer.status === 'PENDING' ? (
+        <div className="flex gap-2">
+          <button
+            onClick={() => onApprove(transfer.reference)}
+            className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors"
+          >
+            <CheckCircle className="w-3.5 h-3.5" /> Approve
+          </button>
+          <button
+            onClick={() => onReject(transfer.reference)}
+            className="flex items-center gap-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg transition-colors"
+          >
+            <XCircle className="w-3.5 h-3.5" /> Reject
+          </button>
         </div>
-      </td>
-      <td className="px-4 py-4">
-        <div className="font-bold text-gray-900">₦{transfer.amount.toLocaleString('en-NG')}</div>
-        <div className="text-xs text-gray-500 font-mono mt-0.5">{transfer.reference}</div>
-      </td>
-      <td className="px-4 py-4">
-        <StatusBadge status={transfer.status} />
-      </td>
-      <td className="px-4 py-4 text-xs text-gray-500">
-        {new Date(transfer.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
-      </td>
-      <td className="px-4 py-4">
-        {transfer.status === 'PENDING' ? (
-          <div className="flex gap-2">
-            <button
-              onClick={() => onApprove(transfer.reference)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors"
-            >
-              <CheckCircle className="w-3.5 h-3.5" /> Approve
-            </button>
-            <button
-              onClick={() => onReject(transfer.reference)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg transition-colors"
-            >
-              <XCircle className="w-3.5 h-3.5" /> Reject
-            </button>
-          </div>
-        ) : (
-          <span className="text-xs text-gray-400">Processed</span>
-        )}
-      </td>
-    </tr>
-  );
-};
+      ) : (
+        <span className="text-xs text-gray-400">Processed</span>
+      )}
+    </td>
+  </tr>
+);
 
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
@@ -287,18 +298,18 @@ const PayoutManagement: React.FC = () => {
     
     try {
         if (type === 'approve_payout') {
-        const res = await api.put(`/wallet/admin/payouts/${id}/approve`, { note: noteOrReason });
-        const { paystack, transferError } = res.data?.data ?? {};
-    
-        if (paystack === 'failed') {
-            // Approved in DB but Paystack transfer failed — show warning, not success
-            toast.error(`⚠️ Payout approved but bank transfer failed: ${transferError ?? 'Unknown error'}. Ops retry needed.`, {
-            duration: 8000,
-            });
-        } else {
-            toast.success('Payout approved and bank transfer initiated');
-        }
-        loadPayouts();
+          const res = await api.put(`/wallet/admin/payouts/${id}/approve`, { note: noteOrReason });
+          const { provider, transferError } = res.data?.data ?? {};
+          const providerOk = res.data?.data?.[provider] === 'ok';
+
+          if (!providerOk) {
+              toast.error(`⚠️ Payout approved but ${provider} transfer failed: ${transferError ?? 'Unknown error'}. Ops retry needed.`, {
+              duration: 8000,
+              });
+          } else {
+              toast.success(`Payout approved and ${provider} transfer initiated`);
+          }
+          loadPayouts();
         } else if (type === 'reject_payout') {
         await api.put(`/wallet/admin/payouts/${id}/reject`, { reason: noteOrReason });
         toast.success('Payout rejected and wallet refunded');

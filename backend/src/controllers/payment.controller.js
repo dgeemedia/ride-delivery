@@ -4,6 +4,15 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
+const emailService = require('../services/email.service');
+
+const safeSendEmail = async (fn, label) => {
+  try {
+    await fn();
+  } catch (err) {
+    console.error(`[payment.controller] ${label} email failed to send:`, err.message);
+  }
+};
 
 // ─────────────────────────────────────────────
 // PAYSTACK FLOWS
@@ -45,13 +54,12 @@ exports.paystackVerify = async (req, res) => {
   const transaction = await paymentService.paystackVerify(reference);
   const { userId, rideId, deliveryId } = transaction.metadata;
 
-  // Prevent duplicate recording
   const existing = await prisma.payment.findFirst({ where: { transactionId: reference } });
   if (existing) {
     return res.status(200).json({ success: true, message: 'Payment already recorded', data: { payment: existing } });
   }
 
-  const amount = transaction.amount / 100; // kobo → NGN
+  const amount = transaction.amount / 100;
 
   const payment = await prisma.payment.create({
     data: {
@@ -75,6 +83,20 @@ exports.paystackVerify = async (req, res) => {
     type: notificationService.TYPES.PAYMENT_RECEIVED,
     data: { reference, amount, rideId, deliveryId }
   });
+
+  // req.user is the authenticated payer here, so we can email directly
+  // without an extra lookup.
+  if (req.user?.email) {
+    await safeSendEmail(
+      () => emailService.sendPaymentReceiptEmail(req.user.email, req.user.firstName, {
+        amount,
+        method: 'CARD',
+        reference,
+        service: rideId ? 'ride' : deliveryId ? 'delivery' : null,
+      }),
+      'Payment receipt (Paystack verify)'
+    );
+  }
 
   res.status(201).json({ success: true, message: 'Payment verified and recorded', data: { payment } });
 };
@@ -126,6 +148,19 @@ exports.paystackWebhook = async (req, res) => {
           type: notificationService.TYPES.PAYMENT_RECEIVED,
           data: { reference, amount: amountNGN }
         });
+
+        const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstName: true } });
+        if (user?.email) {
+          await safeSendEmail(
+            () => emailService.sendPaymentReceiptEmail(user.email, user.firstName, {
+              amount: amountNGN,
+              method: 'CARD',
+              reference,
+              service: rideId ? 'ride' : deliveryId ? 'delivery' : null,
+            }),
+            'Payment receipt (Paystack webhook)'
+          );
+        }
       }
     }
   }
@@ -200,6 +235,18 @@ exports.flutterwaveVerify = async (req, res) => {
     data: { transactionId, amount }
   });
 
+  if (req.user?.email) {
+    await safeSendEmail(
+      () => emailService.sendPaymentReceiptEmail(req.user.email, req.user.firstName, {
+        amount,
+        method: 'CARD',
+        reference: String(transactionId),
+        service: rideId ? 'ride' : deliveryId ? 'delivery' : null,
+      }),
+      'Payment receipt (Flutterwave verify)'
+    );
+  }
+
   res.status(201).json({ success: true, message: 'Payment verified and recorded', data: { payment } });
 };
 
@@ -249,6 +296,19 @@ exports.flutterwaveWebhook = async (req, res) => {
           type: notificationService.TYPES.PAYMENT_RECEIVED,
           data: { transactionId: data.id, amount }
         });
+
+        const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstName: true } });
+        if (user?.email) {
+          await safeSendEmail(
+            () => emailService.sendPaymentReceiptEmail(user.email, user.firstName, {
+              amount,
+              method: 'CARD',
+              reference: String(data.id),
+              service: rideId ? 'ride' : deliveryId ? 'delivery' : null,
+            }),
+            'Payment receipt (Flutterwave webhook)'
+          );
+        }
       }
     }
   }
@@ -293,7 +353,6 @@ exports.processCash = async (req, res) => {
 // ─────────────────────────────────────────────
 // WALLET PAYMENT
 // ─────────────────────────────────────────────
-
 exports.processWalletPayment = async (req, res) => {
   const { rideId, deliveryId, amount } = req.body;
 
@@ -308,7 +367,6 @@ exports.processWalletPayment = async (req, res) => {
   const platformFee = amount * 0.20;
   const earnings = amount * 0.80;
 
-  // Get service for earnings credit
   let earningsUserId = null;
   if (rideId) {
     const ride = await prisma.ride.findUnique({ where: { id: rideId } });
@@ -346,9 +404,9 @@ exports.processWalletPayment = async (req, res) => {
     })
   ];
 
-  // Credit earnings to driver/partner
+  let earnerWallet = null;
   if (earningsUserId) {
-    const earnerWallet = await prisma.wallet.findUnique({ where: { userId: earningsUserId } });
+    earnerWallet = await prisma.wallet.findUnique({ where: { userId: earningsUserId } });
     if (earnerWallet) {
       txns.push(
         prisma.wallet.update({ where: { userId: earningsUserId }, data: { balance: { increment: earnings } } }),
@@ -378,7 +436,19 @@ exports.processWalletPayment = async (req, res) => {
     data: { amount, newBalance: updatedWallet.balance }
   });
 
-  if (earningsUserId) {
+  if (req.user.email) {
+    await safeSendEmail(
+      () => emailService.sendPaymentReceiptEmail(req.user.email, req.user.firstName, {
+        amount,
+        method: 'WALLET',
+        reference: `SVC-${rideId || deliveryId}`,
+        service: rideId ? 'ride' : 'delivery',
+      }),
+      'Payment receipt (wallet payment)'
+    );
+  }
+
+  if (earningsUserId && earnerWallet) {
     await notificationService.notify({
       userId: earningsUserId,
       title: 'Payment Received 💰',
@@ -386,6 +456,19 @@ exports.processWalletPayment = async (req, res) => {
       type: notificationService.TYPES.PAYMENT_RECEIVED,
       data: { earnings, platformFee }
     });
+
+    const earner = await prisma.user.findUnique({ where: { id: earningsUserId }, select: { email: true, firstName: true } });
+    if (earner?.email) {
+      await safeSendEmail(
+        () => emailService.sendEarningsCreditedEmail(earner.email, earner.firstName, {
+          amount: earnings,
+          platformFee,
+          reference: `EARN-${rideId || deliveryId}`,
+          service: rideId ? 'ride' : 'delivery',
+        }),
+        'Earnings credited (wallet payment)'
+      );
+    }
   }
 
   res.status(200).json({ success: true, message: 'Wallet payment successful', data: { payment, wallet: updatedWallet } });
@@ -406,7 +489,6 @@ exports.requestRefund = async (req, res) => {
   if (payment.method === 'CASH') throw new AppError('Cash payments cannot be refunded automatically. Contact support.', 400);
 
   if (payment.method === 'WALLET') {
-    // Refund back to wallet
     const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
     const refundAmount = amount || payment.amount;
 
@@ -433,24 +515,46 @@ exports.requestRefund = async (req, res) => {
       data: { paymentId: id, refundAmount }
     });
 
+    if (req.user.email) {
+      await safeSendEmail(
+        () => emailService.sendRefundProcessedEmail(req.user.email, req.user.firstName, {
+          amount: refundAmount,
+          method: 'WALLET',
+          reference: `REFUND-${id}`,
+        }),
+        'Refund processed (wallet)'
+      );
+    }
+
     return res.status(200).json({ success: true, message: 'Refund credited to wallet', data: { refundAmount } });
   }
 
-  // Card refund via Paystack
-  const refund = await paymentService.paystackRefund(payment.transactionId, amount);
+  const refund = await paymentService.refundUnified(payment.provider ?? 'paystack', payment.transactionId, amount);
+  const refundAmount = amount || payment.amount;
 
   await prisma.payment.update({
     where: { id },
-    data: { status: 'REFUNDED', refundAmount: amount || payment.amount, refundedAt: new Date() }
+    data: { status: 'REFUNDED', refundAmount, refundedAt: new Date() }
   });
 
   await notificationService.notify({
     userId: req.user.id,
     title: 'Refund Initiated ✅',
-    message: `Your refund of ₦${(amount || payment.amount).toFixed(2)} has been processed. It may take 3–5 business days.`,
+    message: `Your refund of ₦${refundAmount.toFixed(2)} has been processed. It may take 3–5 business days.`,
     type: notificationService.TYPES.PAYMENT_REFUNDED,
-    data: { paymentId: id, refundAmount: amount || payment.amount }
+    data: { paymentId: id, refundAmount }
   });
+
+  if (req.user.email) {
+    await safeSendEmail(
+      () => emailService.sendRefundProcessedEmail(req.user.email, req.user.firstName, {
+        amount: refundAmount,
+        method: payment.method,
+        reference: payment.transactionId,
+      }),
+      'Refund processed (card)'
+    );
+  }
 
   res.status(200).json({ success: true, message: 'Refund processed successfully', data: { refund } });
 };
@@ -460,13 +564,13 @@ exports.requestRefund = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.listBanks = async (req, res) => {
-  const banks = await paymentService.paystackListBanks();
+  const banks = await paymentService.listBanksUnified();
   res.status(200).json({ success: true, data: { banks } });
 };
 
 exports.verifyBankAccount = async (req, res) => {
   const { accountNumber, bankCode } = req.body;
-  const account = await paymentService.paystackVerifyAccount(accountNumber, bankCode);
+  const account = await paymentService.verifyBankAccountUnified(accountNumber, bankCode);
   res.status(200).json({ success: true, data: { account } });
 };
 

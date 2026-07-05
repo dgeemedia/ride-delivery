@@ -135,6 +135,23 @@ exports.paystackVerifyAccount = async (accountNumber, bankCode) => {
   }
 };
 
+exports.flutterwaveVerifyAccount = async (accountNumber, bankCode) => {
+  try {
+    const { data } = await flutterwaveAPI.post('/accounts/resolve', {
+      account_number: accountNumber,
+      account_bank:   bankCode,
+    });
+    if (data.status !== 'success') throw new AppError(data.message, 400);
+    return {
+      account_name:   data.data.account_name,
+      account_number: data.data.account_number,
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError('Account verification failed (Flutterwave): ' + error.message, 500);
+  }
+};
+
 exports.paystackCreateTransferRecipient = async ({ name, accountNumber, bankCode }) => {
   try {
     const { data } = await paystackAPI.post('/transferrecipient', {
@@ -261,9 +278,107 @@ exports.flutterwaveTransfer = async ({
   }
 };
 
-/**
- * Validate Flutterwave webhook signature
- */
+exports.flutterwaveListBanks = async () => {
+  try {
+    const { data } = await flutterwaveAPI.get('/banks/NG');
+    if (data.status !== 'success') throw new AppError(data.message, 400);
+    return data.data; // Array of { id, code, name }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError('Failed to fetch banks (Flutterwave): ' + error.message, 500);
+  }
+};
+
+// ─────────────────────────────────────────────
+// PROVIDER SELECTION + UNIFIED HELPERS
+// ─────────────────────────────────────────────
+
+const getActivePayoutProvider = () => {
+  const explicit = (process.env.PAYOUT_PROVIDER || '').toLowerCase();
+  if (explicit === 'paystack' || explicit === 'flutterwave') return explicit;
+  if (PAYSTACK_SECRET)    return 'paystack';
+  if (FLUTTERWAVE_SECRET) return 'flutterwave';
+  return 'paystack';
+};
+exports.getActivePayoutProvider = getActivePayoutProvider;
+
+const _bankListCache = {};
+const BANK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+const _getCachedBankList = async (provider) => {
+  const now = Date.now();
+  const cached = _bankListCache[provider];
+  if (cached && (now - cached.cachedAt) < BANK_CACHE_TTL_MS) return cached.list;
+
+  const list = provider === 'flutterwave'
+    ? await exports.flutterwaveListBanks()
+    : await exports.paystackListBanks();
+
+  _bankListCache[provider] = { list, cachedAt: now };
+  return list;
+};
+
+exports.resolveBankName = async (bankCode, provider = getActivePayoutProvider()) => {
+  if (!bankCode) return null;
+  try {
+    const banks = await _getCachedBankList(provider);
+    const match = banks.find(b => String(b.code) === String(bankCode));
+    return match?.name ?? null;
+  } catch (err) {
+    console.error(`[payment.service] resolveBankName (${provider}) failed:`, err.message);
+    return null;
+  }
+};
+
+exports.verifyBankAccountUnified = async (accountNumber, bankCode) => {
+  const provider = getActivePayoutProvider();
+  return provider === 'flutterwave'
+    ? exports.flutterwaveVerifyAccount(accountNumber, bankCode)
+    : exports.paystackVerifyAccount(accountNumber, bankCode);
+};
+
+exports.listBanksUnified = async () => {
+  const provider = getActivePayoutProvider();
+  return _getCachedBankList(provider);
+};
+
+exports.initiatePayoutTransfer = async ({ amount, accountNumber, bankCode, accountName, reason, reference }) => {
+  const provider = getActivePayoutProvider();
+
+  if (provider === 'flutterwave') {
+    const result = await exports.flutterwaveTransfer({
+      amount,
+      accountNumber,
+      bankCode,
+      accountName,
+      narration: reason,
+      reference,
+    });
+    return {
+      provider,
+      transferCode: result?.id ? String(result.id) : (result?.reference ?? null),
+      raw: result,
+    };
+  }
+
+  const recipient = await exports.paystackCreateTransferRecipient({
+    name: accountName,
+    accountNumber,
+    bankCode,
+  });
+  const transfer = await exports.paystackInitiateTransfer({
+    amount: Math.round(amount * 100),
+    recipient: recipient.recipient_code,
+    reason,
+    reference,
+  });
+  return {
+    provider,
+    transferCode: transfer?.transfer_code ?? null,
+    raw: transfer,
+  };
+};
+
 exports.validateFlutterwaveWebhook = (signature) => {
   return signature === process.env.FLUTTERWAVE_WEBHOOK_HASH;
 };
@@ -278,6 +393,25 @@ exports.validatePaystackWebhook = (signature, rawBody) => {
     .update(rawBody)
     .digest('hex');
   return hash === signature;
+};
+
+exports.flutterwaveRefund = async (transactionId, amount) => {
+  try {
+    const body = {};
+    if (amount) body.amount = amount;
+    const { data } = await flutterwaveAPI.post(`/transactions/${transactionId}/refund`, body);
+    if (data.status !== 'success') throw new AppError(data.message, 400);
+    return data.data;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError('Flutterwave refund failed: ' + error.message, 500);
+  }
+};
+
+exports.refundUnified = async (provider, transactionId, amount) => {
+  return provider === 'flutterwave'
+    ? exports.flutterwaveRefund(transactionId, amount)
+    : exports.paystackRefund(transactionId, amount);
 };
 
 module.exports = exports;

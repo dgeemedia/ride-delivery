@@ -254,6 +254,20 @@ router.get('/payments/:id',
   adminController.getPaymentById
 );
 
+router.get('/refunds',
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  adminController.getRefunds
+);
+
+router.post('/payments/:id/refund',
+  param('id').isUUID(),
+  body('amount').optional().isFloat({ min: 0.01 }),
+  body('reason').optional().isString().isLength({ max: 300 }),
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  validate,
+  adminController.adminIssueRefund
+);
+
 // ─────────────────────────────────────────────
 // ANALYTICS
 // ─────────────────────────────────────────────

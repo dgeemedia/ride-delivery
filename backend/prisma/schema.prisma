@@ -275,6 +275,7 @@ model Payment {
   amount           Float
   currency         String            @default("NGN")
   method           PaymentMethod
+  provider         String?
   status           PaymentStatus     @default(PENDING)
   transactionId    String?           @unique
   receiptUrl       String?
@@ -345,6 +346,7 @@ model Payout {
   status        PayoutStatus @default(PENDING)
   accountNumber String
   bankCode      String
+  bankName      String?
   accountName   String
   reference     String?      @unique
   recipientCode String?

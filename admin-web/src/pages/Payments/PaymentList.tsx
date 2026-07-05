@@ -29,6 +29,7 @@ interface Payment {
   amount: number;
   currency: string;
   method: string;
+  provider?: string | null;
   status: string;
   transactionId?: string;
   rideId?: string;
@@ -318,6 +319,9 @@ const PaymentList: React.FC = () => {
                         {METHOD_ICON[p.method] ?? null}
                         {p.method}
                       </span>
+                      {p.provider && (
+                        <div className="text-[11px] text-gray-400 mt-0.5 capitalize">via {p.provider}</div>
+                      )}
                     </td>
 
                     {/* Service */}

@@ -4,6 +4,7 @@
 const prisma = require('../lib/prisma');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
+const emailService = require('../services/email.service');
 const shieldService = require('../services/shield.service');
 const { invalidateFareCache, getSettings } = require('../utils/fareEngine');
 const bcrypt = require('bcryptjs');
@@ -11,6 +12,8 @@ const { invalidateMaintenanceCache } = require('../middleware/maintenance.middle
 const commissionService = require('../services/commission.service');
 const { validationResult } = require('express-validator');
 const { getWithdrawableBalance } = require('../utils/walletHelpers');
+const paymentService = require('../services/payment.service');
+
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
@@ -27,6 +30,17 @@ const logActivity = async ({ userId, action, entityType, entityId, details, req 
       userAgent: req?.headers?.['user-agent'] || null,
     },
   });
+};
+
+// Small helper so a failed email never blocks (or rolls back) an approval/
+// rejection that has already been committed to the DB. Approval status is
+// the source of truth — email is a best-effort notification on top of it.
+const safeSendEmail = async (fn, label) => {
+  try {
+    await fn();
+  } catch (err) {
+    console.error(`[admin.controller] ${label} email failed to send:`, err.message);
+  }
 };
 
 async function fetchBonusCandidates() {
@@ -262,22 +276,19 @@ exports.getUserById = async (req, res) => {
 exports.suspendUser = async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
- 
-  // Guard 1: cannot suspend yourself
+
   if (id === req.user.id)
     throw new AppError('You cannot suspend your own account.', 400);
- 
+
   const target = await prisma.user.findUnique({ where: { id } });
   if (!target) throw new AppError('User not found.', 404);
- 
-  // Guard 2: nobody can suspend a SUPER_ADMIN
+
   if (target.role === 'SUPER_ADMIN')
     throw new AppError('Super admin accounts cannot be suspended.', 403);
- 
-  // Guard 3: only SUPER_ADMIN can suspend another ADMIN
+
   if (target.role === 'ADMIN' && req.user.role !== 'SUPER_ADMIN')
     throw new AppError('Only a Super Admin can suspend an Admin account.', 403);
- 
+
   const user = await prisma.user.update({
     where: { id },
     data: {
@@ -288,7 +299,7 @@ exports.suspendUser = async (req, res) => {
       suspensionReason: reason || 'Suspended by admin',
     },
   });
- 
+
   await notificationService.notify({
     userId:  id,
     title:   'Account Suspended',
@@ -296,7 +307,14 @@ exports.suspendUser = async (req, res) => {
     type:    notificationService.TYPES.ACCOUNT_SUSPENDED,
     data:    { reason, suspendedBy: req.user.id },
   });
- 
+
+  if (target.email) {
+    await safeSendEmail(
+      () => emailService.sendAccountSuspendedEmail(target.email, target.firstName, reason || 'Policy violation'),
+      'Account suspension'
+    );
+  }
+
   await logActivity({
     userId:     req.user.id,
     action:     'user_suspended',
@@ -305,7 +323,7 @@ exports.suspendUser = async (req, res) => {
     details:    { reason },
     req,
   });
- 
+
   res.status(200).json({ success: true, message: 'User suspended', data: { user } });
 };
 
@@ -316,8 +334,76 @@ exports.activateUser = async (req, res) => {
     data: { isActive: true, isSuspended: false, suspendedAt: null, suspendedBy: null, suspensionReason: null },
   });
   await notificationService.notify({ userId: id, title: 'Account Activated ✅', message: 'Your account has been reactivated. Welcome back!', type: notificationService.TYPES.ACCOUNT_ACTIVATED, data: {} });
+
+  if (user.email) {
+    await safeSendEmail(
+      () => emailService.sendAccountReactivatedEmail(user.email, user.firstName),
+      'Account reactivation'
+    );
+  }
+
   await logActivity({ userId: req.user.id, action: 'user_activated', entityType: 'User', entityId: id, details: {}, req });
   res.status(200).json({ success: true, message: 'User activated', data: { user } });
+};
+
+// ─── DELETE USER (SUPER_ADMIN only — soft delete) ────────────────────────────
+
+exports.deleteUser = async (req, res) => {
+  const { id } = req.params;
+
+  if (id === req.user.id)
+    throw new AppError('You cannot delete your own account', 400);
+
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new AppError('User not found', 404);
+
+  if (user.role === 'SUPER_ADMIN')
+    throw new AppError('Super admin accounts cannot be deleted', 403);
+
+  // Capture original PII before anonymizing — the email service needs it,
+  // and it won't exist on the row anymore after this update.
+  const originalEmail = user.email;
+  const originalFirstName = user.firstName;
+
+  const anonymisedEmail = `deleted_${id}@diakite.internal`;
+  const anonymisedPhone = `+000${id.replace(/-/g, '').slice(0, 12)}`;
+
+  const deleted = await prisma.user.update({
+    where: { id },
+    data: {
+      isActive:    false,
+      isSuspended: true,
+      email:       anonymisedEmail,
+      phone:       anonymisedPhone,
+      firstName:   'Deleted',
+      lastName:    'User',
+      profileImage: null,
+      suspensionReason: 'Account deleted by admin',
+    },
+    select: { id: true, role: true, createdAt: true },
+  });
+
+  if (originalEmail) {
+    await safeSendEmail(
+      () => emailService.sendAccountDeletedEmail(originalEmail, originalFirstName),
+      'Account deletion'
+    );
+  }
+
+  await logActivity({
+    userId: req.user.id,
+    action: 'user_deleted',
+    entityType: 'User',
+    entityId: id,
+    details: { originalRole: user.role, originalEmail: user.email },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'User account deleted and PII anonymised',
+    data: { user: deleted },
+  });
 };
 
 // ─────────────────────────────────────────────
@@ -383,7 +469,8 @@ exports.approveDriver = async (req, res) => {
 
   const driver = await prisma.driverProfile.findUnique({
     where:   { id },
-    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    // NOTE: email is now selected so we can notify the driver directly.
+    include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
   });
   if (!driver)            throw new AppError('Driver profile not found.', 404);
   if (driver.isApproved)  throw new AppError('Driver is already approved.', 400);
@@ -399,7 +486,7 @@ exports.approveDriver = async (req, res) => {
       rejectedBy:     null,
       rejectionReason: null,
     },
-    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
   });
 
   // Optional onboarding bonus (SUPER_ADMIN only)
@@ -439,6 +526,7 @@ exports.approveDriver = async (req, res) => {
     ? ` We've credited ₦${bonusCredited.toLocaleString('en-NG')} to your wallet to get you started.`
     : '';
 
+  // ── In-app notification ────────────────────────────────────────────────────
   await notificationService.notify({
     userId:  driver.userId,
     title:   'Application Approved! 🎉',
@@ -446,6 +534,17 @@ exports.approveDriver = async (req, res) => {
     type:    notificationService.TYPES.DRIVER_APPROVED,
     data:    { driverProfileId: id, bonusCredited, approvedBy: req.user.id },
   });
+
+  // ── Email notification (non-fatal — approval already committed) ───────────
+  if (driver.user.email) {
+    await safeSendEmail(
+      () => emailService.sendDriverApprovedEmail(driver.user.email, driver.user.firstName, {
+        bonusAmount: bonusCredited,
+        note,
+      }),
+      'Driver approval'
+    );
+  }
 
   await logActivity({
     userId:     req.user.id,
@@ -478,7 +577,8 @@ exports.rejectDriver = async (req, res) => {
 
   const driver = await prisma.driverProfile.findUnique({
     where:   { id },
-    include: { user: { select: { id: true, firstName: true } } },
+    // NOTE: email is now selected so we can notify the driver directly.
+    include: { user: { select: { id: true, firstName: true, email: true } } },
   });
   if (!driver) throw new AppError('Driver profile not found.', 404);
 
@@ -500,6 +600,13 @@ exports.rejectDriver = async (req, res) => {
     type:    notificationService.TYPES.DRIVER_REJECTED,
     data:    { reason, rejectedBy: req.user.id },
   });
+
+  if (driver.user.email) {
+    await safeSendEmail(
+      () => emailService.sendDriverRejectedEmail(driver.user.email, driver.user.firstName, reason.trim()),
+      'Driver rejection'
+    );
+  }
 
   await logActivity({
     userId:     req.user.id,
@@ -661,7 +768,8 @@ exports.approvePartner = async (req, res) => {
 
   const partner = await prisma.deliveryPartnerProfile.findUnique({
     where:   { id },
-    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    // NOTE: email is now selected so we can notify the partner directly.
+    include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
   });
   if (!partner)           throw new AppError('Partner profile not found.', 404);
   if (partner.isApproved) throw new AppError('Partner is already approved.', 400);
@@ -677,7 +785,7 @@ exports.approvePartner = async (req, res) => {
       rejectedBy:      null,
       rejectionReason: null,
     },
-    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
   });
 
   // Optional onboarding bonus (SUPER_ADMIN only)
@@ -725,6 +833,16 @@ exports.approvePartner = async (req, res) => {
     data:    { partnerProfileId: id, bonusCredited, approvedBy: req.user.id },
   });
 
+  if (partner.user.email) {
+    await safeSendEmail(
+      () => emailService.sendPartnerApprovedEmail(partner.user.email, partner.user.firstName, {
+        bonusAmount: bonusCredited,
+        note,
+      }),
+      'Partner approval'
+    );
+  }
+
   await logActivity({
     userId:     req.user.id,
     action:     'partner_approved',
@@ -756,7 +874,8 @@ exports.rejectPartner = async (req, res) => {
 
   const partner = await prisma.deliveryPartnerProfile.findUnique({
     where:   { id },
-    include: { user: { select: { id: true, firstName: true } } },
+    // NOTE: email is now selected so we can notify the partner directly.
+    include: { user: { select: { id: true, firstName: true, email: true } } },
   });
   if (!partner) throw new AppError('Partner profile not found.', 404);
 
@@ -779,6 +898,13 @@ exports.rejectPartner = async (req, res) => {
     type:    notificationService.TYPES.PARTNER_REJECTED,
     data:    { reason, rejectedBy: req.user.id },
   });
+
+  if (partner.user.email) {
+    await safeSendEmail(
+      () => emailService.sendPartnerRejectedEmail(partner.user.email, partner.user.firstName, reason.trim()),
+      'Partner rejection'
+    );
+  }
 
   await logActivity({
     userId:     req.user.id,
@@ -994,6 +1120,131 @@ exports.getPaymentById = async (req, res) => {
   });
   if (!payment) throw new AppError('Payment not found', 404);
   res.status(200).json({ success: true, data: { payment } });
+};
+
+// ─────────────────────────────────────────────
+// ADMIN — REFUNDS
+// ─────────────────────────────────────────────
+
+exports.getRefunds = async (req, res) => {
+  const { page = 1, limit = 25, method, search } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const where = { status: 'REFUNDED' };
+  if (method) where.method = method;
+  if (search) {
+    where.OR = [
+      { transactionId: { contains: search, mode: 'insensitive' } },
+      { user: { firstName: { contains: search, mode: 'insensitive' } } },
+      { user: { lastName:  { contains: search, mode: 'insensitive' } } },
+      { user: { email:     { contains: search, mode: 'insensitive' } } },
+    ];
+  }
+
+  const [refunds, total, totalRefundedAgg] = await Promise.all([
+    prisma.payment.findMany({
+      where,
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      },
+      orderBy: { refundedAt: 'desc' },
+      skip,
+      take: parseInt(limit),
+    }),
+    prisma.payment.count({ where }),
+    prisma.payment.aggregate({ where, _sum: { refundAmount: true } }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      refunds,
+      totalRefunded: totalRefundedAgg._sum.refundAmount ?? 0,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
+    },
+  });
+};
+
+/**
+ * Admin-initiated refund — bypasses the ownership check that guards the
+ * user-facing paymentController.requestRefund. Only reachable by ADMIN/SUPER_ADMIN
+ * via the route middleware.
+ */
+exports.adminIssueRefund = async (req, res) => {
+  const { id } = req.params;
+  const { amount, reason = '' } = req.body;
+
+  const payment = await prisma.payment.findUnique({
+    where: { id },
+    include: { user: { select: { id: true, firstName: true, email: true } } },
+  });
+  if (!payment) throw new AppError('Payment not found', 404);
+  if (payment.status !== 'COMPLETED') throw new AppError('Only completed payments can be refunded', 400);
+  if (payment.method === 'CASH') throw new AppError('Cash payments cannot be refunded automatically. Contact the customer directly.', 400);
+
+  const refundAmount = amount || payment.amount;
+  if (refundAmount > payment.amount) throw new AppError('Refund amount cannot exceed the original payment amount', 400);
+
+  if (payment.method === 'WALLET') {
+    const wallet = await prisma.wallet.findUnique({ where: { userId: payment.userId } });
+    if (!wallet) throw new AppError('User wallet not found', 404);
+
+    await prisma.$transaction([
+      prisma.wallet.update({ where: { userId: payment.userId }, data: { balance: { increment: refundAmount } } }),
+      prisma.payment.update({ where: { id }, data: { status: 'REFUNDED', refundAmount, refundedAt: new Date() } }),
+      prisma.walletTransaction.create({
+        data: {
+          walletId:    wallet.id,
+          type:        'CREDIT',
+          amount:      refundAmount,
+          description: `Payment refund (admin-issued)${reason ? ` — ${reason}` : ''}`,
+          status:      'COMPLETED',
+          reference:   `ADMIN-REFUND-${id}`,
+        },
+      }),
+    ]);
+  } else {
+    // Card payment — route through Paystack
+    await paymentService.paystackRefund(payment.transactionId, refundAmount);
+    await prisma.payment.update({
+      where: { id },
+      data: { status: 'REFUNDED', refundAmount, refundedAt: new Date() },
+    });
+  }
+
+  await notificationService.notify({
+    userId:  payment.userId,
+    title:   'Refund Issued ✅',
+    message: `An admin has issued a refund of ₦${refundAmount.toLocaleString('en-NG')} for your payment.${reason ? ` Reason: ${reason}` : ''}`,
+    type:    notificationService.TYPES.PAYMENT_REFUNDED,
+    data:    { paymentId: id, refundAmount, reason },
+  });
+
+  if (payment.user.email) {
+    await safeSendEmail(
+      () => emailService.sendRefundProcessedEmail(payment.user.email, payment.user.firstName, {
+        amount: refundAmount,
+        method: payment.method,
+        reference: payment.transactionId,
+      }),
+      'Refund processed (admin-issued)'
+    );
+  }
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'admin_refund_issued',
+    entityType: 'Payment',
+    entityId:   id,
+    details:    { refundAmount, reason, method: payment.method, targetUserId: payment.userId },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `₦${refundAmount.toLocaleString('en-NG')} refunded successfully.`,
+    data:    { paymentId: id, refundAmount },
+  });
 };
  
 exports.getPaymentStats = async (req, res) => {
@@ -1378,21 +1629,6 @@ exports.togglePromoCode = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
-// SUPPORT TICKETS
-// ─────────────────────────────────────────────
-
-exports.getTickets = async (req, res) => {
-  const { page = 1, limit = 20, status, priority, assignedTo } = req.query;
-  const skip = (page - 1) * limit;
-  const where = {};
-  if (status) where.status = status;
-  if (priority) where.priority = priority;
-  if (assignedTo) where.assignedTo = assignedTo;
-  const [tickets, total] = await Promise.all([prisma.supportTicket.findMany({ where, skip: parseInt(skip), take: parseInt(limit), orderBy: { createdAt: 'desc' } }), prisma.supportTicket.count({ where })]);
-  res.status(200).json({ success: true, data: { tickets, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } } });
-};
-
-// ─────────────────────────────────────────────
 // ACTIVITY LOGS
 // ─────────────────────────────────────────────
 
@@ -1432,15 +1668,29 @@ exports.adjustWallet = async (req, res) => {
   const { amount, type, reason } = req.body;
   if (!amount || amount <= 0) throw new AppError('Valid amount is required', 400);
   if (!['credit', 'debit'].includes(type)) throw new AppError('Type must be credit or debit', 400);
-  const wallet = await prisma.wallet.findUnique({ where: { userId } });
+
+  const wallet = await prisma.wallet.findUnique({
+    where: { userId },
+    include: { user: { select: { firstName: true, email: true } } },
+  });
   if (!wallet) throw new AppError('Wallet not found', 404);
   if (type === 'debit' && wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
+
   const newBalance = type === 'credit' ? wallet.balance + amount : wallet.balance - amount;
   const [updatedWallet, transaction] = await prisma.$transaction([
     prisma.wallet.update({ where: { userId }, data: { balance: newBalance } }),
     prisma.walletTransaction.create({ data: { walletId: wallet.id, type: type === 'credit' ? 'CREDIT' : 'DEBIT', amount, description: reason || `Admin ${type}`, status: 'COMPLETED', reference: `ADMIN-${Date.now()}` } }),
   ]);
+
   await notificationService.notify({ userId, title: type === 'credit' ? 'Wallet Credited 💰' : 'Wallet Debited', message: `Your wallet has been ${type}ed with ₦${amount.toFixed(2)}.${reason ? ` Reason: ${reason}` : ''}`, type: notificationService.TYPES.PAYMENT_RECEIVED, data: { amount, type, reason } });
+
+  if (wallet.user?.email) {
+    await safeSendEmail(
+      () => emailService.sendWalletAdjustmentEmail(wallet.user.email, wallet.user.firstName, { amount, type, reason }),
+      'Wallet adjustment'
+    );
+  }
+
   await logActivity({ userId: req.user.id, action: `wallet_${type}`, entityType: 'Wallet', entityId: wallet.id, details: { amount, reason, targetUserId: userId }, req });
   res.status(200).json({ success: true, message: `Wallet ${type}ed successfully`, data: { wallet: updatedWallet, transaction } });
 };
@@ -1593,6 +1843,35 @@ exports.disburseOnboardingBonuses = async (req, res) => {
       })
     ),
   ]);
+
+  // ── Email notifications — non-fatal, fired in parallel, each isolated so
+  // one bad address never breaks the batch or blocks the response. ─────────
+  await Promise.allSettled([
+    ...driversEligible.map(driver =>
+      driver.user.email
+        ? safeSendEmail(
+            () => emailService.sendBonusEmail(driver.user.email, driver.user.firstName, {
+              amount: driverBonus,
+              withdrawable: false,
+              description: 'Onboarding bonus for accepting rides on Diakite.',
+            }),
+            `Driver onboarding bonus (${driver.user.id})`
+          )
+        : Promise.resolve()
+    ),
+    ...partnersEligible.map(partner =>
+      partner.user.email
+        ? safeSendEmail(
+            () => emailService.sendBonusEmail(partner.user.email, partner.user.firstName, {
+              amount: partnerBonus,
+              withdrawable: false,
+              description: 'Onboarding bonus for accepting deliveries on Diakite.',
+            }),
+            `Partner onboarding bonus (${partner.user.id})`
+          )
+        : Promise.resolve()
+    ),
+  ]);
  
   const driverCount  = driversEligible.length;
   const partnerCount = partnersEligible.length;
@@ -1627,7 +1906,7 @@ exports.disburseCustomBonuses = async (req, res) => {
       userId: { in: userIds },
       user:   { role: { in: ['DRIVER', 'DELIVERY_PARTNER'] } },  // restrict to earners
     },
-    include: { user: { select: { id: true, firstName: true, lastName: true, role: true } } },
+    include: { user: { select: { id: true, firstName: true, lastName: true, role: true, email: true } } },
   });
 
   const foundIds    = wallets.map(w => w.userId);
@@ -1673,6 +1952,20 @@ exports.disburseCustomBonuses = async (req, res) => {
       type:    notificationService.TYPES?.PAYMENT_RECEIVED ?? 'payment_received',
       data:    { amount, nonWithdrawable, creditedBy: req.user.id },
     })
+  ));
+
+  // Email notifications — non-fatal, one per recipient, isolated failures
+  await Promise.allSettled(wallets.map(wallet =>
+    wallet.user.email
+      ? safeSendEmail(
+          () => emailService.sendBonusEmail(wallet.user.email, wallet.user.firstName, {
+            amount,
+            withdrawable: !nonWithdrawable,
+            description: description || undefined,
+          }),
+          `Custom bonus (${wallet.user.id})`
+        )
+      : Promise.resolve()
   ));
 
   // Log the action
@@ -2025,6 +2318,36 @@ await prisma.deliveryPartnerProfile.create({
   },
 });
 }
+
+  // ── Email notification — every admin-created account gets one, tailored
+  // to role. Non-fatal: the account is already created either way. ────────
+  if (user.email) {
+    if (role === 'DRIVER') {
+      await safeSendEmail(
+        () => emailService.sendDriverApprovedEmail(user.email, user.firstName, {
+          source: 'admin_created',
+          password,
+        }),
+        `Admin-created driver account (${user.id})`
+      );
+    } else if (role === 'DELIVERY_PARTNER') {
+      await safeSendEmail(
+        () => emailService.sendPartnerApprovedEmail(user.email, user.firstName, {
+          source: 'admin_created',
+          password,
+        }),
+        `Admin-created partner account (${user.id})`
+      );
+    } else {
+      await safeSendEmail(
+        () => emailService.sendAdminCreatedAccountEmail(user.email, user.firstName, {
+          role,
+          password,
+        }),
+        `Admin-created ${role} account (${user.id})`
+      );
+    }
+  }
  
   await logActivity({
     userId: req.user.id,
@@ -2048,57 +2371,20 @@ await prisma.deliveryPartnerProfile.create({
   });
 };
 
-// ─── DELETE USER (SUPER_ADMIN only — soft delete) ────────────────────────────
+// ─────────────────────────────────────────────
+// SUPPORT TICKETS
+// ─────────────────────────────────────────────
 
-exports.deleteUser = async (req, res) => {
-  const { id } = req.params;
- 
-  if (id === req.user.id)
-    throw new AppError('You cannot delete your own account', 400);
- 
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) throw new AppError('User not found', 404);
- 
-  // Prevent deleting other super admins
-  if (user.role === 'SUPER_ADMIN')
-    throw new AppError('Super admin accounts cannot be deleted', 403);
- 
-  // Soft delete: deactivate + anonymise PII
-  const anonymisedEmail = `deleted_${id}@diakite.internal`;
-  const anonymisedPhone = `+000${id.replace(/-/g, '').slice(0, 12)}`;
- 
-  const deleted = await prisma.user.update({
-    where: { id },
-    data: {
-      isActive:    false,
-      isSuspended: true,
-      email:       anonymisedEmail,
-      phone:       anonymisedPhone,
-      firstName:   'Deleted',
-      lastName:    'User',
-      profileImage: null,
-      suspensionReason: 'Account deleted by admin',
-    },
-    select: { id: true, role: true, createdAt: true },
-  });
- 
-  await logActivity({
-    userId: req.user.id,
-    action: 'user_deleted',
-    entityType: 'User',
-    entityId: id,
-    details: { originalRole: user.role, originalEmail: user.email },
-    req,
-  });
- 
-  res.status(200).json({
-    success: true,
-    message: 'User account deleted and PII anonymised',
-    data: { user: deleted },
-  });
+exports.getTickets = async (req, res) => {
+  const { page = 1, limit = 20, status, priority, assignedTo } = req.query;
+  const skip = (page - 1) * limit;
+  const where = {};
+  if (status) where.status = status;
+  if (priority) where.priority = priority;
+  if (assignedTo) where.assignedTo = assignedTo;
+  const [tickets, total] = await Promise.all([prisma.supportTicket.findMany({ where, skip: parseInt(skip), take: parseInt(limit), orderBy: { createdAt: 'desc' } }), prisma.supportTicket.count({ where })]);
+  res.status(200).json({ success: true, data: { tickets, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } } });
 };
-
-// ─── GET SINGLE TICKET ────────────────────────────────────────────────────────
 
 exports.getTicketById = async (req, res) => {
   const { id } = req.params;
@@ -2126,15 +2412,16 @@ exports.getTicketById = async (req, res) => {
 };
 
 // ─── UPDATE TICKET (with reply support) ──────────────────────────────────────
-
 exports.updateTicket = async (req, res) => {
   const { id } = req.params;
   const { status, assignedTo, resolution, replyMessage } = req.body;
- 
-  const ticket = await prisma.supportTicket.findUnique({ where: { id } });
+
+  const ticket = await prisma.supportTicket.findUnique({
+    where: { id },
+    include: { user: { select: { id: true, firstName: true, email: true } } },
+  });
   if (!ticket) throw new AppError('Ticket not found', 404);
- 
-  // Update ticket fields
+
   const updated = await prisma.supportTicket.update({
     where: { id },
     data: {
@@ -2144,8 +2431,7 @@ exports.updateTicket = async (req, res) => {
       ...(status === 'resolved' && { resolvedAt: new Date() }),
     },
   });
- 
-  // Add reply if provided
+
   if (replyMessage?.trim()) {
     try {
       await prisma.ticketReply.create({
@@ -2159,8 +2445,7 @@ exports.updateTicket = async (req, res) => {
     } catch {
       // TicketReply model may not exist yet — skip gracefully
     }
- 
-    // Notify the ticket creator
+
     await notificationService.notify({
       userId:  ticket.userId,
       title:   `Update on Ticket #${ticket.ticketNumber}`,
@@ -2168,8 +2453,18 @@ exports.updateTicket = async (req, res) => {
       type:    'ticket_reply',
       data:    { ticketId: id, ticketNumber: ticket.ticketNumber, repliedBy: req.user.id },
     });
+
+    if (ticket.user?.email) {
+      await safeSendEmail(
+        () => emailService.sendTicketReplyEmail(ticket.user.email, ticket.user.firstName, {
+          ticketNumber: ticket.ticketNumber,
+          message: replyMessage.trim(),
+        }),
+        'Ticket reply'
+      );
+    }
   }
- 
+
   if (status === 'resolved') {
     await notificationService.notify({
       userId:  ticket.userId,
@@ -2178,8 +2473,18 @@ exports.updateTicket = async (req, res) => {
       type:    'ticket_resolved',
       data:    { ticketId: id, ticketNumber: ticket.ticketNumber },
     });
+
+    if (ticket.user?.email) {
+      await safeSendEmail(
+        () => emailService.sendTicketResolvedEmail(ticket.user.email, ticket.user.firstName, {
+          ticketNumber: ticket.ticketNumber,
+          resolution: resolution || '',
+        }),
+        'Ticket resolved'
+      );
+    }
   }
- 
+
   await logActivity({
     userId: req.user.id,
     action: 'ticket_updated',
@@ -2188,7 +2493,7 @@ exports.updateTicket = async (req, res) => {
     details: { status, assignedTo, hasReply: !!replyMessage },
     req,
   });
- 
+
   res.status(200).json({ success: true, message: 'Ticket updated', data: { ticket: updated } });
 };
 
