@@ -12,7 +12,8 @@ module.exports = {
   expo: {
     name:        'Diakite',
     slug:        'diakite',
-    version:     '1.0.0',
+    scheme:      'diakite',
+    version:     '1.0.1',
     orientation: 'portrait',
     icon:        './assets/icon.png',
     userInterfaceStyle: 'dark',

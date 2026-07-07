@@ -330,7 +330,7 @@ exports.sendDriverApprovedEmail = async (toEmail, firstName, { bonusAmount = 0, 
     ${credsBlock}
     ${bonusBlock}
     ${noteBlock}
-    <a href="${appUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;
+    <a href="${appUrl}/go-online" style="display:inline-block;background:#111;color:#fff;text-decoration:none;
        padding:14px 30px;border-radius:11px;font-weight:800;font-size:14px;margin-top:22px;">
       Go online now
     </a>
@@ -439,7 +439,7 @@ exports.sendPartnerApprovedEmail = async (toEmail, firstName, { bonusAmount = 0,
     ${credsBlock}
     ${bonusBlock}
     ${noteBlock}
-    <a href="${appUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;
+    <a href="${appUrl}/go-online" style="display:inline-block;background:#111;color:#fff;text-decoration:none;
        padding:14px 30px;border-radius:11px;font-weight:800;font-size:14px;margin-top:22px;">
       Go online now
     </a>

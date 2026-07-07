@@ -184,6 +184,39 @@ app.get('/health', (_req, res) => {
   });
 });
 
+// ─── Deep-link redirect for email CTAs (e.g. "Go online now") ───────────────
+const APP_SCHEME    = process.env.APP_SCHEME    || 'diakite://';
+const APP_STORE_URL  = process.env.APP_STORE_URL  || 'https://apps.apple.com/app/idXXXXXXXXX';
+const PLAY_STORE_URL = process.env.PLAY_STORE_URL || 'https://play.google.com/store/apps/details?id=com.diakite.app';
+
+app.get('/go-online', (_req, res) => {
+  res.type('html').send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Opening Diakite…</title>
+</head>
+<body style="font-family:Arial,sans-serif;text-align:center;padding:60px 24px;color:#111;">
+  <h2>Opening the Diakite app…</h2>
+  <p style="color:#666">If nothing happens, tap the button below.</p>
+  <a href="${APP_SCHEME}home?action=online"
+     style="display:inline-block;background:#111;color:#fff;text-decoration:none;
+            padding:14px 30px;border-radius:11px;font-weight:800;margin-top:16px;">
+    Open Diakite
+  </a>
+  <script>
+    window.location.href = "${APP_SCHEME}home?action=online";
+    setTimeout(function () {
+      var ua = navigator.userAgent || '';
+      if (/android/i.test(ua)) window.location.href = "${PLAY_STORE_URL}";
+      else if (/iphone|ipad|ipod/i.test(ua)) window.location.href = "${APP_STORE_URL}";
+    }, 1500);
+  </script>
+</body>
+</html>`);
+});
+
 // ─── SHIELD public web viewer — only when SHIELD is enabled ──────────────────
 if (ENABLE_SHIELD) {
   app.get('/shield/:token', (req, res) => {
