@@ -46,6 +46,7 @@ module.exports = {
             'Diakite uses your location to track your ride in real time.',
         },
       ],
+      './plugins/withRemoveMediaPermissions.js'
     ],
 
     ios: {
