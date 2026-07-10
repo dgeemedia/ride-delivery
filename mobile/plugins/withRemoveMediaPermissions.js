@@ -1,35 +1,56 @@
 // mobile/plugins/withRemoveMediaPermissions.js
 //
-// Google Play flags apps that declare READ_MEDIA_IMAGES / READ_MEDIA_VIDEO
-// but only use one-time/infrequent photo access (via the system photo picker).
-// expo-image-picker's plugin adds these permissions unconditionally and has
-// no toggle to disable them, so we strip them from the final merged manifest
-// after all other plugins have run.
+// expo-image-picker's native Android module ships its own AndroidManifest.xml
+// which the Android Gradle manifest merger pulls in at BUILD time — separate
+// from, and after, whatever config plugins write into the source manifest.
+// Simply filtering the array in the generated source manifest is not enough,
+// because Gradle re-merges the permission back in from the library's own
+// manifest during compilation.
 //
-// Only use this if your app NEVER needs persistent/broad gallery access via
-// expo-media-library or similar. If it does, you'll need to keep the
-// permission and instead update your Play Console "Photo and video
-// permissions" declaration to justify broad access.
+// The correct fix is Android's manifest-merger override: tools:node="remove"
+// forces Gradle to strip the permission even if a dependency tries to add it.
 
 const { withAndroidManifest } = require('@expo/config-plugins');
 
 const PERMISSIONS_TO_REMOVE = [
   'android.permission.READ_MEDIA_IMAGES',
   'android.permission.READ_MEDIA_VIDEO',
-  // Older devices fall back to this one — Play generally doesn't flag it,
-  // but strip it too if you truly need zero broad-storage access.
-  // 'android.permission.READ_EXTERNAL_STORAGE',
+  'android.permission.READ_MEDIA_AUDIO',
+  'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
 ];
 
 module.exports = function withRemoveMediaPermissions(config) {
   return withAndroidManifest(config, (config) => {
-    const manifest = config.modResults.manifest;
+    const androidManifest = config.modResults;
+    const manifest = androidManifest.manifest;
 
-    if (manifest['uses-permission']) {
-      manifest['uses-permission'] = manifest['uses-permission'].filter(
-        (perm) => !PERMISSIONS_TO_REMOVE.includes(perm.$['android:name'])
-      );
+    // Ensure the tools namespace is declared on <manifest>, required for
+    // tools:node to be recognized by the Gradle manifest merger.
+    if (!manifest.$['xmlns:tools']) {
+      manifest.$['xmlns:tools'] = 'http://schemas.android.com/tools';
     }
+
+    if (!manifest['uses-permission']) {
+      manifest['uses-permission'] = [];
+    }
+
+    // Drop any existing entries for these permissions (in case a prior mod
+    // already added them to the source file) …
+    manifest['uses-permission'] = manifest['uses-permission'].filter(
+      (perm) => !PERMISSIONS_TO_REMOVE.includes(perm.$?.['android:name'])
+    );
+
+    // … then re-add each one with tools:node="remove" so the Gradle
+    // manifest merger strips it even when a library (like expo-image-picker)
+    // tries to merge it back in from its own bundled manifest.
+    PERMISSIONS_TO_REMOVE.forEach((name) => {
+      manifest['uses-permission'].push({
+        $: {
+          'android:name': name,
+          'tools:node': 'remove',
+        },
+      });
+    });
 
     return config;
   });
