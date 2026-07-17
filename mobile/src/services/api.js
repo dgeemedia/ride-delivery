@@ -148,6 +148,7 @@ export const userAPI = {
   verifyPasswordChangeOtp: (data) => api.post('/users/password/verify-otp', data),
   getStats:                ()     => api.get('/users/stats'),
   submitFeedback:          (data) => api.post('/users/feedback', data),
+  deleteAccount:           (data) => api.delete('/users/account', { data }), // ← NEW
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

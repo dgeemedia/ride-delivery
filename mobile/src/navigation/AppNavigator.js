@@ -67,13 +67,16 @@ const RootScreen = () => {
   if (!locationGranted) {
     return (
       <LocationPermissionScreen
-        onRequest={(granted) => setLocationGranted(granted)}
-        onSkip={() => setLocationGranted(true)}
+        onRequest={(granted) => {
+          if (granted) setLocationGranted(true);
+          // else: stays false, screen shows the "denied" state internally
+        }}
+        onSkip={() => setLocationGranted('skipped')}
       />
     );
   }
 
-  // 6. Everything good → role navigator
+  // 6. Everything good (or user explicitly continued without location) → role navigator
   if (user.role === 'CUSTOMER') return <CustomerNavigator />;
   if (user.role === 'DRIVER')   return <DriverNavigator />;
   return <PartnerNavigator />;

@@ -722,7 +722,8 @@ export default function ProfileScreen({ navigation }) {
               )}
 
               <MenuItem icon="notifications-outline" label="Notifications"      theme={theme} onPress={() => navigation.navigate('Notifications')} />
-              <MenuItem icon="lock-closed-outline"   label="Change Password"    theme={theme} last onPress={() => navigation.navigate('ChangePassword')} />
+              <MenuItem icon="lock-closed-outline" label="Change Password" theme={theme} onPress={() => navigation.navigate('ChangePassword')} />
+              <MenuItem icon="trash-outline" label="Delete Account" theme={theme} danger last onPress={() => navigation.navigate('DeleteAccount')} />
             </Section>
 
             {/* Support */}

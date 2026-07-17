@@ -1,3 +1,4 @@
+// mobile/src/utils/permissions.js
 import { Platform, PermissionsAndroid, Alert, Linking } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import { request, PERMISSIONS, RESULTS, check, openSettings } from 'react-native-permissions';

@@ -141,6 +141,7 @@ exports.login = async (req, res) => {
   if (!isPasswordValid) throw new AppError('Invalid credentials', 401);
 
   if (!user.isActive)   throw new AppError('Account is deactivated. Contact support.', 403);
+  if (user.isDeleted) throw new AppError('This account no longer exists.', 403);
   if (user.isSuspended) throw new AppError(`Account suspended: ${user.suspensionReason || 'Contact support'}`, 403);
 
   // ── Email verification gate ────────────────────────────────────────────────

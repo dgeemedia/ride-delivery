@@ -33,6 +33,8 @@ model User {
   twoFactorEnabled     Boolean                 @default(false)
   twoFactorMethod      String?
   passwordChangedAt    DateTime?               @db.Timestamptz(6)
+  isDeleted            Boolean                 @default(false)
+  deletedAt            DateTime?               @db.Timestamptz(6)
   activityLogs         ActivityLog[]
   adminProfile         AdminProfile?
   appFeedback          AppFeedback[]
@@ -64,6 +66,7 @@ model User {
   @@index([role])
   @@index([isActive])
   @@index([adminDepartment])
+  @@index([isDeleted])
 }
 
 model OtpVerification {
@@ -275,7 +278,6 @@ model Payment {
   amount           Float
   currency         String            @default("NGN")
   method           PaymentMethod
-  provider         String?
   status           PaymentStatus     @default(PENDING)
   transactionId    String?           @unique
   receiptUrl       String?
@@ -285,6 +287,7 @@ model Payment {
   refundedAt       DateTime?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @default(now()) @updatedAt
+  provider         String?
   commissionLedger CommissionLedger?
   delivery         Delivery?         @relation(fields: [deliveryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   ride             Ride?             @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -346,7 +349,6 @@ model Payout {
   status        PayoutStatus @default(PENDING)
   accountNumber String
   bankCode      String
-  bankName      String?
   accountName   String
   reference     String?      @unique
   recipientCode String?
@@ -356,6 +358,7 @@ model Payout {
   failureReason String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @default(now()) @updatedAt
+  bankName      String?
   user          User         @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([userId])

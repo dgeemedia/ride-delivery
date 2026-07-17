@@ -171,7 +171,7 @@ exports.uploadProfileImage = async (req, res) => {
 };
 
 /**
- * @desc    Delete account (soft delete)
+ * @desc    Delete account (anonymizing hard-delete)
  * @route   DELETE /api/users/account
  * @access  Private
  */
@@ -179,13 +179,46 @@ exports.deleteAccount = async (req, res) => {
   const { password } = req.body;
   if (!password) throw new AppError('Password is required to delete account', 400);
 
-  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    include: { wallet: true },
+  });
+  if (!user) throw new AppError('User not found', 404);
+
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) throw new AppError('Incorrect password', 400);
 
-  await prisma.user.update({ where: { id: req.user.id }, data: { isActive: false } });
+  // Guard: don't delete accounts holding funds — ask them to withdraw first.
+  if (user.wallet && Number(user.wallet.balance) > 0) {
+    throw new AppError(
+      'Please withdraw your wallet balance before deleting your account.',
+      400
+    );
+  }
 
-  res.status(200).json({ success: true, message: 'Account deactivated successfully' });
+  const anonymizedEmail = `deleted_${user.id}@diakite.deleted`;
+  const anonymizedPhone = `deleted_${user.id}`;
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      email:               anonymizedEmail,
+      phone:                anonymizedPhone,
+      firstName:            'Deleted',
+      lastName:             'User',
+      password:             crypto.randomBytes(32).toString('hex'), // unusable
+      profileImage:         null,
+      isActive:             false,
+      isDeleted:             true,
+      deletedAt:             new Date(),
+      emailVerifyToken:      null,
+      passwordResetToken:    null,
+      twoFactorEnabled:      false,
+      twoFactorMethod:       null,
+    },
+  });
+
+  res.status(200).json({ success: true, message: 'Account deleted successfully' });
 };
 
 // ─── helper: build per-star breakdown + weighted average from a ratings array ──
