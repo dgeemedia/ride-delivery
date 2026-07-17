@@ -3,6 +3,7 @@ const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const notificationService = require('../services/notification.service');
 const otpService = require('../services/otp.service');
 
