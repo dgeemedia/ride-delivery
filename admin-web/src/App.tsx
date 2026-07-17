@@ -40,6 +40,7 @@ import CompanyDetails     from '@/pages/Corporate/CompanyDetails';
 import DuoPayMonitor      from '@/pages/DuoPay/DuoPayMonitor';
 import DuoPayDefaults     from '@/pages/DuoPay/DuoPayDefaults';
 import PrivacyPolicy      from '@/pages/Legal/PrivacyPolicy';
+import AccountDeletion    from '@/pages/Legal/AccountDeletion'; 
 
 // ─── Feature flags (set in admin-web/.env) ────────────────────────────────────
 const ENABLE_SHIELD    = import.meta.env.VITE_ENABLE_SHIELD    === 'true';
@@ -141,7 +142,7 @@ function App() {
 
           {/* Legal — public, no auth required */}
           <Route path="/privacy" element={<PrivacyPolicy />} />
-
+          <Route path="/delete-account" element={<AccountDeletion />} />   
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
