@@ -3,6 +3,27 @@
 'use strict';
 const jwt    = require('jsonwebtoken');
 const prisma = require('../lib/prisma');
+const { logActivity } = require('../utils/auditLog'); // ← ADDED
+
+// ─── audit logging for denied access ─── ADDED ────────────────────────────────
+// Fire-and-forget — a logging failure must never delay or block the 403 response.
+const logAccessDenied = (req, requiredRoles) => {
+  if (!req.user) return; // authenticate() already returned 401, no actor to attribute
+  logActivity({
+    userId:     req.user.id,
+    action:     'authorization_denied',
+    entityType: 'Route',
+    details: {
+      path:            req.originalUrl,
+      method:          req.method,
+      requiredRoles,
+      actualRole:      req.user.role,
+      adminDepartment: req.user.adminDepartment ?? null,
+    },
+    req,
+  });
+};
+// ─── END ADDED ─────────────────────────────────────────────────────────────────
 
 // ─── authenticate ─────────────────────────────────────────────────────────────
 const authenticate = async (req, res, next) => {
@@ -48,8 +69,10 @@ if (!user)          return res.status(401).json({ success: false, message: 'Inva
 const authorize = (...roles) => (req, res, next) => {
   if (!req.user)
     return res.status(401).json({ success: false, message: 'Unauthorized.' });
-  if (!roles.includes(req.user.role))
+  if (!roles.includes(req.user.role)) {
+    logAccessDenied(req, roles); // ← ADDED
     return res.status(403).json({ success: false, message: `Access denied. Requires role: ${roles.join(' or ')}.` });
+  }
   next();
 };
 
@@ -80,6 +103,8 @@ const requireScope = (...scopes) => (req, res, next) => {
 
   // Support role — only allowed on SUPPORT scope
   if (role === 'SUPPORT' && scopes.includes('SUPPORT')) return next();
+
+  logAccessDenied(req, scopes); // ← ADDED
 
   return res.status(403).json({
     success: false,

@@ -5,6 +5,7 @@ const { AppError } = require('../middleware/errorHandler');
 const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
 const emailService = require('../services/email.service');
+const { logActivity } = require('../utils/auditLog'); // ← ADDED
 
 const safeSendEmail = async (fn, label) => {
   try {
@@ -507,6 +508,18 @@ exports.requestRefund = async (req, res) => {
       })
     ]);
 
+    // ← ADDED — self-service refund, distinct from admin.controller.js's
+    // 'admin_refund_issued' (staff-initiated). Same underlying money
+    // movement, different actor, so worth telling apart in the audit trail.
+    logActivity({
+      userId:     req.user.id,
+      action:     'refund_requested_self',
+      entityType: 'Payment',
+      entityId:   id,
+      details:    { method: 'WALLET', refundAmount },
+      req,
+    });
+
     await notificationService.notify({
       userId: req.user.id,
       title: 'Refund Processed ✅',
@@ -535,6 +548,16 @@ exports.requestRefund = async (req, res) => {
   await prisma.payment.update({
     where: { id },
     data: { status: 'REFUNDED', refundAmount, refundedAt: new Date() }
+  });
+
+  // ← ADDED
+  logActivity({
+    userId:     req.user.id,
+    action:     'refund_requested_self',
+    entityType: 'Payment',
+    entityId:   id,
+    details:    { method: payment.method, refundAmount, provider: payment.provider ?? 'paystack' },
+    req,
   });
 
   await notificationService.notify({

@@ -6,6 +6,7 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
+const { logActivity } = require('../utils/auditLog'); // ← ADDED
 
 console.log('[PARTNER-CTRL] Prisma partner controller loaded');
 
@@ -41,6 +42,13 @@ const PARTNER_DOC_FIELDS = [
   { field: 'operatorPermitUrl',        label: 'Tricycle Operator Permit'     },
 ];
 
+// ─── audit logging: post-approval critical field changes ─── ADDED ────────────
+// Same rationale as driver.controller.js — vehicleType/vehiclePlate are what
+// got this partner approved. A silent change post-approval means the
+// approved paperwork no longer matches the vehicle actually in use.
+const CRITICAL_PROFILE_FIELDS = ['vehicleType', 'vehiclePlate'];
+// ─── END ADDED ──────────────────────────────────────────────────────────────────
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/partners/profile — create or update vehicle info
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,6 +73,12 @@ exports.createOrUpdateProfile = async (req, res) => {
   let profile;
 
   if (existingProfile) {
+    // ← ADDED — detect changes to critical fields before they're overwritten
+    const incoming = { vehicleType, vehiclePlate };
+    const changedCriticalFields = CRITICAL_PROFILE_FIELDS.filter(
+      (f) => incoming[f] !== undefined && incoming[f] !== existingProfile[f]
+    );
+
     profile = await prisma.deliveryPartnerProfile.update({
       where: { userId: req.user.id },
       data: {
@@ -79,6 +93,23 @@ exports.createOrUpdateProfile = async (req, res) => {
         }),
       },
     });
+
+    // ← ADDED
+    if (existingProfile.isApproved && changedCriticalFields.length > 0) {
+      logActivity({
+        userId:     req.user.id,
+        action:     'profile_critical_field_changed_post_approval',
+        entityType: 'DeliveryPartnerProfile',
+        entityId:   profile.id,
+        details: {
+          role:          'DELIVERY_PARTNER',
+          changedFields: changedCriticalFields,
+          previous:      Object.fromEntries(changedCriticalFields.map((f) => [f, existingProfile[f]])),
+          updated:       Object.fromEntries(changedCriticalFields.map((f) => [f, incoming[f]])),
+        },
+        req,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -444,7 +475,9 @@ exports.requestPayout = async (req, res) => {
   const resolvedAccountName = accountName || accountVerify.account_name;
   const reference           = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
-  await prisma.$transaction([
+  // ← CHANGED — capture the transaction results (was previously discarded)
+  // so we can attach the created Payout's id to the audit log entry below.
+  const [, , payoutRecord] = await prisma.$transaction([
     prisma.wallet.update({
       where: { userId: req.user.id },
       data:  { balance: { decrement: amount } },
@@ -471,6 +504,22 @@ exports.requestPayout = async (req, res) => {
       },
     }),
   ]);
+
+  // ← ADDED
+  logActivity({
+    userId:     req.user.id,
+    action:     'payout_requested',
+    entityType: 'Payout',
+    entityId:   payoutRecord.id,
+    details: {
+      role:          'DELIVERY_PARTNER',
+      amount,
+      bankCode,
+      accountNumber: `****${accountNumber.slice(-4)}`,
+      reference,
+    },
+    req,
+  });
 
   await notificationService.notify({
     userId:  req.user.id,

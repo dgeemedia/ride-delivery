@@ -13,24 +13,7 @@ const commissionService = require('../services/commission.service');
 const { validationResult } = require('express-validator');
 const { getWithdrawableBalance } = require('../utils/walletHelpers');
 const paymentService = require('../services/payment.service');
-
-// ─────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────
-
-const logActivity = async ({ userId, action, entityType, entityId, details, req }) => {
-  await prisma.activityLog.create({
-    data: {
-      userId,
-      action,
-      entityType,
-      entityId,
-      details,
-      ipAddress: req?.ip || null,
-      userAgent: req?.headers?.['user-agent'] || null,
-    },
-  });
-};
+const { logActivity } = require('../utils/auditLog');
 
 // Small helper so a failed email never blocks (or rolls back) an approval/
 // rejection that has already been committed to the DB. Approval status is

@@ -9,6 +9,7 @@ const { AppError }         = require('../middleware/errorHandler');
 const notificationService  = require('../services/notification.service');
 const otpService           = require('../services/otp.service');
 const emailService         = require('../services/email.service');
+const { logActivity }      = require('../utils/auditLog'); // ← ADDED
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -18,6 +19,35 @@ const generateToken = (userId) =>
   jwt.sign({ userId }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
+
+// ─── admin login audit logging ─── ADDED ───────────────────────────────────────
+// Admin-tier roles worth tracking logins/login-failures for.
+const ADMIN_TIER_ROLES = ['ADMIN', 'SUPER_ADMIN', 'SUPPORT', 'MODERATOR'];
+
+const logAdminLogin = (user, req, via = 'password') => {
+  if (!ADMIN_TIER_ROLES.includes(user.role)) return;
+  logActivity({
+    userId:     user.id,
+    action:     'admin_login',
+    entityType: 'User',
+    entityId:   user.id,
+    details:    { role: user.role, via },
+    req,
+  });
+};
+
+const logAdminLoginFailed = (user, req, reason) => {
+  if (!ADMIN_TIER_ROLES.includes(user.role)) return;
+  logActivity({
+    userId:     user.id,
+    action:     'admin_login_failed',
+    entityType: 'User',
+    entityId:   user.id,
+    details:    { role: user.role, reason },
+    req,
+  });
+};
+// ─── END ADDED ──────────────────────────────────────────────────────────────────
 
 // Fields returned to the client after a successful auth event
 const AUTH_USER_SELECT = {
@@ -138,7 +168,10 @@ exports.login = async (req, res) => {
   if (!user) throw new AppError('Invalid credentials', 401);
 
   const isPasswordValid = await bcrypt.compare(password, user.password);
-  if (!isPasswordValid) throw new AppError('Invalid credentials', 401);
+  if (!isPasswordValid) {
+    logAdminLoginFailed(user, req, 'invalid_password'); // ← ADDED
+    throw new AppError('Invalid credentials', 401);
+  }
 
   if (!user.isActive)   throw new AppError('Account is deactivated. Contact support.', 403);
   if (user.isDeleted) throw new AppError('This account no longer exists.', 403);
@@ -179,6 +212,8 @@ exports.login = async (req, res) => {
   const token = generateToken(user.id);
   const { password: _, emailVerifyToken: __, passwordResetToken: ___, ...safeUser } = user;
 
+  logAdminLogin(user, req, 'password'); // ← ADDED
+
   res.status(200).json({
     success: true,
     message: 'Login successful',
@@ -207,6 +242,8 @@ exports.verifyOtp = async (req, res) => {
   if (!user.isActive)  throw new AppError('Account is deactivated.', 403);
 
   const token = generateToken(user.id);
+
+  logAdminLogin(user, req, 'otp'); // ← ADDED
 
   res.status(200).json({
     success: true,
@@ -339,6 +376,17 @@ exports.disableTwoFactor = async (req, res) => {
   await prisma.user.update({
     where: { id: req.user.id },
     data:  { twoFactorEnabled: false, twoFactorMethod: null },
+  });
+
+  // ← ADDED — disabling 2FA is a classic account-takeover precursor step,
+  // worth a distinct high-severity trail entry regardless of role.
+  logActivity({
+    userId:     req.user.id,
+    action:     '2fa_disabled',
+    entityType: 'User',
+    entityId:   req.user.id,
+    details:    { role: req.user.role },
+    req,
   });
 
   await notificationService.notify({
@@ -654,6 +702,17 @@ exports.resetPassword = async (req, res) => {
       passwordResetExpires: null,
       passwordChangedAt:    new Date(),
     },
+  });
+
+  // ← ADDED — a completed password reset is worth a trail entry: if this
+  // wasn't the account owner, it means their email was compromised too.
+  logActivity({
+    userId:     user.id,
+    action:     'password_reset_completed',
+    entityType: 'User',
+    entityId:   user.id,
+    details:    { role: user.role, via: 'email_token' },
+    req,
   });
  
   await notificationService.notify({

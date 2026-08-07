@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const notificationService = require('../services/notification.service');
 const otpService = require('../services/otp.service');
+const { logActivity } = require('../utils/auditLog'); // ← ADDED
 
 /**
  * @desc    Get user profile
@@ -114,6 +115,16 @@ if (process.env.ENABLE_PASSWORD_CHANGE_OTP === 'true' &&
   const hashedPassword = await bcrypt.hash(newPassword, 10);
   await prisma.user.update({ where: { id: req.user.id }, data: { password: hashedPassword } });
 
+  // ← ADDED
+  logActivity({
+    userId:     req.user.id,
+    action:     'password_changed',
+    entityType: 'User',
+    entityId:   req.user.id,
+    details:    { role: req.user.role, via: 'direct' },
+    req,
+  });
+
   await notificationService.notify({
     userId:  req.user.id,
     title:   '🔑 Password Changed',
@@ -141,6 +152,16 @@ exports.verifyPasswordChangeOtp = async (req, res) => {
 
   const hashedPassword = await bcrypt.hash(newPassword, 10);
   await prisma.user.update({ where: { id: req.user.id }, data: { password: hashedPassword } });
+
+  // ← ADDED
+  logActivity({
+    userId:     req.user.id,
+    action:     'password_changed',
+    entityType: 'User',
+    entityId:   req.user.id,
+    details:    { role: req.user.role, via: 'otp' },
+    req,
+  });
 
   await notificationService.notify({
     userId:  req.user.id,
@@ -217,6 +238,18 @@ exports.deleteAccount = async (req, res) => {
       twoFactorEnabled:      false,
       twoFactorMethod:       null,
     },
+  });
+
+  // ← ADDED — self-service deletion, distinct from admin.controller.js's
+  // 'user_deleted' (admin-initiated). Same entityType/entityId, different
+  // action string, so the two are distinguishable in the audit trail.
+  logActivity({
+    userId:     req.user.id,
+    action:     'account_deleted_self',
+    entityType: 'User',
+    entityId:   req.user.id,
+    details:    { role: user.role, hadWalletBalance: false },
+    req,
   });
 
   res.status(200).json({ success: true, message: 'Account deleted successfully' });

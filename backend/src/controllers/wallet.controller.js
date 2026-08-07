@@ -6,6 +6,7 @@ const { AppError } = require('../middleware/errorHandler');
 const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
 const emailService = require('../services/email.service');
+const { logActivity } = require('../utils/auditLog'); // ← ADDED
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -379,6 +380,19 @@ exports.transfer = async (req, res) => {
     }),
   ]);
 
+  // ← ADDED — a self-initiated transfer already debits the sender's wallet
+  // (pending admin approval below). Worth its own audit entry distinct from
+  // the WalletTransaction row, especially since it names a specific
+  // recipient — a pattern worth watching for account-to-account fraud.
+  logActivity({
+    userId:     req.user.id,
+    action:     'wallet_transfer_requested_self',
+    entityType: 'Transfer',
+    entityId:   reference,
+    details:    { amount, recipientId: recipient.id, recipientPhone, reference },
+    req,
+  });
+
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Transfer Pending ⏳',
@@ -442,7 +456,9 @@ exports.withdraw = async (req, res) => {
   // Auto-resolved from whichever provider is currently active — no client change needed.
   const bankName = await paymentService.resolveBankName(bankCode);
 
-  await prisma.$transaction([
+  // ← CHANGED — capture the transaction results (was previously discarded)
+  // so we can attach the created Payout's id to the audit log entry below.
+  const [, , payoutRecord] = await prisma.$transaction([
     prisma.wallet.update({ where: { userId: req.user.id }, data: { balance: { decrement: amount } } }),
     prisma.walletTransaction.create({
       data: {
@@ -467,6 +483,24 @@ exports.withdraw = async (req, res) => {
       },
     }),
   ]);
+
+  // ← ADDED — same action name used by driver.controller.js/partner.controller.js's
+  // requestPayout (this is the generic/customer-facing equivalent), with
+  // role read dynamically since this endpoint isn't role-restricted.
+  logActivity({
+    userId:     req.user.id,
+    action:     'payout_requested',
+    entityType: 'Payout',
+    entityId:   payoutRecord.id,
+    details: {
+      role:          req.user.role,
+      amount,
+      bankCode,
+      accountNumber: `****${accountNumber.slice(-4)}`,
+      reference,
+    },
+    req,
+  });
 
   await notificationService.notify({
     userId:  req.user.id,
@@ -580,6 +614,26 @@ exports.adminApprovePayout = async (req, res) => {
     }),
   ]);
 
+  // ← ADDED — this is the single most important audit entry in this file:
+  // approving a payout triggers a REAL, irreversible external bank transfer.
+  // This action previously had zero ActivityLog coverage anywhere.
+  logActivity({
+    userId:     req.user.id, // the admin who approved it, not the payout owner
+    action:     'admin_payout_approved',
+    entityType: 'Payout',
+    entityId:   id,
+    details: {
+      targetUserId:  payout.userId,
+      amount:        payout.amount,
+      provider,
+      providerOk,
+      transferCode,
+      transferError,
+      note,
+    },
+    req,
+  });
+
   await notificationService.notify({
     userId:  payout.userId,
     title:   'Withdrawal Approved ✅',
@@ -642,6 +696,16 @@ exports.adminRejectPayout = async (req, res) => {
       },
     }),
   ]);
+
+  // ← ADDED
+  logActivity({
+    userId:     req.user.id,
+    action:     'admin_payout_rejected',
+    entityType: 'Payout',
+    entityId:   id,
+    details:    { targetUserId: payout.userId, amount: payout.amount, reason },
+    req,
+  });
 
   await notificationService.notify({
     userId:  payout.userId,
@@ -735,6 +799,23 @@ exports.adminApproveTransfer = async (req, res) => {
     }),
   ]);
 
+  // ← ADDED — an admin decision that moves money from one user's wallet to
+  // another's. Same risk class as admin.controller.js's wallet_credit /
+  // wallet_debit (already CRITICAL there) — this had no equivalent here.
+  logActivity({
+    userId:     req.user.id,
+    action:     'admin_transfer_approved',
+    entityType: 'Transfer',
+    entityId:   reference,
+    details: {
+      senderId:    transfer.senderId,
+      recipientId: transfer.recipientId,
+      amount:      transfer.amount,
+      note,
+    },
+    req,
+  });
+
   await Promise.allSettled([
     notificationService.notify({
       userId:  transfer.senderId,
@@ -815,6 +896,21 @@ exports.adminRejectTransfer = async (req, res) => {
       },
     }),
   ]);
+
+  // ← ADDED
+  logActivity({
+    userId:     req.user.id,
+    action:     'admin_transfer_rejected',
+    entityType: 'Transfer',
+    entityId:   reference,
+    details: {
+      senderId:    transfer.senderId,
+      recipientId: transfer.recipientId,
+      amount:      transfer.amount,
+      reason,
+    },
+    req,
+  });
 
   await notificationService.notify({
     userId:  transfer.senderId,

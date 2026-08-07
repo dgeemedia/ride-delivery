@@ -5,6 +5,7 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
+const { logActivity } = require('../utils/auditLog'); // ← ADDED
 
 console.log('[DRIVER-CTRL] Prisma driver controller loaded');
 
@@ -39,6 +40,15 @@ const DRIVER_DOC_FIELDS = [
 ];
 
 const DRIVER_DOC_FIELD_NAMES = DRIVER_DOC_FIELDS.map((d) => d.field);
+
+// ─── audit logging: post-approval critical field changes ─── ADDED ────────────
+// Once a driver is approved, their license number / vehicle plate / vehicle
+// type are the things a background check and physical inspection actually
+// verified. Letting those change silently post-approval means an approved
+// driver could swap in a different, unverified vehicle. Not blocked here
+// (that's a product decision) — just made visible.
+const CRITICAL_PROFILE_FIELDS = ['licenseNumber', 'vehiclePlate', 'vehicleType'];
+// ─── END ADDED ──────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
@@ -102,10 +112,33 @@ exports.createOrUpdateProfile = async (req, res) => {
   let profile;
 
   if (existingProfile) {
+    // ← ADDED — detect changes to fields that were part of what got this
+    // driver approved, before the update overwrites the old values.
+    const changedCriticalFields = CRITICAL_PROFILE_FIELDS.filter(
+      (f) => profileData[f] !== undefined && profileData[f] !== existingProfile[f]
+    );
+
     profile = await prisma.driverProfile.update({
       where: { userId: req.user.id },
       data: profileData,
     });
+
+    // ← ADDED
+    if (existingProfile.isApproved && changedCriticalFields.length > 0) {
+      logActivity({
+        userId:     req.user.id,
+        action:     'profile_critical_field_changed_post_approval',
+        entityType: 'DriverProfile',
+        entityId:   profile.id,
+        details: {
+          role:          'DRIVER',
+          changedFields: changedCriticalFields,
+          previous:      Object.fromEntries(changedCriticalFields.map((f) => [f, existingProfile[f]])),
+          updated:       Object.fromEntries(changedCriticalFields.map((f) => [f, profileData[f]])),
+        },
+        req,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -503,7 +536,9 @@ exports.requestPayout = async (req, res) => {
   const resolvedAccountName = accountName || accountVerify.account_name;
   const reference = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
-  await prisma.$transaction([
+  // ← CHANGED — capture the transaction results (was previously discarded)
+  // so we can attach the created Payout's id to the audit log entry below.
+  const [, , payoutRecord] = await prisma.$transaction([
     prisma.wallet.update({
       where: { userId: req.user.id },
       data: { balance: { decrement: amount } },
@@ -530,6 +565,24 @@ exports.requestPayout = async (req, res) => {
       },
     }),
   ]);
+
+  // ← ADDED — payout requests move money out of the platform; worth a
+  // dedicated audit trail entry distinct from the WalletTransaction row,
+  // which support/admin staff don't always think to check.
+  logActivity({
+    userId:     req.user.id,
+    action:     'payout_requested',
+    entityType: 'Payout',
+    entityId:   payoutRecord.id,
+    details: {
+      role:          'DRIVER',
+      amount,
+      bankCode,
+      accountNumber: `****${accountNumber.slice(-4)}`,
+      reference,
+    },
+    req,
+  });
 
   await notificationService.notify({
     userId: req.user.id,
