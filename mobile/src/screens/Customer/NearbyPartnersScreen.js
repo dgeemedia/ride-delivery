@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { useTheme } from '../../context/ThemeContext';
-import { deliveryAPI } from '../../services/api';
+import { deliveryAPI, placesAPI } from '../../services/api';
 import SmartMapView, { Marker } from '../../components/SmartMapView';
 
 const { width, height } = Dimensions.get('window');
@@ -58,6 +58,9 @@ const reverseGeocode = async (lat, lng) => {
     return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   }
 };
+
+const newSessionToken = () =>
+  'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 
 // ─── StarRating ───────────────────────────────────────────────────────────────
 const StarRating = ({ rating, size = 11, theme }) => (
@@ -169,6 +172,7 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
   const [mapPin,    setMapPin]    = useState(null);
   const [geocoding, setGeocoding] = useState(false);
   const searchTimer = useRef(null);
+  const sessionTokenRef = useRef(newSessionToken());
   const slideA      = useRef(new Animated.Value(height)).current;
 
   const isPickup = type === 'pickup';
@@ -182,6 +186,7 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
   useEffect(() => {
     if (visible) {
       setQuery(''); setResults([]); setMapPin(null); setTab('search');
+      sessionTokenRef.current = newSessionToken();
       Animated.spring(slideA, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }).start();
     } else {
       Animated.timing(slideA, { toValue: height, duration: 220, useNativeDriver: true }).start();
@@ -195,24 +200,25 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
     setLoading(true);
     searchTimer.current = setTimeout(async () => {
       try {
-        const bias = pickupCoords
-          ? `&lat=${pickupCoords.lat}&lon=${pickupCoords.lng}`
-          : '&bbox=2.68,6.35,3.70,6.70';
-        const url  = `https://photon.komoot.io/api/?q=${encodeURIComponent(text)}&limit=8&lang=en${bias}`;
-        const res  = await fetch(url, { headers: { 'User-Agent': 'DiakiteApp/1.0' } });
-        const data = await res.json();
-        setResults(
-          (data.features ?? []).map((f, i) => ({
-            id:          `${f.geometry.coordinates[0]}_${f.geometry.coordinates[1]}_${i}`,
-            description: [f.properties.name, f.properties.street, f.properties.city, f.properties.country].filter(Boolean).join(', '),
-            main:        f.properties.name ?? f.properties.street ?? '',
-            secondary:   [f.properties.city, f.properties.country].filter(Boolean).join(', '),
-            lat:         f.geometry.coordinates[1],
-            lng:         f.geometry.coordinates[0],
-          }))
-        );
+        const res = await placesAPI.autocomplete({
+          input: text,
+          sessionToken: sessionTokenRef.current,
+          lat: pickupCoords?.lat,
+          lng: pickupCoords?.lng,
+        });
+        const suggestions = res?.data?.suggestions ?? [];
+        setResults(suggestions.map(sug => ({
+          id:          sug.placeId,
+          placeId:     sug.placeId,
+          description: sug.description,
+          main:        sug.mainText,
+          secondary:   sug.secondaryText,
+          provider:    sug.provider,   // 'google' | 'photon'
+          lat:         sug.lat,         // only present when provider === 'photon'
+          lng:         sug.lng,
+        })));
       } catch { setResults([]); }
-      finally  { setLoading(false); }
+      finally { setLoading(false); }
     }, 400);
   };
 
@@ -232,6 +238,28 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
   };
 
 if (!visible) return null;
+
+const handleResultPress = async (item) => {
+    if (item.provider === 'photon') {
+      onSelect({ lat: item.lat, lng: item.lng, description: item.description });
+      onClose();
+      return;
+    }
+    try {
+      const res = await placesAPI.getDetails({
+        placeId: item.placeId,
+        sessionToken: sessionTokenRef.current,
+      });
+      const details = res?.data;
+      if (!details) return;
+      onSelect({ lat: details.lat, lng: details.lng, description: details.formattedAddress || item.description });
+    } catch {
+      Alert.alert('Address error', 'Could not resolve that address. Try the map tab instead.');
+    } finally {
+      sessionTokenRef.current = newSessionToken();
+      onClose();
+    }
+  };
 
 return (
   <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
@@ -294,7 +322,7 @@ return (
                 <TouchableOpacity
                   key={item.id}
                   style={[lss.resultRow, { borderBottomColor: theme.border }]}
-                  onPress={() => { onSelect(item); onClose(); }}
+                  onPress={() => handleResultPress(item)}
                   activeOpacity={0.75}
                 >
                   <View style={[lss.resultIcon, { backgroundColor: accent + '12' }]}>

@@ -23,6 +23,7 @@ const walletRoutes       = require('./routes/wallet.routes');
 const callRoutes         = require('./routes/call.routes');
 const debugRoutes        = require('./routes/debug.route');
 const publicRoutes       = require('./routes/public.routes');
+const placesRoutes       = require('./routes/places.routes'); // ← ADDED
 
 // ─── Feature-flagged routes (only imported when enabled) ──────────────────────
 const ENABLE_SHIELD    = process.env.ENABLE_SHIELD    === 'true';
@@ -251,6 +252,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/wallet',        walletRoutes);
 app.use('/api/calls',         callRoutes);
 app.use('/api/debug',         debugRoutes);
+app.use('/api/places',        placesRoutes); // ← ADDED
 
 if (ENABLE_SHIELD)    app.use('/api/shield',    shieldRoutes);
 if (ENABLE_CORPORATE) app.use('/api/corporate', corporateRoutes);

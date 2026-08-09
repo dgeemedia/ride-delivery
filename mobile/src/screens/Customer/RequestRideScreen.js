@@ -10,11 +10,14 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }           from '../../context/ThemeContext';
-import { rideAPI, walletAPI } from '../../services/api';
+import { rideAPI, walletAPI, placesAPI } from '../../services/api';
 import socketService          from '../../services/socket';
 
 import { useRadarPulse, ScanningBar, StepDots, LocationSearchModal } from '../../components/RideDeliveryShared';
 import { PaymentSelector, useCardPayment }                           from '../../components/PaymentSelector';
+
+const newSessionToken = () =>
+  'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 
 const { height } = Dimensions.get('window');
 const SHEET_SNAP = height * 0.75;
@@ -217,6 +220,7 @@ export default function RequestRideScreen({ navigation }) {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimer  = useRef(null);
   const geocodeTimer = useRef(null);
+  const sessionTokenRef = useRef(newSessionToken());
 
   const [drivers,        setDrivers]        = useState([]);
   const [visibleDrivers, setVisibleDrivers] = useState([]);
@@ -348,36 +352,68 @@ export default function RequestRideScreen({ navigation }) {
     setSearchLoading(true);
     searchTimer.current = setTimeout(async () => {
       try {
-        const bias = pickupCoords ? `&lat=${pickupCoords.lat}&lon=${pickupCoords.lng}` : '&bbox=2.68,6.35,3.70,6.70';
-        const url  = `https://photon.komoot.io/api/?q=${encodeURIComponent(text)}&limit=8&lang=en${bias}`;
-        const res  = await fetch(url, { headers: { 'User-Agent': 'DiakiteApp/1.0' } });
-        const data = await res.json();
-        setSearchResults((data.features ?? []).map(f => ({
-          place_id: `${f.geometry.coordinates[0]}_${f.geometry.coordinates[1]}`,
-          description: [f.properties.name, f.properties.street, f.properties.city, f.properties.state, f.properties.country].filter(Boolean).join(', '),
-          structured_formatting: { main_text: f.properties.name ?? f.properties.street ?? '', secondary_text: [f.properties.city, f.properties.state, f.properties.country].filter(Boolean).join(', ') },
-          _lat: f.geometry.coordinates[1], _lng: f.geometry.coordinates[0],
+        const res = await placesAPI.autocomplete({
+          input: text,
+          sessionToken: sessionTokenRef.current,
+          lat: pickupCoords?.lat,
+          lng: pickupCoords?.lng,
+        });
+        const suggestions = res?.data?.suggestions ?? [];
+        setSearchResults(suggestions.map(s => ({
+          place_id: s.placeId,
+          description: s.description,
+          structured_formatting: {
+            main_text: s.mainText,
+            secondary_text: s.secondaryText,
+          },
+          provider: s.provider,   // 'google' | 'photon'
+          _lat: s.lat,             // only present when provider === 'photon'
+          _lng: s.lng,
         })));
       } catch { setSearchResults([]); }
       finally { setSearchLoading(false); }
     }, 400);
   }, [pickupCoords]);
 
-  const selectPlace = useCallback(async (place) => {
-    const coords = { lat: place._lat, lng: place._lng };
-    if (searchModal === 'pickup') {
-      setPickupCoords(coords); setPickupAddress(place.description);
-      mapRef.current?.animateToRegion({ latitude: coords.lat, longitude: coords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 500);
-    } else {
-      setDropoffCoords(coords); setDropoffAddress(place.description);
-      if (pickupCoords) {
-        setTimeout(() => mapRef.current?.fitToCoordinates(
-          [{ latitude: pickupCoords.lat, longitude: pickupCoords.lng }, { latitude: coords.lat, longitude: coords.lng }],
-          { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true }
-        ), 300);
+ const selectPlace = useCallback(async (place) => {
+    try {
+      let coords, address;
+
+      if (place.provider === 'photon') {
+        // Fallback path — coordinates already included, nothing to look up.
+        coords = { lat: place._lat, lng: place._lng };
+        address = place.description;
+      } else {
+        // Google path — this is the billable call, and it closes the session.
+        const res = await placesAPI.getDetails({
+          placeId: place.place_id,
+          sessionToken: sessionTokenRef.current,
+        });
+        const details = res?.data;
+        if (!details) return;
+        coords = { lat: details.lat, lng: details.lng };
+        address = details.formattedAddress || place.description;
       }
+
+      if (searchModal === 'pickup') {
+        setPickupCoords(coords); setPickupAddress(address);
+        mapRef.current?.animateToRegion({ latitude: coords.lat, longitude: coords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 500);
+      } else {
+        setDropoffCoords(coords); setDropoffAddress(address);
+        if (pickupCoords) {
+          setTimeout(() => mapRef.current?.fitToCoordinates(
+            [{ latitude: pickupCoords.lat, longitude: pickupCoords.lng }, { latitude: coords.lat, longitude: coords.lng }],
+            { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true }
+          ), 300);
+        }
+      }
+    } catch (err) {
+      Alert.alert('Address error', 'Could not resolve that address. Try pinning it on the map instead.');
+    } finally {
+      // Always start a fresh session token for the NEXT search.
+      sessionTokenRef.current = newSessionToken();
+      setSearchModal(null); setSearchQuery(''); setSearchResults([]);
     }
-    setSearchModal(null); setSearchQuery(''); setSearchResults([]);
   }, [searchModal, pickupCoords]);
 
   const openSearchModal  = useCallback((type) => { setSearchModal(type); setSearchQuery(''); setSearchResults([]); setSearchLoading(false); }, []);

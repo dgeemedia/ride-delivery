@@ -138,6 +138,15 @@ export const deliveryAPI = {
   getNearbyPartners:  (params)   => api.get('/deliveries/nearby-partners', { params }),
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+// PLACES  (Google Places Autocomplete proxy, with automatic Photon fallback
+// — see places.controller.js)
+// ─────────────────────────────────────────────────────────────────────────
+export const placesAPI = {
+  autocomplete: (data) => api.post('/places/autocomplete', data),
+  getDetails:   (data) => api.post('/places/details', data),
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // USER
 // ─────────────────────────────────────────────────────────────────────────────
