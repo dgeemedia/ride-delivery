@@ -41,8 +41,12 @@ const { maintenanceMiddleware } = require('./middleware/maintenance.middleware')
 
 const app = express();
 
-// backend/src/app.js
-// ... after express.json() ...
+const crypto = require('crypto'); // add near your other requires at the top of the file instead if you prefer
+app.use((req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
     const redacted = { ...req.body };
@@ -69,7 +73,16 @@ app.use((req, res, next) => {
       },
     })(req, res, next);
   }
-  helmet()(req, res, next);
+
+  return helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        scriptSrc:     ["'self'", `'nonce-${res.locals.cspNonce}'`],
+        scriptSrcAttr: ["'none'"],
+      },
+    },
+  })(req, res, next);
 });
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -206,7 +219,7 @@ app.get('/go-online', (_req, res) => {
             padding:14px 30px;border-radius:11px;font-weight:800;margin-top:16px;">
     Open Diakite
   </a>
-  <script>
+  <script nonce="${res.locals.cspNonce}">
     window.location.href = "${APP_SCHEME}home?action=online";
     setTimeout(function () {
       var ua = navigator.userAgent || '';

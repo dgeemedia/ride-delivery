@@ -551,12 +551,6 @@ exports.getResetPasswordForm = async (req, res) => {
           max-width: 420px; width: 100%;
           box-shadow: 0 4px 40px rgba(0,0,0,0.4);
         }
-        .logo {
-          width: 56px; height: 56px; border-radius: 16px;
-          background: #fff; display: flex; align-items: center; justify-content: center;
-          margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-          font-weight: 900; font-size: 20px; color: #111;
-        }
         .pill {
           display: inline-flex; align-items: center; gap: 6px;
           background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10);
@@ -602,7 +596,6 @@ exports.getResetPasswordForm = async (req, res) => {
     </head>
     <body>
       <div class="card">
-        <div class="logo">D</div>
         <div class="pill"><span class="pill-dot"></span><span class="eyebrow">ACCOUNT SECURITY</span></div>
 
         <div id="formWrap">
@@ -626,7 +619,7 @@ exports.getResetPasswordForm = async (req, res) => {
         </div>
       </div>
 
-      <script>
+      <script nonce="${res.locals.cspNonce}">
         const TOKEN = '${safeToken}';
 
         function checkStrength() {
