@@ -75,14 +75,14 @@ app.use((req, res, next) => {
   }
 
   return helmet({
-    contentSecurityPolicy: {
-      directives: {
-        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        scriptSrc:     ["'self'", `'nonce-${res.locals.cspNonce}'`],
-        scriptSrcAttr: ["'none'"],
-      },
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'script-src':      ["'self'", `'nonce-${res.locals.cspNonce}'`],
+      'script-src-attr': ["'none'"],
     },
-  })(req, res, next);
+  },
+})(req, res, next);
 });
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
