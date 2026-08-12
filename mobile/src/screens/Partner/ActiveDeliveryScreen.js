@@ -194,9 +194,10 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
   const [recipientName, setRecipientName] = useState('');
   const [showComplete,  setShowComplete]  = useState(false);
   const [speed,         setSpeed]         = useState(null);
+  const [mapReady,      setMapReady]      = useState(false);
 
   const mapRef = useRef(null);
-const scrollRef = useRef(null);
+  const scrollRef = useRef(null);
 
   // Draggable sheet — upgraded from fixed height
   const sheetHeightAnim  = useRef(new Animated.Value(SHEET_DEFAULT)).current;
@@ -382,6 +383,16 @@ useEffect(() => {
 
   const backBtnTop = insets.top + 14;
 
+  useEffect(() => {
+    if (mapReady && myLoc) {
+      mapRef.current?.updateTrackedMarker('self', myLoc.latitude, myLoc.longitude, { color: COURIER_ACCENT });
+    }
+  }, [mapReady, myLoc]);
+
+  useEffect(() => {
+    return () => { mapRef.current?.removeTrackedMarker('self'); };
+  }, []);
+
   if (loading) {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
@@ -422,11 +433,8 @@ return (
         showsUserLocation={false}
         showsCompass={false}
         toolbarEnabled={false}
+        onMapReady={() => setMapReady(true)}
       >
-        {/* Partner's position */}
-        {myLoc && (
-          <Marker coordinate={myLoc} anchor={{ x: 0.5, y: 0.5 }} pinColor={COURIER_ACCENT} />
-        )}
         {/* Pickup */}
         {pickupLat && (
           <Marker

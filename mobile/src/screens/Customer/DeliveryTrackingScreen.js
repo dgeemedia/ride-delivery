@@ -206,6 +206,7 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
   const [partnerLocation, setPartnerLocation] = useState(null);
   const [loading,         setLoading]         = useState(true);
   const [cancelling,      setCancelling]      = useState(false);
+  const [mapReady,        setMapReady]        = useState(false);
 
   const mapRef          = useRef(null);
   const hasNavigatedRef = useRef(false);
@@ -350,6 +351,18 @@ try {
     ? { latitude: pickupLat, longitude: pickupLng, latitudeDelta: 0.05, longitudeDelta: 0.05 }
     : undefined;
 
+  useEffect(() => {
+    if (mapReady && partnerLocation) {
+      mapRef.current?.updateTrackedMarker('partner', partnerLocation.latitude, partnerLocation.longitude, {
+        color: statusCfg.color,
+      });
+    }
+  }, [mapReady, partnerLocation, statusCfg.color]);
+
+  useEffect(() => {
+    return () => { mapRef.current?.removeTrackedMarker('partner'); };
+  }, []);
+
   if (loading) {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
@@ -383,10 +396,8 @@ try {
         showsMyLocationButton={false}
         showsCompass={false}
         toolbarEnabled={false}
+        onMapReady={() => setMapReady(true)}
       >
-        {partnerLocation && (
-          <Marker coordinate={partnerLocation} anchor={{ x: 0.5, y: 1 }} pinColor={statusCfg.color} />
-        )}
         {pickupLat && (
           <Marker
             coordinate={{ latitude: pickupLat, longitude: pickupLng }}

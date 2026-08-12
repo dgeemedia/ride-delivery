@@ -495,26 +495,27 @@ exports.forgotPassword = async (req, res) => {
 exports.getResetPasswordForm = async (req, res) => {
   const { token } = req.params;
   const safeToken = token.replace(/[^a-f0-9]/gi, '');
-  const hashedToken = crypto.createHash('sha256').update(safeToken).digest('hex'); 
+  const hashedToken = crypto.createHash('sha256').update(safeToken).digest('hex');
   const user = await prisma.user.findFirst({
     where: {
       passwordResetToken:   hashedToken,
       passwordResetExpires: { gt: new Date() },
     },
   });
- 
+
   if (!user) {
     return res.status(400).send(`
       <!DOCTYPE html><html><head><meta charset="utf-8"/>
       <title>Link Expired — Diakite</title>
       <meta name="viewport" content="width=device-width,initial-scale=1"/>
       </head>
-      <body style="font-family:Arial,sans-serif;display:flex;align-items:center;
-                   justify-content:center;min-height:100vh;margin:0;background:#f9f9f9">
+      <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;
+                   display:flex;align-items:center;justify-content:center;min-height:100vh;
+                   margin:0;background:#0B0B0F;color:#fff">
         <div style="text-align:center;max-width:400px;padding:40px">
           <div style="font-size:56px;margin-bottom:16px">⏱️</div>
-          <h1 style="font-weight:900;font-size:24px;margin-bottom:8px">Link expired</h1>
-          <p style="color:#666;line-height:1.7">
+          <h1 style="font-weight:900;font-size:24px;margin-bottom:8px;letter-spacing:-0.5px">Link expired</h1>
+          <p style="color:rgba(255,255,255,0.55);line-height:1.7;font-weight:300">
             This password reset link is invalid or has expired (links are valid for 10 minutes).<br/><br/>
             Open the Diakite app and request a new reset link.
           </p>
@@ -522,8 +523,8 @@ exports.getResetPasswordForm = async (req, res) => {
       </body></html>
     `);
   }
- 
-  // Valid token — render the password reset form
+
+  // Valid token — render the password reset form (Onyx glass theme)
   res.status(200).send(`
     <!DOCTYPE html>
     <html>
@@ -534,69 +535,100 @@ exports.getResetPasswordForm = async (req, res) => {
       <style>
         * { box-sizing: border-box; }
         body {
-          font-family: Arial, sans-serif;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
           display: flex; align-items: center; justify-content: center;
-          min-height: 100vh; margin: 0; background: #f9f9f9;
-          padding: 20px;
+          min-height: 100vh; margin: 0; padding: 20px;
+          background: #0B0B0F;
+          background-image:
+            radial-gradient(circle at 15% -10%, rgba(83,74,183,0.12), transparent 55%),
+            radial-gradient(circle at 90% 110%, rgba(255,255,255,0.02), transparent 50%);
         }
         .card {
-          background: #fff; border-radius: 18px; padding: 40px 32px;
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.10);
+          backdrop-filter: blur(20px);
+          border-radius: 22px; padding: 40px 32px;
           max-width: 420px; width: 100%;
-          box-shadow: 0 4px 32px rgba(0,0,0,0.08);
+          box-shadow: 0 4px 40px rgba(0,0,0,0.4);
         }
-        h1 { font-size: 26px; font-weight: 900; margin: 0 0 6px; }
-        p  { color: #666; line-height: 1.7; margin: 0 0 28px; font-size: 14px; }
-        label { display: block; font-size: 12px; font-weight: 700; color: #444; margin-bottom: 6px; }
+        .logo {
+          width: 56px; height: 56px; border-radius: 16px;
+          background: #fff; display: flex; align-items: center; justify-content: center;
+          margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+          font-weight: 900; font-size: 20px; color: #111;
+        }
+        .pill {
+          display: inline-flex; align-items: center; gap: 6px;
+          background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10);
+          border-radius: 20px; padding: 5px 10px; margin-bottom: 14px;
+        }
+        .pill-dot { width: 5px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.6); }
+        .eyebrow { font-size: 9px; letter-spacing: 3.5px; font-weight: 800; color: rgba(255,255,255,0.55); }
+        h1 { font-size: 26px; font-weight: 900; margin: 0 0 6px; color: #fff; letter-spacing: -0.5px; }
+        p  { color: rgba(255,255,255,0.55); line-height: 1.7; margin: 0 0 28px; font-size: 14px; font-weight: 300; }
+        label { display: block; font-size: 10px; font-weight: 800; letter-spacing: 0.5px;
+                color: rgba(255,255,255,0.5); margin-bottom: 6px; text-transform: uppercase; }
         input[type=password] {
-          width: 100%; padding: 14px 16px; border: 1.5px solid #e5e5e5;
-          border-radius: 11px; font-size: 15px; outline: none;
+          width: 100%; padding: 14px 16px;
+          background: rgba(255,255,255,0.04);
+          border: 1.5px solid rgba(255,255,255,0.10);
+          color: #fff;
+          border-radius: 13px; font-size: 15px; outline: none;
           transition: border-color 0.2s;
           margin-bottom: 14px;
         }
-        input[type=password]:focus { border-color: #111; }
+        input[type=password]::placeholder { color: rgba(255,255,255,0.25); }
+        input[type=password]:focus { border-color: rgba(255,255,255,0.28); }
         button {
-          width: 100%; background: #111; color: #fff; border: none;
-          padding: 15px; border-radius: 11px; font-size: 15px;
-          font-weight: 800; cursor: pointer; letter-spacing: 0.3px;
+          width: 100%; background: linear-gradient(135deg, #fff, #ddd);
+          color: #111; border: none;
+          padding: 15px; border-radius: 14px; font-size: 14px;
+          font-weight: 800; letter-spacing: 0.3px; cursor: pointer;
           transition: opacity 0.15s;
         }
-        button:hover { opacity: 0.85; }
+        button:hover { opacity: 0.88; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .error { color: #ef4444; font-size: 13px; margin-bottom: 12px; font-weight: 500; }
-        .success {
-          text-align: center; padding: 20px 0;
+        .error {
+          display: flex; align-items: center; gap: 8px;
+          background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.25);
+          color: #F87171; font-size: 13px; font-weight: 500;
+          border-radius: 10px; padding: 9px 12px; margin-bottom: 12px;
         }
+        .success { text-align: center; padding: 20px 0; }
         .success .icon { font-size: 52px; margin-bottom: 12px; }
-        .strength { height: 4px; border-radius: 2px; margin: -8px 0 14px; transition: all 0.3s; }
-        .hint { font-size: 11px; color: #999; margin: -10px 0 14px; }
+        .strength { height: 4px; border-radius: 2px; margin: -8px 0 14px; transition: all 0.3s; background: rgba(255,255,255,0.1); }
+        .hint { font-size: 11px; color: rgba(255,255,255,0.35); margin: -10px 0 14px; font-weight: 500; }
       </style>
     </head>
     <body>
       <div class="card">
-        <h1>New password</h1>
-        <p>Choose a strong password for your Diakite account. Minimum 8 characters.</p>
- 
+        <div class="logo">D</div>
+        <div class="pill"><span class="pill-dot"></span><span class="eyebrow">ACCOUNT SECURITY</span></div>
+
         <div id="formWrap">
+          <h1>New password</h1>
+          <p>Choose a strong password for your Diakite account. Minimum 8 characters.</p>
+
           <div id="errorMsg" class="error" style="display:none"></div>
           <label for="pw">New password</label>
-          <input type="password" id="pw"  placeholder="Enter new password"  oninput="checkStrength()" />
-          <div id="strengthBar" class="strength" style="background:#e5e5e5"></div>
+          <input type="password" id="pw" placeholder="Enter new password" />
+          <div id="strengthBar" class="strength"></div>
           <p class="hint" id="strengthHint"></p>
           <label for="pw2">Confirm password</label>
           <input type="password" id="pw2" placeholder="Confirm new password" />
-          <button id="submitBtn" onclick="submitReset()">Reset Password</button>
+          <button id="submitBtn">Reset Password</button>
         </div>
- 
+
         <div id="successWrap" class="success" style="display:none">
           <div class="icon">✅</div>
           <h1 style="font-size:22px">Password updated!</h1>
-          <p>Your Diakite password has been changed.<br/>Open the app and sign in with your new password.</p>
+          <p style="margin-bottom:0">Your Diakite password has been changed.<br/>Open the app and sign in with your new password.</p>
         </div>
       </div>
- 
+
       <script>
         const TOKEN = '${safeToken}';
- 
+
         function checkStrength() {
           const pw  = document.getElementById('pw').value;
           const bar = document.getElementById('strengthBar');
@@ -608,7 +640,7 @@ exports.getResetPasswordForm = async (req, res) => {
           if (/[0-9]/.test(pw))        score++;
           if (/[^A-Za-z0-9]/.test(pw)) score++;
           const map = [
-            { color: '#e5e5e5', label: '' },
+            { color: 'rgba(255,255,255,0.1)', label: '' },
             { color: '#ef4444', label: 'Weak'   },
             { color: '#f97316', label: 'Fair'   },
             { color: '#eab308', label: 'Good'   },
@@ -620,15 +652,15 @@ exports.getResetPasswordForm = async (req, res) => {
           hint.textContent = map[score].label;
           hint.style.color  = map[score].color;
         }
- 
+
         async function submitReset() {
           const pw   = document.getElementById('pw').value;
           const pw2  = document.getElementById('pw2').value;
           const btn  = document.getElementById('submitBtn');
           const err  = document.getElementById('errorMsg');
- 
+
           err.style.display = 'none';
- 
+
           if (pw.length < 8) {
             err.textContent = 'Password must be at least 8 characters.';
             err.style.display = 'block';
@@ -639,10 +671,10 @@ exports.getResetPasswordForm = async (req, res) => {
             err.style.display = 'block';
             return;
           }
- 
+
           btn.disabled    = true;
           btn.textContent = 'Saving…';
- 
+
           try {
             const res = await fetch('/api/auth/reset-password/' + TOKEN, {
               method:  'POST',
@@ -650,7 +682,7 @@ exports.getResetPasswordForm = async (req, res) => {
               body:    JSON.stringify({ password: pw }),
             });
             const data = await res.json();
- 
+
             if (!res.ok || !data.success) {
               err.textContent = data.message || 'Something went wrong. Please try again.';
               err.style.display = 'block';
@@ -658,7 +690,7 @@ exports.getResetPasswordForm = async (req, res) => {
               btn.textContent = 'Reset Password';
               return;
             }
- 
+
             document.getElementById('formWrap').style.display    = 'none';
             document.getElementById('successWrap').style.display = 'block';
           } catch {
@@ -668,6 +700,9 @@ exports.getResetPasswordForm = async (req, res) => {
             btn.textContent = 'Reset Password';
           }
         }
+
+        document.getElementById('pw').addEventListener('input', checkStrength);
+        document.getElementById('submitBtn').addEventListener('click', submitReset);
       </script>
     </body>
     </html>

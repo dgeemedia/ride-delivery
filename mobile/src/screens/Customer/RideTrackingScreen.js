@@ -232,7 +232,8 @@ export default function RideTrackingScreen({ route, navigation }) {
   const [loading,        setLoading]        = useState(true);
   const [cancelling,     setCancelling]     = useState(false);
   const [etaSeconds,     setEtaSeconds]     = useState(null);
-
+  const [mapReady,       setMapReady]       = useState(false);
+  
   const mapRef          = useRef(null);
   const hasNavigatedRef = useRef(false);
   const etaTimerRef     = useRef(null);
@@ -404,6 +405,18 @@ const handleCancel = () => {
 
   const etaMinutesDisplay = etaSeconds !== null ? Math.ceil(etaSeconds / 60) : ride?.etaMinutes ?? null;
 
+  useEffect(() => {
+    if (mapReady && driverLocation) {
+      mapRef.current?.updateTrackedMarker('driver', driverLocation.latitude, driverLocation.longitude, {
+        color: statusCfg.color,
+      });
+    }
+  }, [mapReady, driverLocation, statusCfg.color]);
+
+  useEffect(() => {
+    return () => { mapRef.current?.removeTrackedMarker('driver'); };
+  }, []);
+
   if (loading) {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
@@ -436,10 +449,8 @@ const handleCancel = () => {
         showsMyLocationButton={false}
         showsCompass={false}
         toolbarEnabled={false}
+        onMapReady={() => setMapReady(true)}
       >
-        {driverLocation && (
-          <Marker coordinate={driverLocation} anchor={{ x: 0.5, y: 1 }} pinColor={statusCfg.color} />
-        )}
         {pickupLat && (
           <Marker
             coordinate={{ latitude: pickupLat, longitude: pickupLng }}

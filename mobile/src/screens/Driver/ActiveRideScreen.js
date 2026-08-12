@@ -180,6 +180,7 @@ export default function ActiveRideScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [acting,  setActing]  = useState(false);
   const [speed,   setSpeed]   = useState(null); // km/h
+  const [mapReady, setMapReady] = useState(false);
 
   const mapRef = useRef(null);
 
@@ -364,6 +365,16 @@ export default function ActiveRideScreen({ route, navigation }) {
 
   const backBtnTop = insets.top + 14;
 
+  useEffect(() => {
+    if (mapReady && myLoc) {
+      mapRef.current?.updateTrackedMarker('self', myLoc.latitude, myLoc.longitude, { color: DA });
+    }
+  }, [mapReady, myLoc]);
+
+  useEffect(() => {
+    return () => { mapRef.current?.removeTrackedMarker('self'); };
+  }, []);
+
   if (loading) {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
@@ -397,11 +408,8 @@ export default function ActiveRideScreen({ route, navigation }) {
         showsUserLocation={false}
         showsCompass={false}
         toolbarEnabled={false}
+        onMapReady={() => setMapReady(true)}
       >
-        {/* Driver's own position */}
-        {myLoc && (
-          <Marker coordinate={myLoc} anchor={{ x: 0.5, y: 0.5 }} pinColor={DA} />
-        )}
         {/* Pickup */}
         {pickupLat && (
           <Marker

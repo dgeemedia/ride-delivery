@@ -33,6 +33,63 @@ const GOOGLE_TIMEOUT = 8000;
 const FORCE_OSM_MAP  = true; // flip to false when Google Maps key is configured
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Translates the dummy OsmMarker/OsmPolyline/OsmCircle children (used by the
+// Leaflet path — they're no-op placeholders whose props get read by
+// OsmMapView's collectDescriptors) into real react-native-maps components
+// for the Google Maps path. Without this, Google Maps renders with zero
+// pins — the dummy components literally return null regardless of props.
+// ─────────────────────────────────────────────────────────────────────────────
+function translateChildrenForGoogle(children) {
+  return React.Children.map(children, (child) => {
+    if (!child) return child;
+    const displayName = child.type?.displayName ?? child.type?.name ?? '';
+
+    if (displayName === 'OsmMarker') {
+      const { coordinate, pinColor, title, anchor, onPress, tracksViewChanges, children: markerChildren } = child.props;
+      return (
+        <GoogleMarker
+          coordinate={coordinate}
+          pinColor={pinColor}
+          title={title}
+          anchor={anchor}
+          onPress={onPress}
+          tracksViewChanges={tracksViewChanges}
+        >
+          {markerChildren}
+        </GoogleMarker>
+      );
+    }
+
+    if (displayName === 'OsmPolyline') {
+      const { coordinates, strokeColor, strokeWidth, lineDashPattern } = child.props;
+      return (
+        <GooglePolyline
+          coordinates={coordinates}
+          strokeColor={strokeColor}
+          strokeWidth={strokeWidth}
+          lineDashPattern={lineDashPattern}
+        />
+      );
+    }
+
+    if (displayName === 'OsmCircle') {
+      const { center, radius, strokeColor, fillColor, strokeWidth } = child.props;
+      return (
+        <GoogleCircle
+          center={center}
+          radius={radius}
+          strokeColor={strokeColor}
+          fillColor={fillColor}
+          strokeWidth={strokeWidth}
+        />
+      );
+    }
+
+    return child;
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SmartMapView
 // ─────────────────────────────────────────────────────────────────────────────
 const SmartMapView = forwardRef(function SmartMapView(
@@ -106,6 +163,17 @@ const SmartMapView = forwardRef(function SmartMapView(
     setCircles(circles) {
       osmRef.current?.setCircles(circles);
     },
+    // InDrive/Uber-style tracked marker — glides + rotates automatically
+    // (OSM-only for now; a no-op on Google Maps, which already animates
+    // Marker coordinate changes natively — worth a parallel Google-side
+    // implementation using a declarative <Marker rotation={...}> if/when
+    // FORCE_OSM_MAP flips to false)
+    updateTrackedMarker(id, lat, lng, opts) {
+      osmRef.current?.updateTrackedMarker(id, lat, lng, opts);
+    },
+    removeTrackedMarker(id) {
+      osmRef.current?.removeTrackedMarker(id);
+    },
   }));
 
   if (useGoogle && GoogleMapView) {
@@ -120,7 +188,7 @@ const SmartMapView = forwardRef(function SmartMapView(
           onError={handleGoogleError}
           {...rest}
         >
-          {children}
+          {translateChildrenForGoogle(children)}
         </GoogleMapView>
       </View>
     );

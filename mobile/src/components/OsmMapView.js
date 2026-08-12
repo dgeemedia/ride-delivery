@@ -10,6 +10,8 @@
 //   • Circle overlay support (for RadarPulse / geofence rings)
 //   • Smooth eased flyTo / fitBounds
 //   • Message-bridge for animateToRegion, fitToCoordinates, sendMarkers, sendCircles
+//   • InDrive/Uber-style animated tracked marker — glides + rotates to face
+//     direction of travel via CSS transition, no per-frame JS animation loop
 
 import React, {
   forwardRef,
@@ -234,6 +236,22 @@ function buildHTML({ initialRegion, showsUserLocation, markers, polylines, circl
     from { stroke-dashoffset: 0; }
     to   { stroke-dashoffset: -26; }
   }
+
+  /* ── InDrive/Uber-style tracked marker — glides between GPS pings ──
+     Leaflet repositions markers by changing the icon element's CSS
+     transform (translate3d). Adding a transition on that same property
+     makes every subsequent position update animate automatically —
+     no per-frame JS loop needed. 3.5s is intentional: it's just under
+     the 4s GPS update interval used on the driver/partner side, so each
+     glide finishes just before the next update lands. */
+  .smooth-marker {
+    transition: transform 3.5s linear;
+  }
+  /* Rotation lives on an inner element so it doesn't fight with the
+     outer element's position transition. */
+  .tm-rot {
+    transition: transform 0.4s ease-out;
+  }
 </style>
 </head>
 <body>
@@ -380,6 +398,63 @@ function buildHTML({ initialRegion, showsUserLocation, markers, polylines, circl
       iconAnchor: [140, 140],
       className: '',
     });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // InDrive/Uber-style tracked marker — glides + rotates to face direction
+  // of travel. Position glide comes from the .smooth-marker CSS transition
+  // above (Leaflet just calls setLatLng, the browser animates the rest).
+  // Rotation is computed here from the bearing between the previous and
+  // new point, applied to an inner element so it doesn't fight with the
+  // outer element's own position transition.
+  // ─────────────────────────────────────────────────────────────────────────
+  var trackedMarkers = {};
+
+  function bearingDeg(lat1, lng1, lat2, lng2) {
+    var toRad = function(d) { return d * Math.PI / 180; };
+    var toDeg = function(r) { return r * 180 / Math.PI; };
+    var dLng = toRad(lng2 - lng1);
+    var y = Math.sin(dLng) * Math.cos(toRad(lat2));
+    var x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+            Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+    return (toDeg(Math.atan2(y, x)) + 360) % 360;
+  }
+
+  function navArrowSvg(color) {
+    return '<svg viewBox="0 0 24 24" width="34" height="34">' +
+      '<path d="M12 2L19 21L12 16.5L5 21Z" fill="' + color + '" stroke="white" stroke-width="1.2" stroke-linejoin="round"/>' +
+    '</svg>';
+  }
+
+  function updateTrackedMarker(id, lat, lng, opts) {
+    opts = opts || {};
+    var color = opts.color || '#4285F4';
+    var existing = trackedMarkers[id];
+
+    if (existing) {
+      var prev = existing.getLatLng();
+      if (prev.lat !== lat || prev.lng !== lng) {
+        var brg = bearingDeg(prev.lat, prev.lng, lat, lng);
+        existing._lastBearing = brg;
+        var el = existing.getElement();
+        var inner = el && el.querySelector('.tm-rot');
+        if (inner) inner.style.transform = 'rotate(' + brg + 'deg)';
+      }
+      existing.setLatLng([lat, lng]); // .smooth-marker CSS transition animates this
+    } else {
+      var icon = L.divIcon({
+        html: '<div class="tm-rot" style="width:34px;height:34px;">' +
+                navArrowSvg(color) +
+              '</div>',
+        iconSize: [34, 34], iconAnchor: [17, 17],
+        className: 'smooth-marker',
+      });
+      trackedMarkers[id] = L.marker([lat, lng], { icon: icon, zIndexOffset: 800 }).addTo(map);
+    }
+  }
+
+  function removeTrackedMarker(id) {
+    if (trackedMarkers[id]) { map.removeLayer(trackedMarkers[id]); delete trackedMarkers[id]; }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -621,6 +696,14 @@ function buildHTML({ initialRegion, showsUserLocation, markers, polylines, circl
         }).addTo(circlesGroup);
       });
     }
+
+    if (cmd.type === 'updateTrackedMarker') {
+      updateTrackedMarker(cmd.id, cmd.lat, cmd.lng, { color: cmd.color });
+    }
+
+    if (cmd.type === 'removeTrackedMarker') {
+      removeTrackedMarker(cmd.id);
+    }
   };
 
   // ── Ready ──────────────────────────────────────────────────────────────────
@@ -662,6 +745,15 @@ function makeRef({ sendCmd, isWeb, iframeRef, webViewRef }) {
     stopRadar()                          { sendCmd({ type: 'stopRadar' }); },
     setDriverPins(pins, selectedId)      { sendCmd({ type: 'setDriverPins', pins, selectedId }); },
     setCircles(circles)                  { sendCmd({ type: 'setCircles', circles }); },
+    // InDrive/Uber-style tracked marker — glides + rotates automatically.
+    // id lets you track multiple entities at once (e.g. 'driver', 'self')
+    // without them colliding; color defaults to Google-blue if omitted.
+    updateTrackedMarker(id, lat, lng, opts = {}) {
+      sendCmd({ type: 'updateTrackedMarker', id, lat, lng, color: opts.color });
+    },
+    removeTrackedMarker(id) {
+      sendCmd({ type: 'removeTrackedMarker', id });
+    },
   };
 }
 
