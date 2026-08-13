@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "1097490566643",
-    "project_id": "project-2907a915-7c46-449d-835",
-    "storage_bucket": "project-2907a915-7c46-449d-835.firebasestorage.app"
+    "project_number": "265181051103",
+    "project_id": "diakite-prod",
+    "storage_bucket": "diakite-prod.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1097490566643:android:d50829274478c1e1055686",
+        "mobilesdk_app_id": "1:265181051103:android:2417376015d477f7fb516a",
         "android_client_info": {
           "package_name": "com.diakite.app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBobzcy2IoTfDD2cABtmYoUBPAzla51MQA"
+          "current_key": "AIzaSyC-JjOdduIkqHaqNZ-KOUp2K3-AD5w-PYM"
         }
       ],
       "services": {

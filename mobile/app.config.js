@@ -52,6 +52,7 @@ module.exports = {
     ios: {
       supportsTablet:   true,
       bundleIdentifier: 'com.diakite.app',
+      googleServicesFile: './GoogleService-Info.plist',
       infoPlist: {
         NSLocationWhenInUseUsageDescription:
           'Diakite needs your location to find nearby drivers and show your position on the map.',

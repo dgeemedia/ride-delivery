@@ -30,7 +30,7 @@ import OsmMapView, {
 
 // ─── Config ────────────────────────────────────────────────────────────────────
 const GOOGLE_TIMEOUT = 8000;
-const FORCE_OSM_MAP  = true; // flip to false when Google Maps key is configured
+const FORCE_OSM_MAP  = false; // flip to false when Google Maps key is configured
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Translates the dummy OsmMarker/OsmPolyline/OsmCircle children (used by the
