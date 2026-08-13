@@ -13,7 +13,7 @@ module.exports = {
     name:        'Diakite',
     slug:        'diakite',
     scheme:      'diakite',
-    version:     '1.0.3',
+    version:     '1.0.4',
     orientation: 'portrait',
     icon:        './assets/icon.png',
     userInterfaceStyle: 'dark',
