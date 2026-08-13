@@ -51,7 +51,7 @@ const DriverPin = ({ driver, selected, onPress, accentColor }) => {
     <Marker
       coordinate={{ latitude: driver.currentLat, longitude: driver.currentLng }}
       onPress={onPress}
-      tracksViewChanges={false}
+      tracksViewChanges={true}
       anchor={{ x: 0.5, y: 0.5 }}
     >
       <Animated.View style={[dp.wrap, { borderColor: selected ? color : '#3A3A3A', transform: [{ scale: scaleA }] }]}>

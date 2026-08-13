@@ -45,7 +45,7 @@ const PartnerPin = ({ partner, selected, onPress, accentColor }) => {
     <Marker
       coordinate={{ latitude: partner.currentLat, longitude: partner.currentLng }}
       onPress={onPress}
-      tracksViewChanges={false}
+      tracksViewChanges={true}
       anchor={{ x: 0.5, y: 0.5 }}
     >
       <Animated.View style={[pp.wrap, selected && { borderColor: accentColor }, { transform: [{ scale: scaleA }] }]}>
