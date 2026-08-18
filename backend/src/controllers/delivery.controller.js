@@ -8,6 +8,7 @@ const notificationService = require('../services/notification.service');
 const { broadcastToPartners, emitToPartner } = require('../services/socket.service');
 const shieldService = require('../services/shield.service');
 const commissionService = require('../services/commission.service');
+const cashbackService = require('../services/cashback.service');
 const { logger } = require('../utils/logger');
 
 exports.getFeeEstimate = async (req, res) => {
@@ -346,6 +347,10 @@ exports.completeDelivery = async (req, res) => {
   }
 
   await prisma.deliveryPartnerProfile.update({ where: { userId: req.user.id }, data: { totalDeliveries: { increment: 1 } } });
+
+  cashbackService.checkAndIssueRideCashback(delivery.customerId).catch(err => {
+    console.error('[cashback] check failed for delivery', id, err.message);
+  });
 
   await shieldService.closeSessionsForDelivery(id).catch(() => {});
 

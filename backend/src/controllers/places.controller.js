@@ -1,24 +1,4 @@
 // backend/src/controllers/places.controller.js
-//
-// Proxies Google Places API (New) so the mobile app never holds the real
-// API key. Autocomplete keystrokes are billed $0 as long as they're linked
-// to a Place Details call via the SAME session token — see:
-// https://developers.google.com/maps/documentation/places/web-service/usage-and-billing
-//
-// Falls back to Photon (Komoot's free OSM geocoder — same one the app used
-// before this integration) if Google is unreachable, times out, or errors.
-// Photon suggestions carry lat/lng directly, so the mobile app skips the
-// Place Details call entirely for those — there's nothing to look up.
-//
-// Flow:
-//   1. Mobile generates a sessionToken when the user opens a search field.
-//   2. Every keystroke -> POST /places/autocomplete { input, sessionToken }
-//      -> tries Google; on failure, falls back to Photon automatically.
-//   3. User taps a suggestion:
-//      - provider === 'google' -> POST /places/details { placeId, sessionToken }
-//        (this is the ONLY call that costs money, and it closes the session)
-//      - provider === 'photon' -> lat/lng already included, no extra call
-//   4. Mobile generates a NEW sessionToken before the next search.
 
 const axios = require('axios');
 const { validationResult } = require('express-validator');

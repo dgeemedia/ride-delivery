@@ -92,6 +92,7 @@ const ACCENT: Record<string, AccentConfig> = {
   'onboarding-bonus': { bar: '#993556', solid: '#993556' },
   'custom-bonus':     { bar: '#993556', solid: '#993556' },
   danger:             { bar: '#A32D2D', solid: '#A32D2D' },
+  cashback:           { bar: '#0F766E', solid: '#0F766E' },
 };
 
 const DEFAULT_ACCENT: AccentConfig = { bar: '#5F5E5A', solid: '#5F5E5A' };
@@ -993,6 +994,109 @@ const WalletLimitsSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CASHBACK PROMO SECTION
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CashbackSection: React.FC = () => {
+  const [enabled,    setEnabled]    = useState(false);
+  const [amount,     setAmount]     = useState('1000');
+  const [cutoffDate, setCutoffDate] = useState('');
+  const [loading,    setLoading]    = useState(false);
+  const [fetching,   setFetching]   = useState(true);
+
+  useEffect(() => {
+    settingsAPI.getSettings('cashback')
+      .then(res => {
+        const s = res.data?.settings ?? {};
+        setEnabled(String(s['cashback_10rides_enabled']?.value) === 'true');
+        setAmount(String(s['cashback_10rides_amount']?.value ?? '1000'));
+        const cutoff = s['cashback_10rides_new_user_after']?.value;
+        setCutoffDate(cutoff ? new Date(cutoff).toISOString().slice(0, 10) : '');
+      })
+      .catch((err: any) => { if (!err?._handled) toast.error('Could not load cashback settings'); })
+      .finally(() => setFetching(false));
+  }, []);
+
+  const handleToggle = () => setEnabled(e => !e);
+
+  const handleSave = async () => {
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt < 0) { toast.error('Enter a valid cashback amount'); return; }
+    setLoading(true);
+    try {
+      await settingsAPI.updateSettingsBatch([
+        { key: 'cashback_10rides_enabled', value: String(enabled), category: 'cashback' },
+        { key: 'cashback_10rides_amount',  value: String(amt),     category: 'cashback' },
+        { key: 'cashback_10rides_new_user_after',
+          value: cutoffDate ? new Date(cutoffDate).toISOString() : '', category: 'cashback' },
+      ]);
+      toast.success(`Cashback promo ${enabled ? 'enabled' : 'disabled'} and saved`);
+    } catch (err: any) { if (!err?._handled) toast.error('Failed to save cashback settings'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      {fetching && <p className="text-xs text-gray-400 animate-pulse">Loading…</p>}
+
+      <Alert variant="info">
+        Credits a new customer's wallet automatically after their <strong>10th completed ride or delivery</strong>.
+        "New" means they signed up on/after the cutoff date below — leave it blank to apply to everyone.
+      </Alert>
+
+      <div className="flex items-center justify-between border border-gray-200 rounded-lg px-4 py-3">
+        <div>
+          <p className="text-sm font-medium text-gray-900">10-ride cashback promo</p>
+          <p className="text-xs text-gray-500 mt-0.5">Master switch — turns the whole promo on or off</p>
+        </div>
+        <button
+          onClick={handleToggle}
+          disabled={fetching}
+          className={cn('flex items-center gap-2 text-sm font-medium transition-colors disabled:opacity-50',
+            enabled ? 'text-teal-600' : 'text-gray-400')}
+        >
+          {enabled
+            ? <><ToggleRight className="h-8 w-8" /><span>ON</span></>
+            : <><ToggleLeft  className="h-8 w-8" /><span>OFF</span></>}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Cashback amount (₦)</label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">₦</span>
+            <input type="number" min={0} value={amount} disabled={fetching}
+              onChange={e => setAmount(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm
+                focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Eligible if signed up on/after</label>
+          <input type="date" value={cutoffDate} disabled={fetching}
+            onChange={e => setCutoffDate(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm
+              focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50" />
+          <p className="text-xs text-gray-400 mt-1">Blank = applies to all customers, old and new</p>
+        </div>
+      </div>
+
+      {enabled && amount && (
+        <div className="inline-flex items-center gap-2 text-sm bg-teal-50 border border-teal-200 text-teal-700 px-4 py-2 rounded-lg">
+          <Gift className="h-4 w-4 flex-shrink-0" />
+          Eligible customers get <strong>₦{(+amount).toLocaleString('en-NG')}</strong> after their 10th trip
+        </div>
+      )}
+
+      <Button loading={loading || fetching} onClick={handleSave}>
+        <Save className="h-4 w-4" />Save cashback settings
+      </Button>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PASSWORD SECTION
 // PwField is defined OUTSIDE PasswordSection so React doesn't recreate the
 // component type on every render — avoids losing focus after each keystroke.
@@ -1733,6 +1837,14 @@ const GeneralSettings: React.FC = () => {
         title: 'Onboarding bonus',
         subtitle: "Credit approved drivers & partners who haven't received one yet",
         component: <OnboardingBonusSection />,
+        superAdmin: true,
+      },
+      {
+        id: 'cashback',
+        icon: <Gift className="h-4 w-4" />,
+        title: 'Cashback promo',
+        subtitle: 'Toggle the 10-ride new-customer cashback reward',
+        component: <CashbackSection />,
         superAdmin: true,
       },
       {

@@ -15,6 +15,7 @@ const notificationService = require('../services/notification.service');
 const { broadcastToDrivers } = require('../services/socket.service');
 const shieldService = require('../services/shield.service');
 const commissionService = require('../services/commission.service');
+const cashbackService = require('../services/cashback.service');
 
 const getIO = (req) => req.app.get('io');
 
@@ -410,6 +411,10 @@ exports.completeRide = async (req, res) => {
 
   await prisma.driverProfile.update({ where: { userId: req.user.id }, data: { totalRides: { increment: 1 } } });
   emitRideStatus(getIO(req), ride.customerId, id, 'COMPLETED');
+
+  cashbackService.checkAndIssueRideCashback(ride.customerId).catch(err => {
+    console.error('[cashback] check failed for ride', id, err.message);
+  });
 
   await shieldService.closeSessionsForRide(id).catch(() => {});
 
