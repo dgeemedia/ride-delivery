@@ -4,21 +4,28 @@
 const prisma = require('../lib/prisma');
 const notificationService = require('./notification.service');
 
-const REFERENCE_PREFIX = 'CASHBACK-10RIDES-';
-const MILESTONE = 10;
+const REFERENCE_PREFIX = 'CASHBACK-MILESTONE-'; // e.g. CASHBACK-MILESTONE-10-{userId}
+const DEFAULT_MILESTONE = 10;
 
+// ─────────────────────────────────────────────
+// SETTINGS
+// All values are admin-configurable via SystemSettings — no redeploy needed
+// to change the trip threshold, reward mode, amount, cap, or eligibility date.
+// ─────────────────────────────────────────────
 async function getCashbackSettings() {
-  const [enabledS, modeS, amountS, pctS, capS, cutoffS] = await Promise.all([
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_10rides_enabled' } }),
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_10rides_mode' } }),          // 'fixed' | 'percentage'
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_10rides_amount' } }),         // used if mode = fixed
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_10rides_percentage' } }),     // used if mode = percentage
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_10rides_max_amount' } }),     // optional cap, percentage mode only
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_10rides_new_user_after' } }),
+  const [enabledS, milestoneS, modeS, amountS, pctS, capS, cutoffS] = await Promise.all([
+    prisma.systemSettings.findUnique({ where: { key: 'cashback_enabled' } }),
+    prisma.systemSettings.findUnique({ where: { key: 'cashback_milestone_trips' } }),
+    prisma.systemSettings.findUnique({ where: { key: 'cashback_mode' } }),          // 'fixed' | 'percentage'
+    prisma.systemSettings.findUnique({ where: { key: 'cashback_amount' } }),        // used if mode = fixed
+    prisma.systemSettings.findUnique({ where: { key: 'cashback_percentage' } }),    // used if mode = percentage
+    prisma.systemSettings.findUnique({ where: { key: 'cashback_max_amount' } }),    // optional cap, percentage mode only
+    prisma.systemSettings.findUnique({ where: { key: 'cashback_new_user_after' } }),
   ]);
 
   return {
     enabled:      enabledS?.value === 'true',
+    milestone:    milestoneS?.value ? parseInt(milestoneS.value, 10) : DEFAULT_MILESTONE,
     mode:         modeS?.value === 'percentage' ? 'percentage' : 'fixed',
     amount:       amountS?.value ? parseFloat(amountS.value) : 0,
     percentage:   pctS?.value ? parseFloat(pctS.value) : 0,
@@ -27,11 +34,12 @@ async function getCashbackSettings() {
   };
 }
 
-// Merge the customer's rides + deliveries by completion time, take the first 10,
-// return their combined spend. This is "spend on the trips that earned the reward,"
-// not lifetime spend — so it stays correct even if they book an 11th trip before
-// the job runs.
-async function getFirstTenTripsSpend(userId) {
+// ─────────────────────────────────────────────
+// Merge the customer's rides + deliveries by completion time, take the first
+// N (N = milestone), return count + combined spend. Used for percentage-mode
+// payouts, and to confirm the customer has actually reached the milestone.
+// ─────────────────────────────────────────────
+async function getFirstNTripsSpend(userId, milestone) {
   const [rides, deliveries] = await Promise.all([
     prisma.ride.findMany({
       where:  { customerId: userId, status: 'COMPLETED' },
@@ -49,27 +57,38 @@ async function getFirstTenTripsSpend(userId) {
   ]
     .filter(t => t.at)
     .sort((a, b) => new Date(a.at) - new Date(b.at))
-    .slice(0, MILESTONE);
+    .slice(0, milestone);
 
   return { count: trips.length, totalSpend: trips.reduce((sum, t) => sum + t.amount, 0) };
 }
 
+// ─────────────────────────────────────────────
+// Call this after a ride/delivery is completed for a CUSTOMER.
+// Cheap no-ops out early in every case except the one real trigger,
+// so it's safe to call unconditionally on every completion.
+// ─────────────────────────────────────────────
 async function checkAndIssueRideCashback(userId) {
   const settings = await getCashbackSettings();
   if (!settings.enabled) return;
+  if (!settings.milestone || settings.milestone < 1) return;
   if (settings.mode === 'fixed' && settings.amount <= 0) return;
   if (settings.mode === 'percentage' && settings.percentage <= 0) return;
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || user.role !== 'CUSTOMER') return;
+
+  // "New users" = signed up on/after the promo's configured start date
   if (settings.newUserAfter && user.createdAt < settings.newUserAfter) return;
 
-  const reference = `${REFERENCE_PREFIX}${userId}`;
+  // Reference is tied to the milestone value at time of payout, so changing
+  // the milestone later doesn't accidentally re-trigger a payout for someone
+  // who already got one under a different threshold.
+  const reference = `${REFERENCE_PREFIX}${settings.milestone}-${userId}`;
   const alreadyPaid = await prisma.walletTransaction.findFirst({ where: { reference } });
   if (alreadyPaid) return;
 
-  const { count, totalSpend } = await getFirstTenTripsSpend(userId);
-  if (count < MILESTONE) return;
+  const { count, totalSpend } = await getFirstNTripsSpend(userId, settings.milestone);
+  if (count < settings.milestone) return;
 
   let cashbackAmount;
   if (settings.mode === 'percentage') {
@@ -82,7 +101,9 @@ async function checkAndIssueRideCashback(userId) {
   if (cashbackAmount <= 0) return;
 
   const wallet = await prisma.wallet.upsert({
-    where: { userId }, update: {}, create: { userId, balance: 0, currency: 'NGN' },
+    where: { userId },
+    update: {},
+    create: { userId, balance: 0, currency: 'NGN' },
   });
 
   try {
@@ -90,24 +111,29 @@ async function checkAndIssueRideCashback(userId) {
       prisma.wallet.update({ where: { userId }, data: { balance: { increment: cashbackAmount } } }),
       prisma.walletTransaction.create({
         data: {
-          walletId: wallet.id, type: 'CREDIT', amount: cashbackAmount,
+          walletId: wallet.id,
+          type: 'CREDIT',
+          amount: cashbackAmount,
           description: settings.mode === 'percentage'
-            ? `🎉 ${settings.percentage}% cashback on your first ${MILESTONE} trips (₦${totalSpend.toLocaleString('en-NG')} spent)`
-            : `🎉 Cashback for completing your first ${MILESTONE} trips`,
-          status: 'COMPLETED', reference,
+            ? `🎉 ${settings.percentage}% cashback on your first ${settings.milestone} trips (₦${totalSpend.toLocaleString('en-NG')} spent)`
+            : `🎉 Cashback for completing your first ${settings.milestone} trips`,
+          status: 'COMPLETED',
+          reference,
         },
       }),
     ]);
   } catch (err) {
-    if (err.code === 'P2002') return; // race-safe
+    // Duplicate reference under a race (two completions firing at once) — safe to ignore
+    if (err.code === 'P2002') return;
     throw err;
   }
 
   await notificationService.notify({
-    userId, title: 'Cashback Unlocked! 🎉',
-    message: `You've completed ${MILESTONE} rides/deliveries — ₦${cashbackAmount.toLocaleString('en-NG')} cashback added to your wallet.`,
+    userId,
+    title: 'Cashback Unlocked! 🎉',
+    message: `You've completed ${settings.milestone} rides/deliveries — ₦${cashbackAmount.toLocaleString('en-NG')} cashback has been added to your wallet.`,
     type: 'cashback_awarded',
-    data: { amount: cashbackAmount, mode: settings.mode, totalSpend },
+    data: { amount: cashbackAmount, mode: settings.mode, totalSpend, milestone: settings.milestone },
   }).catch(() => {});
 }
 

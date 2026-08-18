@@ -1001,10 +1001,11 @@ type CashbackMode = 'fixed' | 'percentage';
 
 const CashbackSection: React.FC = () => {
   const [enabled,    setEnabled]    = useState(false);
+  const [milestone,  setMilestone]  = useState('10');
   const [mode,       setMode]       = useState<CashbackMode>('fixed');
   const [amount,     setAmount]     = useState('1000');
   const [percentage, setPercentage] = useState('10');
-  const [maxAmount,  setMaxAmount]  = useState(''); // blank = no cap
+  const [maxAmount,  setMaxAmount]  = useState('');
   const [cutoffDate, setCutoffDate] = useState('');
   const [loading,    setLoading]    = useState(false);
   const [fetching,   setFetching]   = useState(true);
@@ -1013,12 +1014,13 @@ const CashbackSection: React.FC = () => {
     settingsAPI.getSettings('cashback')
       .then(res => {
         const s = res.data?.settings ?? {};
-        setEnabled(String(s['cashback_10rides_enabled']?.value) === 'true');
-        setMode(s['cashback_10rides_mode']?.value === 'percentage' ? 'percentage' : 'fixed');
-        setAmount(String(s['cashback_10rides_amount']?.value ?? '1000'));
-        setPercentage(String(s['cashback_10rides_percentage']?.value ?? '10'));
-        setMaxAmount(s['cashback_10rides_max_amount']?.value ? String(s['cashback_10rides_max_amount'].value) : '');
-        const cutoff = s['cashback_10rides_new_user_after']?.value;
+        setEnabled(String(s['cashback_enabled']?.value) === 'true');
+        setMilestone(String(s['cashback_milestone_trips']?.value ?? '10'));
+        setMode(s['cashback_mode']?.value === 'percentage' ? 'percentage' : 'fixed');
+        setAmount(String(s['cashback_amount']?.value ?? '1000'));
+        setPercentage(String(s['cashback_percentage']?.value ?? '10'));
+        setMaxAmount(s['cashback_max_amount']?.value ? String(s['cashback_max_amount'].value) : '');
+        const cutoff = s['cashback_new_user_after']?.value;
         setCutoffDate(cutoff ? new Date(cutoff).toISOString().slice(0, 10) : '');
       })
       .catch((err: any) => { if (!err?._handled) toast.error('Could not load cashback settings'); })
@@ -1028,6 +1030,9 @@ const CashbackSection: React.FC = () => {
   const handleToggle = () => setEnabled(e => !e);
 
   const handleSave = async () => {
+    const ms = parseInt(milestone, 10);
+    if (isNaN(ms) || ms < 1) { toast.error('Milestone must be at least 1 trip'); return; }
+
     if (mode === 'fixed') {
       const amt = parseFloat(amount);
       if (isNaN(amt) || amt < 0) { toast.error('Enter a valid cashback amount'); return; }
@@ -1043,12 +1048,13 @@ const CashbackSection: React.FC = () => {
     setLoading(true);
     try {
       await settingsAPI.updateSettingsBatch([
-        { key: 'cashback_10rides_enabled',    value: String(enabled),   category: 'cashback' },
-        { key: 'cashback_10rides_mode',       value: mode,              category: 'cashback' },
-        { key: 'cashback_10rides_amount',     value: amount || '0',     category: 'cashback' },
-        { key: 'cashback_10rides_percentage', value: percentage || '0', category: 'cashback' },
-        { key: 'cashback_10rides_max_amount', value: maxAmount || '',   category: 'cashback' },
-        { key: 'cashback_10rides_new_user_after',
+        { key: 'cashback_enabled',         value: String(enabled),   category: 'cashback' },
+        { key: 'cashback_milestone_trips', value: String(ms),        category: 'cashback' },
+        { key: 'cashback_mode',            value: mode,              category: 'cashback' },
+        { key: 'cashback_amount',          value: amount || '0',     category: 'cashback' },
+        { key: 'cashback_percentage',      value: percentage || '0', category: 'cashback' },
+        { key: 'cashback_max_amount',      value: maxAmount || '',   category: 'cashback' },
+        { key: 'cashback_new_user_after',
           value: cutoffDate ? new Date(cutoffDate).toISOString() : '', category: 'cashback' },
       ]);
       toast.success(`Cashback promo ${enabled ? 'enabled' : 'disabled'} and saved`);
@@ -1061,14 +1067,14 @@ const CashbackSection: React.FC = () => {
       {fetching && <p className="text-xs text-gray-400 animate-pulse">Loading…</p>}
 
       <Alert variant="info">
-        Credits a new customer's wallet automatically after their <strong>10th completed ride or delivery</strong>.
+        Credits a new customer's wallet automatically after their <strong>{milestone}th completed ride or delivery</strong>.
         "New" means they signed up on/after the cutoff date below — leave it blank to apply to everyone.
       </Alert>
 
       {/* Master switch */}
       <div className="flex items-center justify-between border border-gray-200 rounded-lg px-4 py-3">
         <div>
-          <p className="text-sm font-medium text-gray-900">10-ride cashback promo</p>
+          <p className="text-sm font-medium text-gray-900">Cashback promo</p>
           <p className="text-xs text-gray-500 mt-0.5">Master switch — turns the whole promo on or off</p>
         </div>
         <button
@@ -1081,6 +1087,31 @@ const CashbackSection: React.FC = () => {
             ? <><ToggleRight className="h-8 w-8" /><span>ON</span></>
             : <><ToggleLeft  className="h-8 w-8" /><span>OFF</span></>}
         </button>
+      </div>
+
+      {/* Milestone — trip count required to trigger cashback */}
+      <div className="max-w-xs">
+        <label className="block text-xs font-medium text-gray-500 mb-1">Trips required</label>
+        <div className="relative">
+          <input type="number" min={1} value={milestone} disabled={fetching}
+            onChange={e => setMilestone(e.target.value)}
+            className="w-full pl-3 pr-16 py-2 rounded-lg border border-gray-300 text-sm
+              focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50" />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">trips</span>
+        </div>
+        <div className="flex gap-2 mt-2">
+          {[5, 10, 15, 20].map(preset => (
+            <button key={preset} type="button" onClick={() => setMilestone(String(preset))}
+              className={cn(
+                'text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors',
+                milestone === String(preset)
+                  ? 'bg-primary-50 border-primary-400 text-primary-600'
+                  : 'border-gray-200 text-gray-500 hover:border-gray-400',
+              )}>
+              {preset}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Mode selector */}
@@ -1129,7 +1160,7 @@ const CashbackSection: React.FC = () => {
                   focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">%</span>
             </div>
-            <p className="text-xs text-gray-400 mt-1">Of their combined spend on the first 10 trips</p>
+            <p className="text-xs text-gray-400 mt-1">Of their combined spend on the first {milestone} trips</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Cap (optional)</label>
@@ -1161,10 +1192,10 @@ const CashbackSection: React.FC = () => {
         <div className="inline-flex items-center gap-2 text-sm bg-teal-50 border border-teal-200 text-teal-700 px-4 py-2 rounded-lg">
           <Gift className="h-4 w-4 flex-shrink-0" />
           {mode === 'fixed' ? (
-            <>Eligible customers get <strong>₦{(+amount || 0).toLocaleString('en-NG')}</strong> after their 10th trip</>
+            <>Eligible customers get <strong>₦{(+amount || 0).toLocaleString('en-NG')}</strong> after their {milestone}th trip</>
           ) : (
             <>
-              Eligible customers get <strong>{percentage || 0}%</strong> of what they spent on their first 10 trips back
+              Eligible customers get <strong>{percentage || 0}%</strong> of what they spent on their first {milestone} trips back
               {maxAmount && <> (capped at <strong>₦{(+maxAmount).toLocaleString('en-NG')}</strong>)</>}
             </>
           )}
