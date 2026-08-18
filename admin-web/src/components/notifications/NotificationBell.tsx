@@ -113,8 +113,14 @@ const NotificationBell: React.FC = () => {
         )}
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-11 w-96 bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden">
+            {open && (
+              <div className="
+                fixed left-3 right-3 top-16
+                sm:absolute sm:left-auto sm:right-0 sm:top-11
+                w-auto sm:w-96
+                max-w-full
+                bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden
+              ">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <div>
               <p className="text-sm font-bold text-gray-900">Notifications</p>
@@ -133,7 +139,7 @@ const NotificationBell: React.FC = () => {
             )}
           </div>
 
-          <div className="max-h-96 overflow-y-auto divide-y divide-gray-50">
+          <div className="overflow-y-auto divide-y divide-gray-50" style={{ maxHeight: 'min(24rem, 60vh)' }}>
             {loading ? (
               <div className="flex justify-center py-8">
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
