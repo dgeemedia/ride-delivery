@@ -997,9 +997,14 @@ const WalletLimitsSection: React.FC = () => {
 // CASHBACK PROMO SECTION
 // ─────────────────────────────────────────────────────────────────────────────
 
+type CashbackMode = 'fixed' | 'percentage';
+
 const CashbackSection: React.FC = () => {
   const [enabled,    setEnabled]    = useState(false);
+  const [mode,       setMode]       = useState<CashbackMode>('fixed');
   const [amount,     setAmount]     = useState('1000');
+  const [percentage, setPercentage] = useState('10');
+  const [maxAmount,  setMaxAmount]  = useState(''); // blank = no cap
   const [cutoffDate, setCutoffDate] = useState('');
   const [loading,    setLoading]    = useState(false);
   const [fetching,   setFetching]   = useState(true);
@@ -1009,7 +1014,10 @@ const CashbackSection: React.FC = () => {
       .then(res => {
         const s = res.data?.settings ?? {};
         setEnabled(String(s['cashback_10rides_enabled']?.value) === 'true');
+        setMode(s['cashback_10rides_mode']?.value === 'percentage' ? 'percentage' : 'fixed');
         setAmount(String(s['cashback_10rides_amount']?.value ?? '1000'));
+        setPercentage(String(s['cashback_10rides_percentage']?.value ?? '10'));
+        setMaxAmount(s['cashback_10rides_max_amount']?.value ? String(s['cashback_10rides_max_amount'].value) : '');
         const cutoff = s['cashback_10rides_new_user_after']?.value;
         setCutoffDate(cutoff ? new Date(cutoff).toISOString().slice(0, 10) : '');
       })
@@ -1020,13 +1028,26 @@ const CashbackSection: React.FC = () => {
   const handleToggle = () => setEnabled(e => !e);
 
   const handleSave = async () => {
-    const amt = parseFloat(amount);
-    if (isNaN(amt) || amt < 0) { toast.error('Enter a valid cashback amount'); return; }
+    if (mode === 'fixed') {
+      const amt = parseFloat(amount);
+      if (isNaN(amt) || amt < 0) { toast.error('Enter a valid cashback amount'); return; }
+    } else {
+      const pct = parseFloat(percentage);
+      if (isNaN(pct) || pct <= 0 || pct > 100) { toast.error('Enter a valid percentage (1–100)'); return; }
+      if (maxAmount) {
+        const cap = parseFloat(maxAmount);
+        if (isNaN(cap) || cap < 0) { toast.error('Enter a valid cap amount, or leave it blank'); return; }
+      }
+    }
+
     setLoading(true);
     try {
       await settingsAPI.updateSettingsBatch([
-        { key: 'cashback_10rides_enabled', value: String(enabled), category: 'cashback' },
-        { key: 'cashback_10rides_amount',  value: String(amt),     category: 'cashback' },
+        { key: 'cashback_10rides_enabled',    value: String(enabled),   category: 'cashback' },
+        { key: 'cashback_10rides_mode',       value: mode,              category: 'cashback' },
+        { key: 'cashback_10rides_amount',     value: amount || '0',     category: 'cashback' },
+        { key: 'cashback_10rides_percentage', value: percentage || '0', category: 'cashback' },
+        { key: 'cashback_10rides_max_amount', value: maxAmount || '',   category: 'cashback' },
         { key: 'cashback_10rides_new_user_after',
           value: cutoffDate ? new Date(cutoffDate).toISOString() : '', category: 'cashback' },
       ]);
@@ -1044,6 +1065,7 @@ const CashbackSection: React.FC = () => {
         "New" means they signed up on/after the cutoff date below — leave it blank to apply to everyone.
       </Alert>
 
+      {/* Master switch */}
       <div className="flex items-center justify-between border border-gray-200 rounded-lg px-4 py-3">
         <div>
           <p className="text-sm font-medium text-gray-900">10-ride cashback promo</p>
@@ -1061,8 +1083,31 @@ const CashbackSection: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
-        <div>
+      {/* Mode selector */}
+      <div>
+        <label className="block text-xs font-medium text-gray-500 mb-2">Reward calculation</label>
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+          {([
+            { key: 'fixed',      label: 'Flat amount' },
+            { key: 'percentage', label: '% of what they spent' },
+          ] as const).map(opt => (
+            <button key={opt.key}
+              type="button"
+              disabled={fetching}
+              onClick={() => setMode(opt.key)}
+              className={cn(
+                'px-3 py-1.5 rounded-md text-xs font-semibold transition-all disabled:opacity-50',
+                mode === opt.key ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700',
+              )}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Mode-specific fields */}
+      {mode === 'fixed' ? (
+        <div className="max-w-xs">
           <label className="block text-xs font-medium text-gray-500 mb-1">Cashback amount (₦)</label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">₦</span>
@@ -1071,21 +1116,58 @@ const CashbackSection: React.FC = () => {
               className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm
                 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50" />
           </div>
+          <p className="text-xs text-gray-400 mt-1">Every eligible customer gets the same amount</p>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Eligible if signed up on/after</label>
-          <input type="date" value={cutoffDate} disabled={fetching}
-            onChange={e => setCutoffDate(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm
-              focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50" />
-          <p className="text-xs text-gray-400 mt-1">Blank = applies to all customers, old and new</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Percentage of spend</label>
+            <div className="relative">
+              <input type="number" min={0} max={100} step={0.5} value={percentage} disabled={fetching}
+                onChange={e => setPercentage(e.target.value)}
+                className="w-full pl-3 pr-8 py-2 rounded-lg border border-gray-300 text-sm
+                  focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50" />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">%</span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Of their combined spend on the first 10 trips</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Cap (optional)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">₦</span>
+              <input type="number" min={0} value={maxAmount} disabled={fetching}
+                placeholder="No cap"
+                onChange={e => setMaxAmount(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm
+                  focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50" />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Max payout per customer — blank means uncapped</p>
+          </div>
         </div>
+      )}
+
+      {/* Eligibility cutoff */}
+      <div className="max-w-xs">
+        <label className="block text-xs font-medium text-gray-500 mb-1">Eligible if signed up on/after</label>
+        <input type="date" value={cutoffDate} disabled={fetching}
+          onChange={e => setCutoffDate(e.target.value)}
+          className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm
+            focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50" />
+        <p className="text-xs text-gray-400 mt-1">Blank = applies to all customers, old and new</p>
       </div>
 
-      {enabled && amount && (
+      {/* Live preview */}
+      {enabled && (
         <div className="inline-flex items-center gap-2 text-sm bg-teal-50 border border-teal-200 text-teal-700 px-4 py-2 rounded-lg">
           <Gift className="h-4 w-4 flex-shrink-0" />
-          Eligible customers get <strong>₦{(+amount).toLocaleString('en-NG')}</strong> after their 10th trip
+          {mode === 'fixed' ? (
+            <>Eligible customers get <strong>₦{(+amount || 0).toLocaleString('en-NG')}</strong> after their 10th trip</>
+          ) : (
+            <>
+              Eligible customers get <strong>{percentage || 0}%</strong> of what they spent on their first 10 trips back
+              {maxAmount && <> (capped at <strong>₦{(+maxAmount).toLocaleString('en-NG')}</strong>)</>}
+            </>
+          )}
         </div>
       )}
 
