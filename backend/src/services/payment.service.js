@@ -45,6 +45,8 @@ exports.paystackInitialize = async ({ email, amount, metadata = {}, callbackUrl,
   }
 };
 
+// backend/src/services/payment.service.js
+
 exports.paystackVerify = async (reference) => {
   try {
     const { data } = await paystackAPI.get(`/transaction/verify/${reference}`);
@@ -57,7 +59,11 @@ exports.paystackVerify = async (reference) => {
     return data.data;
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError('Paystack verification failed: ' + error.message, 500);
+    // Surface Paystack's actual error message instead of Axios's generic one,
+    // and treat API-level rejections (4xx from Paystack) as 400, not 500.
+    const paystackMsg = error?.response?.data?.message || error.message;
+    const status = error?.response?.status && error.response.status < 500 ? 400 : 502;
+    throw new AppError('Paystack verification failed: ' + paystackMsg, status);
   }
 };
 
@@ -165,7 +171,9 @@ exports.flutterwaveVerifyByReference = async (txRef) => {
     return data.data;
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError('Flutterwave verification failed: ' + error.message, 500);
+    const flwMsg = error?.response?.data?.message || error.message;
+    const status = error?.response?.status && error.response.status < 500 ? 400 : 502;
+    throw new AppError('Flutterwave verification failed: ' + flwMsg, status);
   }
 };
 
@@ -259,7 +267,9 @@ exports.flutterwaveVerify = async (transactionId) => {
     return data.data;
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError('Flutterwave verification failed: ' + error.message, 500);
+    const flwMsg = error?.response?.data?.message || error.message;
+    const status = error?.response?.status && error.response.status < 500 ? 400 : 502;
+    throw new AppError('Flutterwave verification failed: ' + flwMsg, status);
   }
 };
 
