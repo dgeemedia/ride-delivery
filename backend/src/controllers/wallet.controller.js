@@ -195,8 +195,8 @@ exports.initializeTopUp = async (req, res) => {
     callbackUrl: `${process.env.API_BASE_URL}/api/wallet/topup/verify`,
   });
 
-  const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
-  if (wallet) {
+    const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+    if (wallet) {
     await prisma.walletTransaction.create({
       data: {
         walletId:    wallet.id,
@@ -205,6 +205,7 @@ exports.initializeTopUp = async (req, res) => {
         description: 'Wallet top-up via Paystack',
         status:      'PENDING',
         reference,
+        provider:    'paystack', // ← ADD
       },
     });
   }
@@ -255,7 +256,7 @@ exports.verifyTopUp = async (req, res) => {
   const userId = verified.data.metadata?.userId;
   if (!userId) return res.status(400).json({ success: false, message: 'Missing userId in metadata' });
 
-  await prisma.$transaction([
+    await prisma.$transaction([
     prisma.wallet.upsert({
       where:  { userId },
       update: { balance: { increment: amount } },
@@ -263,7 +264,7 @@ exports.verifyTopUp = async (req, res) => {
     }),
     prisma.walletTransaction.updateMany({
       where: { reference },
-      data:  { status: 'COMPLETED' },
+      data:  { status: 'COMPLETED', provider: 'paystack' }, // ← ADD provider
     }),
   ]);
 
@@ -298,9 +299,7 @@ exports.flutterwaveTopup = async (req, res) => {
     metadata: { userId, purpose: 'wallet_topup' },
   });
 
-  // Pre-create a PENDING record so admins can see — and reconcile — this
-  // top-up even if the customer never comes back to verify it.
-  const wallet = await ensureWallet(userId);
+    const wallet = await ensureWallet(userId);
   await prisma.walletTransaction.create({
     data: {
       walletId:    wallet.id,
@@ -309,6 +308,7 @@ exports.flutterwaveTopup = async (req, res) => {
       description: 'Wallet top-up via Flutterwave',
       status:      'PENDING',
       reference:   txRef,
+      provider:    'flutterwave', // ← ADD
     },
   });
 
@@ -319,14 +319,26 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
   const { transactionId } = req.body;
   if (!transactionId) throw new AppError('Transaction ID is required', 400);
 
-  const existing = await prisma.walletTransaction.findFirst({ where: { reference: String(transactionId) } });
+  // The client may send back either our own tx_ref (WALLET-FLW-...) or
+  // Flutterwave's internal numeric id, depending on the redirect payload —
+  // check both so we don't create a duplicate orphan row for the same top-up.
+  const existing = await prisma.walletTransaction.findFirst({
+    where: {
+      OR: [
+        { reference: String(transactionId) },
+        { reference: { startsWith: 'WALLET-FLW-' }, provider: 'flutterwave', status: 'PENDING' },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+  });
   if (existing?.status === 'COMPLETED') {
     return res.status(200).json({ success: true, message: 'Already processed', data: { transaction: existing } });
   }
 
-  // transactionId here is actually the tx_ref generated at initialize time
-  // (WALLET-FLW-...), not Flutterwave's internal numeric id — verify by reference.
-  const transaction = await paymentService.flutterwaveVerifyByReference(transactionId);
+  // Verify against Flutterwave using whichever reference we actually have —
+  // prefer the original tx_ref on the matched PENDING row if we found one.
+  const verifyRef = existing?.reference ?? String(transactionId);
+  const transaction = await paymentService.flutterwaveVerifyByReference(verifyRef);
   if (transaction.status !== 'successful') throw new AppError('Payment verification failed', 400);
 
   const amount     = transaction.amount;
@@ -338,7 +350,7 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
     existing
       ? prisma.walletTransaction.update({
           where: { id: existing.id },
-          data:  { status: 'COMPLETED', amount },
+          data:  { status: 'COMPLETED', amount, provider: 'flutterwave' }, // ← ADD provider
         })
       : prisma.walletTransaction.create({
           data: {
@@ -348,6 +360,7 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
             description: 'Wallet top-up via Flutterwave',
             status:      'COMPLETED',
             reference:   String(transactionId),
+            provider:    'flutterwave', // ← ADD
           },
         }),
   ]);
@@ -1069,24 +1082,16 @@ exports.emailTransactionHistory = async (req, res) => {
 // ADMIN — Wallet Top-Up Visibility & Reconciliation
 // ─────────────────────────────────────────────
 
-// Reference prefixes tell us which provider a top-up went through
-// without needing a separate `provider` column on WalletTransaction.
-const detectTopUpProvider = (reference = '') => {
-  if (reference.startsWith('TOPUP-'))      return 'paystack';
-  if (reference.startsWith('WALLET-FLW-')) return 'flutterwave';
-  return 'unknown';
-};
-
 exports.adminGetTopUps = async (req, res) => {
   const { status = 'PENDING', page = 1, limit = 20 } = req.query;
   const skip = (page - 1) * limit;
 
+  // Any CREDIT wallet transaction with a provider set is a top-up — no more
+  // guessing from the reference string, so we catch every provider/reference
+  // format regardless of which flow (initialize/webhook/verify) created it.
   const where = {
-    type: 'CREDIT',
-    OR: [
-      { reference: { startsWith: 'TOPUP-' } },
-      { reference: { startsWith: 'WALLET-FLW-' } },
-    ],
+    type:     'CREDIT',
+    provider: { in: ['paystack', 'flutterwave'] },
   };
   if (status !== 'ALL') where.status = status;
 
@@ -1108,11 +1113,9 @@ exports.adminGetTopUps = async (req, res) => {
     prisma.walletTransaction.count({ where }),
   ]);
 
-  const enriched = topups.map(t => ({ ...t, provider: detectTopUpProvider(t.reference) }));
-
   res.status(200).json({
     success: true,
-    data: { topups: enriched, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } },
+    data: { topups, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } },
   });
 };
 
@@ -1130,7 +1133,7 @@ exports.adminReconcileTopUp = async (req, res) => {
 
   // Always re-verify with the provider before crediting — never trust the
   // admin's word alone that a payment succeeded.
-  const provider = detectTopUpProvider(tx.reference);
+  const provider = tx.provider;
   let verified;
   if (provider === 'paystack') {
     verified = await paymentService.paystackVerify(tx.reference);

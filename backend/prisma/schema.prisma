@@ -333,12 +333,14 @@ model WalletTransaction {
   description String
   status      String       @default("COMPLETED")
   reference   String?      @unique
+  provider    String?      
   createdAt   DateTime     @default(now())
   wallet      Wallet       @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([walletId])
   @@index([type])
   @@index([createdAt])
+  @@index([provider])
 }
 
 model Payout {

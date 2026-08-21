@@ -370,7 +370,7 @@ const TopUpRow: React.FC<{
     </td>
     <td className="px-4 py-4">
       <span className="text-xs font-semibold capitalize px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-        {topup.provider}
+        {topup.provider ?? 'unknown'}
       </span>
     </td>
     <td className="px-4 py-4"><StatusBadge status={topup.status} /></td>
