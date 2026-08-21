@@ -177,8 +177,24 @@ if (ENABLE_DUOPAY) {
 }
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Skip JSON/urlencoded parsing on routes that already consumed the raw body
+// above — running express.json() a second time on an already-drained stream
+// silently overwrites req.body and can break signature verification.
+const RAW_BODY_ROUTES = [
+  '/api/payments/paystack/webhook',
+  '/api/payments/flutterwave/webhook',
+  '/api/wallet/topup/verify',
+  ...(ENABLE_DUOPAY ? ['/api/duopay/webhook/paystack'] : []),
+];
+
+app.use((req, res, next) => {
+  if (RAW_BODY_ROUTES.includes(req.path)) return next();
+  express.json({ limit: '10mb' })(req, res, next);
+});
+app.use((req, res, next) => {
+  if (RAW_BODY_ROUTES.includes(req.path)) return next();
+  express.urlencoded({ extended: true, limit: '10mb' })(req, res, next);
+});
 
 // ─── Request logging ──────────────────────────────────────────────────────────
 if (process.env.NODE_ENV === 'development') {

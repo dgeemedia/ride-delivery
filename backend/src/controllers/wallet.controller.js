@@ -126,22 +126,61 @@ exports.verifyPaystackTopup = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Already processed', data: { transaction: existing } });
   }
 
-  const transaction = await paymentService.paystackVerify(reference);
+  // The reference the client has (the one we originally issued) may not be
+  // what Paystack settled the charge under — e.g. bank-transfer payments get
+  // a Paystack-generated reference instead. Try verifying by the given
+  // reference first; if Paystack doesn't recognize it, fall back to
+  // matching the client's own PENDING top-up by user + amount.
+  let transaction;
+  try {
+    transaction = await paymentService.paystackVerify(reference);
+  } catch (err) {
+    if (!existing) throw err; // nothing to fall back to — surface the real error
+    const fallback = await prisma.walletTransaction.findFirst({
+      where: {
+        walletId: existing.walletId,
+        status:   'PENDING',
+        type:     'CREDIT',
+        amount:   existing.amount,
+        provider: 'paystack',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!fallback) throw err;
+    throw new AppError(
+      'We could not verify this reference directly. If you completed payment via bank transfer, please wait a moment for automatic confirmation, or contact support.',
+      400
+    );
+  }
   if (transaction.status !== 'success') throw new AppError('Payment verification failed', 400);
 
-  const amount   = transaction.amount / 100;
-  const { userId } = transaction.metadata;
-  const wallet   = await ensureWallet(userId);
+  const amount      = transaction.amount / 100;
+  const { userId }  = transaction.metadata;
+  const wallet      = await ensureWallet(userId);
+  const realRef     = transaction.reference; // the reference Paystack actually settled under
+
+  const pendingMatch = existing ?? await prisma.walletTransaction.findFirst({
+    where: {
+      walletId: wallet.id,
+      status:   'PENDING',
+      type:     'CREDIT',
+      amount,
+      provider: 'paystack',
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 
   const [updatedWallet, walletTx] = await prisma.$transaction([
     prisma.wallet.update({ where: { userId }, data: { balance: { increment: amount } } }),
-    existing
+    pendingMatch
       ? prisma.walletTransaction.update({
-          where: { id: existing.id },
+          where: { id: pendingMatch.id },
           data: {
             status:      'COMPLETED',
             amount,
             description: 'Wallet top-up via Paystack',
+            reference:   realRef,
+            provider:    'paystack',
           },
         })
       : prisma.walletTransaction.create({
@@ -151,7 +190,8 @@ exports.verifyPaystackTopup = async (req, res) => {
             amount,
             description: 'Wallet top-up via Paystack',
             status:      'COMPLETED',
-            reference,
+            reference:   realRef,
+            provider:    'paystack',
           },
         }),
   ]);
@@ -161,7 +201,7 @@ exports.verifyPaystackTopup = async (req, res) => {
     title:   'Wallet Topped Up 💰',
     message: `₦${amount.toFixed(2)} has been added to your wallet. New balance: ₦${updatedWallet.balance.toFixed(2)}`,
     type:    notificationService.TYPES.PAYMENT_RECEIVED,
-    data:    { amount, newBalance: updatedWallet.balance, reference },
+    data:    { amount, newBalance: updatedWallet.balance, reference: realRef },
   });
 
   res.status(200).json({ success: true, message: 'Wallet topped up successfully', data: { wallet: updatedWallet, transaction: walletTx } });
@@ -247,7 +287,7 @@ exports.verifyTopUp = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Already processed' });
   }
 
-  const verified = await paymentService.paystackVerifyTransaction(reference).catch(() => null);
+    const verified = await paymentService.paystackVerifyTransaction(reference).catch(() => null);
   if (!verified || verified.data.status !== 'success') {
     return res.status(400).json({ success: false, message: 'Payment not successful' });
   }
@@ -256,16 +296,46 @@ exports.verifyTopUp = async (req, res) => {
   const userId = verified.data.metadata?.userId;
   if (!userId) return res.status(400).json({ success: false, message: 'Missing userId in metadata' });
 
-    await prisma.$transaction([
-    prisma.wallet.upsert({
-      where:  { userId },
-      update: { balance: { increment: amount } },
-      create: { userId, balance: amount },
-    }),
-    prisma.walletTransaction.updateMany({
-      where: { reference },
-      data:  { status: 'COMPLETED', provider: 'paystack' }, // ← ADD provider
-    }),
+  const wallet = await ensureWallet(userId);
+
+  // Paystack's bank-transfer channel issues its own reference distinct from
+  // the one we sent at initialize time, so `reference` here may not match
+  // any existing row. Fall back to matching the original PENDING row by
+  // wallet + amount + provider instead of by reference.
+  const existingByRef = await prisma.walletTransaction.findFirst({ where: { reference } });
+  const pendingMatch = existingByRef ?? await prisma.walletTransaction.findFirst({
+    where: {
+      walletId: wallet.id,
+      status:   'PENDING',
+      type:     'CREDIT',
+      amount,
+      provider: 'paystack',
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (pendingMatch?.status === 'COMPLETED') {
+    return res.status(200).json({ success: true, message: 'Already processed' });
+  }
+
+  await prisma.$transaction([
+    prisma.wallet.update({ where: { userId }, data: { balance: { increment: amount } } }),
+    pendingMatch
+      ? prisma.walletTransaction.update({
+          where: { id: pendingMatch.id },
+          data:  { status: 'COMPLETED', reference, provider: 'paystack' },
+        })
+      : prisma.walletTransaction.create({
+          data: {
+            walletId:    wallet.id,
+            type:        'CREDIT',
+            amount,
+            description: 'Wallet top-up via Paystack',
+            status:      'COMPLETED',
+            reference,
+            provider:    'paystack',
+          },
+        }),
   ]);
 
   await notificationService.notify({
