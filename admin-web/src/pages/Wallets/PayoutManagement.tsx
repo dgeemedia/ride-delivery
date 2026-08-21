@@ -1,4 +1,4 @@
-// admin-web/src/pages/Wallets/PayoutManagement.tsx  [NEW — replaces skeleton]
+// admin-web/src/pages/Wallets/PayoutManagement.tsx  [Mobile-responsive]
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   CheckCircle, XCircle, Clock, DollarSign, ArrowLeftRight,
@@ -82,8 +82,8 @@ const ConfirmModal: React.FC<{
   const [text, setText] = useState('');
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-bold text-gray-900 mb-2">{title}</h3>
         <p className="text-sm text-gray-600 mb-4">{body}</p>
         {placeholder && (
@@ -94,10 +94,10 @@ const ConfirmModal: React.FC<{
             onChange={e => setText(e.target.value)}
           />
         )}
-        <div className="flex gap-3 justify-end">
-          <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>Cancel</button>
+        <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 sm:justify-end">
+          <button className="btn btn-ghost w-full sm:w-auto py-2.5 sm:py-2" onClick={onCancel} disabled={loading}>Cancel</button>
           <button
-            className={`btn ${confirmClass}`}
+            className={`btn ${confirmClass} w-full sm:w-auto py-2.5 sm:py-2 flex items-center justify-center`}
             onClick={() => onConfirm(text)}
             disabled={loading}
           >
@@ -109,7 +109,43 @@ const ConfirmModal: React.FC<{
   );
 };
 
-// ─── Payout Row ───────────────────────────────────────────────────────────────
+// A small labeled value used inside mobile cards, keeps every card's
+// key/value rhythm identical so the eye can scan straight down the column.
+const CardField: React.FC<{ label: string; children: React.ReactNode; className?: string }> = ({ label, children, className }) => (
+  <div className={className}>
+    <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">{label}</div>
+    <div className="text-sm text-gray-800">{children}</div>
+  </div>
+);
+
+const CardActions: React.FC<{
+  status: string;
+  onApprove: () => void;
+  onReject: () => void;
+  approveLabel?: string;
+  processedNote?: string;
+}> = ({ status, onApprove, onReject, approveLabel = 'Approve', processedNote = 'Processed' }) => (
+  status === 'PENDING' ? (
+    <div className="flex gap-2 mt-3">
+      <button
+        onClick={onApprove}
+        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-green-600 active:bg-green-700 text-white text-xs font-semibold rounded-xl transition-colors"
+      >
+        <CheckCircle className="w-4 h-4" /> {approveLabel}
+      </button>
+      <button
+        onClick={onReject}
+        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-red-500 active:bg-red-600 text-white text-xs font-semibold rounded-xl transition-colors"
+      >
+        <XCircle className="w-4 h-4" /> Reject
+      </button>
+    </div>
+  ) : (
+    <div className="mt-3 text-xs text-gray-400">{processedNote}</div>
+  )
+);
+
+// ─── Payout: desktop row + mobile card ────────────────────────────────────────
 
 const PayoutRow: React.FC<{
   payout: Payout;
@@ -169,7 +205,52 @@ const PayoutRow: React.FC<{
   </tr>
 );
 
-// ─── Transfer Row ─────────────────────────────────────────────────────────────
+const PayoutCard: React.FC<{
+  payout: Payout;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+}> = ({ payout, onApprove, onReject }) => (
+  <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="font-semibold text-gray-900 text-sm truncate">
+          {payout.user.firstName} {payout.user.lastName}
+        </div>
+        <div className="text-xs text-gray-500 truncate">{payout.user.email}</div>
+      </div>
+      <StatusBadge status={payout.status} />
+    </div>
+
+    <div className="mt-3 flex items-baseline justify-between">
+      <div className="font-bold text-gray-900 text-lg">₦{payout.amount.toLocaleString('en-NG')}</div>
+      <div className="text-[11px] text-gray-400 font-mono">{payout.reference}</div>
+    </div>
+
+    <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-50 pt-3">
+      <CardField label="Account">
+        <span className="font-mono">{payout.accountNumber}</span>
+      </CardField>
+      <CardField label="Bank">{payout.bankName || `Code: ${payout.bankCode}`}</CardField>
+      <CardField label="Account Name" className="col-span-2">{payout.accountName}</CardField>
+      <CardField label="Requested" className="col-span-2">
+        {new Date(payout.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+      </CardField>
+    </div>
+
+    {payout.failureReason && (
+      <div className="mt-2 text-xs text-red-600 bg-red-50 rounded-lg px-2.5 py-1.5">{payout.failureReason}</div>
+    )}
+
+    <CardActions
+      status={payout.status}
+      onApprove={() => onApprove(payout.id)}
+      onReject={() => onReject(payout.id)}
+      processedNote={payout.processedAt ? `Processed ${new Date(payout.processedAt).toLocaleDateString('en-NG')}` : 'Processed'}
+    />
+  </div>
+);
+
+// ─── Transfer: desktop row + mobile card ──────────────────────────────────────
 
 const TransferRow: React.FC<{
   transfer: Transfer;
@@ -228,6 +309,49 @@ const TransferRow: React.FC<{
   </tr>
 );
 
+const TransferCard: React.FC<{
+  transfer: Transfer;
+  onApprove: (ref: string) => void;
+  onReject: (ref: string) => void;
+}> = ({ transfer, onApprove, onReject }) => (
+  <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 text-sm">
+        <div className="font-semibold text-gray-900 truncate">
+          {transfer.sender.firstName} {transfer.sender.lastName}
+        </div>
+        <div className="flex items-center gap-1 text-gray-500 text-xs mt-0.5">
+          <ArrowLeftRight className="w-3 h-3 shrink-0" />
+          <span className="truncate">{transfer.recipient.firstName} {transfer.recipient.lastName}</span>
+        </div>
+      </div>
+      <StatusBadge status={transfer.status} />
+    </div>
+
+    <div className="mt-3 flex items-baseline justify-between">
+      <div className="font-bold text-gray-900 text-lg">₦{transfer.amount.toLocaleString('en-NG')}</div>
+      <div className="text-[11px] text-gray-400 font-mono">{transfer.reference}</div>
+    </div>
+
+    <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-50 pt-3">
+      <CardField label="Sender phone"><span className="font-mono">{transfer.sender.phone}</span></CardField>
+      <CardField label="Recipient phone"><span className="font-mono">{transfer.recipient.phone}</span></CardField>
+      <CardField label="Initiated" className="col-span-2">
+        {new Date(transfer.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+      </CardField>
+      {transfer.note && <CardField label="Note" className="col-span-2">{transfer.note}</CardField>}
+    </div>
+
+    <CardActions
+      status={transfer.status}
+      onApprove={() => onApprove(transfer.reference)}
+      onReject={() => onReject(transfer.reference)}
+    />
+  </div>
+);
+
+// ─── Top-up: desktop row + mobile card ────────────────────────────────────────
+
 const TopUpRow: React.FC<{
   topup: TopUp;
   onReconcile: (id: string) => void;
@@ -268,6 +392,46 @@ const TopUpRow: React.FC<{
   </tr>
 );
 
+const TopUpCard: React.FC<{
+  topup: TopUp;
+  onReconcile: (id: string) => void;
+}> = ({ topup, onReconcile }) => (
+  <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="font-semibold text-gray-900 text-sm truncate">
+          {topup.wallet.user.firstName} {topup.wallet.user.lastName}
+        </div>
+        <div className="text-xs text-gray-500 truncate">{topup.wallet.user.email}</div>
+      </div>
+      <StatusBadge status={topup.status} />
+    </div>
+
+    <div className="mt-3 flex items-baseline justify-between">
+      <div className="font-bold text-gray-900 text-lg">₦{topup.amount.toLocaleString('en-NG')}</div>
+      <div className="text-[11px] text-gray-400 font-mono">{topup.reference}</div>
+    </div>
+
+    <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-50 pt-3">
+      <CardField label="Provider"><span className="capitalize">{topup.provider}</span></CardField>
+      <CardField label="Initiated">
+        {new Date(topup.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+      </CardField>
+    </div>
+
+    {topup.status === 'PENDING' ? (
+      <button
+        onClick={() => onReconcile(topup.id)}
+        className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-green-600 active:bg-green-700 text-white text-xs font-semibold rounded-xl transition-colors"
+      >
+        <CheckCircle className="w-4 h-4" /> Verify & Credit
+      </button>
+    ) : (
+      <div className="mt-3 text-xs text-gray-400">Credited</div>
+    )}
+  </div>
+);
+
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 type TabId = 'payouts' | 'transfers' | 'topups';
@@ -299,15 +463,15 @@ const PayoutManagement: React.FC = () => {
   const [topupPagination,   setTopupPagination]  = useState<Pagination>({ total: 0, page: 1, pages: 1 });
   const [topupStatus,       setTopupStatus]      = useState<PayoutStatus>('PENDING');
   const [loading,           setLoading]          = useState(false);
-  
+
   // Confirm modal state
-    const [modal, setModal] = useState<{
+  const [modal, setModal] = useState<{
     open:    boolean;
     type:    'approve_payout' | 'reject_payout' | 'approve_transfer' | 'reject_transfer' | 'reconcile_topup';
     id:      string;
     loading: boolean;
   }>({ open: false, type: 'approve_payout', id: '', loading: false });
-  
+
   // ── Data loading ────────────────────────────────────────────────────────────
 
   const loadStats = useCallback(async () => {
@@ -327,7 +491,7 @@ const PayoutManagement: React.FC = () => {
     finally { setLoading(false); }
   }, [payoutStatus]);
 
-    const loadTransfers = useCallback(async (page = 1) => {
+  const loadTransfers = useCallback(async (page = 1) => {
     setLoading(true);
     try {
       const res = await api.get('/wallet/admin/transfers', { params: { status: xferStatus, page, limit: 20 } });
@@ -351,7 +515,7 @@ const PayoutManagement: React.FC = () => {
   useEffect(() => { if (tab === 'payouts')   loadPayouts();   }, [tab, payoutStatus]);
   useEffect(() => { if (tab === 'transfers') loadTransfers(); }, [tab, xferStatus]);
   useEffect(() => { if (tab === 'topups')    loadTopUps();    }, [tab, topupStatus]);
-  
+
   // ── Modal actions ───────────────────────────────────────────────────────────
 
   const openModal = (type: typeof modal.type, id: string) =>
@@ -363,45 +527,45 @@ const PayoutManagement: React.FC = () => {
   const confirmAction = async (noteOrReason: string) => {
     setModal(m => ({ ...m, loading: true }));
     const { type, id } = modal;
-    
-    try {
-        if (type === 'approve_payout') {
-          const res = await api.put(`/wallet/admin/payouts/${id}/approve`, { note: noteOrReason });
-          const { provider, transferError } = res.data?.data ?? {};
-          const providerOk = res.data?.data?.[provider] === 'ok';
 
-          if (!providerOk) {
-              toast.error(`⚠️ Payout approved but ${provider} transfer failed: ${transferError ?? 'Unknown error'}. Ops retry needed.`, {
-              duration: 8000,
-              });
-          } else {
-              toast.success(`Payout approved and ${provider} transfer initiated`);
-          }
-          loadPayouts();
-        } else if (type === 'reject_payout') {
+    try {
+      if (type === 'approve_payout') {
+        const res = await api.put(`/wallet/admin/payouts/${id}/approve`, { note: noteOrReason });
+        const { provider, transferError } = res.data?.data ?? {};
+        const providerOk = res.data?.data?.[provider] === 'ok';
+
+        if (!providerOk) {
+          toast.error(`⚠️ Payout approved but ${provider} transfer failed: ${transferError ?? 'Unknown error'}. Ops retry needed.`, {
+            duration: 8000,
+          });
+        } else {
+          toast.success(`Payout approved and ${provider} transfer initiated`);
+        }
+        loadPayouts();
+      } else if (type === 'reject_payout') {
         await api.put(`/wallet/admin/payouts/${id}/reject`, { reason: noteOrReason });
         toast.success('Payout rejected and wallet refunded');
         loadPayouts();
-        } else if (type === 'approve_transfer') {
+      } else if (type === 'approve_transfer') {
         await api.put(`/wallet/admin/transfers/${id}/approve`, { note: noteOrReason });
         toast.success('Transfer approved. Recipient credited.');
         loadTransfers();
-                } else if (type === 'reject_transfer') {
+      } else if (type === 'reject_transfer') {
         await api.put(`/wallet/admin/transfers/${id}/reject`, { reason: noteOrReason });
         toast.success('Transfer rejected and sender refunded.');
         loadTransfers();
-        } else if (type === 'reconcile_topup') {
+      } else if (type === 'reconcile_topup') {
         const res = await api.put(`/wallet/admin/topups/${id}/reconcile`);
         toast.success(res.data?.message ?? 'Top-up verified and credited');
         loadTopUps();
-        }
-        loadStats();
-        closeModal();
+      }
+      loadStats();
+      closeModal();
     } catch (err: any) {
-        toast.error(err?.response?.data?.message ?? 'Action failed');
-        setModal(m => ({ ...m, loading: false }));
+      toast.error(err?.response?.data?.message ?? 'Action failed');
+      setModal(m => ({ ...m, loading: false }));
     }
- };
+  };
 
   // ── Status filter tabs ──────────────────────────────────────────────────────
 
@@ -411,27 +575,32 @@ const PayoutManagement: React.FC = () => {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-5 sm:space-y-6 p-3 sm:p-6">
 
       {/* Page header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Wallet Management</h1>
-          <p className="text-gray-500 text-sm mt-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Wallet Management</h1>
+          <p className="text-gray-500 text-xs sm:text-sm mt-1">
             Review and approve withdrawal requests and peer transfers.
           </p>
         </div>
         <button
-          className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-xl transition-colors"
-          onClick={() => { loadStats(); tab === 'payouts' ? loadPayouts() : loadTransfers(); }}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 text-sm font-semibold rounded-xl transition-colors w-full sm:w-auto"
+          onClick={() => {
+            loadStats();
+            if (tab === 'payouts') loadPayouts();
+            else if (tab === 'transfers') loadTransfers();
+            else loadTopUps();
+          }}
         >
           <RefreshCw className="w-4 h-4" /> Refresh
         </button>
       </div>
 
-      {/* Stats cards */}
+      {/* Stats cards — 2-up on phones, scales up from there */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
           {[
             { label: 'Total Wallet Balance', value: `₦${stats.totalBalance.toLocaleString('en-NG')}`, icon: DollarSign,      color: 'bg-blue-500'   },
             { label: 'Total Wallets',        value: stats.totalWallets.toLocaleString(),               icon: Building2,       color: 'bg-indigo-500' },
@@ -440,24 +609,24 @@ const PayoutManagement: React.FC = () => {
             { label: 'Today Credits',        value: `₦${stats.todayCredits.toLocaleString('en-NG')}`, icon: CheckCircle,     color: 'bg-green-500'  },
             { label: 'Today Debits',         value: `₦${stats.todayDebits.toLocaleString('en-NG')}`,  icon: XCircle,         color: 'bg-red-500'    },
           ].map(card => (
-            <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-              <div className={`w-9 h-9 ${card.color} rounded-xl flex items-center justify-center mb-3`}>
+            <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
+              <div className={`w-8 h-8 sm:w-9 sm:h-9 ${card.color} rounded-xl flex items-center justify-center mb-2 sm:mb-3`}>
                 <card.icon className="w-4 h-4 text-white" />
               </div>
-              <div className="text-xl font-bold text-gray-900">{card.value}</div>
-              <div className="text-xs text-gray-500 mt-0.5">{card.label}</div>
+              <div className="text-base sm:text-xl font-bold text-gray-900 leading-tight">{card.value}</div>
+              <div className="text-[11px] sm:text-xs text-gray-500 mt-0.5">{card.label}</div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Tab switcher */}
-            <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+      {/* Tab switcher — scrolls horizontally instead of wrapping on narrow screens */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-full overflow-x-auto no-scrollbar sm:w-fit">
         {(['payouts', 'transfers', 'topups'] as TabId[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 ${
               tab === t
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
@@ -466,19 +635,19 @@ const PayoutManagement: React.FC = () => {
             {t === 'payouts'    && <Building2     className="w-4 h-4" />}
             {t === 'transfers'  && <ArrowLeftRight className="w-4 h-4" />}
             {t === 'topups'     && <DollarSign     className="w-4 h-4" />}
-            {t === 'payouts' ? 'Bank Withdrawals' : t === 'transfers' ? 'Peer Transfers' : 'Wallet Top-Ups'}
+            <span>{t === 'payouts' ? 'Withdrawals' : t === 'transfers' ? 'Transfers' : 'Top-Ups'}</span>
             {t === 'payouts' && stats?.pendingPayouts   ? (
-              <span className="ml-1 bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+              <span className="ml-0.5 bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
                 {stats.pendingPayouts}
               </span>
             ) : null}
             {t === 'transfers' && stats?.pendingTransfers ? (
-              <span className="ml-1 bg-orange-400 text-orange-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+              <span className="ml-0.5 bg-orange-400 text-orange-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
                 {stats.pendingTransfers}
               </span>
             ) : null}
             {t === 'topups' && topupPagination.total > 0 && topupStatus === 'PENDING' ? (
-              <span className="ml-1 bg-blue-400 text-blue-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+              <span className="ml-0.5 bg-blue-400 text-blue-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
                 {topupPagination.total}
               </span>
             ) : null}
@@ -488,16 +657,16 @@ const PayoutManagement: React.FC = () => {
 
       {/* ── PAYOUTS TAB ──────────────────────────────────────────────────── */}
       {tab === 'payouts' && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {/* Status filter */}
-          <div className="flex items-center gap-2 px-6 py-4 border-b border-gray-100">
-            <Filter className="w-4 h-4 text-gray-400" />
-            <span className="text-sm text-gray-500 font-medium mr-2">Filter:</span>
+        <div className="bg-white sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm overflow-hidden">
+          {/* Status filter — horizontal scroll on mobile */}
+          <div className="flex items-center gap-2 px-1 sm:px-6 py-3 sm:py-4 sm:border-b sm:border-gray-100 overflow-x-auto no-scrollbar">
+            <Filter className="w-4 h-4 text-gray-400 shrink-0 hidden sm:block" />
+            <span className="text-sm text-gray-500 font-medium mr-1 shrink-0 hidden sm:inline">Filter:</span>
             {PAYOUT_STATUSES.map(s => (
               <button
                 key={s}
                 onClick={() => setPayoutStatus(s)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
                   payoutStatus === s
                     ? 'bg-gray-900 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -506,7 +675,7 @@ const PayoutManagement: React.FC = () => {
                 {s}
               </button>
             ))}
-            <div className="ml-auto text-xs text-gray-400">{payoutPagination.total} records</div>
+            <div className="ml-auto text-xs text-gray-400 shrink-0 pr-1 hidden sm:block">{payoutPagination.total} records</div>
           </div>
 
           {loading ? (
@@ -514,39 +683,53 @@ const PayoutManagement: React.FC = () => {
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-900 border-t-transparent" />
             </div>
           ) : payouts.length === 0 ? (
-            <div className="text-center py-20 text-gray-400">
+            <div className="text-center py-16 sm:py-20 text-gray-400">
               <Building2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No {payoutStatus.toLowerCase()} payouts</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    {['User', 'Amount', 'Bank Details', 'Status', 'Requested', 'Actions'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        {h}
-                      </th>
+            <>
+              {/* Mobile: stacked cards */}
+              <div className="grid gap-3 px-1 sm:hidden">
+                {payouts.map(p => (
+                  <PayoutCard
+                    key={p.id}
+                    payout={p}
+                    onApprove={id => openModal('approve_payout', id)}
+                    onReject={id  => openModal('reject_payout',  id)}
+                  />
+                ))}
+              </div>
+              {/* Desktop: table */}
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      {['User', 'Amount', 'Bank Details', 'Status', 'Requested', 'Actions'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {payouts.map(p => (
+                      <PayoutRow
+                        key={p.id}
+                        payout={p}
+                        onApprove={id => openModal('approve_payout', id)}
+                        onReject={id  => openModal('reject_payout',  id)}
+                      />
                     ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {payouts.map(p => (
-                    <PayoutRow
-                      key={p.id}
-                      payout={p}
-                      onApprove={id => openModal('approve_payout', id)}
-                      onReject={id  => openModal('reject_payout',  id)}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
 
           {/* Pagination */}
           {payoutPagination.pages > 1 && (
-            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
+            <div className="flex items-center justify-between px-1 sm:px-6 py-4 sm:border-t sm:border-gray-100 mt-1">
               <span className="text-xs text-gray-500">
                 Page {payoutPagination.page} of {payoutPagination.pages}
               </span>
@@ -573,15 +756,15 @@ const PayoutManagement: React.FC = () => {
 
       {/* ── TRANSFERS TAB ─────────────────────────────────────────────────── */}
       {tab === 'transfers' && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="flex items-center gap-2 px-6 py-4 border-b border-gray-100">
-            <Filter className="w-4 h-4 text-gray-400" />
-            <span className="text-sm text-gray-500 font-medium mr-2">Filter:</span>
+        <div className="bg-white sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm overflow-hidden">
+          <div className="flex items-center gap-2 px-1 sm:px-6 py-3 sm:py-4 sm:border-b sm:border-gray-100 overflow-x-auto no-scrollbar">
+            <Filter className="w-4 h-4 text-gray-400 shrink-0 hidden sm:block" />
+            <span className="text-sm text-gray-500 font-medium mr-1 shrink-0 hidden sm:inline">Filter:</span>
             {XFER_STATUSES.map(s => (
               <button
                 key={s}
                 onClick={() => setXferStatus(s)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
                   xferStatus === s
                     ? 'bg-gray-900 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -590,7 +773,7 @@ const PayoutManagement: React.FC = () => {
                 {s}
               </button>
             ))}
-            <div className="ml-auto text-xs text-gray-400">{xferPagination.total} records</div>
+            <div className="ml-auto text-xs text-gray-400 shrink-0 pr-1 hidden sm:block">{xferPagination.total} records</div>
           </div>
 
           {loading ? (
@@ -598,38 +781,50 @@ const PayoutManagement: React.FC = () => {
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-900 border-t-transparent" />
             </div>
           ) : transfers.length === 0 ? (
-            <div className="text-center py-20 text-gray-400">
+            <div className="text-center py-16 sm:py-20 text-gray-400">
               <ArrowLeftRight className="w-10 h-10 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No {xferStatus.toLowerCase()} transfers</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    {['Sender', 'Recipient', 'Amount', 'Status', 'Initiated', 'Actions'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        {h}
-                      </th>
+            <>
+              <div className="grid gap-3 px-1 sm:hidden">
+                {transfers.map(t => (
+                  <TransferCard
+                    key={t.id}
+                    transfer={t}
+                    onApprove={ref => openModal('approve_transfer', ref)}
+                    onReject={ref  => openModal('reject_transfer',  ref)}
+                  />
+                ))}
+              </div>
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      {['Sender', 'Recipient', 'Amount', 'Status', 'Initiated', 'Actions'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {transfers.map(t => (
+                      <TransferRow
+                        key={t.id}
+                        transfer={t}
+                        onApprove={ref => openModal('approve_transfer', ref)}
+                        onReject={ref  => openModal('reject_transfer',  ref)}
+                      />
                     ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {transfers.map(t => (
-                    <TransferRow
-                      key={t.id}
-                      transfer={t}
-                      onApprove={ref => openModal('approve_transfer', ref)}
-                      onReject={ref  => openModal('reject_transfer',  ref)}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
 
           {xferPagination.pages > 1 && (
-            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
+            <div className="flex items-center justify-between px-1 sm:px-6 py-4 sm:border-t sm:border-gray-100 mt-1">
               <span className="text-xs text-gray-500">
                 Page {xferPagination.page} of {xferPagination.pages}
               </span>
@@ -654,24 +849,24 @@ const PayoutManagement: React.FC = () => {
         </div>
       )}
 
-            {/* ── WALLET TOP-UPS TAB ───────────────────────────────────────────── */}
+      {/* ── WALLET TOP-UPS TAB ───────────────────────────────────────────── */}
       {tab === 'topups' && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="flex items-center gap-2 px-6 py-4 border-b border-gray-100">
-            <Filter className="w-4 h-4 text-gray-400" />
-            <span className="text-sm text-gray-500 font-medium mr-2">Filter:</span>
+        <div className="bg-white sm:rounded-2xl sm:border sm:border-gray-100 sm:shadow-sm overflow-hidden">
+          <div className="flex items-center gap-2 px-1 sm:px-6 py-3 sm:py-4 sm:border-b sm:border-gray-100 overflow-x-auto no-scrollbar">
+            <Filter className="w-4 h-4 text-gray-400 shrink-0 hidden sm:block" />
+            <span className="text-sm text-gray-500 font-medium mr-1 shrink-0 hidden sm:inline">Filter:</span>
             {(['PENDING', 'COMPLETED', 'FAILED', 'ALL'] as PayoutStatus[]).map(s => (
               <button
                 key={s}
                 onClick={() => setTopupStatus(s)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
                   topupStatus === s ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
                 {s}
               </button>
             ))}
-            <div className="ml-auto text-xs text-gray-400">{topupPagination.total} records</div>
+            <div className="ml-auto text-xs text-gray-400 shrink-0 pr-1 hidden sm:block">{topupPagination.total} records</div>
           </div>
 
           {loading ? (
@@ -679,33 +874,40 @@ const PayoutManagement: React.FC = () => {
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-900 border-t-transparent" />
             </div>
           ) : topups.length === 0 ? (
-            <div className="text-center py-20 text-gray-400">
+            <div className="text-center py-16 sm:py-20 text-gray-400">
               <DollarSign className="w-10 h-10 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No {topupStatus.toLowerCase()} top-ups</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    {['User', 'Amount', 'Provider', 'Status', 'Initiated', 'Actions'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        {h}
-                      </th>
+            <>
+              <div className="grid gap-3 px-1 sm:hidden">
+                {topups.map(t => (
+                  <TopUpCard key={t.id} topup={t} onReconcile={id => openModal('reconcile_topup', id)} />
+                ))}
+              </div>
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      {['User', 'Amount', 'Provider', 'Status', 'Initiated', 'Actions'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {topups.map(t => (
+                      <TopUpRow key={t.id} topup={t} onReconcile={id => openModal('reconcile_topup', id)} />
                     ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {topups.map(t => (
-                    <TopUpRow key={t.id} topup={t} onReconcile={id => openModal('reconcile_topup', id)} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
 
           {topupPagination.pages > 1 && (
-            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
+            <div className="flex items-center justify-between px-1 sm:px-6 py-4 sm:border-t sm:border-gray-100 mt-1">
               <span className="text-xs text-gray-500">Page {topupPagination.page} of {topupPagination.pages}</span>
               <div className="flex gap-2">
                 <button
