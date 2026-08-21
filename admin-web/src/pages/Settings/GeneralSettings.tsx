@@ -86,7 +86,8 @@ const ACCENT: Record<string, AccentConfig> = {
   pricing:            { bar: '#3B6D11', solid: '#3B6D11' },
   surge:              { bar: '#BA7517', solid: '#BA7517' },
   notifications:      { bar: '#534AB7', solid: '#534AB7' },
-  wallet:             { bar: '#1D9E75', solid: '#1D9E75' },
+  wallet:           { bar: '#1D9E75', solid: '#1D9E75' },
+  'manual-credit':    { bar: '#0F6E56', solid: '#0F6E56' },
   password:           { bar: '#5F5E5A', solid: '#5F5E5A' },
   audit:              { bar: '#5F5E5A', solid: '#5F5E5A' },
   'onboarding-bonus': { bar: '#993556', solid: '#993556' },
@@ -1210,6 +1211,154 @@ const CashbackSection: React.FC = () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MANUAL WALLET CREDIT SECTION
+// For reconciling stuck payments (any user — customer, driver, or partner),
+// not restricted to earners like Custom Bonus is.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface WalletUser {
+  id: string; firstName: string; lastName: string; email: string; phone: string; role: string;
+  wallet?: { balance: number } | null;
+}
+
+const ManualWalletCreditSection: React.FC = () => {
+  const [searchTerm, setSearchTerm]   = useState('');
+  const [results,     setResults]     = useState<WalletUser[]>([]);
+  const [searching,   setSearching]   = useState(false);
+  const [searched,    setSearched]    = useState(false);
+  const [selected,    setSelected]    = useState<WalletUser | null>(null);
+  const [amount,      setAmount]      = useState('');
+  const [type,        setType]        = useState<'credit' | 'debit'>('credit');
+  const [reason,      setReason]      = useState('');
+  const [sending,     setSending]     = useState(false);
+
+  const runSearch = async () => {
+    if (!searchTerm.trim()) return;
+    setSearching(true); setSearched(true); setSelected(null);
+    try {
+      const res = await api.get('/admin/users', { params: { search: searchTerm.trim(), limit: 10 } });
+      setResults(res.data?.data?.users ?? []);
+    } catch (err: any) {
+      if (!err?._handled) toast.error('Search failed');
+    } finally { setSearching(false); }
+  };
+
+  const reset = () => {
+    setSelected(null); setAmount(''); setReason(''); setType('credit');
+  };
+
+  const handleCredit = async () => {
+    if (!selected) return;
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt <= 0) { toast.error('Enter a valid amount'); return; }
+    if (!reason.trim()) { toast.error('A reason is required — this feeds the audit log'); return; }
+
+    setSending(true);
+    try {
+      const res = await api.post(`/admin/wallets/${selected.id}/adjust`, {
+        amount: amt, type, reason: reason.trim(),
+      });
+      toast.success(
+        `₦${amt.toLocaleString('en-NG')} ${type === 'credit' ? 'credited to' : 'debited from'} ${selected.firstName}'s wallet`
+      );
+      const newBalance = res.data?.data?.wallet?.balance;
+      setSelected(s => s ? { ...s, wallet: { balance: newBalance ?? (s.wallet?.balance ?? 0) } } : s);
+      setAmount(''); setReason('');
+    } catch (err: any) {
+      if (!err?._handled) toast.error(err?.response?.data?.message || 'Failed to adjust wallet');
+    } finally { setSending(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Alert variant="warning">
+        Use this only after confirming the payment on the Paystack/Flutterwave dashboard — this does not
+        re-verify with the provider. For payments still tracked in-app, prefer <strong>Wallet Management → Wallet Top-Ups</strong>,
+        which verifies with the provider automatically before crediting.
+      </Alert>
+
+      <div className="flex gap-2 max-w-lg">
+        <Input
+          placeholder="Search by name, email, or phone…"
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+        />
+        <Button variant="secondary" loading={searching} onClick={runSearch}>
+          <Search className="h-4 w-4" />Search
+        </Button>
+      </div>
+
+      {searched && !searching && results.length === 0 && (
+        <p className="text-xs text-gray-400">No users found.</p>
+      )}
+
+      {results.length > 0 && !selected && (
+        <div className="border border-gray-200 rounded-lg divide-y divide-gray-50 max-h-56 overflow-y-auto">
+          {results.map(u => (
+            <button key={u.id} onClick={() => setSelected(u)}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{u.firstName} {u.lastName}</p>
+                <p className="text-xs text-gray-400 truncate">{u.email} · {u.phone}</p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{u.role}</span>
+                <span className="text-xs text-gray-500">₦{(u.wallet?.balance ?? 0).toLocaleString('en-NG')}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">{selected.firstName} {selected.lastName}</p>
+              <p className="text-xs text-gray-400">{selected.email} · {selected.role}</p>
+              <p className="text-xs text-gray-500 mt-1">Current balance: <strong>₦{(selected.wallet?.balance ?? 0).toLocaleString('en-NG')}</strong></p>
+            </div>
+            <button onClick={reset} className="text-xs text-gray-400 hover:text-gray-600">Change user</button>
+          </div>
+
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+            {(['credit', 'debit'] as const).map(t => (
+              <button key={t} onClick={() => setType(t)}
+                className={cn('px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all',
+                  type === t ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700')}>
+                {t}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Amount (₦)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₦</span>
+                <input type="number" min={1} value={amount} onChange={e => setAmount(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Reason (required — used as audit trail)</label>
+              <input value={reason} onChange={e => setReason(e.target.value)}
+                placeholder="e.g. Paystack ref PSK_xxxx — verify bug, topup not recorded"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+            </div>
+          </div>
+
+          <Button loading={sending} onClick={handleCredit}>
+            <Save className="h-4 w-4" />
+            {type === 'credit' ? 'Credit' : 'Debit'} ₦{(+amount || 0).toLocaleString('en-NG')}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PASSWORD SECTION
 // PwField is defined OUTSIDE PasswordSection so React doesn't recreate the
 // component type on every render — avoids losing focus after each keystroke.
@@ -1902,14 +2051,23 @@ const GeneralSettings: React.FC = () => {
       subtitle: 'Update your administrator account password',
       component: <PasswordSection />,
     },
-    {
+        {
       id: 'audit',
       icon: <ClipboardList className="h-4 w-4" />,
       title: 'Audit log',
       subtitle: 'Recent changes to platform configuration',
       component: <AuditLogSection />,
     },
-    ...(isSuperAdmin ? [
+        ...(isSuperAdmin ? [
+      {
+        id: 'manual-credit',
+        icon: <DollarSign className="h-4 w-4" />,
+        title: 'Manual wallet credit',
+        subtitle: 'Reconcile a stuck payment for any customer, driver, or partner',
+        component: <ManualWalletCreditSection />,
+        wide: true,
+        superAdmin: true,
+      },
       {
         id: 'pricing',
         icon: <DollarSign className="h-4 w-4" />,

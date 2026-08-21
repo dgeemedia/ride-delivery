@@ -298,6 +298,20 @@ exports.flutterwaveTopup = async (req, res) => {
     metadata: { userId, purpose: 'wallet_topup' },
   });
 
+  // Pre-create a PENDING record so admins can see — and reconcile — this
+  // top-up even if the customer never comes back to verify it.
+  const wallet = await ensureWallet(userId);
+  await prisma.walletTransaction.create({
+    data: {
+      walletId:    wallet.id,
+      type:        'CREDIT',
+      amount,
+      description: 'Wallet top-up via Flutterwave',
+      status:      'PENDING',
+      reference:   txRef,
+    },
+  });
+
   res.status(200).json({ success: true, data: { paymentLink: transaction.link, txRef } });
 };
 
@@ -310,8 +324,8 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Already processed', data: { transaction: existing } });
   }
 
-    // transactionId here is actually the tx_ref the app generated at initialize
-  // time (WALLET-FLW-...), not Flutterwave's internal numeric id — verify by reference.
+  // transactionId here is actually the tx_ref generated at initialize time
+  // (WALLET-FLW-...), not Flutterwave's internal numeric id — verify by reference.
   const transaction = await paymentService.flutterwaveVerifyByReference(transactionId);
   if (transaction.status !== 'successful') throw new AppError('Payment verification failed', 400);
 
@@ -321,16 +335,21 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
 
   const [updatedWallet, walletTx] = await prisma.$transaction([
     prisma.wallet.update({ where: { userId }, data: { balance: { increment: amount } } }),
-    prisma.walletTransaction.create({
-      data: {
-        walletId:    wallet.id,
-        type:        'CREDIT',
-        amount,
-        description: 'Wallet top-up via Flutterwave',
-        status:      'COMPLETED',
-        reference:   String(transactionId),
-      },
-    }),
+    existing
+      ? prisma.walletTransaction.update({
+          where: { id: existing.id },
+          data:  { status: 'COMPLETED', amount },
+        })
+      : prisma.walletTransaction.create({
+          data: {
+            walletId:    wallet.id,
+            type:        'CREDIT',
+            amount,
+            description: 'Wallet top-up via Flutterwave',
+            status:      'COMPLETED',
+            reference:   String(transactionId),
+          },
+        }),
   ]);
 
   await notificationService.notify({
@@ -1043,6 +1062,112 @@ exports.emailTransactionHistory = async (req, res) => {
     success: true,
     message: `Transaction history sent to ${email}`,
     data: { count: transactions.length, from: fmtDate(fromDate), to: fmtDate(toDate) },
+  });
+};
+
+// ─────────────────────────────────────────────
+// ADMIN — Wallet Top-Up Visibility & Reconciliation
+// ─────────────────────────────────────────────
+
+// Reference prefixes tell us which provider a top-up went through
+// without needing a separate `provider` column on WalletTransaction.
+const detectTopUpProvider = (reference = '') => {
+  if (reference.startsWith('TOPUP-'))      return 'paystack';
+  if (reference.startsWith('WALLET-FLW-')) return 'flutterwave';
+  return 'unknown';
+};
+
+exports.adminGetTopUps = async (req, res) => {
+  const { status = 'PENDING', page = 1, limit = 20 } = req.query;
+  const skip = (page - 1) * limit;
+
+  const where = {
+    type: 'CREDIT',
+    OR: [
+      { reference: { startsWith: 'TOPUP-' } },
+      { reference: { startsWith: 'WALLET-FLW-' } },
+    ],
+  };
+  if (status !== 'ALL') where.status = status;
+
+  const [topups, total] = await Promise.all([
+    prisma.walletTransaction.findMany({
+      where,
+      include: {
+        wallet: {
+          select: {
+            userId: true,
+            user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, role: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip:    parseInt(skip),
+      take:    parseInt(limit),
+    }),
+    prisma.walletTransaction.count({ where }),
+  ]);
+
+  const enriched = topups.map(t => ({ ...t, provider: detectTopUpProvider(t.reference) }));
+
+  res.status(200).json({
+    success: true,
+    data: { topups: enriched, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } },
+  });
+};
+
+exports.adminReconcileTopUp = async (req, res) => {
+  const { id } = req.params;
+
+  const tx = await prisma.walletTransaction.findUnique({
+    where:   { id },
+    include: { wallet: { select: { id: true, userId: true } } },
+  });
+  if (!tx) throw new AppError('Top-up record not found', 404);
+  if (tx.status === 'COMPLETED') {
+    return res.status(200).json({ success: true, message: 'Already credited', data: { transaction: tx } });
+  }
+
+  // Always re-verify with the provider before crediting — never trust the
+  // admin's word alone that a payment succeeded.
+  const provider = detectTopUpProvider(tx.reference);
+  let verified;
+  if (provider === 'paystack') {
+    verified = await paymentService.paystackVerify(tx.reference);
+    if (verified.status !== 'success') throw new AppError('Paystack has not confirmed this payment as successful', 400);
+  } else if (provider === 'flutterwave') {
+    verified = await paymentService.flutterwaveVerifyByReference(tx.reference);
+    if (verified.status !== 'successful') throw new AppError('Flutterwave has not confirmed this payment as successful', 400);
+  } else {
+    throw new AppError('Could not determine payment provider from reference', 400);
+  }
+
+  const [updatedWallet, updatedTx] = await prisma.$transaction([
+    prisma.wallet.update({ where: { id: tx.wallet.id }, data: { balance: { increment: tx.amount } } }),
+    prisma.walletTransaction.update({ where: { id: tx.id }, data: { status: 'COMPLETED' } }),
+  ]);
+
+  await notificationService.notify({
+    userId:  tx.wallet.userId,
+    title:   'Wallet Topped Up 💰',
+    message: `₦${tx.amount.toLocaleString('en-NG')} has been added to your wallet. New balance: ₦${updatedWallet.balance.toLocaleString('en-NG')}`,
+    type:    notificationService.TYPES.PAYMENT_RECEIVED,
+    data:    { amount: tx.amount, newBalance: updatedWallet.balance, reference: tx.reference },
+  });
+
+  await logActivity({
+    userId:     req.user.id,
+    action:     'admin_topup_reconciled',
+    entityType: 'WalletTransaction',
+    entityId:   tx.id,
+    details:    { targetUserId: tx.wallet.userId, amount: tx.amount, provider, reference: tx.reference },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `₦${tx.amount.toLocaleString('en-NG')} verified with ${provider} and credited.`,
+    data:    { wallet: updatedWallet, transaction: updatedTx },
   });
 };
 

@@ -214,4 +214,26 @@ router.put(
   walletController.adminRejectTransfer
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN — Wallet top-up visibility & reconciliation
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get(
+  '/admin/topups',
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  [
+    query('status').optional().isIn(['PENDING', 'COMPLETED', 'FAILED', 'ALL']),
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+  ],
+  walletController.adminGetTopUps
+);
+
+router.put(
+  '/admin/topups/:id/reconcile',
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  [param('id').isUUID()],
+  walletController.adminReconcileTopUp
+);
+
 module.exports = router;

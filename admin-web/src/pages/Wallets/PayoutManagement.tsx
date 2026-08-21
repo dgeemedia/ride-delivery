@@ -228,9 +228,63 @@ const TransferRow: React.FC<{
   </tr>
 );
 
+const TopUpRow: React.FC<{
+  topup: TopUp;
+  onReconcile: (id: string) => void;
+}> = ({ topup, onReconcile }) => (
+  <tr className="hover:bg-gray-50 transition-colors">
+    <td className="px-4 py-4">
+      <div className="font-semibold text-gray-900 text-sm">
+        {topup.wallet.user.firstName} {topup.wallet.user.lastName}
+      </div>
+      <div className="text-xs text-gray-500">{topup.wallet.user.email}</div>
+      <div className="text-xs text-gray-400 font-mono">{topup.wallet.user.phone}</div>
+    </td>
+    <td className="px-4 py-4">
+      <div className="font-bold text-gray-900">₦{topup.amount.toLocaleString('en-NG')}</div>
+      <div className="text-xs text-gray-500 font-mono mt-0.5">{topup.reference}</div>
+    </td>
+    <td className="px-4 py-4">
+      <span className="text-xs font-semibold capitalize px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+        {topup.provider}
+      </span>
+    </td>
+    <td className="px-4 py-4"><StatusBadge status={topup.status} /></td>
+    <td className="px-4 py-4 text-xs text-gray-500">
+      {new Date(topup.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+    </td>
+    <td className="px-4 py-4">
+      {topup.status === 'PENDING' ? (
+        <button
+          onClick={() => onReconcile(topup.id)}
+          className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors"
+        >
+          <CheckCircle className="w-3.5 h-3.5" /> Verify & Credit
+        </button>
+      ) : (
+        <span className="text-xs text-gray-400">Credited</span>
+      )}
+    </td>
+  </tr>
+);
+
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
-type TabId = 'payouts' | 'transfers';
+type TabId = 'payouts' | 'transfers' | 'topups';
+
+interface TopUpUser {
+  id: string; firstName: string; lastName: string; email: string; phone: string;
+}
+interface TopUp {
+  id: string;
+  amount: number;
+  status: string;
+  reference: string;
+  provider: 'paystack' | 'flutterwave' | 'unknown';
+  description: string;
+  createdAt: string;
+  wallet: { userId: string; user: TopUpUser };
+}
 
 const PayoutManagement: React.FC = () => {
   const [tab,               setTab]              = useState<TabId>('payouts');
@@ -241,16 +295,19 @@ const PayoutManagement: React.FC = () => {
   const [xferPagination,    setXferPagination]   = useState<Pagination>({ total: 0, page: 1, pages: 1 });
   const [payoutStatus,      setPayoutStatus]     = useState<PayoutStatus>('PENDING');
   const [xferStatus,        setXferStatus]       = useState<TransferStatus>('PENDING');
+  const [topups,            setTopups]           = useState<TopUp[]>([]);
+  const [topupPagination,   setTopupPagination]  = useState<Pagination>({ total: 0, page: 1, pages: 1 });
+  const [topupStatus,       setTopupStatus]      = useState<PayoutStatus>('PENDING');
   const [loading,           setLoading]          = useState(false);
-
+  
   // Confirm modal state
-  const [modal, setModal] = useState<{
+    const [modal, setModal] = useState<{
     open:    boolean;
-    type:    'approve_payout' | 'reject_payout' | 'approve_transfer' | 'reject_transfer';
+    type:    'approve_payout' | 'reject_payout' | 'approve_transfer' | 'reject_transfer' | 'reconcile_topup';
     id:      string;
     loading: boolean;
   }>({ open: false, type: 'approve_payout', id: '', loading: false });
-
+  
   // ── Data loading ────────────────────────────────────────────────────────────
 
   const loadStats = useCallback(async () => {
@@ -270,7 +327,7 @@ const PayoutManagement: React.FC = () => {
     finally { setLoading(false); }
   }, [payoutStatus]);
 
-  const loadTransfers = useCallback(async (page = 1) => {
+    const loadTransfers = useCallback(async (page = 1) => {
     setLoading(true);
     try {
       const res = await api.get('/wallet/admin/transfers', { params: { status: xferStatus, page, limit: 20 } });
@@ -280,10 +337,21 @@ const PayoutManagement: React.FC = () => {
     finally { setLoading(false); }
   }, [xferStatus]);
 
+  const loadTopUps = useCallback(async (page = 1) => {
+    setLoading(true);
+    try {
+      const res = await api.get('/wallet/admin/topups', { params: { status: topupStatus, page, limit: 20 } });
+      setTopups(res.data.data.topups);
+      setTopupPagination(res.data.data.pagination);
+    } catch { toast.error('Failed to load top-ups'); }
+    finally { setLoading(false); }
+  }, [topupStatus]);
+
   useEffect(() => { loadStats(); }, []);
   useEffect(() => { if (tab === 'payouts')   loadPayouts();   }, [tab, payoutStatus]);
   useEffect(() => { if (tab === 'transfers') loadTransfers(); }, [tab, xferStatus]);
-
+  useEffect(() => { if (tab === 'topups')    loadTopUps();    }, [tab, topupStatus]);
+  
   // ── Modal actions ───────────────────────────────────────────────────────────
 
   const openModal = (type: typeof modal.type, id: string) =>
@@ -318,10 +386,14 @@ const PayoutManagement: React.FC = () => {
         await api.put(`/wallet/admin/transfers/${id}/approve`, { note: noteOrReason });
         toast.success('Transfer approved. Recipient credited.');
         loadTransfers();
-        } else if (type === 'reject_transfer') {
+                } else if (type === 'reject_transfer') {
         await api.put(`/wallet/admin/transfers/${id}/reject`, { reason: noteOrReason });
         toast.success('Transfer rejected and sender refunded.');
         loadTransfers();
+        } else if (type === 'reconcile_topup') {
+        const res = await api.put(`/wallet/admin/topups/${id}/reconcile`);
+        toast.success(res.data?.message ?? 'Top-up verified and credited');
+        loadTopUps();
         }
         loadStats();
         closeModal();
@@ -380,8 +452,8 @@ const PayoutManagement: React.FC = () => {
       )}
 
       {/* Tab switcher */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {(['payouts', 'transfers'] as TabId[]).map(t => (
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        {(['payouts', 'transfers', 'topups'] as TabId[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -393,7 +465,8 @@ const PayoutManagement: React.FC = () => {
           >
             {t === 'payouts'    && <Building2     className="w-4 h-4" />}
             {t === 'transfers'  && <ArrowLeftRight className="w-4 h-4" />}
-            {t === 'payouts' ? 'Bank Withdrawals' : 'Peer Transfers'}
+            {t === 'topups'     && <DollarSign     className="w-4 h-4" />}
+            {t === 'payouts' ? 'Bank Withdrawals' : t === 'transfers' ? 'Peer Transfers' : 'Wallet Top-Ups'}
             {t === 'payouts' && stats?.pendingPayouts   ? (
               <span className="ml-1 bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
                 {stats.pendingPayouts}
@@ -402,6 +475,11 @@ const PayoutManagement: React.FC = () => {
             {t === 'transfers' && stats?.pendingTransfers ? (
               <span className="ml-1 bg-orange-400 text-orange-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
                 {stats.pendingTransfers}
+              </span>
+            ) : null}
+            {t === 'topups' && topupPagination.total > 0 && topupStatus === 'PENDING' ? (
+              <span className="ml-1 bg-blue-400 text-blue-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                {topupPagination.total}
               </span>
             ) : null}
           </button>
@@ -576,6 +654,80 @@ const PayoutManagement: React.FC = () => {
         </div>
       )}
 
+            {/* ── WALLET TOP-UPS TAB ───────────────────────────────────────────── */}
+      {tab === 'topups' && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="flex items-center gap-2 px-6 py-4 border-b border-gray-100">
+            <Filter className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-500 font-medium mr-2">Filter:</span>
+            {(['PENDING', 'COMPLETED', 'FAILED', 'ALL'] as PayoutStatus[]).map(s => (
+              <button
+                key={s}
+                onClick={() => setTopupStatus(s)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  topupStatus === s ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+            <div className="ml-auto text-xs text-gray-400">{topupPagination.total} records</div>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-900 border-t-transparent" />
+            </div>
+          ) : topups.length === 0 ? (
+            <div className="text-center py-20 text-gray-400">
+              <DollarSign className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No {topupStatus.toLowerCase()} top-ups</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    {['User', 'Amount', 'Provider', 'Status', 'Initiated', 'Actions'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {topups.map(t => (
+                    <TopUpRow key={t.id} topup={t} onReconcile={id => openModal('reconcile_topup', id)} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {topupPagination.pages > 1 && (
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
+              <span className="text-xs text-gray-500">Page {topupPagination.page} of {topupPagination.pages}</span>
+              <div className="flex gap-2">
+                <button
+                  disabled={topupPagination.page <= 1}
+                  onClick={() => loadTopUps(topupPagination.page - 1)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  disabled={topupPagination.page >= topupPagination.pages}
+                  onClick={() => loadTopUps(topupPagination.page + 1)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Confirm modals */}
       <ConfirmModal
         open={modal.open && modal.type === 'approve_payout'}
@@ -617,6 +769,16 @@ const PayoutManagement: React.FC = () => {
         placeholder="Reason for rejection…"
         confirmLabel="Reject & Refund"
         confirmClass="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg"
+        onCancel={closeModal}
+        onConfirm={confirmAction}
+        loading={modal.loading}
+      />
+      <ConfirmModal
+        open={modal.open && modal.type === 'reconcile_topup'}
+        title="Verify & Credit Top-Up"
+        body="We'll re-check this payment directly with the provider (Paystack/Flutterwave) before crediting. Only proceed if you can see this exact amount as a successful charge on the provider dashboard."
+        confirmLabel="Verify & Credit"
+        confirmClass="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg"
         onCancel={closeModal}
         onConfirm={confirmAction}
         loading={modal.loading}
