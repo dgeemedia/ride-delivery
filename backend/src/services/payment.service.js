@@ -153,6 +153,22 @@ exports.flutterwaveVerifyAccount = async (accountNumber, bankCode) => {
   }
 };
 
+exports.flutterwaveVerifyByReference = async (txRef) => {
+  try {
+    const { data } = await flutterwaveAPI.get('/transactions/verify_by_reference', {
+      params: { tx_ref: txRef },
+    });
+    if (data.status !== 'success') throw new AppError(data.message, 400);
+    if (data.data.status !== 'successful') {
+      throw new AppError(`Payment not successful. Status: ${data.data.status}`, 400);
+    }
+    return data.data;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError('Flutterwave verification failed: ' + error.message, 500);
+  }
+};
+
 exports.paystackCreateTransferRecipient = async ({ name, accountNumber, bankCode }) => {
   try {
     const { data } = await paystackAPI.post('/transferrecipient', {

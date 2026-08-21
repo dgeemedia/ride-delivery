@@ -310,7 +310,9 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Already processed', data: { transaction: existing } });
   }
 
-  const transaction = await paymentService.flutterwaveVerify(transactionId);
+    // transactionId here is actually the tx_ref the app generated at initialize
+  // time (WALLET-FLW-...), not Flutterwave's internal numeric id — verify by reference.
+  const transaction = await paymentService.flutterwaveVerifyByReference(transactionId);
   if (transaction.status !== 'successful') throw new AppError('Payment verification failed', 400);
 
   const amount     = transaction.amount;
