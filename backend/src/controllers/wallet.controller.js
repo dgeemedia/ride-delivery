@@ -135,16 +135,25 @@ exports.verifyPaystackTopup = async (req, res) => {
 
   const [updatedWallet, walletTx] = await prisma.$transaction([
     prisma.wallet.update({ where: { userId }, data: { balance: { increment: amount } } }),
-    prisma.walletTransaction.create({
-      data: {
-        walletId:    wallet.id,
-        type:        'CREDIT',
-        amount,
-        description: 'Wallet top-up via Paystack',
-        status:      'COMPLETED',
-        reference,
-      },
-    }),
+    existing
+      ? prisma.walletTransaction.update({
+          where: { id: existing.id },
+          data: {
+            status:      'COMPLETED',
+            amount,
+            description: 'Wallet top-up via Paystack',
+          },
+        })
+      : prisma.walletTransaction.create({
+          data: {
+            walletId:    wallet.id,
+            type:        'CREDIT',
+            amount,
+            description: 'Wallet top-up via Paystack',
+            status:      'COMPLETED',
+            reference,
+          },
+        }),
   ]);
 
   await notificationService.notify({

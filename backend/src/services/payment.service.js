@@ -26,14 +26,15 @@ const flutterwaveAPI = axios.create({
 // PAYSTACK
 // ─────────────────────────────────────────────
 
-exports.paystackInitialize = async ({ email, amount, metadata = {}, callbackUrl }) => {
+exports.paystackInitialize = async ({ email, amount, metadata = {}, callbackUrl, reference }) => {
   try {
     const { data } = await paystackAPI.post('/transaction/initialize', {
       email,
       amount: Math.round(amount * 100), // Paystack uses kobo (1 NGN = 100 kobo)
       currency: 'NGN',
       callback_url: callbackUrl || process.env.PAYSTACK_CALLBACK_URL,
-      metadata
+      metadata,
+      ...(reference && { reference }),
     });
 
     if (!data.status) throw new AppError(data.message, 400);
