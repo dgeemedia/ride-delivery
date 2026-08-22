@@ -14,14 +14,14 @@ router.get('/debug-env', (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PUBLIC — Paystack webhook (no auth)
+// PUBLIC — Payment provider webhooks (no auth — verified via signature instead)
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.post('/topup/verify', walletController.verifyTopUp);
+router.post('/topup/flutterwave/webhook', walletController.verifyFlutterwaveWebhook);
 
 // ── PUBLIC — deposit limits (no auth required, used by mobile top-up screen) ──
 router.get('/deposit-limits', walletController.getDepositLimits);
-
 // ─────────────────────────────────────────────────────────────────────────────
 // All routes below require authentication
 // ─────────────────────────────────────────────────────────────────────────────

@@ -167,6 +167,11 @@ app.use(
   express.raw({ type: 'application/json' }),
   (req, _res, next) => { req.rawBody = req.body; next(); }
 );
+app.use(
+  '/api/wallet/topup/flutterwave/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, _res, next) => { req.rawBody = req.body; next(); }
+);
 
 if (ENABLE_DUOPAY) {
   app.use(
@@ -184,6 +189,7 @@ const RAW_BODY_ROUTES = [
   '/api/payments/paystack/webhook',
   '/api/payments/flutterwave/webhook',
   '/api/wallet/topup/verify',
+  '/api/wallet/topup/flutterwave/webhook',
   ...(ENABLE_DUOPAY ? ['/api/duopay/webhook/paystack'] : []),
 ];
 

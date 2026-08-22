@@ -446,6 +446,69 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
   res.status(200).json({ success: true, message: 'Wallet topped up successfully', data: { wallet: updatedWallet, transaction: walletTx } });
 };
 
+exports.verifyFlutterwaveWebhook = async (req, res) => {
+  const signature = req.headers['verif-hash'];
+  if (!paymentService.validateFlutterwaveWebhook(signature)) {
+    return res.status(401).json({ success: false, message: 'Invalid signature' });
+  }
+
+  const { event, data } = req.body;
+  if (event !== 'charge.completed' || data?.status !== 'successful') {
+    return res.sendStatus(200); // ack, nothing to do
+  }
+
+  const txRef = data.tx_ref;
+  if (!txRef || !txRef.startsWith('WALLET-FLW-')) {
+    return res.sendStatus(200); // not a wallet top-up event, ignore
+  }
+
+  const existing = await prisma.walletTransaction.findFirst({ where: { reference: txRef } });
+  if (existing?.status === 'COMPLETED') {
+    return res.sendStatus(200);
+  }
+
+  const verified = await paymentService.flutterwaveVerifyByReference(txRef).catch(() => null);
+  if (!verified || verified.status !== 'successful') {
+    return res.sendStatus(200); // don't credit on unverified webhook payload alone
+  }
+
+  const amount = verified.amount;
+  const userId = verified.meta?.userId;
+  if (!userId) return res.sendStatus(200);
+
+  const wallet = await ensureWallet(userId);
+
+  await prisma.$transaction([
+    prisma.wallet.update({ where: { userId }, data: { balance: { increment: amount } } }),
+    existing
+      ? prisma.walletTransaction.update({
+          where: { id: existing.id },
+          data:  { status: 'COMPLETED', provider: 'flutterwave' },
+        })
+      : prisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            type: 'CREDIT',
+            amount,
+            description: 'Wallet top-up via Flutterwave',
+            status: 'COMPLETED',
+            reference: txRef,
+            provider: 'flutterwave',
+          },
+        }),
+  ]);
+
+  await notificationService.notify({
+    userId,
+    title: 'Wallet Credited 💰',
+    message: `₦${amount.toLocaleString('en-NG')} added to your wallet. Ref: ${txRef}`,
+    type: notificationService.TYPES.WALLET_CREDITED,
+    data: { amount, reference: txRef },
+  });
+
+  res.sendStatus(200);
+};
+
 exports.transfer = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
