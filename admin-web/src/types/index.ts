@@ -247,7 +247,12 @@ export interface DashboardStats {
   wallet: {
     totalBalance: number;
   };
-    pending: {
+  pending: {
+    drivers:  number;
+    partners: number;
+  };
+  // ← NEW
+  incomplete: {
     drivers:  number;
     partners: number;
   };

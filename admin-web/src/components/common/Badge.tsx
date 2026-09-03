@@ -1,3 +1,4 @@
+// admin-web/src/components/common/Badge.tsx
 import React from 'react';
 
 type BadgeVariant = 'default' | 'success' | 'warning' | 'error' | 'info';

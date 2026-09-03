@@ -21,6 +21,17 @@ router.use((req, res, next) => {
 router.get('/dashboard/stats', adminController.getDashboardStats);
 
 // ─────────────────────────────────────────────
+// INCOMPLETE APPLICATIONS
+// Users who selected DRIVER / DELIVERY_PARTNER at signup but never
+// completed their profile. Spans both RIDES and DELIVERIES scope
+// since it can return either role — same pattern as /rides below.
+// ─────────────────────────────────────────────
+router.get('/applications/incomplete',
+  requireScope('RIDES', 'DELIVERIES'),
+  adminController.getIncompleteApplications
+);
+
+// ─────────────────────────────────────────────
 // USER MANAGEMENT
 // NOTE: Static routes (/create-admin) MUST come before dynamic routes (/:id)
 // ─────────────────────────────────────────────

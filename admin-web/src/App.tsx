@@ -17,6 +17,7 @@ import DriverDocuments    from '@/pages/Drivers/DriverDocuments';
 import PartnerList        from '@/pages/Partners/PartnerList';
 import PartnerApproval    from '@/pages/Partners/PartnerApproval';
 import PartnerDetails     from '@/pages/Partners/PartnerDetails';
+import IncompleteApplications from '@/pages/Applications/IncompleteApplications';
 import RideList           from '@/pages/Rides/RideList';
 import RideDetails        from '@/pages/Rides/RideDetails';
 import LiveRides          from '@/pages/Rides/LiveRides';
@@ -76,6 +77,9 @@ function App() {
           <Route path="/users"              element={<ProtectedRoute><UserList /></ProtectedRoute>} />
           <Route path="/users/create-admin" element={<SuperAdminRoute><CreateAdminUser /></SuperAdminRoute>} />
           <Route path="/users/:id"          element={<ProtectedRoute><UserDetails /></ProtectedRoute>} />
+
+          {/* Incomplete Applications */}
+          <Route path="/applications/incomplete" element={<ProtectedRoute><IncompleteApplications /></ProtectedRoute>} />
 
           {/* Drivers — statics before :id wildcard */}
           <Route path="/drivers"               element={<ProtectedRoute><DriverList /></ProtectedRoute>} />

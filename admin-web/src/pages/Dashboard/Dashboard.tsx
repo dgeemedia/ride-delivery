@@ -121,6 +121,18 @@ const statCards = [
       onClick:  () => navigate('/partners?status=pending'),
     },
     {
+      title:    'Incomplete Applications',
+      value:    ((stats.incomplete?.drivers ?? 0) + (stats.incomplete?.partners ?? 0)).toLocaleString(),
+      icon:     UserX,
+      color:    ((stats.incomplete?.drivers ?? 0) + (stats.incomplete?.partners ?? 0)) > 0
+        ? 'bg-gray-400'
+        : 'bg-success-500',
+      subLabel: ((stats.incomplete?.drivers ?? 0) + (stats.incomplete?.partners ?? 0)) > 0
+        ? { label: `${stats.incomplete?.drivers ?? 0} drivers, ${stats.incomplete?.partners ?? 0} partners`, positive: false }
+        : { label: 'No abandoned signups', positive: true },
+      onClick:  () => navigate('/applications/incomplete'),
+    },
+    {
       title:    'Active Rides',
       value:    stats.rides.active.toLocaleString(),
       icon:     Car,

@@ -96,21 +96,26 @@ exports.getDashboardStats = async (req, res) => {
     newUsersToday, newUsersYesterday,
     suspendedDriversCount, suspendedPartnersCount,
     suspendedDriversList, suspendedPartnersList,
+    incompleteDrivers, incompletePartners,       // ← NEW
   ] = await Promise.all([
     prisma.user.count({ where: { role: 'CUSTOMER' } }),
-    prisma.user.count({ where: { role: 'DRIVER' } }),
-    prisma.user.count({ where: { role: 'DELIVERY_PARTNER' } }),
+
+    // ← CHANGED — count actual DriverProfile / DeliveryPartnerProfile rows,
+    // not User rows with role=DRIVER. A user can pick the role and never
+    // finish onboarding, which previously inflated this number relative to
+    // what the Drivers/Partners list pages (which query the profile table) show.
+    prisma.driverProfile.count(),
+    prisma.deliveryPartnerProfile.count(),
+
     prisma.ride.count({ where: { status: 'COMPLETED' } }),
     prisma.delivery.count({ where: { status: 'DELIVERED' } }),
     prisma.ride.count({ where: { status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } } }),
     prisma.delivery.count({ where: { status: { in: ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } } }),
- 
-    // Today's revenue
+
     prisma.payment.aggregate({
       where: { status: 'COMPLETED', createdAt: { gte: todayStart } },
       _sum: { amount: true },
     }),
-    // Yesterday's revenue (for delta)
     prisma.payment.aggregate({
       where: { status: 'COMPLETED', createdAt: { gte: yesterdayStart, lt: todayStart } },
       _sum: { amount: true },
@@ -135,13 +140,10 @@ exports.getDashboardStats = async (req, res) => {
     prisma.driverProfile.count({ where: { isApproved: false, isRejected: false } }),
     prisma.deliveryPartnerProfile.count({ where: { isApproved: false, isRejected: false } }),
     prisma.supportTicket.count({ where: { status: 'open' } }),
- 
-    // New users today (for delta)
+
     prisma.user.count({ where: { createdAt: { gte: todayStart } } }),
-    // New users yesterday (for delta)
     prisma.user.count({ where: { createdAt: { gte: yesterdayStart, lt: todayStart } } }),
 
-    // Suspended drivers count + list (dashboard widget)
     prisma.user.count({ where: { role: 'DRIVER', isSuspended: true } }),
     prisma.user.count({ where: { role: 'DELIVERY_PARTNER', isSuspended: true } }),
     prisma.user.findMany({
@@ -156,27 +158,31 @@ exports.getDashboardStats = async (req, res) => {
       orderBy: { suspendedAt: 'desc' },
       take: 10,
     }),
+
+    // ← NEW — users who picked DRIVER / DELIVERY_PARTNER at signup but never
+    // completed the profile step. Distinct from "pending approval": these
+    // never even reach the review queue.
+    prisma.user.count({ where: { role: 'DRIVER', driverProfile: null } }),
+    prisma.user.count({ where: { role: 'DELIVERY_PARTNER', deliveryProfile: null } }),
   ]);
- 
-  // ── Revenue delta (today vs yesterday) ──────────────────────────────────────
+
   const todayRev     = todayRevenue._sum.amount     ?? 0;
   const yesterdayRev = yesterdayRevenue._sum.amount ?? 0;
- 
+
   let revenueDelta = null;
   if (yesterdayRev > 0) {
     revenueDelta = parseFloat((((todayRev - yesterdayRev) / yesterdayRev) * 100).toFixed(1));
   } else if (todayRev > 0) {
-    revenueDelta = 100; // first revenue of the platform
+    revenueDelta = 100;
   }
- 
-  // ── User delta (today vs yesterday signups) ──────────────────────────────────
+
   let userDelta = null;
   if (newUsersYesterday > 0) {
     userDelta = parseFloat((((newUsersToday - newUsersYesterday) / newUsersYesterday) * 100).toFixed(1));
   } else if (newUsersToday > 0) {
     userDelta = 100;
   }
- 
+
   res.status(200).json({
     success: true,
     data: {
@@ -194,6 +200,8 @@ exports.getDashboardStats = async (req, res) => {
       },
       wallet:  { totalBalance: totalWalletBalance._sum.balance ?? 0 },
       pending: { drivers: pendingDrivers, partners: pendingPartners },
+      // ← NEW
+      incomplete: { drivers: incompleteDrivers, partners: incompletePartners },
       support: { openTickets },
       deltas:  { revenue: revenueDelta, users: userDelta },
       suspended: {
@@ -202,6 +210,54 @@ exports.getDashboardStats = async (req, res) => {
         driversList:   suspendedDriversList,
         partnersList:  suspendedPartnersList,
       },
+    },
+  });
+};
+
+// ─────────────────────────────────────────────
+// INCOMPLETE APPLICATIONS
+// Users who picked DRIVER / DELIVERY_PARTNER at signup but never
+// completed the profile step (no DriverProfile / DeliveryPartnerProfile row).
+// Distinct from "pending approval" — these never even reached the review queue.
+// ─────────────────────────────────────────────
+exports.getIncompleteApplications = async (req, res) => {
+  const { page = 1, limit = 20, role } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  let where;
+  if (role === 'DRIVER') {
+    where = { role: 'DRIVER', driverProfile: null };
+  } else if (role === 'DELIVERY_PARTNER') {
+    where = { role: 'DELIVERY_PARTNER', deliveryProfile: null };
+  } else {
+    where = {
+      OR: [
+        { role: 'DRIVER', driverProfile: null },
+        { role: 'DELIVERY_PARTNER', deliveryProfile: null },
+      ],
+    };
+  }
+
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      select: {
+        id: true, email: true, phone: true,
+        firstName: true, lastName: true, role: true,
+        isActive: true, createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: parseInt(skip),
+      take: parseInt(limit),
+    }),
+    prisma.user.count({ where }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      users,
+      pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
     },
   });
 };
