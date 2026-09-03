@@ -30,6 +30,8 @@ model User {
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @default(now()) @updatedAt
   adminDepartment      String?
+  countryCode          String                  @default("NG")
+  locale               String?
   twoFactorEnabled     Boolean                 @default(false)
   twoFactorMethod      String?
   passwordChangedAt    DateTime?               @db.Timestamptz(6)
@@ -67,6 +69,7 @@ model User {
   @@index([isActive])
   @@index([adminDepartment])
   @@index([isDeleted])
+  @@index([countryCode])
 }
 
 model OtpVerification {
@@ -361,6 +364,8 @@ model Payout {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @default(now()) @updatedAt
   bankName      String?
+  payoutMethod  String?      @default("NG_BANK_TRANSFER")
+  payoutDetails Json?
   user          User         @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([userId])
@@ -445,6 +450,29 @@ model SystemSettings {
   createdAt   DateTime @default(now())
 
   @@index([category])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// COUNTRY — per-market configuration. Not a strict FK on User.countryCode
+// yet (kept as a plain indexed string on User for now) so this table can be
+// introduced without requiring every existing user row to already match a
+// seeded Country record.
+// ─────────────────────────────────────────────────────────────────────────
+model Country {
+  id                String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  code              String   @unique // ISO 3166-1 alpha-2, e.g. "NG", "GH", "KE"
+  name              String
+  currencyCode      String   // ISO 4217, e.g. "NGN", "GHS", "KES"
+  currencySymbol    String
+  defaultLocale     String   // e.g. "en-NG", "fr-CI"
+  phoneDialCode     String   // e.g. "+234"
+  isActive          Boolean  @default(true)
+  paymentProviders  Json     // e.g. ["paystack","flutterwave"] in priority order
+  payoutMethod      String   @default("NG_BANK_TRANSFER")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+
+  @@index([isActive])
 }
 
 model PromoCode {
