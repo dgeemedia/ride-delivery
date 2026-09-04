@@ -201,6 +201,7 @@ model Ride {
   distance           Float?
   duration           Int?
   estimatedFare      Float
+  currency           String             @default("NGN")
   actualFare         Float?
   promoCode          String?
   requestedAt        DateTime           @default(now())
@@ -245,6 +246,7 @@ model Delivery {
   status             DeliveryStatus @default(PENDING)
   distance           Float?
   estimatedFee       Float
+  currency           String         @default("NGN")
   actualFee          Float?
   deliveryImageUrl   String?
   recipientName      String?
