@@ -84,10 +84,42 @@ const getCurrencyForUserId = async (userId) => {
   }
 };
 
+/**
+ * Countries the mobile app should offer at registration, optionally
+ * filtered by role. DRIVER and DELIVERY_PARTNER need real payouts, so
+ * countries whose payoutMethod is still 'UNSUPPORTED' are excluded for
+ * them. CUSTOMER (or no role) only needs a working payment provider, so
+ * every seeded country is eligible.
+ */
+const getRegistrationCountries = async (role) => {
+  try {
+    if (!_cache || Date.now() - _loadedAt >= CACHE_TTL_MS) {
+      await _loadAll();
+    }
+    const requiresPayout = role === 'DRIVER' || role === 'DELIVERY_PARTNER';
+
+    return Array.from(_cache.values())
+      .filter(c => c.isActive !== false)
+      .filter(c => !requiresPayout || c.payoutMethod !== 'UNSUPPORTED')
+      .map(c => ({
+        code:         c.code,
+        name:         c.name,
+        flag:         undefined, // frontend derives flag from code
+        dialPrefix:   c.phoneDialCode,
+        currencyCode: c.currencyCode,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch (err) {
+    console.error('[country.service] getRegistrationCountries failed, using NG fallback:', err.message);
+    return [{ code: 'NG', name: 'Nigeria', dialPrefix: '+234', currencyCode: 'NGN' }];
+  }
+};
+
 module.exports = {
   getCountryByCode,
   getCountryForUser,
   getCurrencyForUserId,
+  getRegistrationCountries,
   invalidateCountryCache,
   FALLBACK_COUNTRY,
 };

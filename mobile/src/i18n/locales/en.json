@@ -176,7 +176,10 @@
     "welcomeTitle": "Welcome to Diakite 🎉",
     "welcomeBody": "Your account has been created!",
     "errorTitle": "Error",
-    "somethingWentWrong": "Something went wrong. Please try again."
+    "somethingWentWrong": "Something went wrong. Please try again.",
+    "loadingCountries": "Loading countries…",
+    "invalidPhoneLengthTitle": "Check Your Number",
+    "invalidPhoneLengthBody": "That phone number looks too short or too long for the selected country. Please double-check it."
   },
   "rating": {
     "labelPoor": "Poor",
@@ -1202,7 +1205,7 @@
   },
   "transfer": {
     "invalidNumber": "Invalid number",
-    "invalidNumberMsg": "Enter a valid Nigerian phone number.",
+    "invalidNumberMsg": "Enter a valid phone number.",
     "userNotFound": "User not found",
     "userNotFoundTitle": "User Not Found",
     "noAccountLinked": "No account linked to this number.",

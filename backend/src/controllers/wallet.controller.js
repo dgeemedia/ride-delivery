@@ -6,8 +6,10 @@ const { AppError } = require('../middleware/errorHandler');
 const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
 const emailService = require('../services/email.service');
-const { logActivity } = require('../utils/auditLog'); // ← ADDED
+const { logActivity } = require('../utils/auditLog');
 const { ensureWallet: ensureWalletShared } = require('../utils/walletHelpers');
+const { getCountryForUser, getCurrencyForUserId } = require('../services/country.service');
+const { formatMoney } = require('../utils/currency');
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -69,12 +71,28 @@ exports.getTransactions = async (req, res) => {
 };
 
 exports.lookupUser = async (req, res) => {
-  const { phone } = req.query;
-  if (!phone) throw new AppError('Phone number is required', 400);
-  if (phone === req.user.phone) throw new AppError('Cannot look up yourself', 400);
+  const { phone: rawPhone } = req.query;
+  if (!rawPhone) throw new AppError('Phone number is required', 400);
 
-  const user = await prisma.user.findUnique({
-    where:  { phone },
+  // The client sends a bare local number (e.g. "0801...") while registration
+  // stores full E.164 (e.g. "+234801..."). Build every plausible E.164
+  // candidate using the requester's own country dial code, since transfers
+  // are effectively domestic today (cross-currency transfers are blocked
+  // further down this file anyway).
+  const digits = rawPhone.replace(/\D/g, '');
+  const country = await getCountryForUser(req.user);
+  const dialDigits = country.phoneDialCode.replace('+', '');
+
+  const candidates = [...new Set([
+    `+${digits}`,
+    `+${dialDigits}${digits.replace(/^0+/, '')}`,
+    digits.startsWith('0') ? `+${dialDigits}${digits.slice(1)}` : null,
+  ].filter(Boolean))];
+
+  if (candidates.includes(req.user.phone)) throw new AppError('Cannot look up yourself', 400);
+
+  const user = await prisma.user.findFirst({
+    where:  { phone: { in: candidates } },
     select: { id: true, firstName: true, lastName: true, phone: true, isActive: true },
   });
 
@@ -96,11 +114,13 @@ exports.paystackTopup = async (req, res) => {
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
   const { amount } = req.body;
-  if (amount < 100) throw new AppError('Minimum top-up amount is ₦100', 400);
+  const chargeCurrency = await getCurrencyForUserId(req.user.id);
+  if (amount < 100) throw new AppError(`Minimum top-up amount is ${formatMoney(100, chargeCurrency)}`, 400);
 
-  const transaction = await paymentService.paystackInitialize({
+    const transaction = await paymentService.paystackInitialize({
     email:    req.user.email,
     amount,
+    currency: chargeCurrency,
     metadata: { userId: req.user.id, purpose: 'wallet_topup' },
   });
 
@@ -196,7 +216,7 @@ exports.verifyPaystackTopup = async (req, res) => {
   await notificationService.notify({
     userId,
     title:   'Wallet Topped Up 💰',
-    message: `₦${amount.toFixed(2)} has been added to your wallet. New balance: ₦${updatedWallet.balance.toFixed(2)}`,
+    message: `${formatMoney(amount, updatedWallet.currency)} has been added to your wallet. New balance: ${formatMoney(updatedWallet.balance, updatedWallet.currency)}`,
     type:    notificationService.TYPES.PAYMENT_RECEIVED,
     data:    { amount, newBalance: updatedWallet.balance, reference: realRef },
   });
@@ -206,7 +226,8 @@ exports.verifyPaystackTopup = async (req, res) => {
 
 exports.initializeTopUp = async (req, res) => {
   const { amount } = req.body;
-  if (!amount || amount < 100) throw new AppError('Minimum top-up is ₦100', 400);
+  const chargeCurrency = await getCurrencyForUserId(req.user.id);
+  if (!amount || amount < 100) throw new AppError(`Minimum top-up is ${formatMoney(100, chargeCurrency)}`, 400);
 
   // ── Fetch admin-configured limits from SystemSettings ──
   const [minSetting, maxSetting] = await Promise.all([
@@ -218,15 +239,16 @@ exports.initializeTopUp = async (req, res) => {
   const maxDeposit = maxSetting?.value ? parseFloat(maxSetting.value) : 1_000_000;
 
   if (amount < minDeposit)
-    throw new AppError(`Minimum top-up is ₦${minDeposit.toLocaleString('en-NG')}`, 400);
+    throw new AppError(`Minimum top-up is ${formatMoney(minDeposit, chargeCurrency)}`, 400);
   if (amount > maxDeposit)
-    throw new AppError(`Maximum top-up is ₦${maxDeposit.toLocaleString('en-NG')}`, 400);
+    throw new AppError(`Maximum top-up is ${formatMoney(maxDeposit, chargeCurrency)}`, 400);
 
   const reference = `TOPUP-${req.user.id.slice(0, 8)}-${Date.now()}`;
 
-  const paystackRes = await paymentService.paystackInitialize({
+    const paystackRes = await paymentService.paystackInitialize({
     email:       req.user.email,
-    amount,    
+    amount,
+    currency:    chargeCurrency,
     reference,
     metadata:    { userId: req.user.id, type: 'wallet_topup', amount },
     callbackUrl: `${process.env.API_BASE_URL}/api/wallet/topup/verify`,
@@ -242,7 +264,7 @@ exports.initializeTopUp = async (req, res) => {
         description: 'Wallet top-up via Paystack',
         status:      'PENDING',
         reference,
-        provider:    'paystack', // ← ADD
+        provider:    'paystack',
       },
     });
   }
@@ -338,7 +360,7 @@ exports.verifyTopUp = async (req, res) => {
   await notificationService.notify({
     userId,
     title:   'Wallet Credited 💰',
-    message: `₦${amount.toLocaleString('en-NG')} added to your wallet. Ref: ${reference}`,
+    message: `${formatMoney(amount, wallet.currency)} added to your wallet. Ref: ${reference}`,
     type:    notificationService.TYPES.WALLET_CREDITED,
     data:    { amount, reference },
   });
@@ -353,8 +375,9 @@ exports.verifyTopUp = async (req, res) => {
 exports.flutterwaveTopup = async (req, res) => {
   const { amount } = req.body;
   const { email, phone, firstName, lastName, id: userId } = req.user;
-  
-  if (amount < 100) throw new AppError('Minimum top-up amount is ₦100', 400);
+  const chargeCurrency = await getCurrencyForUserId(userId);
+
+  if (amount < 100) throw new AppError(`Minimum top-up amount is ${formatMoney(100, chargeCurrency)}`, 400);
 
   const txRef = `WALLET-FLW-${userId}-${Date.now()}`;
   const transaction = await paymentService.flutterwaveInitialize({
@@ -363,6 +386,7 @@ exports.flutterwaveTopup = async (req, res) => {
     name:     `${firstName} ${lastName}`,
     amount,
     txRef,
+    currency: chargeCurrency,
     metadata: { userId, purpose: 'wallet_topup' },
   });
 
@@ -375,7 +399,7 @@ exports.flutterwaveTopup = async (req, res) => {
       description: 'Wallet top-up via Flutterwave',
       status:      'PENDING',
       reference:   txRef,
-      provider:    'flutterwave', // ← ADD
+      provider:    'flutterwave',
     },
   });
 
@@ -417,7 +441,7 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
     existing
       ? prisma.walletTransaction.update({
           where: { id: existing.id },
-          data:  { status: 'COMPLETED', amount, provider: 'flutterwave' }, // ← ADD provider
+          data:  { status: 'COMPLETED', amount, provider: 'flutterwave' },
         })
       : prisma.walletTransaction.create({
           data: {
@@ -427,7 +451,7 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
             description: 'Wallet top-up via Flutterwave',
             status:      'COMPLETED',
             reference:   String(transactionId),
-            provider:    'flutterwave', // ← ADD
+            provider:    'flutterwave',
           },
         }),
   ]);
@@ -435,7 +459,7 @@ exports.verifyFlutterwaveTopup = async (req, res) => {
   await notificationService.notify({
     userId,
     title:   'Wallet Topped Up 💰',
-    message: `₦${amount.toFixed(2)} has been added to your wallet. New balance: ₦${updatedWallet.balance.toFixed(2)}`,
+    message: `${formatMoney(amount, updatedWallet.currency)} has been added to your wallet. New balance: ${formatMoney(updatedWallet.balance, updatedWallet.currency)}`,
     type:    notificationService.TYPES.PAYMENT_RECEIVED,
     data:    { amount, newBalance: updatedWallet.balance },
   });
@@ -498,7 +522,7 @@ exports.verifyFlutterwaveWebhook = async (req, res) => {
   await notificationService.notify({
     userId,
     title: 'Wallet Credited 💰',
-    message: `₦${amount.toLocaleString('en-NG')} added to your wallet. Ref: ${txRef}`,
+    message: `${formatMoney(amount, wallet.currency)} added to your wallet. Ref: ${txRef}`,
     type: notificationService.TYPES.WALLET_CREDITED,
     data: { amount, reference: txRef },
   });
@@ -519,9 +543,25 @@ exports.transfer = async (req, res) => {
   if (!recipient)          throw new AppError('Recipient not found', 404);
   if (!recipient.isActive) throw new AppError('Recipient account is not active', 400);
 
-  const senderWallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
-  if (!senderWallet || senderWallet.balance < amount) {
+    const senderWallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
+  if (!senderWallet) throw new AppError('Wallet not found', 404);
+
+  // TODO: move to a per-country SystemSettings value (like wallet_topup_min/max)
+  // once transfer minimums need to vary by market instead of being a flat rule.
+  const MIN_TRANSFER = 50;
+  if (amount < MIN_TRANSFER) {
+    throw new AppError(`Minimum transfer is ${formatMoney(MIN_TRANSFER, senderWallet.currency)}`, 400);
+  }
+  if (senderWallet.balance < amount) {
     throw new AppError('Insufficient wallet balance', 400);
+  }
+
+  // Guard: sender and recipient may be in different countries/currencies
+  // now that Country is seeded beyond NG. A raw balance move here would
+  // otherwise turn a ₦5,000 debit into a 5,000 GHS credit for the recipient.
+  const recipientWallet = await prisma.wallet.findUnique({ where: { userId: recipient.id } });
+  if (recipientWallet && recipientWallet.currency !== senderWallet.currency) {
+    throw new AppError('Cross-currency transfers are not supported yet.', 400);
   }
 
   const reference = `TRF-${Date.now()}-${req.user.id.slice(0, 6)}`;
@@ -553,7 +593,7 @@ exports.transfer = async (req, res) => {
     }),
   ]);
 
-  // ← ADDED — a self-initiated transfer already debits the sender's wallet
+  // A self-initiated transfer already debits the sender's wallet
   // (pending admin approval below). Worth its own audit entry distinct from
   // the WalletTransaction row, especially since it names a specific
   // recipient — a pattern worth watching for account-to-account fraud.
@@ -569,7 +609,7 @@ exports.transfer = async (req, res) => {
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Transfer Pending ⏳',
-    message: `₦${amount.toLocaleString('en-NG')} transfer to ${recipient.firstName} ${recipient.lastName} is pending admin approval.`,
+    message: `${formatMoney(amount, senderWallet.currency)} transfer to ${recipient.firstName} ${recipient.lastName} is pending admin approval.`,
     type:    notificationService.TYPES.PAYMENT_RECEIVED,
     data:    { amount, recipientId: recipient.id, reference },
   });
@@ -595,7 +635,7 @@ exports.transfer = async (req, res) => {
       notificationService.notify({
         userId:  a.id,
         title:   'New Transfer Request 💸',
-        message: `${req.user.firstName} ${req.user.lastName} → ${recipient.firstName} ${recipient.lastName}: ₦${amount.toLocaleString('en-NG')}`,
+        message: `${req.user.firstName} ${req.user.lastName} → ${recipient.firstName} ${recipient.lastName}: ${formatMoney(amount, senderWallet.currency)}`,
         type:    'transfer_pending',
         data:    { reference, senderId: req.user.id, recipientId: recipient.id, amount },
       })
@@ -604,7 +644,7 @@ exports.transfer = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: `Transfer of ₦${amount.toFixed(2)} submitted and pending admin approval. Funds held from your balance.`,
+    message: `Transfer of ${formatMoney(amount, senderWallet.currency)} submitted and pending admin approval. Funds held from your balance.`,
     data:    { reference, amount, recipientName: `${recipient.firstName} ${recipient.lastName}` },
   });
 };
@@ -619,15 +659,27 @@ exports.withdraw = async (req, res) => {
 
   const { amount, accountNumber, bankCode, accountName } = req.body;
 
-  if (amount < 500) throw new AppError('Minimum withdrawal is ₦500', 400);
-
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
-  if (!wallet || wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
+  if (!wallet) throw new AppError('Wallet not found', 404);
+
+  if (amount < 500) throw new AppError(`Minimum withdrawal is ${formatMoney(500, wallet.currency)}`, 400);
+  if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
+
+  // Guard: this endpoint only knows how to verify/pay out via Nigerian bank
+  // transfer today. Fail clearly now rather than silently sending a
+  // non-Nigerian-format account number into Paystack/Flutterwave's transfer
+  // APIs, which would either error confusingly or resolve to the wrong
+  // account. Mirrors the identical guard in driver.controller.js /
+  // partner.controller.js's requestPayout.
+  const country = await getCountryForUser(req.user);
+  if (country.payoutMethod !== 'NG_BANK_TRANSFER') {
+    throw new AppError(`Payouts for ${country.name} aren't supported yet. Contact support.`, 400);
+  }
 
   const reference = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
   // Auto-resolved from whichever provider is currently active — no client change needed.
-  const bankName = await paymentService.resolveBankName(bankCode);
+  const bankName = await paymentService.resolveBankName(bankCode, country.code);
 
   // ← CHANGED — capture the transaction results (was previously discarded)
   // so we can attach the created Payout's id to the audit log entry below.
@@ -647,6 +699,7 @@ exports.withdraw = async (req, res) => {
       data: {
         userId:        req.user.id,
         amount,
+        currency:      wallet.currency,
         accountNumber,
         bankCode,
         bankName,
@@ -657,9 +710,6 @@ exports.withdraw = async (req, res) => {
     }),
   ]);
 
-  // ← ADDED — same action name used by driver.controller.js/partner.controller.js's
-  // requestPayout (this is the generic/customer-facing equivalent), with
-  // role read dynamically since this endpoint isn't role-restricted.
   logActivity({
     userId:     req.user.id,
     action:     'payout_requested',
@@ -678,7 +728,7 @@ exports.withdraw = async (req, res) => {
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Withdrawal Requested 🏦',
-    message: `₦${amount.toLocaleString('en-NG')} withdrawal to ${accountName} is pending admin review.`,
+    message: `${formatMoney(amount, wallet.currency)} withdrawal to ${accountName} is pending admin review.`,
     type:    notificationService.TYPES.PAYMENT_RECEIVED,
     data:    { amount, accountNumber: `****${accountNumber.slice(-4)}`, bankCode, reference },
   });
@@ -703,7 +753,8 @@ exports.verifyBankAccount = async (req, res) => {
   const { accountNumber, bankCode } = req.query;
   if (!accountNumber || !bankCode) throw new AppError('Account number and bank code required', 400);
 
-  const result = await paymentService.verifyBankAccountUnified(accountNumber, bankCode);
+  const country = await getCountryForUser(req.user);
+  const result = await paymentService.verifyBankAccountUnified(accountNumber, bankCode, country.code);
   if (!result) throw new AppError('Account not found', 404);
 
   res.status(200).json({
@@ -762,6 +813,7 @@ exports.adminApprovePayout = async (req, res) => {
       accountName:   payout.accountName,
       reason:        `Wallet withdrawal — ${payout.user.firstName} ${payout.user.lastName}`,
       reference:     payout.reference,
+      currency:      payout.currency,
     });
     transferCode = result.transferCode;
     provider     = result.provider;
@@ -787,9 +839,8 @@ exports.adminApprovePayout = async (req, res) => {
     }),
   ]);
 
-  // ← ADDED — this is the single most important audit entry in this file:
-  // approving a payout triggers a REAL, irreversible external bank transfer.
-  // This action previously had zero ActivityLog coverage anywhere.
+  // This is the single most important audit entry in this file: approving
+  // a payout triggers a REAL, irreversible external bank transfer.
   logActivity({
     userId:     req.user.id, // the admin who approved it, not the payout owner
     action:     'admin_payout_approved',
@@ -810,7 +861,7 @@ exports.adminApprovePayout = async (req, res) => {
   await notificationService.notify({
     userId:  payout.userId,
     title:   'Withdrawal Approved ✅',
-    message: `Your withdrawal of ₦${payout.amount.toLocaleString('en-NG')} to ${payout.accountName} has been approved${
+    message: `Your withdrawal of ${formatMoney(payout.amount, payout.currency)} to ${payout.accountName} has been approved${
       providerOk ? ' and is on its way' : ' — bank transfer will be retried shortly'
     }.${note ? ` Note: ${note}` : ''}`,
     type:    notificationService.TYPES.WALLET_WITHDRAWAL,
@@ -870,7 +921,6 @@ exports.adminRejectPayout = async (req, res) => {
     }),
   ]);
 
-  // ← ADDED
   logActivity({
     userId:     req.user.id,
     action:     'admin_payout_rejected',
@@ -883,7 +933,7 @@ exports.adminRejectPayout = async (req, res) => {
   await notificationService.notify({
     userId:  payout.userId,
     title:   'Withdrawal Rejected',
-    message: `Your withdrawal of ₦${payout.amount.toLocaleString('en-NG')} was rejected and refunded to your wallet.${reason ? ` Reason: ${reason}` : ''}`,
+    message: `Your withdrawal of ${formatMoney(payout.amount, payout.currency)} was rejected and refunded to your wallet.${reason ? ` Reason: ${reason}` : ''}`,
     type:    notificationService.TYPES.WALLET_CREDITED,
     data:    { payoutId: id, amount: payout.amount, reason },
   });
@@ -972,9 +1022,9 @@ exports.adminApproveTransfer = async (req, res) => {
     }),
   ]);
 
-  // ← ADDED — an admin decision that moves money from one user's wallet to
-  // another's. Same risk class as admin.controller.js's wallet_credit /
-  // wallet_debit (already CRITICAL there) — this had no equivalent here.
+  // An admin decision that moves money from one user's wallet to another's.
+  // Same risk class as admin.controller.js's wallet_credit / wallet_debit
+  // (already CRITICAL there) — this had no equivalent here.
   logActivity({
     userId:     req.user.id,
     action:     'admin_transfer_approved',
@@ -993,14 +1043,14 @@ exports.adminApproveTransfer = async (req, res) => {
     notificationService.notify({
       userId:  transfer.senderId,
       title:   'Transfer Approved ✅',
-      message: `Your transfer of ₦${transfer.amount.toLocaleString('en-NG')} to ${transfer.recipient.firstName} ${transfer.recipient.lastName} has been approved.`,
+      message: `Your transfer of ${formatMoney(transfer.amount, senderWallet.currency)} to ${transfer.recipient.firstName} ${transfer.recipient.lastName} has been approved.`,
       type:    notificationService.TYPES.PAYMENT_RECEIVED,
       data:    { reference, amount: transfer.amount },
     }),
     notificationService.notify({
       userId:  transfer.recipientId,
       title:   'Money Received 💰',
-      message: `₦${transfer.amount.toLocaleString('en-NG')} received from ${transfer.sender.firstName} ${transfer.sender.lastName}.`,
+      message: `${formatMoney(transfer.amount, senderWallet.currency)} received from ${transfer.sender.firstName} ${transfer.sender.lastName}.`,
       type:    notificationService.TYPES.PAYMENT_RECEIVED,
       data:    { reference, amount: transfer.amount },
     }),
@@ -1048,6 +1098,8 @@ exports.adminRejectTransfer = async (req, res) => {
   if (!transfer)                    throw new AppError('Transfer not found', 404);
   if (transfer.status !== 'PENDING') throw new AppError('Transfer already processed', 400);
 
+  const senderWallet = transfer.sender.wallet;
+
   await prisma.$transaction([
     prisma.transfer.update({ where: { reference }, data: { status: 'FAILED' } }),
     prisma.wallet.update({
@@ -1060,7 +1112,7 @@ exports.adminRejectTransfer = async (req, res) => {
     }),
     prisma.walletTransaction.create({
       data: {
-        walletId:    transfer.sender.wallet.id,
+        walletId:    senderWallet.id,
         type:        'REFUND',
         amount:      transfer.amount,
         description: `Transfer refund — ${reason ?? 'rejected by admin'}`,
@@ -1070,7 +1122,6 @@ exports.adminRejectTransfer = async (req, res) => {
     }),
   ]);
 
-  // ← ADDED
   logActivity({
     userId:     req.user.id,
     action:     'admin_transfer_rejected',
@@ -1088,7 +1139,7 @@ exports.adminRejectTransfer = async (req, res) => {
   await notificationService.notify({
     userId:  transfer.senderId,
     title:   'Transfer Rejected',
-    message: `Your transfer of ₦${transfer.amount.toLocaleString('en-NG')} was rejected. Funds have been returned to your wallet.${reason ? ` Reason: ${reason}` : ''}`,
+    message: `Your transfer of ${formatMoney(transfer.amount, senderWallet.currency)} was rejected. Funds have been returned to your wallet.${reason ? ` Reason: ${reason}` : ''}`,
     type:    notificationService.TYPES.WALLET_CREDITED,
     data:    { reference, amount: transfer.amount, reason },
   });
@@ -1114,11 +1165,14 @@ exports.adminRejectTransfer = async (req, res) => {
 
 exports.adminGetWalletStats = async (req, res) => {
   const [
-    totalBalance, totalUsers,
+    balancesByCurrency, totalUsers,
     pendingPayouts, pendingTransfers,
     todayCredits, todayDebits,
   ] = await Promise.all([
-    prisma.wallet.aggregate({ _sum: { balance: true } }),
+    // Grouped by currency instead of a single sum — a raw sum across NGN,
+    // GHS, and XOF wallets would be a meaningless number once non-NG
+    // wallets exist.
+    prisma.wallet.groupBy({ by: ['currency'], _sum: { balance: true }, _count: true }),
     prisma.wallet.count(),
     prisma.payout.count({ where: { status: 'PENDING' } }),
     // FIX: count from Transfer table instead of WalletTransaction description heuristic
@@ -1136,7 +1190,11 @@ exports.adminGetWalletStats = async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      totalBalance:     totalBalance._sum.balance ?? 0,
+      balancesByCurrency: balancesByCurrency.map(b => ({
+        currency:    b.currency,
+        total:       b._sum.balance ?? 0,
+        walletCount: b._count,
+      })),
       totalWallets:     totalUsers,
       pendingPayouts,
       pendingTransfers,
@@ -1147,10 +1205,11 @@ exports.adminGetWalletStats = async (req, res) => {
 };
 
 exports.getDepositLimits = async (req, res) => {
-  const [minSetting, maxSetting, wallet] = await Promise.all([
+  const [minSetting, maxSetting, wallet, country] = await Promise.all([
     prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_min' } }),
     prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_max' } }),
     prisma.wallet.findUnique({ where: { userId: req.user.id }, select: { currency: true } }),
+    getCountryForUser(req.user),
   ]);
 
   res.status(200).json({
@@ -1158,7 +1217,8 @@ exports.getDepositLimits = async (req, res) => {
     data: {
       min: minSetting?.value ? parseFloat(minSetting.value) : 100,
       max: maxSetting?.value ? parseFloat(maxSetting.value) : 1_000_000,
-      currency: wallet?.currency ?? 'NGN', // ← was hardcoded; now reflects the requesting user's actual wallet currency
+      currency: wallet?.currency ?? 'NGN',
+      paymentProviders: country.paymentProviders ?? ['paystack', 'flutterwave'],
     },
   });
 };
@@ -1284,7 +1344,7 @@ exports.adminReconcileTopUp = async (req, res) => {
   await notificationService.notify({
     userId:  tx.wallet.userId,
     title:   'Wallet Topped Up 💰',
-    message: `₦${tx.amount.toLocaleString('en-NG')} has been added to your wallet. New balance: ₦${updatedWallet.balance.toLocaleString('en-NG')}`,
+    message: `${formatMoney(tx.amount, updatedWallet.currency)} has been added to your wallet. New balance: ${formatMoney(updatedWallet.balance, updatedWallet.currency)}`,
     type:    notificationService.TYPES.PAYMENT_RECEIVED,
     data:    { amount: tx.amount, newBalance: updatedWallet.balance, reference: tx.reference },
   });
@@ -1300,7 +1360,7 @@ exports.adminReconcileTopUp = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: `₦${tx.amount.toLocaleString('en-NG')} verified with ${provider} and credited.`,
+    message: `${formatMoney(tx.amount, updatedWallet.currency)} verified with ${provider} and credited.`,
     data:    { wallet: updatedWallet, transaction: updatedTx },
   });
 };

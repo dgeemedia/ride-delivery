@@ -5,14 +5,22 @@ const { AppError } = require('../middleware/errorHandler');
 const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
 const emailService = require('../services/email.service');
-const { logActivity } = require('../utils/auditLog'); // ← ADDED
-const { getCurrencyForUserId } = require('../services/country.service');
+const { logActivity } = require('../utils/auditLog');
+const { getCurrencyForUserId, getCountryForUser } = require('../services/country.service');
+const { formatMoney } = require('../utils/currency');
 
 const safeSendEmail = async (fn, label) => {
   try {
     await fn();
   } catch (err) {
     console.error(`[payment.controller] ${label} email failed to send:`, err.message);
+  }
+};
+
+const assertProviderSupported = (country, provider) => {
+  const providers = Array.isArray(country.paymentProviders) ? country.paymentProviders : [];
+  if (!providers.includes(provider)) {
+    throw new AppError(`${provider} is not available in ${country.name} yet.`, 400);
   }
 };
 
@@ -29,6 +37,8 @@ exports.paystackInitialize = async (req, res) => {
   const { amount, rideId, deliveryId } = req.body;
   const { email, id: userId } = req.user;
   const chargeCurrency = await getCurrencyForUserId(userId);
+  const country = await getCountryForUser(req.user);
+  assertProviderSupported(country, 'paystack');
 
   const transaction = await paymentService.paystackInitialize({
     email,
@@ -84,7 +94,7 @@ exports.paystackVerify = async (req, res) => {
   await notificationService.notify({
     userId,
     title: 'Payment Successful ✅',
-    message: `Your payment of ₦${amount.toFixed(2)} was successful.`,
+    message: `Your payment of ${formatMoney(amount, paymentCurrency)} was successful.`,
     type: notificationService.TYPES.PAYMENT_RECEIVED,
     data: { reference, amount, rideId, deliveryId }
   });
@@ -128,7 +138,7 @@ exports.paystackWebhook = async (req, res) => {
       }
 
       const { userId, rideId, deliveryId } = verified.metadata || {};
-      const amountNGN = verified.amount / 100;
+      const chargedAmount = verified.amount / 100;
 
       if (userId) {
         const paymentCurrency = await getCurrencyForUserId(userId);
@@ -137,29 +147,29 @@ exports.paystackWebhook = async (req, res) => {
             userId,
             ...(rideId && { rideId }),
             ...(deliveryId && { deliveryId }),
-            amount: amountNGN,
+            amount: chargedAmount,
             currency: paymentCurrency,
             method: 'CARD',
             status: 'COMPLETED',
             transactionId: reference,
-            platformFee: amountNGN * 0.20,
-            driverEarnings: amountNGN * 0.80
+            platformFee: chargedAmount * 0.20,
+            driverEarnings: chargedAmount * 0.80
           }
         });
 
         await notificationService.notify({
           userId,
           title: 'Payment Received ✅',
-          message: `Your payment of ₦${amountNGN.toFixed(2)} was received.`,
+          message: `Your payment of ${formatMoney(chargedAmount, paymentCurrency)} was received.`,
           type: notificationService.TYPES.PAYMENT_RECEIVED,
-          data: { reference, amount: amountNGN }
+          data: { reference, amount: chargedAmount }
         });
 
         const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstName: true } });
         if (user?.email) {
           await safeSendEmail(
             () => emailService.sendPaymentReceiptEmail(user.email, user.firstName, {
-              amount: amountNGN,
+              amount: chargedAmount,
               method: 'CARD',
               reference,
               service: rideId ? 'ride' : deliveryId ? 'delivery' : null,
@@ -188,6 +198,8 @@ exports.flutterwaveInitialize = async (req, res) => {
   const { email, phone, firstName, lastName, id: userId } = req.user;
   const txRef = `TXN-${userId}-${Date.now()}`;
   const chargeCurrency = await getCurrencyForUserId(userId);
+  const country = await getCountryForUser(req.user);
+  assertProviderSupported(country, 'flutterwave');
 
   const transaction = await paymentService.flutterwaveInitialize({
     email,
@@ -239,7 +251,7 @@ exports.flutterwaveVerify = async (req, res) => {
   await notificationService.notify({
     userId,
     title: 'Payment Successful ✅',
-    message: `Your payment of ₦${amount.toFixed(2)} was successful.`,
+    message: `Your payment of ${formatMoney(amount, paymentCurrency)} was successful.`,
     type: notificationService.TYPES.PAYMENT_RECEIVED,
     data: { transactionId, amount }
   });
@@ -302,7 +314,7 @@ exports.flutterwaveWebhook = async (req, res) => {
         await notificationService.notify({
           userId,
           title: 'Payment Received ✅',
-          message: `Your payment of ₦${amount.toFixed(2)} was received.`,
+          message: `Your payment of ${formatMoney(amount, paymentCurrency)} was received.`,
           type: notificationService.TYPES.PAYMENT_RECEIVED,
           data: { transactionId: data.id, amount }
         });
@@ -442,7 +454,7 @@ exports.processWalletPayment = async (req, res) => {
   await notificationService.notify({
     userId: req.user.id,
     title: 'Payment Successful 💳',
-    message: `₦${amount.toFixed(2)} paid from wallet. Balance: ₦${updatedWallet.balance.toFixed(2)}`,
+    message: `${formatMoney(amount, wallet.currency)} paid from wallet. Balance: ${formatMoney(updatedWallet.balance, updatedWallet.currency)}`,
     type: notificationService.TYPES.PAYMENT_RECEIVED,
     data: { amount, newBalance: updatedWallet.balance }
   });
@@ -463,7 +475,7 @@ exports.processWalletPayment = async (req, res) => {
     await notificationService.notify({
       userId: earningsUserId,
       title: 'Payment Received 💰',
-      message: `₦${earnings.toFixed(2)} added to your wallet (after 20% platform fee).`,
+      message: `${formatMoney(earnings, earnerWallet.currency)} added to your wallet (after 20% platform fee).`,
       type: notificationService.TYPES.PAYMENT_RECEIVED,
       data: { earnings, platformFee }
     });
@@ -518,7 +530,7 @@ exports.requestRefund = async (req, res) => {
       })
     ]);
 
-    // ← ADDED — self-service refund, distinct from admin.controller.js's
+    // Self-service refund, distinct from admin.controller.js's
     // 'admin_refund_issued' (staff-initiated). Same underlying money
     // movement, different actor, so worth telling apart in the audit trail.
     logActivity({
@@ -533,7 +545,7 @@ exports.requestRefund = async (req, res) => {
     await notificationService.notify({
       userId: req.user.id,
       title: 'Refund Processed ✅',
-      message: `₦${refundAmount.toFixed(2)} has been refunded to your wallet.`,
+      message: `${formatMoney(refundAmount, wallet.currency)} has been refunded to your wallet.`,
       type: notificationService.TYPES.PAYMENT_REFUNDED,
       data: { paymentId: id, refundAmount }
     });
@@ -560,7 +572,6 @@ exports.requestRefund = async (req, res) => {
     data: { status: 'REFUNDED', refundAmount, refundedAt: new Date() }
   });
 
-  // ← ADDED
   logActivity({
     userId:     req.user.id,
     action:     'refund_requested_self',
@@ -573,7 +584,7 @@ exports.requestRefund = async (req, res) => {
   await notificationService.notify({
     userId: req.user.id,
     title: 'Refund Initiated ✅',
-    message: `Your refund of ₦${refundAmount.toFixed(2)} has been processed. It may take 3–5 business days.`,
+    message: `Your refund of ${formatMoney(refundAmount, payment.currency)} has been processed. It may take 3–5 business days.`,
     type: notificationService.TYPES.PAYMENT_REFUNDED,
     data: { paymentId: id, refundAmount }
   });
@@ -597,13 +608,15 @@ exports.requestRefund = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.listBanks = async (req, res) => {
-  const banks = await paymentService.listBanksUnified();
+  const country = await getCountryForUser(req.user);
+  const banks = await paymentService.listBanksUnified(country.code);
   res.status(200).json({ success: true, data: { banks } });
 };
 
 exports.verifyBankAccount = async (req, res) => {
   const { accountNumber, bankCode } = req.body;
-  const account = await paymentService.verifyBankAccountUnified(accountNumber, bankCode);
+  const country = await getCountryForUser(req.user);
+  const account = await paymentService.verifyBankAccountUnified(accountNumber, bankCode, country.code);
   res.status(200).json({ success: true, data: { account } });
 };
 

@@ -11,14 +11,13 @@ import { useTheme }          from '../../context/ThemeContext';
 import { useCurrency }       from '../../context/CurrencyContext';
 import { useAuth }           from '../../context/AuthContext';
 import { useTranslation }    from 'react-i18next';
-import { walletAPI, driverAPI, partnerAPI } from '../../services/api';
-
+import { walletAPI, driverAPI, partnerAPI, paymentAPI } from '../../services/api';
 const { height } = Dimensions.get('window');
 
 const formatNGN = (n) =>
   Number(n).toLocaleString('en-NG', { maximumFractionDigits: 0 });
 
-const BANKS = [
+const FALLBACK_BANKS = [
   { name: 'Access Bank',             code: '044'    },
   { name: 'Citibank',                code: '023'    },
   { name: 'Ecobank',                 code: '050'    },
@@ -44,10 +43,10 @@ const BANKS = [
   { name: 'Zenith Bank',             code: '057'    },
 ];
 
-const BankPicker = ({ selected, onSelect, theme }) => {
+const BankPicker = ({ selected, onSelect, theme, banks }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const bank   = BANKS.find(b => b.code === selected);
+  const bank   = banks.find(b => b.code === selected);
   const accent = theme.accent;
 
   return (
@@ -70,7 +69,7 @@ const BankPicker = ({ selected, onSelect, theme }) => {
           nestedScrollEnabled
           showsVerticalScrollIndicator
         >
-          {BANKS.map(b => (
+          {banks.map(b => (
             <TouchableOpacity
               key={b.code}
               style={[bp.option, { borderBottomColor: theme.border }]}
@@ -132,6 +131,19 @@ export default function WithdrawalScreen({ navigation }) {
   const [submitting,    setSubmitting]    = useState(false);
   const [step,          setStep]          = useState(1);
   const [payoutHistory, setPayoutHistory] = useState([]);
+  const [banks, setBanks] = useState(FALLBACK_BANKS);
+
+  useEffect(() => {
+    paymentAPI.listBanks()
+      .then(res => {
+        const list = res?.data?.banks ?? [];
+        const normalized = list
+          .map(b => ({ name: b.name, code: String(b.code ?? b.id) }))
+          .filter(b => b.name && b.code);
+        if (normalized.length > 0) setBanks(normalized);
+      })
+      .catch(() => {}); // keeps FALLBACK_BANKS on failure
+  }, []);
 
   const shakeA = useRef(new Animated.Value(0)).current;
 
@@ -343,7 +355,7 @@ export default function WithdrawalScreen({ navigation }) {
           {step === 2 && (
             <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
               <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('withdrawal.selectBank')}</Text>
-              <BankPicker selected={bankCode} onSelect={setBankCode} theme={theme} />
+              <BankPicker selected={bankCode} onSelect={setBankCode} theme={theme} banks={banks} />
 
               <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('withdrawal.accountNumber')}</Text>
               <View style={[s.fieldCard, {
@@ -397,7 +409,7 @@ export default function WithdrawalScreen({ navigation }) {
                 <Text style={[s.confirmTitle, { color: theme.foreground }]}>{t('withdrawal.reviewYourWithdrawal')}</Text>
                 {[
                   { label: t('withdrawal.confirmAmount'),       value: formatMoney(amtNum),                               color: accent    },
-                  { label: t('withdrawal.confirmBank'),         value: BANKS.find(b => b.code === bankCode)?.name ?? bankCode, color: undefined },
+                  { label: t('withdrawal.confirmBank'),         value: banks.find(b => b.code === bankCode)?.name ?? bankCode, color: undefined },
                   { label: t('withdrawal.confirmAccountNo'), value: accountNumber,                                           color: undefined },
                   { label: t('withdrawal.confirmAccountName'),value: accountName,                                             color: undefined },
                   { label: t('withdrawal.confirmProcessing'),  value: t('withdrawal.businessDays'),                                    color: undefined },
@@ -447,7 +459,7 @@ export default function WithdrawalScreen({ navigation }) {
                       <Ionicons name="cash-outline" size={14} color={accent} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[s.histBank, { color: theme.foreground }]}>{BANKS.find(b => b.code === p.bankCode)?.name ?? p.bankCode}</Text>
+                      <Text style={[s.histBank, { color: theme.foreground }]}>{banks.find(b => b.code === p.bankCode)?.name ?? p.bankCode}</Text>
                       <Text style={[s.histDate, { color: theme.hint }]}>{new Date(p.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>

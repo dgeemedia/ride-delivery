@@ -14,6 +14,7 @@ import { useAuth }           from '../../context/AuthContext';
 import { useTheme }          from '../../context/ThemeContext';
 import { useTranslation }    from 'react-i18next';
 import { RegisterHeroIllustration } from '../../components/ServiceIcons';
+import { countryAPI } from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
 const LOGO = require('../../../assets/diakite_dark.png');
@@ -29,17 +30,23 @@ const G = {
 };
 
 // ── Phone formatter ───────────────────────────────────────────────────────────
-// NOTE: this only formats Nigerian numbers correctly. Fine for now since
-// COUNTRIES below only offers Nigeria — but this needs to become
-// country-aware (using the selected country's dial prefix) before adding
-// a second country to the picker, or non-NG numbers will pass through
-// unformatted.
-const formatPhone = (raw) => {
+// Country-aware: strips a leading trunk 0 (common across West African
+// numbering plans) and prepends whichever dial prefix the user selected,
+// rather than assuming +234 like before.
+const formatPhone = (raw, dialPrefix = '+234') => {
   const digits = raw.replace(/\D/g, '');
-  if (digits.startsWith('0') && digits.length === 11)   return `+234${digits.slice(1)}`;
-  if (digits.startsWith('234') && digits.length === 13) return `+${digits}`;
-  if (/^[7-9]\d{9}$/.test(digits))                      return `+234${digits}`;
-  return raw;
+  const bareDial = dialPrefix.replace('+', '');
+  if (digits.startsWith(bareDial)) return `+${digits}`;
+  return `${dialPrefix}${digits.replace(/^0+/, '')}`;
+};
+
+// Soft validation only — returns false when the digit count clearly looks
+// wrong for the selected country. Never used to block submission by itself.
+const isPlausiblePhoneLength = (raw, countryCode) => {
+  const expected = COUNTRY_PHONE_DIGITS[countryCode];
+  if (!expected) return true; // unknown country code — don't gate on it
+  const digits = raw.replace(/\D/g, '').replace(/^0+/, '');
+  return digits.length === expected;
 };
 
 const ROLES = [
@@ -56,25 +63,37 @@ const ROLE_I18N_KEYS = {
   DELIVERY_PARTNER: { label: 'register.roleCourierLabel',  sub: 'register.roleCourierSub' },
 };
 
-// ── Countries — add a row here only once that country's Country DB record,
-// payment-provider integration, and payout method are actually live on the
-// backend (see backend/src/services/country.service.js). Listing a country
-// here before that work is done would let someone register into a country
-// whose payments/payouts silently don't work yet.
-const COUNTRIES = [
-  { code: 'NG', flag: '🇳🇬', name: 'Nigeria', dialPrefix: '+234' },
-];
+// Emoji flags keyed by ISO code — purely presentational, so it's fine to
+// keep client-side. The actual list of *which* countries are offered comes
+// from the backend (GET /countries?forRole=...) so payout/provider
+// readiness lives in exactly one place.
+const COUNTRY_FLAGS = {
+  NG: '🇳🇬', GH: '🇬🇭', CI: '🇨🇮', SN: '🇸🇳', ML: '🇲🇱', TG: '🇹🇬', BJ: '🇧🇯',
+  BF: '🇧🇫', NE: '🇳🇪', GN: '🇬🇳', GW: '🇬🇼', GM: '🇬🇲', SL: '🇸🇱', LR: '🇱🇷', CV: '🇨🇻',
+};
+
+// Used only if the /countries fetch fails (e.g. offline at registration
+// time) so the screen never hard-blocks signup entirely.
+const FALLBACK_COUNTRIES = [{ code: 'NG', flag: '🇳🇬', name: 'Nigeria', dialPrefix: '+234' }];
+
+// Approx local digit count (excluding country code) per market — used only
+// for a soft "looks wrong" hint, never to hard-block submission, since this
+// is inherently a best-effort client-side check.
+const COUNTRY_PHONE_DIGITS = {
+  NG: 10, GH: 9, CI: 10, SN: 9, ML: 8, TG: 8, BJ: 8, BF: 8,
+  NE: 8, GN: 9, GW: 7, GM: 7, SL: 8, LR: 8, CV: 7,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LEGAL CONTENT — full text bundled in app, no login required
 // ─────────────────────────────────────────────────────────────────────────────
-const TERMS_CONTENT = [
+const buildTermsContent = (countryName = 'Nigeria') => [
   { type: 'title',   text: 'Terms of Service' },
   { type: 'meta',    text: 'Last updated: May 2025' },
   { type: 'heading', text: '1. Acceptance of Terms' },
   { type: 'body',    text: 'By downloading, registering, or using the Diakite app, you agree to be bound by these Terms of Service. If you do not agree, please do not use the app.' },
   { type: 'heading', text: '2. Who We Are' },
-  { type: 'body',    text: 'Diakite is a technology platform that connects customers with independent drivers and delivery couriers in Nigeria. We do not provide transportation or delivery services directly — we facilitate connections between users.' },
+  { type: 'body',    text: `Diakite is a technology platform that connects customers with independent drivers and delivery couriers in ${countryName}. We do not provide transportation or delivery services directly — we facilitate connections between users.`},
   { type: 'heading', text: '3. Eligibility' },
   { type: 'body',    text: 'You must be at least 18 years old to create an account. By registering, you confirm that all information you provide is accurate and truthful.' },
   { type: 'heading', text: '4. User Accounts' },
@@ -89,7 +108,7 @@ const TERMS_CONTENT = [
   { type: 'heading', text: '6. Drivers & Couriers' },
   { type: 'bullet',  text: "You must hold a valid driver's licence and all required vehicle documentation." },
   { type: 'bullet',  text: 'You are an independent contractor, not an employee of Diakite.' },
-  { type: 'bullet',  text: 'You are responsible for your own taxes, insurance, and compliance with Nigerian traffic laws.' },
+  { type: 'bullet',  text: `You are responsible for your own taxes, insurance, and compliance with the traffic laws of ${countryName}.` },
   { type: 'bullet',  text: 'Diakite deducts a platform commission from each completed trip as disclosed in the app.' },
   { type: 'heading', text: '7. Payments & Wallet' },
   { type: 'bullet',  text: 'All transactions are processed through your in-app wallet or supported payment gateways (Paystack, Flutterwave).' },
@@ -111,12 +130,12 @@ const TERMS_CONTENT = [
   { type: 'heading', text: '12. Changes to Terms' },
   { type: 'body',    text: 'We may update these Terms from time to time. Continued use of the app after changes are posted constitutes your acceptance of the new Terms.' },
   { type: 'heading', text: '13. Governing Law' },
-  { type: 'body',    text: 'These Terms are governed by the laws of the Federal Republic of Nigeria. Any disputes shall be resolved in Nigerian courts.' },
+  { type: 'body',    text: `These Terms are governed by the laws of ${countryName}, the country associated with your Diakite account. Any disputes shall be resolved in the courts of ${countryName}.` },
   { type: 'heading', text: '14. Contact' },
   { type: 'body',    text: 'If you have questions about these Terms, contact us through the Support section of the app.' },
 ];
 
-const PRIVACY_CONTENT = [
+const buildPrivacyContent = (countryName = 'Nigeria') => [
   { type: 'title',   text: 'Privacy Policy' },
   { type: 'meta',    text: 'Last updated: May 2025' },
   { type: 'heading', text: '1. Introduction' },
@@ -146,18 +165,18 @@ const PRIVACY_CONTENT = [
   { type: 'bullet',  text: 'To send trip confirmations, OTP codes, and important notifications' },
   { type: 'bullet',  text: 'To verify the identity and documents of drivers and couriers' },
   { type: 'bullet',  text: 'To investigate disputes, fraud, or safety incidents' },
-  { type: 'bullet',  text: 'To comply with Nigerian legal and regulatory requirements' },
+  { type: 'bullet',  text: `To comply with legal and regulatory requirements in ${countryName}` },
   { type: 'heading', text: '4. Location Sharing During Trips' },
   { type: 'body',    text: 'When a trip is active, your real-time location is shared with the matched driver or customer so the trip can be completed safely. Location sharing ends when the trip is marked complete.' },
   { type: 'heading', text: '5. Data Sharing' },
   { type: 'body',    text: 'We do not sell your personal data. We may share data with:' },
   { type: 'bullet',  text: 'Payment processors (Paystack, Flutterwave) to complete transactions' },
   { type: 'bullet',  text: 'SMS/email providers to deliver OTP codes and notifications' },
-  { type: 'bullet',  text: 'Regulators or law enforcement when required by Nigerian law' },
+  { type: 'bullet',  text: `Regulators or law enforcement when required by law in ${countryName}` },
   { type: 'bullet',  text: 'Emergency services in cases of safety incidents' },
   { type: 'heading', text: '6. Data Retention' },
   { type: 'bullet',  text: 'Account data is retained for as long as your account is active' },
-  { type: 'bullet',  text: 'After account deletion, we retain transaction records for 7 years as required by Nigerian financial regulations' },
+  { type: 'bullet',  text: `After account deletion, we retain transaction records for 7 years, in line with financial recordkeeping regulations in ${countryName}` },
   { type: 'bullet',  text: 'Document images are deleted within 90 days of account closure' },
   { type: 'heading', text: '7. Security' },
   { type: 'body',    text: 'We use industry-standard encryption (TLS in transit, AES at rest), hashed passwords, and device-based authentication tokens. Access to personal data is restricted to authorised personnel only.' },
@@ -181,8 +200,8 @@ const PRIVACY_CONTENT = [
 // ─────────────────────────────────────────────────────────────────────────────
 // LEGAL MODAL — bottom sheet, no auth required
 // ─────────────────────────────────────────────────────────────────────────────
-const LegalModal = ({ visible, onClose, onAgree, type, darkMode, theme, mode }) => {
-  const content = type === 'terms' ? TERMS_CONTENT : PRIVACY_CONTENT;
+const LegalModal = ({ visible, onClose, onAgree, type, darkMode, theme, mode, countryName }) => {
+  const content = type === 'terms' ? buildTermsContent(countryName) : buildPrivacyContent(countryName);
   const slideY  = useRef(new Animated.Value(height)).current;
   const bgO     = useRef(new Animated.Value(0)).current;
 
@@ -401,7 +420,9 @@ export default function RegisterScreen({ navigation }) {
   const [lastName,        setLastName]        = useState('');
   const [email,           setEmail]           = useState('');
   const [phone,           setPhone]           = useState('');
-  const [countryCode,     setCountryCode]     = useState(COUNTRIES[0].code);
+  const [countries,       setCountries]       = useState(FALLBACK_COUNTRIES);
+  const [countriesLoading, setCountriesLoading] = useState(false);
+  const [countryCode,     setCountryCode]     = useState(FALLBACK_COUNTRIES[0].code);
   const [countryPickerVisible, setCountryPickerVisible] = useState(false);
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -446,7 +467,36 @@ export default function RegisterScreen({ navigation }) {
     ]).start();
   };
 
-  useEffect(() => { animateIn(); }, []);
+    useEffect(() => { animateIn(); }, []);
+
+  // Re-fetch whenever the chosen role changes, since payout-readiness
+  // filtering depends on role (Driver/Courier need a live payout method,
+  // Customer doesn't).
+  useEffect(() => {
+    let cancelled = false;
+    const loadCountries = async () => {
+      setCountriesLoading(true);
+      try {
+        const res  = await countryAPI.listForRegistration(roleId);
+        const list = (res?.data?.countries ?? []).map(c => ({
+          ...c,
+          flag: COUNTRY_FLAGS[c.code] ?? '🌍',
+        }));
+        if (!cancelled && list.length > 0) {
+          setCountries(list);
+          // Keep current selection if it's still valid, else default to first.
+          setCountryCode(prev => (list.some(c => c.code === prev) ? prev : list[0].code));
+        }
+      } catch (err) {
+        console.error('[RegisterScreen] Failed to load countries, using fallback:', err?.message ?? err);
+        if (!cancelled) setCountries(FALLBACK_COUNTRIES);
+      } finally {
+        if (!cancelled) setCountriesLoading(false);
+      }
+    };
+    loadCountries();
+    return () => { cancelled = true; };
+  }, [roleId]);
 
   const activeRole = ROLES.find(r => r.id === roleId);
 
@@ -473,6 +523,9 @@ export default function RegisterScreen({ navigation }) {
     if (!firstName.trim() || !lastName.trim()) return Alert.alert(t('register.missingFieldsTitle'),    t('register.missingFieldsBody'));
     if (!email.trim() || !email.includes('@'))  return Alert.alert(t('register.invalidEmailTitle'),    t('register.invalidEmailBody'));
     if (!phone.trim())                           return Alert.alert(t('register.missingPhoneTitle'),   t('register.missingPhoneBody'));
+    if (!isPlausiblePhoneLength(phone.trim(), countryCode)) {
+      return Alert.alert(t('register.invalidPhoneLengthTitle'), t('register.invalidPhoneLengthBody'));
+    }
     if (password.length < 8)                    return Alert.alert(t('register.weakPasswordTitle'),   t('register.weakPasswordBody'));
     if (password !== confirmPassword)           return Alert.alert(t('register.passwordMismatchTitle'),t('register.passwordMismatchBody'));
     if (!roleId)                                return Alert.alert(t('register.selectRoleTitle'),      t('register.selectRoleBody'));
@@ -485,7 +538,7 @@ export default function RegisterScreen({ navigation }) {
         firstName: firstName.trim(),
         lastName:  lastName.trim(),
         email:     email.trim().toLowerCase(),
-        phone:     formatPhone(phone.trim()),
+        phone:     formatPhone(phone.trim(), countries.find(c => c.code === countryCode)?.dialPrefix),
         password,
         role:      roleId,
         countryCode,
@@ -621,6 +674,7 @@ export default function RegisterScreen({ navigation }) {
         darkMode={darkMode}
         theme={theme}
         mode={mode}
+        countryName={countries.find(c => c.code === countryCode)?.name ?? 'Nigeria'}
       />
 
       <KeyboardAvoidingView
@@ -818,18 +872,21 @@ export default function RegisterScreen({ navigation }) {
                 <FloatInput label={t('register.phoneNumber')}  iconName="call-outline" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
 
                 {/* Country selector */}
-                <TouchableOpacity
+                                <TouchableOpacity
                   onPress={() => setCountryPickerVisible(true)}
                   activeOpacity={0.8}
-                  style={[s.countryRow, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}
+                  disabled={countriesLoading}
+                  style={[s.countryRow, { backgroundColor: G.card(mode), borderColor: G.border(mode), opacity: countriesLoading ? 0.6 : 1 }]}
                 >
                   <Text style={{ fontSize: 18, marginRight: 8 }}>
-                    {COUNTRIES.find(c => c.code === countryCode)?.flag}
+                    {countries.find(c => c.code === countryCode)?.flag ?? '🌍'}
                   </Text>
                   <Text style={{ flex: 1, color: theme.foreground, fontSize: SMALL ? 13 : 14, fontWeight: '600' }}>
-                    {COUNTRIES.find(c => c.code === countryCode)?.name}
+                    {countriesLoading ? t('register.loadingCountries') : countries.find(c => c.code === countryCode)?.name}
                   </Text>
-                  <Ionicons name="chevron-down" size={16} color={theme.hint} />
+                  {countriesLoading
+                    ? <ActivityIndicator size="small" color={theme.hint} />
+                    : <Ionicons name="chevron-down" size={16} color={theme.hint} />}
                 </TouchableOpacity>
 
                 <Modal
@@ -844,7 +901,7 @@ export default function RegisterScreen({ navigation }) {
                     onPress={() => setCountryPickerVisible(false)}
                   >
                     <View style={{ backgroundColor: theme.background, borderRadius: 16, padding: 8 }}>
-                      {COUNTRIES.map(c => (
+                      {countries.map(c => (
                         <TouchableOpacity
                           key={c.code}
                           onPress={() => { setCountryCode(c.code); setCountryPickerVisible(false); }}

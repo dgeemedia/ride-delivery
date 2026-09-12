@@ -45,8 +45,6 @@ exports.paystackInitialize = async ({ email, amount, metadata = {}, callbackUrl,
   }
 };
 
-// backend/src/services/payment.service.js
-
 exports.paystackVerify = async (reference) => {
   try {
     const { data } = await paystackAPI.get(`/transaction/verify/${reference}`);
@@ -82,14 +80,17 @@ exports.paystackRefund = async (transactionReference, amount) => {
   }
 };
 
-exports.paystackCreateRecipient = async ({ name, accountNumber, bankCode }) => {
+// NOTE: kept for backward compatibility with any existing call sites, but
+// prefer paystackCreateTransferRecipient below (it accepts `currency` and
+// is the one initiatePayoutTransfer uses).
+exports.paystackCreateRecipient = async ({ name, accountNumber, bankCode, currency = 'NGN' }) => {
   try {
     const { data } = await paystackAPI.post('/transferrecipient', {
       type: 'nuban',
       name,
       account_number: accountNumber,
       bank_code: bankCode,
-      currency: 'NGN'
+      currency
     });
 
     if (!data.status) throw new AppError(data.message, 400);
@@ -118,9 +119,12 @@ exports.paystackTransfer = async ({ amount, recipientCode, reason, metadata = {}
   }
 };
 
-exports.paystackListBanks = async () => {
+// Paystack's ?country= param wants the full country name and is only valid
+// for markets Paystack actually operates in (NG, GH, ZA, KE, RW, CI as of
+// 2026). Defaults preserve the original NG-only behavior.
+exports.paystackListBanks = async (currency = 'NGN', countryName = 'nigeria') => {
   try {
-    const { data } = await paystackAPI.get('/bank?currency=NGN&country=nigeria');
+    const { data } = await paystackAPI.get(`/bank?currency=${currency}&country=${countryName}`);
     if (!data.status) throw new AppError(data.message, 400);
     return data.data; // Array of { name, code, ... }
   } catch (error) {
@@ -177,14 +181,14 @@ exports.flutterwaveVerifyByReference = async (txRef) => {
   }
 };
 
-exports.paystackCreateTransferRecipient = async ({ name, accountNumber, bankCode }) => {
+exports.paystackCreateTransferRecipient = async ({ name, accountNumber, bankCode, currency = 'NGN' }) => {
   try {
     const { data } = await paystackAPI.post('/transferrecipient', {
       type:           'nuban',
       name,
       account_number: accountNumber,
       bank_code:      bankCode,
-      currency:       'NGN',
+      currency,
     });
     if (!data.status) throw new AppError(data.message, 400);
     return data.data; // { recipient_code, ... }
@@ -198,7 +202,7 @@ exports.paystackInitiateTransfer = async ({ amount, recipient, reason, reference
   try {
     const { data } = await paystackAPI.post('/transfer', {
       source:    'balance',
-      amount,               // kobo
+      amount,               // kobo (or subunit for the recipient's currency)
       recipient,            // recipient_code from paystackCreateTransferRecipient
       reason:    reason ?? 'Wallet withdrawal',
       reference: reference ?? `WD-${Date.now()}`,
@@ -283,6 +287,7 @@ exports.flutterwaveTransfer = async ({
   accountName,
   narration,
   reference,
+  currency = 'NGN',
   metadata = {}
 }) => {
   try {
@@ -291,7 +296,7 @@ exports.flutterwaveTransfer = async ({
       account_number: accountNumber,
       amount,
       narration,
-      currency: 'NGN',
+      currency,
       reference: reference || `PAYOUT-${Date.now()}`,
       beneficiary_name: accountName,
       meta: [metadata]
@@ -305,9 +310,10 @@ exports.flutterwaveTransfer = async ({
   }
 };
 
-exports.flutterwaveListBanks = async () => {
+// countryCode is an ISO alpha-2 (e.g. 'NG', 'GH', 'CI'), matching Country.code.
+exports.flutterwaveListBanks = async (countryCode = 'NG') => {
   try {
-    const { data } = await flutterwaveAPI.get('/banks/NG');
+    const { data } = await flutterwaveAPI.get(`/banks/${countryCode}`);
     if (data.status !== 'success') throw new AppError(data.message, 400);
     return data.data; // Array of { id, code, name }
   } catch (error) {
@@ -329,47 +335,62 @@ const getActivePayoutProvider = () => {
 };
 exports.getActivePayoutProvider = getActivePayoutProvider;
 
+// Paystack only operates in a handful of markets and expects the full
+// country name (not ISO code) plus its own currency code on /bank.
+const PAYSTACK_COUNTRY_NAME = { NG: 'nigeria', GH: 'ghana', CI: "cote d'ivoire" };
+const PAYSTACK_CURRENCY     = { NG: 'NGN', GH: 'GHS', CI: 'XOF' };
+
 const _bankListCache = {};
 const BANK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-const _getCachedBankList = async (provider) => {
+// Cache key now includes country — otherwise Ghana and Nigeria bank lists
+// would overwrite each other under a single `provider`-only key.
+const _getCachedBankList = async (provider, countryCode = 'NG') => {
+  const cacheKey = `${provider}:${countryCode}`;
   const now = Date.now();
-  const cached = _bankListCache[provider];
+  const cached = _bankListCache[cacheKey];
   if (cached && (now - cached.cachedAt) < BANK_CACHE_TTL_MS) return cached.list;
 
   const list = provider === 'flutterwave'
-    ? await exports.flutterwaveListBanks()
-    : await exports.paystackListBanks();
+    ? await exports.flutterwaveListBanks(countryCode)
+    : await exports.paystackListBanks(
+        PAYSTACK_CURRENCY[countryCode] ?? 'NGN',
+        PAYSTACK_COUNTRY_NAME[countryCode] ?? 'nigeria'
+      );
 
-  _bankListCache[provider] = { list, cachedAt: now };
+  _bankListCache[cacheKey] = { list, cachedAt: now };
   return list;
 };
 
-exports.resolveBankName = async (bankCode, provider = getActivePayoutProvider()) => {
+exports.resolveBankName = async (bankCode, countryCode = 'NG', provider = getActivePayoutProvider()) => {
   if (!bankCode) return null;
   try {
-    const banks = await _getCachedBankList(provider);
+    const banks = await _getCachedBankList(provider, countryCode);
     const match = banks.find(b => String(b.code) === String(bankCode));
     return match?.name ?? null;
   } catch (err) {
-    console.error(`[payment.service] resolveBankName (${provider}) failed:`, err.message);
+    console.error(`[payment.service] resolveBankName (${provider}, ${countryCode}) failed:`, err.message);
     return null;
   }
 };
 
-exports.verifyBankAccountUnified = async (accountNumber, bankCode) => {
+// NOTE: Paystack's /bank/resolve only genuinely validates Nigerian NUBAN
+// accounts today. Calling this for a non-NG account number will not give a
+// meaningful result until a mobile-money verification path is added —
+// tracked separately from this currency/country plumbing.
+exports.verifyBankAccountUnified = async (accountNumber, bankCode, countryCode = 'NG') => {
   const provider = getActivePayoutProvider();
   return provider === 'flutterwave'
     ? exports.flutterwaveVerifyAccount(accountNumber, bankCode)
     : exports.paystackVerifyAccount(accountNumber, bankCode);
 };
 
-exports.listBanksUnified = async () => {
+exports.listBanksUnified = async (countryCode = 'NG') => {
   const provider = getActivePayoutProvider();
-  return _getCachedBankList(provider);
+  return _getCachedBankList(provider, countryCode);
 };
 
-exports.initiatePayoutTransfer = async ({ amount, accountNumber, bankCode, accountName, reason, reference }) => {
+exports.initiatePayoutTransfer = async ({ amount, accountNumber, bankCode, accountName, reason, reference, currency = 'NGN' }) => {
   const provider = getActivePayoutProvider();
 
   if (provider === 'flutterwave') {
@@ -380,6 +401,7 @@ exports.initiatePayoutTransfer = async ({ amount, accountNumber, bankCode, accou
       accountName,
       narration: reason,
       reference,
+      currency,
     });
     return {
       provider,
@@ -392,6 +414,7 @@ exports.initiatePayoutTransfer = async ({ amount, accountNumber, bankCode, accou
     name: accountName,
     accountNumber,
     bankCode,
+    currency,
   });
   const transfer = await exports.paystackInitiateTransfer({
     amount: Math.round(amount * 100),

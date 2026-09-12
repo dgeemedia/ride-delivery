@@ -103,6 +103,8 @@ export default function WalletTopUpScreen({ navigation }) {
   const [provider, setProvider] = useState('paystack');
   const [loading,  setLoading]  = useState(false);
   const [limits,   setLimits]   = useState({ min: 100, max: 1000000 });
+  // Defaults to both until the real list loads, so the UI doesn't flash empty.
+  const [availableProviderIds, setAvailableProviderIds] = useState(['paystack', 'flutterwave']);
 
   const shakeA = useRef(new Animated.Value(0)).current;
 
@@ -110,11 +112,15 @@ export default function WalletTopUpScreen({ navigation }) {
   const HEADER_H       = insets.top + HEADER_INNER_H;
   const SCROLL_H       = height - HEADER_H - insets.bottom;
 
-  useEffect(() => {
+    useEffect(() => {
     walletAPI.getDepositLimits?.()
       .then(res => {
-        const { min, max } = res?.data ?? {};
+        const { min, max, paymentProviders } = res?.data ?? {};
         if (min && max) setLimits({ min, max });
+        if (Array.isArray(paymentProviders) && paymentProviders.length > 0) {
+          setAvailableProviderIds(paymentProviders);
+          setProvider(prev => paymentProviders.includes(prev) ? prev : paymentProviders[0]);
+        }
       })
       .catch(() => {});
   }, []);
@@ -259,7 +265,7 @@ export default function WalletTopUpScreen({ navigation }) {
           {/* ── Provider selector ── */}
           <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('walletTopUp.paymentProvider')}</Text>
           <View style={s.providerRow}>
-            {PROVIDERS.map(p => {
+            {PROVIDERS.filter(p => availableProviderIds.includes(p.id)).map(p => {
               const selected = provider === p.id;
               return (
                 <TouchableOpacity

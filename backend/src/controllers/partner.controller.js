@@ -7,6 +7,7 @@ const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog'); // ← ADDED
+const { formatMoney } = require('../utils/currency');
 const { getCountryForUser } = require('../services/country.service');
 
 console.log('[PARTNER-CTRL] Prisma partner controller loaded');
@@ -539,7 +540,7 @@ exports.requestPayout = async (req, res) => {
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Withdrawal Requested 🏦',
-    message: `₦${amount.toLocaleString('en-NG')} withdrawal to ${resolvedAccountName} is pending admin review.`,
+    message: `${formatMoney(amount, wallet.currency)} withdrawal to ${resolvedAccountName} is pending admin review.`,
     type:    notificationService.TYPES.WALLET_WITHDRAWAL,
     data:    { amount, accountNumber: `****${accountNumber.slice(-4)}`, bankCode, reference },
   });
@@ -554,7 +555,7 @@ exports.requestPayout = async (req, res) => {
       notificationService.notify({
         userId:  a.id,
         title:   'New Withdrawal Request 💸',
-        message: `${req.user.firstName} ${req.user.lastName} (Partner) → ${resolvedAccountName}: ₦${amount.toLocaleString('en-NG')}`,
+        message: `${req.user.firstName} ${req.user.lastName} (Partner) → ${resolvedAccountName}: ${formatMoney(amount, wallet.currency)}`,
         type:    'withdrawal_pending',
         data:    { reference, userId: req.user.id, amount },
       })

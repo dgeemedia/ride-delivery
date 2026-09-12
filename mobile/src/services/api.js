@@ -260,6 +260,16 @@ export const settingsAPI = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// COUNTRIES  (public, no auth token required — used pre-login at registration)
+// ─────────────────────────────────────────────────────────────────────────────
+export const countryAPI = {
+  // forRole is optional: pass 'DRIVER' or 'DELIVERY_PARTNER' to filter out
+  // countries where payoutMethod is still 'UNSUPPORTED'. Omit for customers.
+  listForRegistration: (forRole) =>
+    api.get('/countries', { params: forRole ? { forRole } : {} }),
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SHIELD
 // ─────────────────────────────────────────────────────────────────────────────
 export const shieldAPI = {

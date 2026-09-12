@@ -16,19 +16,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import en from './locales/en.json';
 import fr from './locales/fr.json';
+import pt from './locales/pt.json';
 
 const LANGUAGE_STORAGE_KEY = 'appLanguage';
 
 // Add an entry here once a locale file exists in ./locales and has been
 // reviewed — see the "Adding a new language" note in fr.json's header.
 export const SUPPORTED_LANGUAGES = [
-  { code: 'en', label: 'English',  nativeLabel: 'English' },
-  { code: 'fr', label: 'French',   nativeLabel: 'Français' },
+  { code: 'en', label: 'English',    nativeLabel: 'English' },
+  { code: 'fr', label: 'French',     nativeLabel: 'Français' },
+  { code: 'pt', label: 'Portuguese', nativeLabel: 'Português' },
 ];
 
 const resources = {
   en: { translation: en },
   fr: { translation: fr },
+  pt: { translation: pt },
 };
 
 const supportedCodes = SUPPORTED_LANGUAGES.map(l => l.code);
