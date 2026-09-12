@@ -6,12 +6,14 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider }     from './src/context/AuthContext';
+import { CurrencyProvider } from './src/context/CurrencyContext';
 import { LocationProvider } from './src/context/LocationContext';
 import { RideProvider }     from './src/context/RideContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import AppNavigator         from './src/navigation/AppNavigator';
 import ErrorBoundary        from './src/components/ErrorBoundary';
 import socketService        from './src/services/socket';
+import { initI18n }         from './src/i18n';
 
 // Keep splash visible until we explicitly hide it
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -40,6 +42,7 @@ export default function App() {
   useEffect(() => {
     async function prepare() {
       try {
+        await initI18n();
         await new Promise(resolve => setTimeout(resolve, 300));
       } catch (e) {
         console.warn('[App] prepare error:', e);
@@ -85,11 +88,13 @@ export default function App() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AuthProvider>
-            <RideProvider>
-              <LocationProvider>
-                <AppShell onLayout={onLayoutRootView} />
-              </LocationProvider>
-            </RideProvider>
+            <CurrencyProvider>
+              <RideProvider>
+                <LocationProvider>
+                  <AppShell onLayout={onLayoutRootView} />
+                </LocationProvider>
+              </RideProvider>
+            </CurrencyProvider>
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

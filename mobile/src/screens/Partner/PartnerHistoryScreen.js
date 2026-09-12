@@ -8,7 +8,9 @@ import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }    from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }    from '../../context/ThemeContext';
+import { useCurrency } from '../../context/CurrencyContext';
 import { useScrollY }  from '../../context/ScrollContext';
+import { useTranslation } from 'react-i18next';
 import { deliveryAPI } from '../../services/api';
 
 const { height } = Dimensions.get('window');
@@ -19,14 +21,16 @@ const RED   = '#E05555';
 const GOLD  = '#FFB800';
 
 const STATUS_CFG = {
-  DELIVERED: { color: TEAL,  icon: 'checkmark-circle-outline', label: 'Delivered' },
-  CANCELLED: { color: RED,   icon: 'close-circle-outline',     label: 'Cancelled' },
+  DELIVERED: { color: TEAL,  icon: 'checkmark-circle-outline', labelKey: 'partnerHistory.statusDelivered' },
+  CANCELLED: { color: RED,   icon: 'close-circle-outline',     labelKey: 'partnerHistory.statusCancelled' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DeliveryCard
 // ─────────────────────────────────────────────────────────────────────────────
 const DeliveryCard = ({ item, theme }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const cfg  = STATUS_CFG[item.status] ?? STATUS_CFG.DELIVERED;
   const date = new Date(item.requestedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
   const time = new Date(item.requestedAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
@@ -51,7 +55,7 @@ const DeliveryCard = ({ item, theme }) => {
         </View>
         <View style={[dc.statusPill, { backgroundColor: cfg.color + '15' }]}>
           <Ionicons name={cfg.icon} size={11} color={cfg.color} />
-          <Text style={[dc.statusTxt, { color: cfg.color }]}>{cfg.label}</Text>
+          <Text style={[dc.statusTxt, { color: cfg.color }]}>{t(cfg.labelKey)}</Text>
         </View>
       </View>
 
@@ -87,22 +91,22 @@ const DeliveryCard = ({ item, theme }) => {
       {item.status === 'DELIVERED' && (
         <View style={[dc.earningsBox, { backgroundColor: TEAL + '08', borderColor: TEAL + '25' }]}>
           <View style={dc.earningRow}>
-            <Text style={[dc.earningLbl, { color: theme.hint }]}>Gross Fee</Text>
+            <Text style={[dc.earningLbl, { color: theme.hint }]}>{t('partnerHistory.grossFee')}</Text>
             <Text style={[dc.earningVal, { color: theme.foreground }]}>
-              ₦{Number(gross).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+              {formatMoney(gross)}
             </Text>
           </View>
           <View style={dc.earningRow}>
-            <Text style={[dc.earningLbl, { color: theme.hint }]}>Platform Fee (15%)</Text>
+            <Text style={[dc.earningLbl, { color: theme.hint }]}>{t('partnerHistory.platformFee')}</Text>
             <Text style={[dc.earningVal, { color: RED }]}>
-              -₦{Number(platFee).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+              -{formatMoney(platFee)}
             </Text>
           </View>
           <View style={[dc.earningDivider, { backgroundColor: TEAL + '30' }]} />
           <View style={dc.earningRow}>
-            <Text style={[dc.earningLbl, { color: TEAL, fontWeight: '800' }]}>Your Earnings</Text>
+            <Text style={[dc.earningLbl, { color: TEAL, fontWeight: '800' }]}>{t('partnerHistory.yourEarnings')}</Text>
             <Text style={[dc.earningVal, { color: TEAL, fontWeight: '900', fontSize: 15 }]}>
-              ₦{Number(net).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+              {formatMoney(net)}
             </Text>
           </View>
         </View>
@@ -179,6 +183,8 @@ const dc = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function PartnerHistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t }            = useTranslation();
   const scrollY         = useScrollY();
   const insets          = useSafeAreaInsets();
 
@@ -259,8 +265,8 @@ export default function PartnerHistoryScreen({ navigation }) {
             <Ionicons name="arrow-back" size={18} color={theme.foreground} />
           </TouchableOpacity>
           <View>
-            <Text style={[s.headerTitle, { color: theme.foreground }]}>Delivery History</Text>
-            <Text style={[s.headerSub, { color: theme.hint }]}>{deliveries.length} deliveries loaded</Text>
+            <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('partnerHistory.headerTitle')}</Text>
+            <Text style={[s.headerSub, { color: theme.hint }]}>{t('partnerHistory.deliveriesLoaded', { count: deliveries.length })}</Text>
           </View>
         </View>
 
@@ -268,19 +274,19 @@ export default function PartnerHistoryScreen({ navigation }) {
           <View style={[s.summaryStrip, { backgroundColor: theme.backgroundAlt, borderBottomColor: theme.border }]}>
             <View style={s.sumItem}>
               <Text style={[s.sumVal, { color: TEAL }]}>{totals.delivered}</Text>
-              <Text style={[s.sumLbl, { color: theme.hint }]}>Delivered</Text>
+              <Text style={[s.sumLbl, { color: theme.hint }]}>{t('partnerHistory.statusDelivered')}</Text>
             </View>
             <View style={[s.sumDiv, { backgroundColor: theme.border }]} />
             <View style={s.sumItem}>
               <Text style={[s.sumVal, { color: RED }]}>{totals.cancelled}</Text>
-              <Text style={[s.sumLbl, { color: theme.hint }]}>Cancelled</Text>
+              <Text style={[s.sumLbl, { color: theme.hint }]}>{t('partnerHistory.statusCancelled')}</Text>
             </View>
             <View style={[s.sumDiv, { backgroundColor: theme.border }]} />
             <View style={s.sumItem}>
               <Text style={[s.sumVal, { color: TEAL }]}>
-                ₦{totals.earned.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                {formatMoney(totals.earned)}
               </Text>
-              <Text style={[s.sumLbl, { color: theme.hint }]}>Net Earned</Text>
+              <Text style={[s.sumLbl, { color: theme.hint }]}>{t('partnerHistory.netEarned')}</Text>
             </View>
           </View>
         )}
@@ -307,8 +313,8 @@ export default function PartnerHistoryScreen({ navigation }) {
               {deliveries.length === 0 ? (
                 <View style={s.empty}>
                   <Ionicons name="cube-outline" size={48} color={theme.hint} />
-                  <Text style={[s.emptyTitle, { color: theme.foreground }]}>No deliveries yet</Text>
-                  <Text style={[s.emptySub, { color: theme.hint }]}>Your completed deliveries will appear here</Text>
+                  <Text style={[s.emptyTitle, { color: theme.foreground }]}>{t('partnerHistory.emptyTitle')}</Text>
+                  <Text style={[s.emptySub, { color: theme.hint }]}>{t('partnerHistory.emptySub')}</Text>
                 </View>
               ) : (
                 deliveries.map(item => (

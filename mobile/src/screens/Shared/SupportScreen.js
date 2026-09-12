@@ -8,6 +8,8 @@ import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
 import { useAuth }           from '../../context/AuthContext';
+import { useTranslation }    from 'react-i18next';
+import i18n                  from '../../i18n';
 import { settingsAPI }       from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
@@ -70,8 +72,8 @@ const openURL = async (url) => {
   try {
     const supported = await Linking.canOpenURL(url);
     if (supported) await Linking.openURL(url);
-    else Alert.alert('Cannot Open', `Unable to open: ${url}`);
-  } catch { Alert.alert('Error', 'Could not open the link.'); }
+    else Alert.alert(i18n.t('support.cannotOpenTitle'), i18n.t('support.cannotOpenMsg', { url }));
+  } catch { Alert.alert(i18n.t('common.error'), i18n.t('support.openLinkError')); }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,6 +82,7 @@ const openURL = async (url) => {
 export default function SupportScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const { user }        = useAuth();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const fadeA           = useRef(new Animated.Value(0)).current;
 
@@ -141,7 +144,7 @@ export default function SupportScreen({ navigation }) {
         >
           <Ionicons name="arrow-back" size={20} color={theme.foreground} />
         </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: theme.foreground }]}>Help & Support</Text>
+        <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('support.headerTitle')}</Text>
         {/* Spacer mirrors backBtn width to keep title perfectly centred */}
         <View style={s.headerSpacer} />
       </View>
@@ -161,21 +164,21 @@ export default function SupportScreen({ navigation }) {
               <View style={[s.heroIcon, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '30' }]}>
                 <Ionicons name="headset-outline" size={32} color={theme.accent} />
               </View>
-              <Text style={[s.heroTitle, { color: theme.foreground }]}>We're here to help</Text>
-              <Text style={[s.heroSub, { color: theme.hint }]}>Reach out anytime — we respond within 24 hours.</Text>
+              <Text style={[s.heroTitle, { color: theme.foreground }]}>{t('support.heroTitle')}</Text>
+              <Text style={[s.heroSub, { color: theme.hint }]}>{t('support.heroSub')}</Text>
             </View>
 
             {/* Support Tickets */}
-            <Section title="SUPPORT TICKETS" theme={theme}>
+            <Section title={t('support.sectionTickets')} theme={theme}>
               <MenuItem
                 icon="chatbubble-ellipses-outline"
-                label="Submit a Ticket"
+                label={t('support.submitTicket')}
                 theme={theme}
                 onPress={() => navigation.navigate('SubmitTicket')}
               />
               <MenuItem
                 icon="list-outline"
-                label="My Tickets"
+                label={t('support.myTickets')}
                 theme={theme}
                 last
                 onPress={() => navigation.navigate('MyTickets')}
@@ -183,24 +186,24 @@ export default function SupportScreen({ navigation }) {
             </Section>
 
             {/* Contact — driven by admin settings */}
-            <Section title="CONTACT US" theme={theme}>
+            <Section title={t('support.sectionContact')} theme={theme}>
               <MenuItem
                 icon="mail-outline"
-                label="Email Support"
+                label={t('support.emailSupport')}
                 value={contact.email}
                 theme={theme}
                 onPress={() => openURL(`mailto:${contact.email}`)}
               />
               <MenuItem
                 icon="call-outline"
-                label="Call Us"
+                label={t('support.callUs')}
                 value={contact.phone}
                 theme={theme}
                 onPress={() => openURL(`tel:${contact.phone}`)}
               />
               <MenuItem
                 icon="logo-whatsapp"
-                label="WhatsApp"
+                label={t('support.whatsapp')}
                 value={`+${contact.whatsapp}`}
                 theme={theme}
                 last
@@ -209,12 +212,12 @@ export default function SupportScreen({ navigation }) {
             </Section>
 
             {/* Self-service */}
-            <Section title="SELF-SERVICE" theme={theme}>
+            <Section title={t('support.sectionSelfService')} theme={theme}>
               <MenuItem
                 icon="help-buoy-outline"
-                label="FAQs"
+                label={t('support.faqs')}
                 theme={theme}
-                onPress={() => openLegal('help_content', 'Help Center')}
+                onPress={() => openLegal('help_content', t('support.helpCenterTitle'))}
               />
               {/*<MenuItem
                 icon="warning-outline"
@@ -226,25 +229,25 @@ export default function SupportScreen({ navigation }) {
             </Section>
 
             {/* Legal */}
-            <Section title="LEGAL" theme={theme}>
+            <Section title={t('support.sectionLegal')} theme={theme}>
               <MenuItem
                 icon="document-text-outline"
-                label="Terms of Service"
+                label={t('support.termsOfService')}
                 theme={theme}
-                onPress={() => openLegal('terms_content', 'Terms of Service')}
+                onPress={() => openLegal('terms_content', t('support.termsOfService'))}
               />
               <MenuItem
                 icon="shield-checkmark-outline"
-                label="Privacy Policy"
+                label={t('support.privacyPolicy')}
                 theme={theme}
                 last
-                onPress={() => openLegal('privacy_content', 'Privacy Policy')}
+                onPress={() => openLegal('privacy_content', t('support.privacyPolicy'))}
               />
             </Section>
 
-            <Text style={[s.version,   { color: theme.hint }]}>Diakite v1.0.0</Text>
+            <Text style={[s.version,   { color: theme.hint }]}>{t('support.versionLabel', { version: '1.0.0' })}</Text>
             <Text style={[s.copyright, { color: theme.hint }]}>
-              © {new Date().getFullYear()} Diakite. All rights reserved.
+              {t('support.copyright', { year: new Date().getFullYear() })}
             </Text>
 
           </Animated.View>

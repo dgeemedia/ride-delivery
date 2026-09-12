@@ -9,6 +9,8 @@ import { LinearGradient }    from 'expo-linear-gradient';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
+import { useTranslation }    from 'react-i18next';
 import { useAuth }           from '../../context/AuthContext';
 import { corporateAPI }      from '../../services/api';
 
@@ -23,6 +25,7 @@ const G = {
 
 // ── Budget bar ────────────────────────────────────────────────────────────────
 const BudgetBar = ({ spent, limit, theme, mode }) => {
+  const { formatMoney } = useCurrency();
   const pct   = limit > 0 ? Math.min(spent / limit, 1) : 0;
   const color = pct > 0.9 ? '#E05555' : pct > 0.7 ? '#FFB800' : CORP_BLUE;
   const widA  = useRef(new Animated.Value(0)).current;
@@ -35,8 +38,8 @@ const BudgetBar = ({ spent, limit, theme, mode }) => {
         <Animated.View style={[bb.fill, { width: widA.interpolate({ inputRange:[0,1], outputRange:['0%','100%'] }), backgroundColor: color }]} />
       </View>
       <View style={bb.labels}>
-        <Text style={[bb.txt, { color: theme.hint }]}>₦{spent.toLocaleString('en-NG')} spent</Text>
-        <Text style={[bb.txt, { color: theme.hint }]}>₦{limit.toLocaleString('en-NG')} limit</Text>
+        <Text style={[bb.txt, { color: theme.hint }]}>{formatMoney(spent)} spent</Text>
+        <Text style={[bb.txt, { color: theme.hint }]}>{formatMoney(limit)} limit</Text>
       </View>
     </View>
   );
@@ -50,7 +53,14 @@ const bb = StyleSheet.create({
 });
 
 // ── Employee card ─────────────────────────────────────────────────────────────
+const EMPLOYEE_STATUS_KEYS = {
+  ACTIVE: 'corporateScreen.employeeStatusActive',
+  PENDING: 'corporateScreen.employeeStatusPending',
+  REJECTED: 'corporateScreen.employeeStatusRejected',
+};
+
 const EmployeeCard = ({ emp, theme, mode, onEdit }) => {
+  const { t } = useTranslation();
   const statusColor = emp.inviteStatus === 'ACTIVE' ? '#4CAF50' : emp.inviteStatus === 'PENDING' ? '#FFB800' : '#E05555';
   return (
     <View style={[ec.card, { borderColor: G.border(mode), overflow:'hidden' }]}>
@@ -71,7 +81,7 @@ const EmployeeCard = ({ emp, theme, mode, onEdit }) => {
       </View>
       <View style={ec.right}>
         <View style={[ec.statusBadge, { backgroundColor: statusColor + '18', borderColor: statusColor + '30', borderWidth:1 }]}>
-          <Text style={[ec.statusTxt, { color: statusColor }]}>{emp.inviteStatus}</Text>
+          <Text style={[ec.statusTxt, { color: statusColor }]}>{t(EMPLOYEE_STATUS_KEYS[emp.inviteStatus] ?? EMPLOYEE_STATUS_KEYS.PENDING)}</Text>
         </View>
         <TouchableOpacity onPress={() => onEdit(emp)} style={{ padding:4, marginTop:6 }}>
           <Ionicons name="create-outline" size={16} color={theme.hint} />
@@ -96,6 +106,8 @@ const ec = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function CorporateScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t }            = useTranslation();
   const { user }        = useAuth();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
@@ -152,7 +164,7 @@ export default function CorporateScreen({ navigation }) {
           <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
             <Ionicons name="arrow-back" size={22} color={theme.foreground} />
           </TouchableOpacity>
-          <Text style={[s.title, { color: theme.foreground }]}>Corporate</Text>
+          <Text style={[s.title, { color: theme.foreground }]}>{t('corporateScreen.corporate')}</Text>
         </View>
         <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + (Platform.OS==='ios' ? 110 : 90) }]}>
           {myAccount?.employed ? (
@@ -175,18 +187,18 @@ export default function CorporateScreen({ navigation }) {
               <BudgetBar spent={myAccount.currentMonthSpend} limit={myAccount.monthlyLimit} theme={theme} mode={mode} />
               <View style={s.budgetStats}>
                 <View style={s.statItem}>
-                  <Text style={[s.statLabel, { color: theme.hint }]}>MONTHLY BUDGET</Text>
-                  <Text style={[s.statVal, { color: theme.foreground }]}>₦{myAccount.monthlyLimit.toLocaleString('en-NG')}</Text>
+                  <Text style={[s.statLabel, { color: theme.hint }]}>{t('corporateScreen.monthlyBudget')}</Text>
+                  <Text style={[s.statVal, { color: theme.foreground }]}>{formatMoney(myAccount.monthlyLimit)}</Text>
                 </View>
                 <View style={s.statItem}>
-                  <Text style={[s.statLabel, { color: theme.hint }]}>REMAINING</Text>
-                  <Text style={[s.statVal, { color: CORP_BLUE }]}>₦{myAccount.remaining.toLocaleString('en-NG')}</Text>
+                  <Text style={[s.statLabel, { color: theme.hint }]}>{t('corporateScreen.remaining')}</Text>
+                  <Text style={[s.statVal, { color: CORP_BLUE }]}>{formatMoney(myAccount.remaining)}</Text>
                 </View>
               </View>
               {!myAccount.canBook && (
                 <View style={[s.restrictNotice, { backgroundColor:'#FFB80012', borderColor:'#FFB800' }]}>
                   <Ionicons name="time-outline" size={14} color="#FFB800" />
-                  <Text style={[s.restrictTxt, { color:'#FFB800' }]}>Corporate booking is only available weekdays 7 AM – 8 PM</Text>
+                  <Text style={[s.restrictTxt, { color:'#FFB800' }]}>{t('corporateScreen.bookingHoursRestriction')}</Text>
                 </View>
               )}
             </View>
@@ -198,10 +210,10 @@ export default function CorporateScreen({ navigation }) {
                 style={StyleSheet.absoluteFill}
               />
               <Ionicons name="business-outline" size={38} color={theme.hint} />
-              <Text style={[s.noCorpTitle, { color: theme.foreground }]}>No Corporate Account</Text>
-              <Text style={[s.noCorpSub, { color: theme.hint }]}>Ask your company admin to invite you, or register your own corporate account.</Text>
+              <Text style={[s.noCorpTitle, { color: theme.foreground }]}>{t('corporateScreen.noCorporateAccount')}</Text>
+              <Text style={[s.noCorpSub, { color: theme.hint }]}>{t('corporateScreen.noCorporateAccountBody')}</Text>
               <TouchableOpacity style={[s.registerBtn, { backgroundColor: CORP_BLUE }]} onPress={() => navigation.navigate('RegisterCompany')}>
-                <Text style={s.registerBtnTxt}>Register My Company</Text>
+                <Text style={s.registerBtnTxt}>{t('corporateScreen.registerMyCompany')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -229,13 +241,13 @@ export default function CorporateScreen({ navigation }) {
         </View>
         <TouchableOpacity style={[s.topUpBtn, { backgroundColor: CORP_BLUE }]} onPress={() => navigation.navigate('CorporateTopUp')}>
           <Ionicons name="add" size={16} color="#FFF" />
-          <Text style={s.topUpBtnTxt}>Top Up</Text>
+          <Text style={s.topUpBtnTxt}>{t('corporateScreen.topUp')}</Text>
         </TouchableOpacity>
       </View>
 
       {/* Tab bar */}
       <View style={[s.tabs, { borderBottomColor: G.border(mode) }]}>
-        {[['overview','Overview'],['employees','Employees'],['trips','Trips']].map(([key, label]) => (
+        {[['overview',t('corporateScreen.tabOverview')],['employees',t('corporateScreen.tabEmployees')],['trips',t('corporateScreen.tabTrips')]].map(([key, label]) => (
           <TouchableOpacity key={key} style={s.tab} onPress={() => setTab(key)}>
             <Text style={[s.tabTxt, { color: tab === key ? CORP_BLUE : theme.hint }]}>{label}</Text>
             {tab === key && <View style={[s.tabLine, { backgroundColor: CORP_BLUE }]} />}
@@ -258,9 +270,9 @@ export default function CorporateScreen({ navigation }) {
                 style={StyleSheet.absoluteFill}
               />
               <View style={[s.walletShimmer, { backgroundColor: CORP_BLUE + '40' }]} />
-              <Text style={[s.walletLabel, { color: CORP_BLUE }]}>WALLET BALANCE</Text>
+              <Text style={[s.walletLabel, { color: CORP_BLUE }]}>{t('corporateScreen.walletBalance')}</Text>
               <Text style={[s.walletAmount, { color: CORP_BLUE }]}>
-                ₦{(company.wallet?.balance ?? 0).toLocaleString('en-NG',{ minimumFractionDigits:2 })}
+                {formatMoney(company.wallet?.balance ?? 0, { decimals: 2 })}
               </Text>
               <View style={s.walletRow}>
                 <Text style={[s.walletSub, { color: theme.hint }]}>{company._count?.employees ?? 0} employees · {company._count?.trips ?? 0} trips</Text>
@@ -296,7 +308,7 @@ export default function CorporateScreen({ navigation }) {
                 style={StyleSheet.absoluteFill}
               />
               <Ionicons name="document-text-outline" size={18} color={CORP_BLUE} />
-              <Text style={[s.invoiceBtnTxt, { color: CORP_BLUE }]}>Download Monthly Invoice</Text>
+              <Text style={[s.invoiceBtnTxt, { color: CORP_BLUE }]}>{t('corporateScreen.downloadMonthlyInvoice')}</Text>
               <Ionicons name="chevron-forward" size={14} color={CORP_BLUE} />
             </TouchableOpacity>
           </>
@@ -307,12 +319,12 @@ export default function CorporateScreen({ navigation }) {
           <>
             <TouchableOpacity style={[s.inviteBtn, { backgroundColor: CORP_BLUE }]} onPress={() => navigation.navigate('InviteEmployee')}>
               <Ionicons name="person-add-outline" size={18} color="#FFF" />
-              <Text style={s.inviteBtnTxt}>Invite Employee</Text>
+              <Text style={s.inviteBtnTxt}>{t('corporateScreen.inviteEmployee')}</Text>
             </TouchableOpacity>
             {employees.length === 0 ? (
               <View style={[s.emptyState, { borderColor: G.border(mode) }]}>
                 <Ionicons name="people-outline" size={32} color={theme.hint} />
-                <Text style={[s.emptyTxt, { color: theme.hint }]}>No employees yet. Invite your team.</Text>
+                <Text style={[s.emptyTxt, { color: theme.hint }]}>{t('corporateScreen.noEmployeesYet')}</Text>
               </View>
             ) : (
               employees.map(emp => (
@@ -331,7 +343,7 @@ export default function CorporateScreen({ navigation }) {
             {trips.length === 0 ? (
               <View style={[s.emptyState, { borderColor: G.border(mode) }]}>
                 <Ionicons name="car-outline" size={32} color={theme.hint} />
-                <Text style={[s.emptyTxt, { color: theme.hint }]}>No corporate trips yet.</Text>
+                <Text style={[s.emptyTxt, { color: theme.hint }]}>{t('corporateScreen.noCorporateTripsYet')}</Text>
               </View>
             ) : (
               trips.map(trip => (
@@ -343,7 +355,7 @@ export default function CorporateScreen({ navigation }) {
                   />
                   <View style={s.tripHeader}>
                     <Text style={[s.tripEmployee, { color: theme.foreground }]}>{trip.employee?.user?.firstName} {trip.employee?.user?.lastName}</Text>
-                    <Text style={[s.tripFare, { color: CORP_BLUE }]}>₦{trip.fare.toLocaleString('en-NG')}</Text>
+                    <Text style={[s.tripFare, { color: CORP_BLUE }]}>{formatMoney(trip.fare)}</Text>
                   </View>
                   {trip.purpose && <Text style={[s.tripPurpose, { color: theme.hint }]}>"{trip.purpose}"</Text>}
                   <Text style={[s.tripRoute, { color: theme.hint }]} numberOfLines={1}>

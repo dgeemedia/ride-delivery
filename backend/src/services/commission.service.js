@@ -55,6 +55,7 @@ exports.createCommissionRecord = async ({
   commissionAmount,
   earnerAmount,
   surgeMultiplier  = 1.0,
+  currency         = 'NGN',
   tx,
 }) => {
   const client = tx ?? prisma;
@@ -72,7 +73,7 @@ exports.createCommissionRecord = async ({
       commissionAmount,
       earnerAmount,
       surgeMultiplier,
-      currency: 'NGN',
+      currency,
     },
   });
 

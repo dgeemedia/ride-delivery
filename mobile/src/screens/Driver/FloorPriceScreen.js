@@ -8,6 +8,8 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
+import { useTranslation }    from 'react-i18next';
 import { driverAPI, rideAPI } from '../../services/api';
 
 const DA         = '#FFB800';
@@ -80,6 +82,8 @@ const mb = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function FloorPriceScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney, currencySymbol } = useCurrency();
+  const { t } = useTranslation();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
 
@@ -170,12 +174,12 @@ export default function FloorPriceScreen({ navigation }) {
     Keyboard.dismiss();
     if (enabled && (!floorNum || floorNum < 100)) {
       shake();
-      Alert.alert('Invalid Amount', 'Please enter a floor price of at least ₦100.');
+      Alert.alert(t('floorPriceScreen.invalidAmountTitle'), `Please enter a floor price of at least ${formatMoney(100)}.`); // NOTE: 100 is an NG-specific minimum business rule, not just a currency swap
       return;
     }
     const saveValue = enabled ? effectiveFloor : 0;
     if (!platformEst && saveValue > 0) {
-      Alert.alert('Not ready', 'Platform rates are still loading. Please wait a moment.');
+      Alert.alert(t('floorPriceScreen.notReadyTitle'), t('floorPriceScreen.notReadyBody'));
       return;
     }
     setSaving(true);
@@ -188,12 +192,12 @@ export default function FloorPriceScreen({ navigation }) {
       Alert.alert(
         saveValue > 0 ? 'Floor Price Set ✅' : 'Floor Price Disabled',
         saveValue > 0
-          ? `Customers will see your minimum fare of ₦${saveValue.toLocaleString('en-NG')} when browsing nearby drivers.`
+          ? `Customers will see your minimum fare of ${formatMoney(saveValue)} when browsing nearby drivers.`
           : 'You will now receive rides at the standard platform rate.',
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (err) {
-      Alert.alert('Error', err?.message ?? 'Failed to save. Please try again.');
+      Alert.alert(t('floorPriceScreen.errorTitle'), err?.message ?? t('floorPriceScreen.failedToSave'));
     } finally {
       setSaving(false);
     }
@@ -218,13 +222,13 @@ export default function FloorPriceScreen({ navigation }) {
           <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={[s.headerTitle, { color: theme.foreground }]}>Floor Price</Text>
-          <Text style={[s.headerSub,   { color: theme.hint }]}>Set your minimum acceptable fare</Text>
+          <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('floorPriceScreen.floorPrice')}</Text>
+          <Text style={[s.headerSub,   { color: theme.hint }]}>{t('floorPriceScreen.setMinimumFare')}</Text>
         </View>
         {enabled && floorNum > 0 && (
           <View style={[s.activePill, { backgroundColor: GREEN + '20', borderColor: GREEN + '50' }]}>
             <View style={[s.activeDot, { backgroundColor: GREEN }]} />
-            <Text style={[s.activeTxt, { color: GREEN }]}>ACTIVE</Text>
+            <Text style={[s.activeTxt, { color: GREEN }]}>{t('floorPriceScreen.active')}</Text>
           </View>
         )}
       </View>
@@ -252,13 +256,13 @@ export default function FloorPriceScreen({ navigation }) {
             <View style={[s.card, { backgroundColor: inputBg, borderColor: DA + '25' }]}>
               <View style={s.cardTitleRow}>
                 <Ionicons name="information-circle" size={16} color={DA} />
-                <Text style={[s.cardTitle, { color: DA }]}>How Floor Pricing Works</Text>
+                <Text style={[s.cardTitle, { color: DA }]}>{t('floorPriceScreen.howFloorPricingWorks')}</Text>
               </View>
               <Text style={[s.cardBody, { color: theme.hint }]}>
-                When customers browse nearby drivers, they'll see your floor price. If they choose you, the higher of{' '}
-                <Text style={{ color: theme.foreground, fontWeight: '700' }}>your floor</Text> or the{' '}
-                <Text style={{ color: theme.foreground, fontWeight: '700' }}>platform estimate</Text> is used.
-                Maximum markup is <Text style={{ color: DA, fontWeight: '800' }}>+30%</Text> above the platform rate.
+                {t('floorPriceScreen.floorPricingExplainer1')}{' '}
+                <Text style={{ color: theme.foreground, fontWeight: '700' }}>{t('floorPriceScreen.yourFloor')}</Text> {t('floorPriceScreen.orThe')}{' '}
+                <Text style={{ color: theme.foreground, fontWeight: '700' }}>{t('floorPriceScreen.platformEstimate')}</Text> {t('floorPriceScreen.isUsed')}
+                {t('floorPriceScreen.maxMarkupIs')} <Text style={{ color: DA, fontWeight: '800' }}>+30%</Text> {t('floorPriceScreen.aboveThePlatformRate')}
               </Text>
             </View>
 
@@ -266,9 +270,9 @@ export default function FloorPriceScreen({ navigation }) {
             <View style={[s.card, { backgroundColor: inputBg, borderColor: inputBorder }]}>
               <View style={s.toggleRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.toggleLabel, { color: theme.foreground }]}>Enable Floor Price</Text>
+                  <Text style={[s.toggleLabel, { color: theme.foreground }]}>{t('floorPriceScreen.enableFloorPrice')}</Text>
                   <Text style={[s.toggleSub, { color: theme.hint }]}>
-                    {enabled ? 'Your floor price is shown to customers' : 'Accept rides at the platform rate'}
+                    {enabled ? t('floorPriceScreen.floorPriceShownToCustomers') : t('floorPriceScreen.acceptRidesAtPlatformRate')}
                   </Text>
                 </View>
                 <Switch
@@ -284,18 +288,18 @@ export default function FloorPriceScreen({ navigation }) {
             {/* ── Input ── */}
             {enabled && (
               <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
-                <SectionLabel text="YOUR MINIMUM FARE" theme={theme} />
+                <SectionLabel text={t('floorPriceScreen.yourMinimumFare')} theme={theme} />
                 <View style={[s.inputCard, {
                   backgroundColor: inputBg,
                   borderColor: isClamped ? RED + '60' : floorNum > 0 ? DA + '60' : inputBorder,
                 }]}>
-                  <Text style={[s.currency, { color: DA }]}>₦</Text>
+                  <Text style={[s.currency, { color: DA }]}>{currencySymbol}</Text>
                   <TextInput
                     style={[s.input, { color: theme.foreground }]}
                     value={floorInput}
                     onChangeText={setFloorInput}
                     keyboardType="numeric"
-                    placeholder="e.g. 1500"
+                    placeholder={t('floorPriceScreen.amountPlaceholder')}
                     placeholderTextColor={theme.hint}
                     returnKeyType="done"
                     onSubmitEditing={Keyboard.dismiss}
@@ -312,7 +316,7 @@ export default function FloorPriceScreen({ navigation }) {
                   <View style={[s.clampWarn, { backgroundColor: RED + '12', borderColor: RED + '40' }]}>
                     <Ionicons name="warning-outline" size={14} color={RED} />
                     <Text style={[s.clampTxt, { color: RED }]}>
-                      Capped at ₦{clampedMax.toLocaleString('en-NG')} (+30% max). Your effective floor will be ₦{clampedMax.toLocaleString('en-NG')}.
+                      {t('floorPriceScreen.cappedAtMax', { amount: formatMoney(clampedMax) })}
                     </Text>
                   </View>
                 )}
@@ -326,20 +330,20 @@ export default function FloorPriceScreen({ navigation }) {
             {/* ── Live preview ── */}
             {platformEst && (
               <>
-                <SectionLabel text={`EARNINGS PREVIEW • ${SAMPLE_KM}KM ${vehicleType} RIDE`} theme={theme} />
+                <SectionLabel text={t('floorPriceScreen.earningsPreview', { km: SAMPLE_KM, vehicleType })} theme={theme} />
                 <View style={[s.card, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <InfoRow
                     icon="calculator-outline"
-                    label="Platform estimate"
-                    value={`₦${platformEst.toLocaleString('en-NG')}`}
+                    label={t('floorPriceScreen.platformEstimateLabel')}
+                    value={formatMoney(platformEst)}
                     valueColor={theme.foreground}
                     theme={theme}
                   />
                   {enabled && effectiveFloor > platformEst && (
                     <InfoRow
                       icon="trending-up-outline"
-                      label="Your floor price"
-                      value={`₦${effectiveFloor.toLocaleString('en-NG')}`}
+                      label={t('floorPriceScreen.yourFloorPriceLabel')}
+                      value={formatMoney(effectiveFloor)}
                       valueColor={DA}
                       theme={theme}
                     />
@@ -347,20 +351,20 @@ export default function FloorPriceScreen({ navigation }) {
                   <View style={[s.divider, { backgroundColor: inputBorder }]} />
                   <InfoRow
                     icon="wallet-outline"
-                    label="Your net earnings"
-                    value={`₦${(driverEarnings ?? 0).toLocaleString('en-NG')}`}
+                    label={t('floorPriceScreen.yourNetEarnings')}
+                    value={formatMoney(driverEarnings ?? 0)}
                     valueColor={GREEN}
                     theme={theme}
                   />
                   <Text style={[s.earningsNote, { color: theme.hint }]}>
-                    After 20% platform commission + ₦{rate.bookingFee} booking fee. Actual earnings vary with traffic time.
+                    {t('floorPriceScreen.earningsNote', { fee: formatMoney(rate.bookingFee) })}
                   </Text>
                 </View>
               </>
             )}
 
             {/* ── Rate table ── */}
-            <SectionLabel text="PLATFORM BASE RATES (ADMIN-SET)" theme={theme} />
+            <SectionLabel text={t('floorPriceScreen.platformBaseRates')} theme={theme} />
             <View style={[s.card, { backgroundColor: inputBg, borderColor: inputBorder }]}>
               {Object.entries(liveRates).map(([type, r], i, arr) => (
                 <View key={type}>
@@ -372,15 +376,15 @@ export default function FloorPriceScreen({ navigation }) {
                         {type}
                       </Text>
                     </View>
-                    <Text style={[s.rateVal, { color: theme.foreground }]}>₦{r.baseFare}</Text>
-                    <Text style={[s.rateVal, { color: theme.foreground }]}>₦{r.perKm}/km</Text>
-                    <Text style={[s.rateVal, { color: theme.foreground }]}>₦{r.perMinute}/min</Text>
+                    <Text style={[s.rateVal, { color: theme.foreground }]}>{formatMoney(r.baseFare)}</Text>
+                    <Text style={[s.rateVal, { color: theme.foreground }]}>{formatMoney(r.perKm)}/km</Text>
+                    <Text style={[s.rateVal, { color: theme.foreground }]}>{formatMoney(r.perMinute)}/min</Text>
                   </View>
                   {i < arr.length - 1 && <View style={[s.divider, { backgroundColor: inputBorder }]} />}
                 </View>
               ))}
               <Text style={[s.earningsNote, { color: theme.hint, marginTop: 8 }]}>
-                Surge multipliers (1.2–1.6×) apply during peak hours. Your floor is applied before surge.
+                {t('floorPriceScreen.surgeNote')}
               </Text>
             </View>
 
@@ -396,7 +400,7 @@ export default function FloorPriceScreen({ navigation }) {
                 : (
                   <>
                     <Ionicons name="checkmark-circle" size={20} color="#080C18" />
-                    <Text style={s.saveTxt}>{enabled ? 'Save Floor Price' : 'Save (No Floor)'}</Text>
+                    <Text style={s.saveTxt}>{enabled ? t('floorPriceScreen.saveFloorPrice') : t('floorPriceScreen.saveNoFloor')}</Text>
                   </>
                 )
               }

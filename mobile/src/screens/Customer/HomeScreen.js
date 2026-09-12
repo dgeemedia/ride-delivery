@@ -17,6 +17,7 @@ import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth }           from '../../context/AuthContext';
 import { useTheme }          from '../../context/ThemeContext';
+import { useTranslation }    from 'react-i18next';
 import { rideAPI, deliveryAPI } from '../../services/api';
 import ActiveRideBanner      from '../../components/ActiveRideBanner';
 import ActiveDeliveryBanner  from '../../components/ActiveDeliveryBanner';
@@ -46,26 +47,26 @@ const TAB_H         = Platform.OS === 'android'
   : TAB_CONTENT_H;
 
 // ── Service card data ─────────────────────────────────────────────────────────
-const buildServices = (nav, maint, warn, userCoords) => [
+const buildServices = (nav, maint, warn, userCoords, t) => [
   {
     id: 'ride',
     IconComponent: RidesIcon,
-    label: 'Rides',
-    sub: "Let's get moving",
+    label: t('home.serviceRidesLabel'),
+    sub: t('home.serviceRidesSub'),
     onPress: () => { if (maint.isOn) { warn(); return; } nav.navigate('RequestRide'); },
   },
   {
     id: 'send',
     IconComponent: SendIcon,
-    label: 'Send',
-    sub: 'Door to door',
+    label: t('home.serviceSendLabel'),
+    sub: t('home.serviceSendSub'),
     onPress: () => { if (maint.isOn) { warn(); return; } nav.navigate('RequestDelivery'); },
   },
   {
     id: 'nearby',
     IconComponent: DriversIcon,
-    label: 'Drivers',
-    sub: 'By route',
+    label: t('home.serviceDriversLabel'),
+    sub: t('home.serviceDriversSub'),
     onPress: () => {
       if (maint.isOn) { warn(); return; }
       nav.navigate('NearbyDrivers', {
@@ -78,8 +79,8 @@ const buildServices = (nav, maint, warn, userCoords) => [
   {
     id: 'couriers',
     IconComponent: CouriersIcon,
-    label: 'Couriers',
-    sub: 'Near you',
+    label: t('home.serviceCouriersLabel'),
+    sub: t('home.serviceCouriersSub'),
     onPress: () => {
       if (maint.isOn) { warn(); return; }
       nav.navigate('NearbyPartners', {
@@ -92,8 +93,8 @@ const buildServices = (nav, maint, warn, userCoords) => [
   {
     id: 'support',
     IconComponent: SupportIcon,
-    label: 'Support',
-    sub: "We're here",
+    label: t('home.serviceSupportLabel'),
+    sub: t('home.serviceSupportSub'),
     onPress: () => { if (maint.isOn) { warn(); return; } nav.navigate('Support'); },
   },
 ];
@@ -101,6 +102,7 @@ const buildServices = (nav, maint, warn, userCoords) => [
 // ── DrawerMenu ────────────────────────────────────────────────────────────────
 const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
   const { logout } = useAuth();
+  const { t } = useTranslation();
   const slideA = useRef(new Animated.Value(-320)).current;
   const bgA    = useRef(new Animated.Value(0)).current;
 
@@ -132,7 +134,7 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
   const handleLogout = () => {
     onClose();
     setTimeout(async () => {
-      Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      Alert.alert(t('home.signOutTitle'), t('home.signOutBody'), [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Sign Out', style: 'destructive',
@@ -151,18 +153,18 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
   };
 
   const MENU_ITEMS = [
-    { icon: 'home-outline',          label: 'Home',             dest: null },
-    { icon: 'car-outline',           label: 'Book a Ride',      dest: 'RequestRide' },
-    { icon: 'cube-outline',          label: 'Send a Package',   dest: 'RequestDelivery' },
-    { icon: 'people-outline',        label: 'Nearby Drivers',   dest: 'NearbyDrivers',
+    { icon: 'home-outline',          label: t('home.menuHome'),             dest: null },
+    { icon: 'car-outline',           label: t('home.menuBookRide'),      dest: 'RequestRide' },
+    { icon: 'cube-outline',          label: t('home.menuSendPackage'),   dest: 'RequestDelivery' },
+    { icon: 'people-outline',        label: t('home.menuNearbyDrivers'),   dest: 'NearbyDrivers',
       params: { pickupAddress: '', pickupLat: 6.5244, pickupLng: 3.3792, dropoffAddress: '', dropoffLat: 6.4281, dropoffLng: 3.4219, vehicleType: 'CAR' } },
-    { icon: 'bicycle-outline',       label: 'Nearby Couriers',  dest: 'NearbyPartners',
+    { icon: 'bicycle-outline',       label: t('home.menuNearbyCouriers'),  dest: 'NearbyPartners',
       params: { pickupLat: 6.5244, pickupLng: 3.3792, pickupAddress: '' } },
-    { icon: 'time-outline',          label: 'My History',       dest: 'HistoryTab' },
-    { icon: 'wallet-outline',        label: 'Wallet',           dest: 'WalletTab' },
-    { icon: 'notifications-outline', label: 'Notifications',    dest: 'Notifications' },
-    { icon: 'headset-outline',       label: 'Support',          dest: 'Support' },
-    { icon: 'person-outline',        label: 'Profile',          dest: 'ProfileTab' },
+    { icon: 'time-outline',          label: t('home.menuMyHistory'),       dest: 'HistoryTab' },
+    { icon: 'wallet-outline',        label: t('home.menuWallet'),           dest: 'WalletTab' },
+    { icon: 'notifications-outline', label: t('home.menuNotifications'),    dest: 'Notifications' },
+    { icon: 'headset-outline',       label: t('home.menuSupport'),          dest: 'Support' },
+    { icon: 'person-outline',        label: t('home.menuProfile'),          dest: 'ProfileTab' },
   ];
 
   if (!visible) return null;
@@ -209,10 +211,10 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
             <View style={[dm.menuIcon, { backgroundColor: 'rgba(224,85,85,0.10)' }]}>
               <Ionicons name="log-out-outline" size={18} color="#E05555" />
             </View>
-            <Text style={dm.logoutTxt}>Sign Out</Text>
+            <Text style={dm.logoutTxt}>{t('home.signOut')}</Text>
           </TouchableOpacity>
           <View style={[dm.footer, { borderTopColor: border }]}>
-            <Text style={[dm.footerTxt, { color: theme.hint }]}>DrivAfrica • v1.0.0</Text>
+            <Text style={[dm.footerTxt, { color: theme.hint }]}>{t('home.footerTagline')}</Text>
           </View>
         </SafeAreaView>
       </Animated.View>
@@ -288,6 +290,7 @@ const ri = StyleSheet.create({
 export default function HomeScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
+  const { t }           = useTranslation();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
 
@@ -426,22 +429,22 @@ export default function HomeScreen({ navigation }) {
 
   const showMaintenanceAlert = () => {
     const endsMsg = maintenance.endsAt
-      ? `\n\nExpected back: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}`
+      ? t('home.expectedBack', { datetime: new Date(maintenance.endsAt).toLocaleString('en-NG') })
       : '';
-    Alert.alert('Platform Under Maintenance', maintenance.message + endsMsg);
+    Alert.alert(t('home.maintenanceTitle'), maintenance.message + endsMsg);
   };
 
   const handleCancelRide = () => {
-    Alert.alert('Cancel Ride?', 'Your ride request will be cancelled.', [
-      { text: 'Keep', style: 'cancel' },
+    Alert.alert(t('home.cancelRideTitle'), t('home.cancelRideBody'), [
+      { text: t('home.keep'), style: 'cancel' },
       {
-        text: 'Cancel Ride', style: 'destructive',
+        text: t('home.cancelRide'), style: 'destructive',
         onPress: async () => {
           try {
             await rideAPI.cancelRide(activeRide.id, { reason: 'Customer cancelled from home screen' });
             setActiveRide(null);
           } catch (err) {
-            Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel the ride.');
+            Alert.alert(t('home.errorTitle'), err?.response?.data?.message ?? t('home.couldNotCancelRide'));
           }
         },
       },
@@ -453,7 +456,7 @@ export default function HomeScreen({ navigation }) {
       await deliveryAPI.cancelDelivery(activeDelivery.id, { reason: 'Customer cancelled from home screen' });
       setActiveDelivery(null);
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message ?? 'Could not cancel delivery.');
+      Alert.alert(t('home.errorTitle'), err?.response?.data?.message ?? t('home.couldNotCancelDelivery'));
     }
   };
 
@@ -475,10 +478,10 @@ export default function HomeScreen({ navigation }) {
     .slice(0, 6);
 
   const hasMaintBanner = maintenance.isOn || maintenance.isScheduled;
-  const serviceCards   = buildServices(navigation, maintenance, showMaintenanceAlert, userCoords);
+  const serviceCards   = buildServices(navigation, maintenance, showMaintenanceAlert, userCoords, t);
 
   const hour  = new Date().getHours();
-  const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const greet = hour < 12 ? t('home.goodMorning') : hour < 17 ? t('home.goodAfternoon') : t('home.goodEvening');
 
   const sheetBg     = darkMode ? '#111111' : '#FFFFFF';
   const hintColor   = darkMode ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.40)';
@@ -598,7 +601,7 @@ export default function HomeScreen({ navigation }) {
         <View style={s.handleWrap} {...panResponder.panHandlers}>
           <View style={[s.handle, { backgroundColor: darkMode ? 'rgba(255,255,255,0.20)' : 'rgba(0,0,0,0.16)' }]} />
           {sheetExpanded && (
-            <Text style={[s.expandedTitle, { color: theme.foreground }]}>Recent Trips</Text>
+            <Text style={[s.expandedTitle, { color: theme.foreground }]}>{t('home.recentTripsHeading')}</Text>
           )}
         </View>
 
@@ -662,13 +665,13 @@ export default function HomeScreen({ navigation }) {
               activeOpacity={0.85}
             >
               <Ionicons name="search-outline" size={18} color={hintColor} />
-              <Text style={[s.searchHint, { color: hintColor }]}>Where to?</Text>
+              <Text style={[s.searchHint, { color: hintColor }]}>{t('home.whereTo')}</Text>
               <View style={[s.laterPill, {
                 backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : '#FFFFFF',
                 borderColor: inputBorder,
               }]}>
                 <Ionicons name="calendar-outline" size={13} color={hintColor} />
-                <Text style={[s.laterTxt, { color: hintColor }]}>Later</Text>
+                <Text style={[s.laterTxt, { color: hintColor }]}>{t('home.later')}</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -676,7 +679,7 @@ export default function HomeScreen({ navigation }) {
           {/* Section label */}
           {!sheetExpanded && recentAddresses.length > 0 && (
             <TouchableOpacity style={s.sectionRow} onPress={snapExpand} activeOpacity={0.7}>
-              <Text style={[s.sectionLabel, { color: theme.hint }]}>Recent trips</Text>
+              <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('home.recentTrips')}</Text>
               <Ionicons name="chevron-up" size={13} color={theme.hint} />
             </TouchableOpacity>
           )}
@@ -717,7 +720,7 @@ export default function HomeScreen({ navigation }) {
             ) : (
               <View style={s.emptyWrap}>
                 <Ionicons name="map-outline" size={28} color={hintColor} />
-                <Text style={[s.emptyTxt, { color: hintColor }]}>No recent trips yet</Text>
+                <Text style={[s.emptyTxt, { color: hintColor }]}>{t('home.noRecentTripsYet')}</Text>
               </View>
             )}
           </ScrollView>

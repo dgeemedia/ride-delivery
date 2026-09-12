@@ -7,6 +7,7 @@ const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog'); // ← ADDED
+const { getCountryForUser } = require('../services/country.service');
 
 console.log('[PARTNER-CTRL] Prisma partner controller loaded');
 
@@ -277,7 +278,7 @@ exports.getEarnings = async (req, res) => {
 
   const wallet = await prisma.wallet.findUnique({
     where:  { userId: req.user.id },
-    select: { balance: true },
+    select: { balance: true, currency: true },
   });
 
   res.status(200).json({
@@ -290,7 +291,7 @@ exports.getEarnings = async (req, res) => {
       totalDeliveries:    deliveries.length,
       averagePerDelivery: deliveries.length > 0
         ? (totalNetEarnings / deliveries.length).toFixed(2) : '0.00',
-      currency: 'NGN',
+      currency: wallet?.currency ?? 'NGN',
       period,
       deliveries: deliveries.map((d) => ({
         id:                 d.id,
@@ -462,6 +463,18 @@ exports.requestPayout = async (req, res) => {
 
   if (amount < 1000) throw new AppError('Minimum payout amount is ₦1,000', 400);
 
+  const requester = await prisma.user.findUnique({ where: { id: req.user.id }, select: { countryCode: true } });
+  const country = await getCountryForUser(requester);
+
+  // Same guard as driver.controller.js — see the comment there for why this
+  // isn't a currency-label fix.
+  if (country.payoutMethod !== 'NG_BANK_TRANSFER') {
+    throw new AppError(
+      `Payouts for ${country.name} aren't supported yet. Contact support.`,
+      400
+    );
+  }
+
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   if (!wallet)               throw new AppError('Wallet not found', 404);
   if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
@@ -501,6 +514,8 @@ exports.requestPayout = async (req, res) => {
         accountName:   resolvedAccountName,
         status:        'PENDING',
         reference,
+        payoutMethod:  'NG_BANK_TRANSFER',
+        payoutDetails: { accountNumber, bankCode, accountName: resolvedAccountName },
       },
     }),
   ]);

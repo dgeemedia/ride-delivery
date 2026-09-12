@@ -3,6 +3,7 @@
 
 const prisma = require('../lib/prisma');
 const notificationService = require('./notification.service');
+const { ensureWallet } = require('../utils/walletHelpers');
 
 const REFERENCE_PREFIX = 'CASHBACK-MILESTONE-'; // e.g. CASHBACK-MILESTONE-10-{userId}
 const DEFAULT_MILESTONE = 10;
@@ -100,11 +101,7 @@ async function checkAndIssueRideCashback(userId) {
   cashbackAmount = Math.round(cashbackAmount);
   if (cashbackAmount <= 0) return;
 
-  const wallet = await prisma.wallet.upsert({
-    where: { userId },
-    update: {},
-    create: { userId, balance: 0, currency: 'NGN' },
-  });
+  const wallet = await ensureWallet(userId);
 
   try {
     await prisma.$transaction([

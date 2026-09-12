@@ -7,6 +7,7 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useTranslation }    from 'react-i18next';
 import { settingsAPI }       from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
@@ -63,8 +64,9 @@ function InlineText({ text, style, theme }) {
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function LegalScreen({ navigation, route }) {
-  const { contentKey = 'terms_content', title = 'Document' } = route.params ?? {};
+  const { contentKey = 'terms_content', title = t('legal.defaultTitle') } = route.params ?? {};
   const { theme, mode } = useTheme();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const fadeA           = useRef(new Animated.Value(0)).current;
 
@@ -87,8 +89,8 @@ export default function LegalScreen({ navigation, route }) {
         const raw = res?.data?.[contentKey] ?? '';
         if (!raw.trim()) {
           setNodes([
-            { type: 'h1', text: title,                                                        key: 0 },
-            { type: 'p',  text: 'This page has not been set up yet. Please check back later.', key: 1 },
+            { type: 'h1', text: title,                        key: 0 },
+            { type: 'p',  text: t('legal.notSetUp'), key: 1 },
           ]);
         } else {
           setNodes(parseMarkdown(raw));
@@ -167,20 +169,20 @@ export default function LegalScreen({ navigation, route }) {
       {loading ? (
         <View style={[st.centre, { height: SCROLL_H }]}>
           <ActivityIndicator size="large" color={theme.accent} />
-          <Text style={[st.loadingTxt, { color: theme.hint }]}>Loading…</Text>
+          <Text style={[st.loadingTxt, { color: theme.hint }]}>{t('legal.loading')}</Text>
         </View>
       ) : error ? (
         <View style={[st.centre, { height: SCROLL_H }]}>
           <Ionicons name="cloud-offline-outline" size={48} color={theme.hint} />
           <Text style={[st.errorTxt, { color: theme.hint }]}>
-            Could not load this page. Please check your connection and try again.
+            {t('legal.loadError')}
           </Text>
           <TouchableOpacity
             style={[st.retryBtn, { borderColor: theme.accent }]}
             onPress={fetchContent}
             activeOpacity={0.75}
           >
-            <Text style={[st.retryTxt, { color: theme.accent }]}>Try Again</Text>
+            <Text style={[st.retryTxt, { color: theme.accent }]}>{t('legal.tryAgain')}</Text>
           </TouchableOpacity>
         </View>
       ) : (

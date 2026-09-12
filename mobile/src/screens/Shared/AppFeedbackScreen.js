@@ -8,24 +8,26 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import { userAPI } from '../../services/api';
 import Constants from 'expo-constants';
 
 const { width, height } = Dimensions.get('window');
 
 const CATEGORIES = [
-  { id: 'general',      label: 'General',       icon: 'chatbubble-outline'       },
-  { id: 'ui_ux',        label: 'Design / UX',   icon: 'color-palette-outline'    },
-  { id: 'performance',  label: 'Performance',   icon: 'speedometer-outline'      },
-  { id: 'feature',      label: 'Feature Idea',  icon: 'bulb-outline'             },
-  { id: 'bug',          label: 'Bug Report',    icon: 'bug-outline'              },
-  { id: 'pricing',      label: 'Pricing',       icon: 'pricetag-outline'         },
+  { id: 'general',      labelKey: 'appFeedback.catGeneral',     icon: 'chatbubble-outline'       },
+  { id: 'ui_ux',        labelKey: 'appFeedback.catDesign',      icon: 'color-palette-outline'    },
+  { id: 'performance',  labelKey: 'appFeedback.catPerformance', icon: 'speedometer-outline'      },
+  { id: 'feature',      labelKey: 'appFeedback.catFeature',     icon: 'bulb-outline'             },
+  { id: 'bug',          labelKey: 'appFeedback.catBug',         icon: 'bug-outline'              },
+  { id: 'pricing',      labelKey: 'appFeedback.catPricing',     icon: 'pricetag-outline'         },
 ];
 
-const STAR_LABELS = ['Terrible', 'Poor', 'Okay', 'Good', 'Excellent'];
+const STAR_LABEL_KEYS = ['appFeedback.starTerrible', 'appFeedback.starPoor', 'appFeedback.starOkay', 'appFeedback.starGood', 'appFeedback.starExcellent'];
 
 export default function AppFeedbackScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { t }             = useTranslation();
   const insets           = useSafeAreaInsets();
   const fadeA            = useRef(new Animated.Value(0)).current;
 
@@ -64,7 +66,7 @@ export default function AppFeedbackScreen({ navigation }) {
 
   const handleSubmit = async () => {
     if (rating === 0) {
-      Alert.alert('Rating required', 'Please tap a star to rate the app.');
+      Alert.alert(t('appFeedback.ratingRequiredTitle'), t('appFeedback.ratingRequiredMsg'));
       return;
     }
     setLoading(true);
@@ -83,8 +85,8 @@ export default function AppFeedbackScreen({ navigation }) {
       const msg =
         err?.message ??
         err?.errors?.[0]?.msg ??
-        'Could not submit feedback. Please try again.';
-      Alert.alert('Error', msg);
+        t('appFeedback.submitError');
+      Alert.alert(t('common.error'), msg);
     } finally {
       setLoading(false);
     }
@@ -99,16 +101,16 @@ export default function AppFeedbackScreen({ navigation }) {
           <View style={[s.successIcon, { backgroundColor: theme.accent + '18', borderColor: theme.accent + '35' }]}>
             <Ionicons name="checkmark-circle" size={52} color={theme.accent} />
           </View>
-          <Text style={[s.successTitle, { color: theme.foreground }]}>Thank you!</Text>
+          <Text style={[s.successTitle, { color: theme.foreground }]}>{t('appFeedback.thankYou')}</Text>
           <Text style={[s.successSub, { color: theme.hint }]}>
-            Your feedback helps us make Diakite better for everyone.
+            {t('appFeedback.successSub')}
           </Text>
           <TouchableOpacity
             style={[s.doneBtn, { backgroundColor: theme.accent }]}
             onPress={() => navigation.goBack()}
             activeOpacity={0.8}
           >
-            <Text style={[s.doneTxt, { color: theme.accentFg ?? '#111' }]}>Back to Profile</Text>
+            <Text style={[s.doneTxt, { color: theme.accentFg ?? '#111' }]}>{t('appFeedback.backToProfile')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -147,15 +149,15 @@ export default function AppFeedbackScreen({ navigation }) {
               <View style={[s.heroIcon, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '30' }]}>
                 <Ionicons name="star-outline" size={32} color={theme.accent} />
               </View>
-              <Text style={[s.heroTitle, { color: theme.foreground }]}>Rate the App</Text>
+              <Text style={[s.heroTitle, { color: theme.foreground }]}>{t('appFeedback.heroTitle')}</Text>
               <Text style={[s.heroSub, { color: theme.hint }]}>
-                How's your experience with Diakite? Your honest opinion matters.
+                {t('appFeedback.heroSub')}
               </Text>
             </View>
 
             {/* Stars */}
             <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Text style={[s.cardLabel, { color: theme.hint }]}>YOUR RATING</Text>
+              <Text style={[s.cardLabel, { color: theme.hint }]}>{t('appFeedback.yourRating')}</Text>
               <View style={s.starsRow}>
                 {[1, 2, 3, 4, 5].map(star => (
                   <TouchableOpacity
@@ -177,14 +179,14 @@ export default function AppFeedbackScreen({ navigation }) {
               </View>
               {activeRating > 0 && (
                 <Text style={[s.starLabel, { color: theme.accent }]}>
-                  {STAR_LABELS[activeRating - 1]}
+                  {t(STAR_LABEL_KEYS[activeRating - 1])}
                 </Text>
               )}
             </View>
 
             {/* Category */}
             <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Text style={[s.cardLabel, { color: theme.hint }]}>CATEGORY</Text>
+              <Text style={[s.cardLabel, { color: theme.hint }]}>{t('appFeedback.category')}</Text>
               <View style={s.categoryGrid}>
                 {CATEGORIES.map(cat => {
                   const active = category === cat.id;
@@ -203,7 +205,7 @@ export default function AppFeedbackScreen({ navigation }) {
                     >
                       <Ionicons name={cat.icon} size={15} color={active ? theme.accent : theme.hint} />
                       <Text style={[s.catTxt, { color: active ? theme.accent : theme.hint }]}>
-                        {cat.label}
+                        {t(cat.labelKey)}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -213,10 +215,10 @@ export default function AppFeedbackScreen({ navigation }) {
 
             {/* Comment */}
             <View style={[s.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Text style={[s.cardLabel, { color: theme.hint }]}>COMMENTS (OPTIONAL)</Text>
+              <Text style={[s.cardLabel, { color: theme.hint }]}>{t('appFeedback.comments')}</Text>
               <TextInput
                 style={[s.textInput, { color: theme.foreground, borderColor: theme.border }]}
-                placeholder="Tell us more about your experience…"
+                placeholder={t('appFeedback.commentPlaceholder')}
                 placeholderTextColor={theme.hint}
                 value={comment}
                 onChangeText={setComment}
@@ -240,14 +242,14 @@ export default function AppFeedbackScreen({ navigation }) {
                 : (
                   <>
                     <Ionicons name="send-outline" size={18} color={theme.accentFg ?? '#111'} />
-                    <Text style={[s.submitTxt, { color: theme.accentFg ?? '#111' }]}>Submit Feedback</Text>
+                    <Text style={[s.submitTxt, { color: theme.accentFg ?? '#111' }]}>{t('appFeedback.submitFeedback')}</Text>
                   </>
                 )
               }
             </TouchableOpacity>
 
             <Text style={[s.privacy, { color: theme.hint }]}>
-              Your feedback is anonymous and used only to improve Diakite.
+              {t('appFeedback.privacyNote')}
             </Text>
 
           </Animated.View>

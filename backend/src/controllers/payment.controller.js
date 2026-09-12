@@ -6,6 +6,7 @@ const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
 const emailService = require('../services/email.service');
 const { logActivity } = require('../utils/auditLog'); // ← ADDED
+const { getCurrencyForUserId } = require('../services/country.service');
 
 const safeSendEmail = async (fn, label) => {
   try {
@@ -27,10 +28,12 @@ exports.paystackInitialize = async (req, res) => {
 
   const { amount, rideId, deliveryId } = req.body;
   const { email, id: userId } = req.user;
+  const chargeCurrency = await getCurrencyForUserId(userId);
 
   const transaction = await paymentService.paystackInitialize({
     email,
     amount,
+    currency: chargeCurrency,
     metadata: {
       userId,
       ...(rideId && { rideId }),
@@ -61,6 +64,7 @@ exports.paystackVerify = async (req, res) => {
   }
 
   const amount = transaction.amount / 100;
+  const paymentCurrency = await getCurrencyForUserId(userId);
 
   const payment = await prisma.payment.create({
     data: {
@@ -68,7 +72,7 @@ exports.paystackVerify = async (req, res) => {
       ...(rideId && { rideId }),
       ...(deliveryId && { deliveryId }),
       amount,
-      currency: 'NGN',
+      currency: paymentCurrency,
       method: 'CARD',
       status: 'COMPLETED',
       transactionId: reference,
@@ -127,13 +131,14 @@ exports.paystackWebhook = async (req, res) => {
       const amountNGN = verified.amount / 100;
 
       if (userId) {
+        const paymentCurrency = await getCurrencyForUserId(userId);
         await prisma.payment.create({
           data: {
             userId,
             ...(rideId && { rideId }),
             ...(deliveryId && { deliveryId }),
             amount: amountNGN,
-            currency: 'NGN',
+            currency: paymentCurrency,
             method: 'CARD',
             status: 'COMPLETED',
             transactionId: reference,
@@ -182,6 +187,7 @@ exports.flutterwaveInitialize = async (req, res) => {
   const { amount, rideId, deliveryId } = req.body;
   const { email, phone, firstName, lastName, id: userId } = req.user;
   const txRef = `TXN-${userId}-${Date.now()}`;
+  const chargeCurrency = await getCurrencyForUserId(userId);
 
   const transaction = await paymentService.flutterwaveInitialize({
     email,
@@ -189,6 +195,7 @@ exports.flutterwaveInitialize = async (req, res) => {
     name: `${firstName} ${lastName}`,
     amount,
     txRef,
+    currency: chargeCurrency,
     metadata: {
       userId,
       ...(rideId && { rideId }),
@@ -212,6 +219,7 @@ exports.flutterwaveVerify = async (req, res) => {
   }
 
   const amount = transaction.amount;
+  const paymentCurrency = await getCurrencyForUserId(userId);
 
   const payment = await prisma.payment.create({
     data: {
@@ -219,7 +227,7 @@ exports.flutterwaveVerify = async (req, res) => {
       ...(rideId && { rideId }),
       ...(deliveryId && { deliveryId }),
       amount,
-      currency: 'NGN',
+      currency: paymentCurrency,
       method: 'CARD',
       status: 'COMPLETED',
       transactionId: String(transactionId),
@@ -275,13 +283,14 @@ exports.flutterwaveWebhook = async (req, res) => {
       const amount = verified.amount;
 
       if (userId) {
+        const paymentCurrency = await getCurrencyForUserId(userId);
         await prisma.payment.create({
           data: {
             userId,
             ...(rideId && { rideId }),
             ...(deliveryId && { deliveryId }),
             amount,
-            currency: 'NGN',
+            currency: paymentCurrency,
             method: 'CARD',
             status: 'COMPLETED',
             transactionId: String(data.id),
@@ -328,6 +337,7 @@ exports.processCash = async (req, res) => {
   }
 
   const { rideId, deliveryId, amount } = req.body;
+  const paymentCurrency = await getCurrencyForUserId(req.user.id);
 
   const payment = await prisma.payment.create({
     data: {
@@ -335,7 +345,7 @@ exports.processCash = async (req, res) => {
       ...(rideId && { rideId }),
       ...(deliveryId && { deliveryId }),
       amount,
-      currency: 'NGN',
+      currency: paymentCurrency,
       method: 'CASH',
       status: 'PENDING',
       transactionId: `CASH-${Date.now()}`,
@@ -385,7 +395,7 @@ exports.processWalletPayment = async (req, res) => {
         ...(rideId && { rideId }),
         ...(deliveryId && { deliveryId }),
         amount,
-        currency: 'NGN',
+        currency: wallet.currency,
         method: 'WALLET',
         status: 'COMPLETED',
         transactionId: `WALLET-${Date.now()}`,
@@ -666,6 +676,7 @@ exports.getStats = async (req, res) => {
       ...(Object.keys(dateFilter).length > 0 && { createdAt: dateFilter })
     }
   });
+  const statsCurrency = await getCurrencyForUserId(req.user.id);
 
   const totalSpent = payments.reduce((sum, p) => sum + p.amount, 0);
   const ridePayments = payments.filter(p => p.rideId);
@@ -677,7 +688,7 @@ exports.getStats = async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      currency: 'NGN',
+      currency: statsCurrency,
       totalSpent: totalSpent.toFixed(2),
       totalTransactions: payments.length,
       averageTransaction: payments.length > 0 ? (totalSpent / payments.length).toFixed(2) : '0.00',

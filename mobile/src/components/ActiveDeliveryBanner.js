@@ -2,20 +2,22 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 const TEAL = '#34D399';
 
-const STATUS_LABEL = {
-  PENDING:    { label: 'Finding a delivery partner...', icon: 'time-outline',              color: '#4E8DBD' },
-  ASSIGNED:   { label: 'Partner is on the way',         icon: 'bicycle-outline',           color: TEAL      },
-  PICKED_UP:  { label: 'Package picked up!',            icon: 'cube-outline',              color: '#FFB800' },
-  IN_TRANSIT: { label: 'Package in transit',            icon: 'navigate-outline',          color: '#A78BFA' },
+const STATUS_LABEL_KEYS = {
+  PENDING:    { labelKey: 'activeDeliveryBanner.statusFindingPartner',   icon: 'time-outline',              color: '#4E8DBD' },
+  ASSIGNED:   { labelKey: 'activeDeliveryBanner.statusPartnerOnWay',     icon: 'bicycle-outline',           color: TEAL      },
+  PICKED_UP:  { labelKey: 'activeDeliveryBanner.statusPackagePickedUp', icon: 'cube-outline',              color: '#FFB800' },
+  IN_TRANSIT: { labelKey: 'activeDeliveryBanner.statusPackageInTransit',     icon: 'navigate-outline',          color: '#A78BFA' },
 };
 
 export default function ActiveDeliveryBanner({ delivery, role = 'CUSTOMER', onPress, onCancel, theme }) {
+  const { t } = useTranslation();
   if (!delivery) return null;
 
-  const cfg    = STATUS_LABEL[delivery.status] ?? STATUS_LABEL.ASSIGNED;
+  const cfg    = STATUS_LABEL_KEYS[delivery.status] ?? STATUS_LABEL_KEYS.ASSIGNED;
   const pulseA = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -43,10 +45,10 @@ export default function ActiveDeliveryBanner({ delivery, role = 'CUSTOMER', onPr
 
       <View style={{ flex: 1 }}>
         <Text style={[s.title, { color: cfg.color }]}>
-          {role === 'DELIVERY_PARTNER' ? 'Active Delivery' : 'Your Package'}
+          {role === 'DELIVERY_PARTNER' ? t('activeDeliveryBanner.activeDelivery') : t('activeDeliveryBanner.yourPackage')}
         </Text>
         <Text style={[s.sub, { color: theme?.foreground ?? '#fff' }]} numberOfLines={1}>
-          {cfg.label}
+          {t(cfg.labelKey)}
           {delivery.packageDescription ? ` · ${delivery.packageDescription}` : ''}
         </Text>
       </View>
@@ -57,7 +59,7 @@ export default function ActiveDeliveryBanner({ delivery, role = 'CUSTOMER', onPr
           onPress={(e) => { e.stopPropagation?.(); onCancel?.(); }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={s.cancelTxt}>Cancel</Text>
+          <Text style={s.cancelTxt}>{t('activeRideBanner.cancel')}</Text>
         </TouchableOpacity>
       )}
 

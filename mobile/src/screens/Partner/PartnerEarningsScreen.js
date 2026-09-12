@@ -16,7 +16,9 @@ import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }                          from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets }   from 'react-native-safe-area-context';
 import { useTheme }                          from '../../context/ThemeContext';
+import { useCurrency }                       from '../../context/CurrencyContext';
 import { useScrollY }                        from '../../context/ScrollContext';
+import { useTranslation }                    from 'react-i18next';
 import { partnerAPI, walletAPI, deliveryAPI } from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
@@ -27,17 +29,17 @@ const RED            = '#E05555';
 const GREEN          = '#5DAA72';
 
 const PERIODS = [
-  { key: 'today', label: 'Today' },
-  { key: 'week',  label: 'Week'  },
-  { key: 'month', label: 'Month' },
-  { key: 'all',   label: 'All'   },
+  { key: 'today', labelKey: 'partnerEarnings.periodToday' },
+  { key: 'week',  labelKey: 'partnerEarnings.periodWeek'  },
+  { key: 'month', labelKey: 'partnerEarnings.periodMonth' },
+  { key: 'all',   labelKey: 'partnerEarnings.periodAll'   },
 ];
 
 const TX_CONFIG = {
-  CREDIT:     { icon: 'arrow-down-circle-outline', color: GREEN,  label: 'Credit'     },
-  DEBIT:      { icon: 'arrow-up-circle-outline',   color: RED,    label: 'Debit'      },
-  WITHDRAWAL: { icon: 'cash-outline',              color: GOLD,   label: 'Withdrawal' },
-  REFUND:     { icon: 'refresh-circle-outline',    color: PURPLE, label: 'Refund'     },
+  CREDIT:     { icon: 'arrow-down-circle-outline', color: GREEN,  labelKey: 'partnerEarnings.txCredit'     },
+  DEBIT:      { icon: 'arrow-up-circle-outline',   color: RED,    labelKey: 'partnerEarnings.txDebit'      },
+  WITHDRAWAL: { icon: 'cash-outline',              color: GOLD,   labelKey: 'partnerEarnings.txWithdrawal' },
+  REFUND:     { icon: 'refresh-circle-outline',    color: PURPLE, labelKey: 'partnerEarnings.txRefund'     },
 };
 
 const filterByPeriod = (list, period) => {
@@ -57,28 +59,32 @@ const filterByPeriod = (list, period) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // StatStrip — mirrors Driver's layout: Wallet | Net Earned | Deliveries
 // ─────────────────────────────────────────────────────────────────────────────
-const StatStrip = ({ earnings, walletBalance, totalDeliveries, theme }) => (
+const StatStrip = ({ earnings, walletBalance, totalDeliveries, theme }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
+  return (
   <View style={[ss.card, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '30' }]}>
     <View style={ss.item}>
-      <Text style={[ss.lbl, { color: theme.hint }]}>WALLET</Text>
+      <Text style={[ss.lbl, { color: theme.hint }]}>{t('partnerEarnings.wallet')}</Text>
       <Text style={[ss.val, { color: GREEN }]}>
-        ₦{Number(walletBalance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+        {formatMoney(walletBalance ?? 0, { decimals: 2 })}
       </Text>
     </View>
     <View style={[ss.div, { backgroundColor: theme.border }]} />
     <View style={ss.item}>
-      <Text style={[ss.lbl, { color: theme.hint }]}>NET EARNED</Text>
+      <Text style={[ss.lbl, { color: theme.hint }]}>{t('partnerEarnings.netEarned')}</Text>
       <Text style={[ss.val, { color: COURIER_ACCENT }]}>
-        ₦{Number(earnings?.netEarnings ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+        {formatMoney(earnings?.netEarnings ?? 0)}
       </Text>
     </View>
     <View style={[ss.div, { backgroundColor: theme.border }]} />
     <View style={ss.item}>
-      <Text style={[ss.lbl, { color: theme.hint }]}>DELIVERIES</Text>
+      <Text style={[ss.lbl, { color: theme.hint }]}>{t('partnerEarnings.deliveries')}</Text>
       <Text style={[ss.val, { color: theme.foreground }]}>{totalDeliveries}</Text>
     </View>
   </View>
-);
+  );
+};
 const ss = StyleSheet.create({
   card: { flexDirection: 'row', borderRadius: 20, borderWidth: 1, padding: 20, marginBottom: 14 },
   item: { flex: 1, alignItems: 'center', gap: 5 },
@@ -110,6 +116,8 @@ const st = StyleSheet.create({
 // TxRow
 // ─────────────────────────────────────────────────────────────────────────────
 const TxRow = ({ tx, theme }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const cfg     = TX_CONFIG[tx.type] ?? TX_CONFIG.CREDIT;
   const sign    = tx.type === 'CREDIT' || tx.type === 'REFUND' ? '+' : '-';
   const date    = new Date(tx.createdAt);
@@ -123,13 +131,13 @@ const TxRow = ({ tx, theme }) => {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[tr.desc, { color: theme.foreground }]} numberOfLines={1}>
-          {tx.description || cfg.label}
+          {tx.description || t(cfg.labelKey)}
         </Text>
         <Text style={[tr.date, { color: theme.hint }]}>{dateStr} • {timeStr}</Text>
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={[tr.amount, { color: cfg.color }]}>
-          {sign}₦{Number(tx.amount).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+          {sign}{formatMoney(tx.amount)}
         </Text>
         <Text style={[tr.status, {
           color: tx.status === 'COMPLETED' ? GREEN : tx.status === 'PENDING' ? GOLD : RED,
@@ -153,6 +161,8 @@ const tr = StyleSheet.create({
 // DeliveryRow
 // ─────────────────────────────────────────────────────────────────────────────
 const DeliveryRow = ({ delivery, theme }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const gross = Number(
     delivery.grossFee ??
     delivery.actualFee ??
@@ -184,10 +194,10 @@ const DeliveryRow = ({ delivery, theme }) => {
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={[dr.net, { color: COURIER_ACCENT }]}>
-          +₦{net.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+          +{formatMoney(net)}
         </Text>
         <Text style={[dr.gross, { color: theme.hint }]}>
-          ₦{gross.toLocaleString('en-NG', { maximumFractionDigits: 0 })} gross
+          {t('partnerEarnings.grossAmount', { amount: formatMoney(gross) })}
         </Text>
       </View>
     </View>
@@ -207,6 +217,8 @@ const dr = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function PartnerEarningsScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t }            = useTranslation();
   const scrollY         = useScrollY();
   const insets          = useSafeAreaInsets();
 
@@ -318,8 +330,8 @@ export default function PartnerEarningsScreen({ navigation }) {
           </TouchableOpacity>
         )}
         <View style={{ flex: 1 }}>
-          <Text style={[s.eyebrow, { color: COURIER_ACCENT + '99' }]}>PARTNER EARNINGS</Text>
-          <Text style={[s.title,   { color: theme.foreground }]}>My Wallet</Text>
+          <Text style={[s.eyebrow, { color: COURIER_ACCENT + '99' }]}>{t('partnerEarnings.headerEyebrow')}</Text>
+          <Text style={[s.title,   { color: theme.foreground }]}>{t('partnerEarnings.headerTitle')}</Text>
         </View>
         <View style={s.headerBtns}>
           <TouchableOpacity
@@ -328,7 +340,7 @@ export default function PartnerEarningsScreen({ navigation }) {
             activeOpacity={0.88}
           >
             <Ionicons name="add-circle-outline" size={15} color={theme.foreground} />
-            <Text style={[s.headerActionTxt, { color: theme.foreground }]}>Top Up</Text>
+            <Text style={[s.headerActionTxt, { color: theme.foreground }]}>{t('partnerEarnings.topUp')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[s.headerActionBtn, { backgroundColor: COURIER_ACCENT }]}
@@ -336,7 +348,7 @@ export default function PartnerEarningsScreen({ navigation }) {
             activeOpacity={0.88}
           >
             <Ionicons name="arrow-up-circle-outline" size={15} color="#080C18" />
-            <Text style={[s.headerActionTxt, { color: '#080C18' }]}>Withdraw</Text>
+            <Text style={[s.headerActionTxt, { color: '#080C18' }]}>{t('partnerEarnings.withdraw')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -377,8 +389,8 @@ export default function PartnerEarningsScreen({ navigation }) {
                   <View style={[s.walletActionIcon, { backgroundColor: GREEN + '20' }]}>
                     <Ionicons name="add-circle-outline" size={20} color={GREEN} />
                   </View>
-                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Top Up</Text>
-                  <Text style={[s.walletActionSub, { color: theme.hint }]}>Add money</Text>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>{t('partnerEarnings.topUp')}</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>{t('partnerEarnings.addMoney')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -389,8 +401,8 @@ export default function PartnerEarningsScreen({ navigation }) {
                   <View style={[s.walletActionIcon, { backgroundColor: COURIER_ACCENT + '20' }]}>
                     <Ionicons name="arrow-up-circle-outline" size={20} color={COURIER_ACCENT} />
                   </View>
-                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Withdraw</Text>
-                  <Text style={[s.walletActionSub, { color: theme.hint }]}>To bank</Text>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>{t('partnerEarnings.withdraw')}</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>{t('partnerEarnings.toBank')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -401,24 +413,24 @@ export default function PartnerEarningsScreen({ navigation }) {
                   <View style={[s.walletActionIcon, { backgroundColor: PURPLE + '20' }]}>
                     <Ionicons name="time-outline" size={20} color={PURPLE} />
                   </View>
-                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>History</Text>
-                  <Text style={[s.walletActionSub, { color: theme.hint }]}>& Export</Text>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>{t('partnerEarnings.history')}</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>{t('partnerEarnings.andExport')}</Text>
                 </TouchableOpacity>
               </View>
 
               {/* ── Breakdown card — mirrors Driver ── */}
               <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-                <Text style={[s.sectionEyebrow, { color: theme.hint }]}>EARNINGS BREAKDOWN</Text>
+                <Text style={[s.sectionEyebrow, { color: theme.hint }]}>{t('partnerEarnings.earningsBreakdown')}</Text>
                 {[
-                  ['Gross Earnings',     earnings?.totalEarnings,   COURIER_ACCENT],
-                  ['Platform Fee (15%)', earnings?.platformFee,     RED],
-                  ['Net Earnings',       earnings?.netEarnings,     GREEN],
-                  ['Avg per Delivery',   earnings?.averagePerDelivery, theme.foreground],
+                  [t('partnerEarnings.grossEarnings'),     earnings?.totalEarnings,   COURIER_ACCENT],
+                  [t('partnerEarnings.platformFee15'), earnings?.platformFee,     RED],
+                  [t('partnerEarnings.netEarnings'),       earnings?.netEarnings,     GREEN],
+                  [t('partnerEarnings.avgPerDelivery'),   earnings?.averagePerDelivery, theme.foreground],
                 ].map(([lbl, val, col]) => (
                   <View key={lbl} style={[s.breakRow, { borderBottomColor: theme.border }]}>
                     <Text style={[s.breakLbl, { color: theme.hint }]}>{lbl}</Text>
                     <Text style={[s.breakVal, { color: col }]}>
-                      ₦{Number(val ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                      {formatMoney(val ?? 0, { decimals: 2 })}
                     </Text>
                   </View>
                 ))}
@@ -440,7 +452,7 @@ export default function PartnerEarningsScreen({ navigation }) {
                       onPress={() => setPeriod(p.key)}
                       activeOpacity={0.8}
                     >
-                      <Text style={[s.periodTxt, { color: active ? '#080C18' : theme.hint }]}>{p.label}</Text>
+                      <Text style={[s.periodTxt, { color: active ? '#080C18' : theme.hint }]}>{t(p.labelKey)}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -449,8 +461,8 @@ export default function PartnerEarningsScreen({ navigation }) {
               {/* ── Tab switcher ── */}
               <View style={[s.tabRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                 {[
-                  ['deliveries',   `Deliveries (${deliveries.length})`    ],
-                  ['transactions', `Wallet Txns (${transactions.length})` ],
+                  ['deliveries',   t('partnerEarnings.deliveriesCount', { count: deliveries.length })    ],
+                  ['transactions', t('partnerEarnings.walletTxnsCount', { count: transactions.length }) ],
                 ].map(([key, lbl]) => (
                   <TouchableOpacity
                     key={key}
@@ -472,7 +484,7 @@ export default function PartnerEarningsScreen({ navigation }) {
                   deliveries.length === 0 ? (
                     <View style={s.empty}>
                       <Ionicons name="cube-outline" size={32} color={theme.hint} />
-                      <Text style={[s.emptyTxt, { color: theme.hint }]}>No deliveries for this period</Text>
+                      <Text style={[s.emptyTxt, { color: theme.hint }]}>{t('partnerEarnings.noDeliveries')}</Text>
                     </View>
                   ) : (
                     deliveries.map((d, i) => (
@@ -483,7 +495,7 @@ export default function PartnerEarningsScreen({ navigation }) {
                   transactions.length === 0 ? (
                     <View style={s.empty}>
                       <Ionicons name="wallet-outline" size={32} color={theme.hint} />
-                      <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
+                      <Text style={[s.emptyTxt, { color: theme.hint }]}>{t('partnerEarnings.noTransactions')}</Text>
                     </View>
                   ) : (
                     <>
@@ -500,7 +512,7 @@ export default function PartnerEarningsScreen({ navigation }) {
                         >
                           {txLoading
                             ? <ActivityIndicator color={COURIER_ACCENT} size="small" />
-                            : <Text style={[s.loadMoreTxt, { color: COURIER_ACCENT }]}>Load more</Text>
+                            : <Text style={[s.loadMoreTxt, { color: COURIER_ACCENT }]}>{t('partnerEarnings.loadMore')}</Text>
                           }
                         </TouchableOpacity>
                       )}
@@ -513,7 +525,7 @@ export default function PartnerEarningsScreen({ navigation }) {
                       >
                         <Ionicons name="calendar-outline" size={13} color={COURIER_ACCENT} />
                         <Text style={[s.historyLinkTxt, { color: COURIER_ACCENT }]}>
-                          Full history · date filter · PDF export
+                          {t('partnerEarnings.fullHistoryLink')}
                         </Text>
                         <Ionicons name="chevron-forward" size={12} color={COURIER_ACCENT} />
                       </TouchableOpacity>
@@ -527,22 +539,24 @@ export default function PartnerEarningsScreen({ navigation }) {
                 <View style={s.noteRow}>
                   <View style={[s.noteDot, { backgroundColor: COURIER_ACCENT }]} />
                   <Text style={[s.noteTxt, { color: theme.hint }]}>
-                    Platform takes{' '}
-                    <Text style={{ color: COURIER_ACCENT, fontWeight: '700' }}>15% commission</Text>{' '}
-                    + booking fee per delivery
+                    {t('partnerEarnings.platformTakes')}{' '}
+                    <Text style={{ color: COURIER_ACCENT, fontWeight: '700' }}>{t('partnerEarnings.commission15')}</Text>{' '}
+                    {t('partnerEarnings.plusBookingFeePerDelivery')}
                   </Text>
                 </View>
                 <View style={s.noteRow}>
                   <View style={[s.noteDot, { backgroundColor: GREEN }]} />
                   <Text style={[s.noteTxt, { color: theme.hint }]}>
-                    Net earnings = gross − 15% commission − booking fee
+                    {t('partnerEarnings.netEarningsFormula')}
                   </Text>
                 </View>
                 <View style={s.noteRow}>
                   <View style={[s.noteDot, { backgroundColor: GOLD }]} />
                   <Text style={[s.noteTxt, { color: theme.hint }]}>
-                    Minimum withdrawal:{' '}
-                    <Text style={{ color: GOLD, fontWeight: '700' }}>₦500</Text>
+                    {t('partnerEarnings.minWithdrawal')}{' '}
+                    <Text style={{ color: GOLD, fontWeight: '700' }}>{formatMoney(500)}</Text>
+                    {/* NOTE: 500 is a fixed NG minimum-withdrawal business rule — needs a
+                        real per-country decision, not just a currency-symbol swap. */}
                   </Text>
                 </View>
               </View>

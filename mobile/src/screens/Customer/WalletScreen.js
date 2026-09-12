@@ -8,6 +8,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+import { useTranslation } from 'react-i18next';
+
+// Keeps the underlying filter values as stable English identifiers (they're
+// compared against transaction.type from the backend), while only the
+// displayed label is translated.
+const FILTER_LABEL_KEYS = {
+  ALL: 'wallet.filterAll', CREDIT: 'wallet.filterCredit', DEBIT: 'wallet.filterDebit', WITHDRAWAL: 'wallet.filterWithdrawal',
+};
+import { useCurrency } from '../../context/CurrencyContext';
 import { walletAPI } from '../../services/api';
 
 const { height } = Dimensions.get('window');
@@ -21,6 +30,7 @@ const TX_ICONS = {
 
 // ── Transaction row ──────────────────────────────────────────────────────────
 const TxRow = ({ item, theme, last }) => {
+  const { formatMoney } = useCurrency();
   const meta  = TX_ICONS[item.type] ?? TX_ICONS.DEBIT;
   const sign  = item.type === 'CREDIT' || item.type === 'REFUND' ? '+' : '-';
   const color = meta.color;
@@ -37,7 +47,7 @@ const TxRow = ({ item, theme, last }) => {
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={[tx.amount, { color }]}>
-          {sign}₦{Number(item.amount).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+          {sign}{formatMoney(item.amount, { decimals: 2 })}
         </Text>
         <Text style={[tx.status, { color: item.status === 'COMPLETED' ? theme.muted : '#C9A96E' }]}>
           {item.status}
@@ -58,6 +68,8 @@ const tx = StyleSheet.create({
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 export default function WalletScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
 
   const [wallet,  setWallet]  = useState(null);
@@ -115,7 +127,7 @@ export default function WalletScreen({ navigation }) {
         >
           <Ionicons name="arrow-back" size={18} color={theme.muted} />
         </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: theme.foreground }]}>My Wallet</Text>
+        <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('wallet.myWallet')}</Text>
         {/* History button */}
         <TouchableOpacity
           style={[s.historyBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
@@ -138,12 +150,12 @@ export default function WalletScreen({ navigation }) {
 
             {/* Balance card */}
             <View style={[s.balanceCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-              <Text style={[s.balanceLabel, { color: theme.hint }]}>AVAILABLE BALANCE</Text>
+              <Text style={[s.balanceLabel, { color: theme.hint }]}>{t('wallet.availableBalance')}</Text>
               {loading ? (
                 <ActivityIndicator color={theme.accent} style={{ marginVertical: 12 }} />
               ) : (
                 <Text style={[s.balanceAmount, { color: theme.foreground }]}>
-                  ₦{Number(wallet?.balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                  {formatMoney(wallet?.balance ?? 0, { decimals: 2 })}
                 </Text>
               )}
               <Text style={[s.currency, { color: theme.hint }]}>{wallet?.currency ?? 'NGN'}</Text>
@@ -156,7 +168,7 @@ export default function WalletScreen({ navigation }) {
                   activeOpacity={0.85}
                 >
                   <Ionicons name="add" size={18} color={theme.accentFg} />
-                  <Text style={[s.actionBtnTxt, { color: theme.accentFg }]}>Top Up</Text>
+                  <Text style={[s.actionBtnTxt, { color: theme.accentFg }]}>{t('wallet.topUp')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[s.actionBtnOutline, { borderColor: theme.border, backgroundColor: theme.background }]}
@@ -164,7 +176,7 @@ export default function WalletScreen({ navigation }) {
                   activeOpacity={0.8}
                 >
                   <Ionicons name="swap-horizontal-outline" size={17} color={theme.muted} />
-                  <Text style={[s.actionBtnOutlineTxt, { color: theme.muted }]}>Transfer</Text>
+                  <Text style={[s.actionBtnOutlineTxt, { color: theme.muted }]}>{t('wallet.transfer')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[s.actionBtnOutline, { borderColor: theme.border, backgroundColor: theme.background }]}
@@ -172,7 +184,7 @@ export default function WalletScreen({ navigation }) {
                   activeOpacity={0.8}
                 >
                   <Ionicons name="arrow-up-outline" size={17} color={theme.muted} />
-                  <Text style={[s.actionBtnOutlineTxt, { color: theme.muted }]}>Withdraw</Text>
+                  <Text style={[s.actionBtnOutlineTxt, { color: theme.muted }]}>{t('wallet.withdraw')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -199,7 +211,7 @@ export default function WalletScreen({ navigation }) {
                     ]}
                     activeOpacity={0.75}
                   >
-                    <Text style={[s.filterTxt, { color: active ? theme.accent : theme.hint }]}>{f}</Text>
+                    <Text style={[s.filterTxt, { color: active ? theme.accent : theme.hint }]}>{t(FILTER_LABEL_KEYS[f])}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -209,12 +221,12 @@ export default function WalletScreen({ navigation }) {
             <View style={[s.txCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               {/* Section header with "See all" link */}
               <View style={s.txHeader}>
-                <Text style={[s.txTitle, { color: theme.hint }]}>RECENT TRANSACTIONS</Text>
+                <Text style={[s.txTitle, { color: theme.hint }]}>{t('wallet.recentTransactions')}</Text>
                 <TouchableOpacity
                   onPress={() => navigation.navigate('TransactionHistory')}
                   activeOpacity={0.7}
                 >
-                  <Text style={[s.txSeeAll, { color: theme.accent }]}>See all →</Text>
+                  <Text style={[s.txSeeAll, { color: theme.accent }]}>{t('wallet.seeAll')}</Text>
                 </TouchableOpacity>
               </View>
 
@@ -223,8 +235,8 @@ export default function WalletScreen({ navigation }) {
               ) : filtered.length === 0 ? (
                 <View style={s.empty}>
                   <Ionicons name="wallet-outline" size={36} color={theme.hint} style={{ marginBottom: 10 }} />
-                  <Text style={[s.emptyTxt, { color: theme.muted }]}>No transactions yet</Text>
-                  <Text style={[s.emptyHint, { color: theme.hint }]}>Top up your wallet to get started</Text>
+                  <Text style={[s.emptyTxt, { color: theme.muted }]}>{t('wallet.noTransactionsYet')}</Text>
+                  <Text style={[s.emptyHint, { color: theme.hint }]}>{t('wallet.topUpToGetStarted')}</Text>
                 </View>
               ) : (
                 <>

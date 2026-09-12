@@ -9,11 +9,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth }  from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useBiometric } from '../../hooks/useBiometric';
+import { useTranslation } from 'react-i18next';
 
 const { width } = Dimensions.get('window');
 
 export default function BiometricLockScreen() {
   const { theme, mode }                = useTheme();
+  const { t }                          = useTranslation();
   const { biometricUnlock, logout }    = useAuth();               // ✅ fixed
   const { authenticate, biometricType, getSecureToken, disable: disableBiometric } = useBiometric(); // ✅ fixed
   const darkMode = mode === 'dark';
@@ -52,7 +54,7 @@ export default function BiometricLockScreen() {
   };
 
   const iconName = biometricType === 'faceid' ? 'scan-outline' : 'finger-print-outline';
-  const label    = biometricType === 'faceid' ? 'Face ID' : biometricType === 'iris' ? 'Iris scan' : 'Fingerprint';
+  const label    = biometricType === 'faceid' ? t('biometricLock.faceId') : biometricType === 'iris' ? t('biometricLock.irisScan') : t('biometricLock.fingerprint');
 
   return (
     <Animated.View style={[s.root, { backgroundColor: theme.background, opacity: fadeAnim }]}>
@@ -69,8 +71,8 @@ export default function BiometricLockScreen() {
           />
           <Ionicons name={iconName} size={52} color={theme.foreground} />
         </Animated.View>
-        <Text style={[s.title, { color: theme.foreground }]}>App locked</Text>
-        <Text style={[s.subtitle, { color: theme.hint }]}>Use {label} to continue</Text>
+        <Text style={[s.title, { color: theme.foreground }]}>{t('biometricLock.appLocked')}</Text>
+        <Text style={[s.subtitle, { color: theme.hint }]}>{t('biometricLock.useMethodToContinue', { method: label })}</Text>
         <TouchableOpacity style={[s.btn, { overflow: 'hidden' }]} activeOpacity={0.85} onPress={triggerBiometric}>
           <LinearGradient
             colors={darkMode ? ['#ffffff', '#dcdcdc'] : ['#000000', '#1e1e1e']}
@@ -78,10 +80,10 @@ export default function BiometricLockScreen() {
             style={StyleSheet.absoluteFill}
           />
           <Ionicons name={iconName} size={18} color={darkMode ? '#000' : '#fff'} />
-          <Text style={[s.btnTxt, { color: darkMode ? '#000' : '#fff' }]}>Verify with {label}</Text>
+          <Text style={[s.btnTxt, { color: darkMode ? '#000' : '#fff' }]}>{t('biometricLock.verifyWith', { method: label })}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={s.signOut} onPress={logout}>
-          <Text style={[s.signOutTxt, { color: theme.hint }]}>Sign in with password instead</Text>
+          <Text style={[s.signOutTxt, { color: theme.hint }]}>{t('biometricLock.signInWithPasswordInstead')}</Text>
         </TouchableOpacity>
       </View>
     </Animated.View>

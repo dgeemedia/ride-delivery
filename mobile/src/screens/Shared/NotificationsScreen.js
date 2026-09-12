@@ -8,7 +8,10 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
 import { useAuth }           from '../../context/AuthContext';
+import { useTranslation }    from 'react-i18next';
+import i18n                  from '../../i18n';
 import { notificationAPI }   from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
@@ -18,41 +21,42 @@ const { width, height } = Dimensions.get('window');
 // ─────────────────────────────────────────────────────────────────────────────
 const TYPE_CONFIG = {
   // Rides
-  ride_requested:   { icon: 'car-outline',             color: '#4E8DBD', label: 'Ride Requested',   nav: 'RideTracking'      },
-  ride_accepted:    { icon: 'car-sport-outline',        color: '#FFB800', label: 'Ride Accepted',    nav: 'RideTracking'      },
-  ride_arrived:     { icon: 'location-outline',         color: '#A78BFA', label: 'Driver Arrived',   nav: 'RideTracking'      },
-  ride_started:     { icon: 'navigate-outline',         color: '#5DAA72', label: 'Ride Started',     nav: 'RideTracking'      },
-  ride_completed:   { icon: 'checkmark-circle-outline', color: '#5DAA72', label: 'Ride Completed',   nav: 'History'           },
-  ride_cancelled:   { icon: 'close-circle-outline',     color: '#E05555', label: 'Ride Cancelled',   nav: 'History'           },
+  ride_requested:   { icon: 'car-outline',             color: '#4E8DBD', labelKey: 'notifications.type_ride_requested',   nav: 'RideTracking'      },
+  ride_accepted:    { icon: 'car-sport-outline',        color: '#FFB800', labelKey: 'notifications.type_ride_accepted',    nav: 'RideTracking'      },
+  ride_arrived:     { icon: 'location-outline',         color: '#A78BFA', labelKey: 'notifications.type_ride_arrived',   nav: 'RideTracking'      },
+  ride_started:     { icon: 'navigate-outline',         color: '#5DAA72', labelKey: 'notifications.type_ride_started',     nav: 'RideTracking'      },
+  ride_completed:   { icon: 'checkmark-circle-outline', color: '#5DAA72', labelKey: 'notifications.type_ride_completed',   nav: 'History'           },
+  ride_cancelled:   { icon: 'close-circle-outline',     color: '#E05555', labelKey: 'notifications.type_ride_cancelled',   nav: 'History'           },
   // Deliveries
-  delivery_requested:  { icon: 'cube-outline',             color: '#4E8DBD', label: 'Delivery Requested', nav: 'DeliveryTracking'  },
-  delivery_assigned:   { icon: 'bicycle-outline',          color: '#34D399', label: 'Partner Assigned',   nav: 'DeliveryTracking'  },
-  delivery_picked_up:  { icon: 'bag-outline',              color: '#FFB800', label: 'Package Picked Up',  nav: 'DeliveryTracking'  },
-  delivery_in_transit: { icon: 'navigate-outline',         color: '#A78BFA', label: 'In Transit',         nav: 'DeliveryTracking'  },
-  delivery_completed:  { icon: 'checkmark-circle-outline', color: '#5DAA72', label: 'Delivered',          nav: 'History'           },
-  delivery_cancelled:  { icon: 'close-circle-outline',     color: '#E05555', label: 'Delivery Cancelled', nav: 'History'           },
+  delivery_requested:  { icon: 'cube-outline',             color: '#4E8DBD', labelKey: 'notifications.type_delivery_requested', nav: 'DeliveryTracking'  },
+  delivery_assigned:   { icon: 'bicycle-outline',          color: '#34D399', labelKey: 'notifications.type_delivery_assigned',   nav: 'DeliveryTracking'  },
+  delivery_picked_up:  { icon: 'bag-outline',              color: '#FFB800', labelKey: 'notifications.type_delivery_picked_up',  nav: 'DeliveryTracking'  },
+  delivery_in_transit: { icon: 'navigate-outline',         color: '#A78BFA', labelKey: 'notifications.type_delivery_in_transit',         nav: 'DeliveryTracking'  },
+  delivery_completed:  { icon: 'checkmark-circle-outline', color: '#5DAA72', labelKey: 'notifications.type_delivery_completed',          nav: 'History'           },
+  delivery_cancelled:  { icon: 'close-circle-outline',     color: '#E05555', labelKey: 'notifications.type_delivery_cancelled', nav: 'History'           },
   // Payments
-  payment_received:  { icon: 'cash-outline',             color: '#5DAA72', label: 'Payment Received',  nav: null },
-  payment_refunded:  { icon: 'refresh-circle-outline',   color: '#A78BFA', label: 'Payment Refunded',  nav: null },
+  payment_received:  { icon: 'cash-outline',             color: '#5DAA72', labelKey: 'notifications.type_payment_received',  nav: null },
+  payment_refunded:  { icon: 'refresh-circle-outline',   color: '#A78BFA', labelKey: 'notifications.type_payment_refunded',  nav: null },
   // Wallet
-  wallet_credited:   { icon: 'arrow-down-circle-outline', color: '#5DAA72', label: 'Wallet Credited',  nav: null },
-  wallet_debited:    { icon: 'arrow-up-circle-outline',   color: '#E05555', label: 'Wallet Debited',   nav: null },
-  wallet_withdrawal: { icon: 'cash-outline',              color: '#FFB800', label: 'Withdrawal',       nav: null },
+  wallet_credited:   { icon: 'arrow-down-circle-outline', color: '#5DAA72', labelKey: 'notifications.type_wallet_credited',  nav: null },
+  wallet_debited:    { icon: 'arrow-up-circle-outline',   color: '#E05555', labelKey: 'notifications.type_wallet_debited',   nav: null },
+  wallet_withdrawal: { icon: 'cash-outline',              color: '#FFB800', labelKey: 'notifications.type_wallet_withdrawal',       nav: null },
   // Account
-  account_welcome:   { icon: 'happy-outline',            color: '#34D399', label: 'Welcome!',          nav: null },
-  account_verified:  { icon: 'shield-checkmark-outline', color: '#5DAA72', label: 'Email Verified',    nav: null },
-  account_suspended: { icon: 'warning-outline',          color: '#E05555', label: 'Account Suspended', nav: null },
-  password_reset:    { icon: 'lock-closed-outline',      color: '#FFB800', label: 'Password Reset',    nav: null },
-  driver_approved:   { icon: 'shield-checkmark-outline', color: '#5DAA72', label: 'Driver Approved',   nav: null },
-  partner_approved:  { icon: 'shield-checkmark-outline', color: '#34D399', label: 'Partner Approved',  nav: null },
-  driver_rejected:   { icon: 'close-circle-outline',     color: '#E05555', label: 'Profile Rejected',  nav: null },
-  profile_submitted: { icon: 'document-text-outline',    color: '#4E8DBD', label: 'Profile Submitted', nav: null },
-  rating_received:   { icon: 'star-outline',             color: '#FFB800', label: 'New Rating',        nav: null },
+  account_welcome:   { icon: 'happy-outline',            color: '#34D399', labelKey: 'notifications.type_account_welcome',          nav: null },
+  account_verified:  { icon: 'shield-checkmark-outline', color: '#5DAA72', labelKey: 'notifications.type_account_verified',    nav: null },
+  account_suspended: { icon: 'warning-outline',          color: '#E05555', labelKey: 'notifications.type_account_suspended', nav: null },
+  password_reset:    { icon: 'lock-closed-outline',      color: '#FFB800', labelKey: 'notifications.type_password_reset',    nav: null },
+  driver_approved:   { icon: 'shield-checkmark-outline', color: '#5DAA72', labelKey: 'notifications.type_driver_approved',   nav: null },
+  partner_approved:  { icon: 'shield-checkmark-outline', color: '#34D399', labelKey: 'notifications.type_partner_approved',  nav: null },
+  driver_rejected:   { icon: 'close-circle-outline',     color: '#E05555', labelKey: 'notifications.type_driver_rejected',  nav: null },
+  profile_submitted: { icon: 'document-text-outline',    color: '#4E8DBD', labelKey: 'notifications.type_profile_submitted', nav: null },
+  rating_received:   { icon: 'star-outline',             color: '#FFB800', labelKey: 'notifications.type_rating_received',        nav: null },
   // Fallback
-  default:           { icon: 'notifications-outline',    color: '#4E8DBD', label: 'Notification',      nav: null },
+  default:           { icon: 'notifications-outline',    color: '#4E8DBD', labelKey: 'notifications.type_default',      nav: null },
 };
 
 const getConfig = (type) => TYPE_CONFIG[type] ?? TYPE_CONFIG.default;
+const getConfigLabel = (type) => i18n.t(getConfig(type).labelKey);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: relative time
@@ -61,10 +65,10 @@ const relativeTime = (dateStr) => {
   const now  = Date.now();
   const then = new Date(dateStr).getTime();
   const diff = Math.floor((now - then) / 1000);
-  if (diff < 60)     return 'Just now';
-  if (diff < 3600)   return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400)  return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 60)     return i18n.t('notifications.justNow');
+  if (diff < 3600)   return i18n.t('notifications.minutesAgo', { count: Math.floor(diff / 60) });
+  if (diff < 86400)  return i18n.t('notifications.hoursAgo', { count: Math.floor(diff / 3600) });
+  if (diff < 604800) return i18n.t('notifications.daysAgo', { count: Math.floor(diff / 86400) });
   return new Date(dateStr).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
 };
 
@@ -72,6 +76,8 @@ const relativeTime = (dateStr) => {
 // NotificationCard
 // ─────────────────────────────────────────────────────────────────────────────
 const NotificationCard = ({ item, onPress, onDelete, theme }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const cfg     = getConfig(item.type);
   const slideX  = useRef(new Animated.Value(0)).current;
   const [expanded, setExpanded] = useState(false);
@@ -135,7 +141,7 @@ const NotificationCard = ({ item, onPress, onDelete, theme }) => {
                     </Text>
                     <Text style={[nc.dataVal, { color: cfg.color }]}>
                       {typeof v === 'number' && k.toLowerCase().includes('amount')
-                        ? `₦${Number(v).toLocaleString('en-NG', { maximumFractionDigits: 0 })}`
+                        ? formatMoney(v)
                         : String(v)}
                     </Text>
                   </View>
@@ -147,11 +153,11 @@ const NotificationCard = ({ item, onPress, onDelete, theme }) => {
           {/* Type label + nav hint */}
           <View style={nc.footer}>
             <View style={[nc.typePill, { backgroundColor: cfg.color + '15' }]}>
-              <Text style={[nc.typeLabel, { color: cfg.color }]}>{cfg.label}</Text>
+              <Text style={[nc.typeLabel, { color: cfg.color }]}>{t(cfg.labelKey)}</Text>
             </View>
             {cfg.nav && (
               <View style={nc.navHint}>
-                <Text style={[nc.navHintTxt, { color: theme.hint }]}>Tap to view</Text>
+                <Text style={[nc.navHintTxt, { color: theme.hint }]}>{t('notifications.tapToView')}</Text>
                 <Ionicons name="chevron-forward" size={11} color={theme.hint} />
               </View>
             )}
@@ -197,6 +203,7 @@ const nc = StyleSheet.create({
 export default function NotificationsScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const { user }        = useAuth();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
 
   const [notifications, setNotifications] = useState([]);
@@ -296,12 +303,12 @@ export default function NotificationsScreen({ navigation }) {
 
   const handleDelete = async (id) => {
   Alert.alert(
-    'Delete Notification',
-    'Are you sure you want to delete this notification?',
+    t('notifications.deleteTitle'),
+    t('notifications.deleteMsg'),
     [
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('deleteAccount.delete'),
         style: 'destructive',
         onPress: async () => {
           try {
@@ -324,12 +331,12 @@ export default function NotificationsScreen({ navigation }) {
 
   const handleClearAll = () => {
     Alert.alert(
-      'Clear All Notifications',
-      'This will permanently delete all your notifications.',
+      t('notifications.clearAllTitle'),
+      t('notifications.clearAllMsg'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Clear All',
+          text: t('notifications.clearAllBtn'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -368,9 +375,9 @@ export default function NotificationsScreen({ navigation }) {
           </TouchableOpacity>
 
           <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { color: theme.foreground }]}>Notifications</Text>
+            <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('notifications.headerTitle')}</Text>
             {unreadCount > 0 && (
-              <Text style={[s.headerSub, { color: theme.hint }]}>{unreadCount} unread</Text>
+              <Text style={[s.headerSub, { color: theme.hint }]}>{t('notifications.unreadCount', { count: unreadCount })}</Text>
             )}
           </View>
 
@@ -402,8 +409,8 @@ export default function NotificationsScreen({ navigation }) {
           borderBottomColor: theme.border,
         }]}>
           {[
-            { key: 'all',    label: 'All' },
-            { key: 'unread', label: `Unread${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
+            { key: 'all',    label: t('notifications.filterAll') },
+            { key: 'unread', label: unreadCount > 0 ? t('notifications.filterUnreadCount', { count: unreadCount }) : t('notifications.filterUnread') },
           ].map(f => {
             const active = filter === f.key;
             return (
@@ -471,11 +478,11 @@ export default function NotificationsScreen({ navigation }) {
                   <View style={[s.emptyIcon, { backgroundColor: theme.accent + '12' }]}>
                     <Ionicons name="notifications-off-outline" size={28} color={theme.accent} />
                   </View>
-                  <Text style={[s.emptyTitle, { color: theme.foreground }]}>No notifications yet</Text>
+                  <Text style={[s.emptyTitle, { color: theme.foreground }]}>{t('notifications.emptyTitle')}</Text>
                   <Text style={[s.emptySub, { color: theme.hint }]}>
                     {filter === 'unread'
-                      ? 'You have no unread notifications.'
-                      : "You're all caught up!"}
+                      ? t('notifications.emptyUnread')
+                      : t('notifications.emptyAll')}
                   </Text>
                 </View>
               }

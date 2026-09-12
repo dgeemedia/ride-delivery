@@ -9,6 +9,8 @@ import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
+import { useTranslation }    from 'react-i18next';
 import { rideAPI }           from '../../services/api';
 import socketService         from '../../services/socket';
 
@@ -22,29 +24,29 @@ const DRAG_HANDLE_H  = 28;
 
 // ── Renamed `step` key → `stageIndex` to avoid Hermes reserved-word crash ────
 const STATUS_CONFIG = {
-  REQUESTED:   { label: 'Finding your driver',  sublabel: 'Matching you with the best driver nearby', color: '#4E8DBD', icon: 'time-outline',             stageIndex: 0 },
-  ACCEPTED:    { label: 'Driver on the way',    sublabel: 'Your driver is heading to pickup',          color: '#FFB800', icon: 'car-outline',              stageIndex: 1 },
-  ARRIVED:     { label: 'Driver has arrived',   sublabel: 'Look for your driver at the pickup point',  color: '#A78BFA', icon: 'location-outline',         stageIndex: 2 },
-  IN_PROGRESS: { label: 'Ride in progress',     sublabel: 'Sit back, you\'re on your way',             color: '#5DAA72', icon: 'navigate-outline',         stageIndex: 3 },
-  COMPLETED:   { label: 'Ride completed',       sublabel: 'Hope you enjoyed the ride!',                color: '#5DAA72', icon: 'checkmark-circle-outline',  stageIndex: 4 },
-  CANCELLED:   { label: 'Ride cancelled',       sublabel: 'This ride has been cancelled',              color: '#E05555', icon: 'close-circle-outline',      stageIndex: -1 },
+  REQUESTED:   { labelKey: 'rideTracking.statusFindingDriver',  sublabelKey: 'rideTracking.statusFindingDriverSub', color: '#4E8DBD', icon: 'time-outline',             stageIndex: 0 },
+  ACCEPTED:    { labelKey: 'rideTracking.statusDriverOnWay',    sublabelKey: 'rideTracking.statusDriverOnWaySub',          color: '#FFB800', icon: 'car-outline',              stageIndex: 1 },
+  ARRIVED:     { labelKey: 'rideTracking.statusDriverArrived',   sublabelKey: 'rideTracking.statusDriverArrivedSub',  color: '#A78BFA', icon: 'location-outline',         stageIndex: 2 },
+  IN_PROGRESS: { labelKey: 'rideTracking.statusRideInProgress',     sublabelKey: 'rideTracking.statusRideInProgressSub',             color: '#5DAA72', icon: 'navigate-outline',         stageIndex: 3 },
+  COMPLETED:   { labelKey: 'rideTracking.statusRideCompleted',       sublabelKey: 'rideTracking.statusRideCompletedSub',                color: '#5DAA72', icon: 'checkmark-circle-outline',  stageIndex: 4 },
+  CANCELLED:   { labelKey: 'rideTracking.statusRideCancelled',       sublabelKey: 'rideTracking.statusRideCancelledSub',              color: '#E05555', icon: 'close-circle-outline',      stageIndex: -1 },
 };
 
-const STEPS = ['Matched', 'En Route', 'Arrived', 'In Progress'];
+const STEP_KEYS = ['rideTracking.stepMatched', 'rideTracking.stepEnRoute', 'rideTracking.stepArrived', 'rideTracking.stepInProgress'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const goHome = (navigation) => navigation.getParent()?.navigate('HomeTab');
 
-const callPhone = (phone) => {
+const callPhone = (phone, t) => {
   if (!phone) return;
   const cleaned = String(phone).replace(/\s+/g, '');
   const url     = `tel:${cleaned}`;
   Linking.canOpenURL(url)
     .then(ok => {
       if (ok) return Linking.openURL(url);
-      Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
+      Alert.alert(t('rideTracking.cannotCallTitle'), t('rideTracking.cannotCallBody'));
     })
-    .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
+    .catch(() => Alert.alert(t('rideTracking.errorTitle'), t('rideTracking.couldNotInitiateCall')));
 };
 
 // ── ETACountdownRing ──────────────────────────────────────────────────────────
@@ -78,12 +80,14 @@ const era = StyleSheet.create({
 });
 
 // ── StatusRail — prop renamed from `step` → `stageIndex` ─────────────────────
-const StatusRail = ({ stageIndex, color, theme }) => (
+const StatusRail = ({ stageIndex, color, theme }) => {
+  const { t } = useTranslation();
+  return (
   <View style={sr.wrap}>
-    {STEPS.map((s, i) => {
+    {STEP_KEYS.map((key, i) => {
       const active = i <= stageIndex;
       return (
-        <React.Fragment key={s}>
+        <React.Fragment key={key}>
           <View style={sr.item}>
             <View style={[sr.dot, {
               backgroundColor: active ? color : theme.border,
@@ -92,16 +96,17 @@ const StatusRail = ({ stageIndex, color, theme }) => (
             }]}>
               {active && i < stageIndex && <Ionicons name="checkmark" size={8} color="#080C18" />}
             </View>
-            <Text style={[sr.lbl, { color: active ? color : theme.hint, fontWeight: i === stageIndex ? '800' : '500' }]}>{s}</Text>
+            <Text style={[sr.lbl, { color: active ? color : theme.hint, fontWeight: i === stageIndex ? '800' : '500' }]}>{t(key)}</Text>
           </View>
-          {i < STEPS.length - 1 && (
+          {i < STEP_KEYS.length - 1 && (
             <View style={[sr.line, { backgroundColor: i < stageIndex ? color : theme.border }]} />
           )}
         </React.Fragment>
       );
     })}
   </View>
-);
+  );
+};
 const sr = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, paddingHorizontal: 4 },
   item: { alignItems: 'center', gap: 4 },
@@ -112,6 +117,7 @@ const sr = StyleSheet.create({
 
 // ── DriverHeroCard ────────────────────────────────────────────────────────────
 const DriverHeroCard = ({ ride, theme, accentColor, accentFg }) => {
+  const { t } = useTranslation();
   const driver = ride?.driver;
   if (!driver) return null;
   const dp    = driver.driverProfile;
@@ -161,7 +167,7 @@ const DriverHeroCard = ({ ride, theme, accentColor, accentFg }) => {
       {driver.phone && (
         <TouchableOpacity
           style={[dh.callBtn, { backgroundColor: accentColor, shadowColor: accentColor }]}
-          onPress={() => callPhone(driver.phone)}
+          onPress={() => callPhone(driver.phone, t)}
           activeOpacity={0.75}
         >
           <Ionicons name="call" size={18} color={accentFg} />
@@ -189,12 +195,14 @@ const dh = StyleSheet.create({
 });
 
 // ── RouteCard ─────────────────────────────────────────────────────────────────
-const RouteCard = ({ ride, theme }) => (
+const RouteCard = ({ ride, theme }) => {
+  const { t } = useTranslation();
+  return (
   <View style={[rc.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <View style={rc.row}>
       <View style={[rc.dot, { backgroundColor: theme.accent }]} />
       <View style={{ flex: 1 }}>
-        <Text style={[rc.lbl, { color: theme.hint }]}>PICKUP</Text>
+        <Text style={[rc.lbl, { color: theme.hint }]}>{t('rideTracking.pickup')}</Text>
         <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={2}>{ride.pickupAddress}</Text>
       </View>
     </View>
@@ -202,12 +210,13 @@ const RouteCard = ({ ride, theme }) => (
     <View style={rc.row}>
       <View style={[rc.dot, { backgroundColor: '#E05555' }]} />
       <View style={{ flex: 1 }}>
-        <Text style={[rc.lbl, { color: theme.hint }]}>DROP-OFF</Text>
+        <Text style={[rc.lbl, { color: theme.hint }]}>{t('rideTracking.dropoff')}</Text>
         <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={2}>{ride.dropoffAddress}</Text>
       </View>
     </View>
   </View>
-);
+  );
+};
 const rc = StyleSheet.create({
   card: { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 14 },
   row:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
@@ -222,6 +231,8 @@ const rc = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RideTrackingScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const rideId          = route?.params?.rideId;
   const accentColor     = theme.accent;
@@ -340,8 +351,8 @@ export default function RideTrackingScreen({ route, navigation }) {
         setTimeout(() => navigation.navigate('RateRide', { rideId, driver: data.driver }), 500);
       }
       if (data.status === 'CANCELLED') {
-        Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [
-          { text: 'OK', onPress: () => goHome(navigation) },
+        Alert.alert(t('rideTracking.rideCancelledTitle'), t('rideTracking.rideCancelledBody'), [
+          { text: t('rideTracking.ok'), onPress: () => goHome(navigation) },
         ]);
       }
     };
@@ -354,7 +365,7 @@ export default function RideTrackingScreen({ route, navigation }) {
     socketService.on('ride:status:update',     handleStatus);
     socketService.on('ride:cancelled',         ({ rideId: id }) => {
       if (id !== rideId) return;
-      Alert.alert('Ride Cancelled', 'Your ride was cancelled.', [{ text: 'OK', onPress: () => goHome(navigation) }]);
+      Alert.alert(t('rideTracking.rideCancelledTitle'), t('rideTracking.rideCancelledBody'), [{ text: t('rideTracking.ok'), onPress: () => goHome(navigation) }]);
     });
     socketService.on('driver:location:update', handleDriverLoc);
     return () => {
@@ -367,21 +378,21 @@ export default function RideTrackingScreen({ route, navigation }) {
 
 const handleCancel = () => {
   if (!ride?.id) {
-    Alert.alert('Error', 'No active ride found.');
+    Alert.alert(t('rideTracking.errorTitle'), t('rideTracking.noActiveRideFound'));
     return;
   }
-  Alert.alert('Cancel Ride?', 'Are you sure you want to cancel?', [
-    { text: 'Keep Ride', style: 'cancel' },
+  Alert.alert(t('rideTracking.cancelRideTitle'), t('rideTracking.areYouSureCancel'), [
+    { text: t('rideTracking.keepRide'), style: 'cancel' },
     {
-      text: 'Cancel Ride', style: 'destructive',
+      text: t('rideTracking.cancelRide'), style: 'destructive',
       onPress: async () => {
         setCancelling(true);
         try {
           await rideAPI.cancelRide(ride.id, { reason: 'Customer cancelled from tracking screen' });
           goHome(navigation);
         } catch (err) {
-          const msg = err?.response?.data?.message ?? err?.data?.message ?? err?.message ?? 'Could not cancel.';
-          Alert.alert('Error', msg);
+          const msg = err?.response?.data?.message ?? err?.data?.message ?? err?.message ?? t('rideTracking.couldNotCancel');
+          Alert.alert(t('rideTracking.errorTitle'), msg);
         } finally { setCancelling(false); }
       },
     },
@@ -421,7 +432,7 @@ const handleCancel = () => {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
         <ActivityIndicator color={accentColor} size="large" />
-        <Text style={[s.centerTxt, { color: '#666' }]}>Loading your ride...</Text>
+        <Text style={[s.centerTxt, { color: '#666' }]}>{t('rideTracking.loadingYourRide')}</Text>
       </View>
     );
   }
@@ -429,9 +440,9 @@ const handleCancel = () => {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
         <Ionicons name="alert-circle-outline" size={40} color="#555" />
-        <Text style={[s.centerTxt, { color: '#666' }]}>Ride not found.</Text>
+        <Text style={[s.centerTxt, { color: '#666' }]}>{t('rideTracking.rideNotFound')}</Text>
         <TouchableOpacity style={[s.goHomeBtn, { borderColor: '#333' }]} onPress={() => goHome(navigation)}>
-          <Text style={[s.goHomeTxt, { color: '#ccc' }]}>Go Home</Text>
+          <Text style={[s.goHomeTxt, { color: '#ccc' }]}>{t('rideTracking.goHome')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -498,7 +509,7 @@ const handleCancel = () => {
         bottom:          statusPillBottom,
       }]}>
         <View style={[s.statusDot, { backgroundColor: statusCfg.color }]} />
-        <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+        <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{t(statusCfg.labelKey)}</Text>
         {etaMinutesDisplay !== null && ['ACCEPTED', 'ARRIVED'].includes(status) && (
           <View style={[s.etaChip, { backgroundColor: statusCfg.color }]}>
             <Text style={s.etaChipTxt}>{etaMinutesDisplay} min</Text>
@@ -521,8 +532,8 @@ const handleCancel = () => {
 
             <View style={s.headerRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[s.statusTitle, { color: theme.foreground }]}>{statusCfg.label}</Text>
-                <Text style={[s.statusSub, { color: theme.hint }]}>{statusCfg.sublabel}</Text>
+                <Text style={[s.statusTitle, { color: theme.foreground }]}>{t(statusCfg.labelKey)}</Text>
+                <Text style={[s.statusSub, { color: theme.hint }]}>{t(statusCfg.sublabelKey)}</Text>
                 <View style={{ marginTop: 12 }}>
                   {/* stageIndex replaces step prop to avoid Hermes crash */}
                   <StatusRail stageIndex={statusCfg.stageIndex} color={statusCfg.color} theme={theme} />
@@ -535,23 +546,23 @@ const handleCancel = () => {
 
             <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <View style={s.fareItem}>
-                <Text style={[s.fareLabel, { color: theme.hint }]}>FARE</Text>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>{t('rideTracking.fareLabel')}</Text>
                 <Text style={[s.fareValue, { color: accentColor }]}>
-                  ₦{Number(ride.estimatedFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                  {formatMoney(ride.estimatedFare ?? 0)}
                 </Text>
               </View>
               <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
               <View style={s.fareItem}>
-                <Text style={[s.fareLabel, { color: theme.hint }]}>DISTANCE</Text>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>{t('rideTracking.distanceLabel')}</Text>
                 <Text style={[s.fareValue, { color: theme.foreground }]}>
                   {ride.distance?.toFixed(1) ?? '—'} km
                 </Text>
               </View>
               <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
               <View style={s.fareItem}>
-                <Text style={[s.fareLabel, { color: theme.hint }]}>PAYMENT</Text>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>{t('rideTracking.paymentLabel')}</Text>
                 <Text style={[s.fareValue, { color: theme.foreground }]}>
-                  {ride.paymentMethod ?? 'CASH'}
+                  {ride.paymentMethod ?? t('rideTracking.cash')}
                 </Text>
               </View>
             </View>
@@ -576,7 +587,7 @@ const handleCancel = () => {
                 {cancelling ? <ActivityIndicator color="#E05555" size="small" /> : (
                   <>
                     <Ionicons name="close-circle-outline" size={16} color="#E05555" />
-                    <Text style={s.cancelTxt}>Cancel Ride</Text>
+                    <Text style={s.cancelTxt}>{t('rideTracking.cancelRide')}</Text>
                   </>
                 )}
               </TouchableOpacity>

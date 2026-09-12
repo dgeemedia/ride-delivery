@@ -10,6 +10,8 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
+import { useTranslation }    from 'react-i18next';
 import { deliveryAPI, walletAPI, partnerAPI } from '../../services/api';
 import socketService          from '../../services/socket';
 
@@ -84,23 +86,25 @@ const rs = StyleSheet.create({
 
 // ── Fee breakdown (modal) ─────────────────────────────────────────────────────
 const FeeBreakdown = ({ fee, theme, color }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const earnings = Math.round(fee * (1 - COMMISSION));
   const platform = fee - earnings;
   return (
     <View style={[fb.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
       <View style={fb.col}>
-        <Text style={[fb.label, { color: theme.hint }]}>CUSTOMER PAYS</Text>
-        <Text style={[fb.val, { color: color }]}>₦{fmt(fee)}</Text>
+        <Text style={[fb.label, { color: theme.hint }]}>{t('incomingDeliveryQueue.customerPays')}</Text>
+        <Text style={[fb.val, { color: color }]}>{formatMoney(fee)}</Text>
       </View>
       <View style={[fb.div, { backgroundColor: theme.border }]} />
       <View style={fb.col}>
-        <Text style={[fb.label, { color: theme.hint }]}>YOUR EARNINGS</Text>
-        <Text style={[fb.val, { color: '#5DAA72' }]}>₦{fmt(earnings)}</Text>
+        <Text style={[fb.label, { color: theme.hint }]}>{t('incomingDeliveryQueue.yourEarnings')}</Text>
+        <Text style={[fb.val, { color: '#5DAA72' }]}>{formatMoney(earnings)}</Text>
       </View>
       <View style={[fb.div, { backgroundColor: theme.border }]} />
       <View style={fb.col}>
-        <Text style={[fb.label, { color: theme.hint }]}>PLATFORM (15%)</Text>
-        <Text style={[fb.val, { color: '#A78BFA' }]}>₦{fmt(platform)}</Text>
+        <Text style={[fb.label, { color: theme.hint }]}>{t('incomingDeliveryQueue.platform15')}</Text>
+        <Text style={[fb.val, { color: '#A78BFA' }]}>{formatMoney(platform)}</Text>
       </View>
     </View>
   );
@@ -115,6 +119,8 @@ const fb = StyleSheet.create({
 
 // ── Wallet strip ──────────────────────────────────────────────────────────────
 const WalletStrip = ({ balance, required, theme, onTopUp }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const ok       = balance >= required;
   const col      = ok ? '#5DAA72' : '#E05555';
   const shortfall = required - balance;
@@ -123,11 +129,11 @@ const WalletStrip = ({ balance, required, theme, onTopUp }) => {
       <Ionicons name="wallet-outline" size={16} color={col} />
       <View style={{ flex: 1 }}>
         <Text style={[ws.title, { color: col }]}>
-          {ok ? `Wallet OK ✓  ₦${fmt(balance)}` : `Balance ₦${fmt(balance)}`}
+          {ok ? t('incomingDeliveryQueue.walletOk', { amount: formatMoney(balance) }) : t('incomingDeliveryQueue.balance', { amount: formatMoney(balance) })}
         </Text>
         {!ok && (
           <Text style={[ws.sub, { color: '#E05555' }]}>
-            Top up ₦{fmt(shortfall)} to accept
+            {t('incomingDeliveryQueue.topUpToAccept', { amount: formatMoney(shortfall) })}
           </Text>
         )}
       </View>
@@ -137,7 +143,7 @@ const WalletStrip = ({ balance, required, theme, onTopUp }) => {
           onPress={onTopUp}
           activeOpacity={0.85}
         >
-          <Text style={ws.btnTxt}>Top Up</Text>
+          <Text style={ws.btnTxt}>{t('incomingDeliveryQueue.topUp')}</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -153,6 +159,8 @@ const ws = StyleSheet.create({
 
 // ── Collapsed request card ────────────────────────────────────────────────────
 const RequestCard = React.memo(({ req, onTap, theme, walletBalance }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const color     = feeColor(req.estimatedFee);
   const canAfford = walletBalance === null || walletBalance >= req.estimatedFee;
   const scaleA    = useRef(new Animated.Value(0.96)).current;
@@ -186,10 +194,10 @@ const RequestCard = React.memo(({ req, onTap, theme, walletBalance }) => {
           {/* Top row: fee + timer */}
           <View style={rc.topRow}>
             <View>
-              <Text style={[rc.feeLabel, { color: theme.hint }]}>DELIVERY FEE</Text>
-              <Text style={[rc.fee, { color: color }]}>₦{fmt(req.estimatedFee)}</Text>
+              <Text style={[rc.feeLabel, { color: theme.hint }]}>{t('incomingDeliveryQueue.deliveryFee')}</Text>
+              <Text style={[rc.fee, { color: color }]}>{formatMoney(req.estimatedFee)}</Text>
               <Text style={[rc.earningHint, { color: theme.hint }]}>
-                Your cut: ₦{fmt(Math.round(req.estimatedFee * (1 - COMMISSION)))}
+                {t('incomingDeliveryQueue.yourCut', { amount: formatMoney(Math.round(req.estimatedFee * (1 - COMMISSION))) })}
               </Text>
             </View>
             <TinyRing seconds={req.timeLeft} total={REQUEST_SECS} color={color} />
@@ -202,16 +210,16 @@ const RequestCard = React.memo(({ req, onTap, theme, walletBalance }) => {
           <View style={rc.metaRow}>
             <View style={[rc.pill, { backgroundColor: theme.background, borderColor: theme.border }]}>
               <Ionicons name="navigate-outline" size={11} color={theme.hint} />
-              <Text style={[rc.pillTxt, { color: theme.hint }]}>{req.distance?.toFixed(1)} km</Text>
+              <Text style={[rc.pillTxt, { color: theme.hint }]}>{t('incomingDeliveryQueue.distanceKm', { km: req.distance?.toFixed(1) })}</Text>
             </View>
             <View style={[rc.pill, { backgroundColor: theme.background, borderColor: theme.border }]}>
               <Ionicons name="time-outline" size={11} color={theme.hint} />
-              <Text style={[rc.pillTxt, { color: theme.hint }]}>~{req.etaMinutes} min</Text>
+              <Text style={[rc.pillTxt, { color: theme.hint }]}>{t('incomingDeliveryQueue.etaMin', { min: req.etaMinutes })}</Text>
             </View>
             {hasWeight && (
               <View style={[rc.pill, { backgroundColor: theme.background, borderColor: theme.border }]}>
                 <Ionicons name="scale-outline" size={11} color={theme.hint} />
-                <Text style={[rc.pillTxt, { color: theme.hint }]}>{req.packageWeight} kg</Text>
+                <Text style={[rc.pillTxt, { color: theme.hint }]}>{t('incomingDeliveryQueue.weightKg', { weight: req.packageWeight })}</Text>
               </View>
             )}
             {req.packageDescription && (
@@ -227,7 +235,7 @@ const RequestCard = React.memo(({ req, onTap, theme, walletBalance }) => {
             {!canAfford && (
               <View style={[rc.pill, { backgroundColor: '#E05555' + '18', borderColor: '#E05555' + '40' }]}>
                 <Ionicons name="wallet-outline" size={11} color="#E05555" />
-                <Text style={[rc.pillTxt, { color: '#E05555' }]}>Low balance</Text>
+                <Text style={[rc.pillTxt, { color: '#E05555' }]}>{t('incomingDeliveryQueue.lowBalance')}</Text>
               </View>
             )}
           </View>
@@ -261,6 +269,8 @@ const DetailModal = ({
   req, theme, walletBalance, loadingWallet,
   accepting, onAccept, onDecline, onClose, onNavigateTopUp,
 }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   if (!req) return null;
   const color     = feeColor(req.estimatedFee);
   const canAfford = !loadingWallet && walletBalance >= req.estimatedFee;
@@ -301,9 +311,9 @@ const DetailModal = ({
               <View style={[dm.colorBar, { backgroundColor: color }]} />
               <View style={{ flex: 1 }}>
                 <Text style={[dm.feeTopLabel, { color: theme.hint }]}>
-                  TOTAL FEE (SAME PRICE CUSTOMER SEES)
+                  {t('incomingDeliveryQueue.totalFeeLabel')}
                 </Text>
-                <Text style={[dm.feeAmt, { color: color }]}>₦{fmt(req.estimatedFee)}</Text>
+                <Text style={[dm.feeAmt, { color: color }]}>{formatMoney(req.estimatedFee)}</Text>
               </View>
             </View>
 
@@ -313,9 +323,9 @@ const DetailModal = ({
             {/* Stats row */}
             <View style={dm.statsRow}>
               {[
-                { icon: 'navigate-outline', val: `${req.distance?.toFixed(1)} km`, lbl: 'Distance' },
-                { icon: 'time-outline',     val: `~${req.etaMinutes} min`,          lbl: 'ETA' },
-                ...(hasWeight ? [{ icon: 'scale-outline', val: `${req.packageWeight} kg`, lbl: 'Weight' }] : []),
+                { icon: 'navigate-outline', val: `${req.distance?.toFixed(1)} km`, lbl: t('incomingDeliveryQueue.distance') },
+                { icon: 'time-outline',     val: `~${req.etaMinutes} min`,          lbl: t('incomingDeliveryQueue.eta') },
+                ...(hasWeight ? [{ icon: 'scale-outline', val: `${req.packageWeight} kg`, lbl: t('incomingDeliveryQueue.weight') }] : []),
               ].map(({ icon, val, lbl }) => (
                 <View key={lbl} style={[dm.stat, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                   <Ionicons name={icon} size={16} color={color} />
@@ -330,7 +340,7 @@ const DetailModal = ({
               <View style={[dm.pkgCard, { backgroundColor: color + '10', borderColor: color + '30' }]}>
                 <Ionicons name="cube-outline" size={16} color={color} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[dm.pkgLabel, { color: theme.hint }]}>PACKAGE</Text>
+                  <Text style={[dm.pkgLabel, { color: theme.hint }]}>{t('incomingDeliveryQueue.package')}</Text>
                   <Text style={[dm.pkgDesc, { color: theme.foreground }]}>{req.packageDescription}</Text>
                 </View>
               </View>
@@ -341,7 +351,7 @@ const DetailModal = ({
               <View style={dm.routeRow}>
                 <View style={[dm.routeDot, { backgroundColor: CA }]} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[dm.routeLabel, { color: theme.hint }]}>PICKUP</Text>
+                  <Text style={[dm.routeLabel, { color: theme.hint }]}>{t('incomingDeliveryQueue.pickup')}</Text>
                   <Text style={[dm.routeAddr,  { color: theme.foreground }]}>{req.pickupAddress}</Text>
                   {req.pickupContact && (
                     <Text style={[dm.routeContact, { color: theme.hint }]}>{req.pickupContact}</Text>
@@ -352,7 +362,7 @@ const DetailModal = ({
               <View style={dm.routeRow}>
                 <View style={[dm.routeDot, { backgroundColor: '#E05555' }]} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[dm.routeLabel, { color: theme.hint }]}>DROP-OFF</Text>
+                  <Text style={[dm.routeLabel, { color: theme.hint }]}>{t('incomingDeliveryQueue.dropoff')}</Text>
                   <Text style={[dm.routeAddr,  { color: theme.foreground }]}>{req.dropoffAddress}</Text>
                   {req.dropoffContact && (
                     <Text style={[dm.routeContact, { color: theme.hint }]}>{req.dropoffContact}</Text>
@@ -375,7 +385,7 @@ const DetailModal = ({
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
                     <Ionicons name="shield-checkmark" size={11} color="#5DAA72" />
-                    <Text style={[dm.cVerified, { color: '#5DAA72' }]}>Verified customer</Text>
+                    <Text style={[dm.cVerified, { color: '#5DAA72' }]}>{t('incomingDeliveryQueue.verifiedCustomer')}</Text>
                   </View>
                 </View>
               </View>
@@ -385,7 +395,7 @@ const DetailModal = ({
             {loadingWallet ? (
               <View style={[ws.wrap, { borderColor: theme.border, backgroundColor: theme.backgroundAlt }]}>
                 <ActivityIndicator color={color} size="small" />
-                <Text style={[ws.title, { color: theme.hint }]}>Checking wallet…</Text>
+                <Text style={[ws.title, { color: theme.hint }]}>{t('incomingDeliveryQueue.checkingWallet')}</Text>
               </View>
             ) : (
               <WalletStrip
@@ -401,7 +411,7 @@ const DetailModal = ({
               <View style={[dm.expiredBar, { backgroundColor: '#E05555' + '12', borderColor: '#E05555' + '35' }]}>
                 <Ionicons name="time-outline" size={14} color="#E05555" />
                 <Text style={[dm.expiredTxt, { color: '#E05555' }]}>
-                  Timer expired — delivery may still be available. Try accepting!
+                  {t('incomingDeliveryQueue.timerExpiredMsg')}
                 </Text>
               </View>
             )}
@@ -417,7 +427,7 @@ const DetailModal = ({
                 activeOpacity={0.75}
               >
                 <Ionicons name="close-circle-outline" size={20} color={theme.hint} />
-                <Text style={[dm.declineTxt, { color: theme.hint }]}>Decline</Text>
+                <Text style={[dm.declineTxt, { color: theme.hint }]}>{t('incomingDeliveryQueue.decline')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -435,13 +445,13 @@ const DetailModal = ({
                   <>
                     <Ionicons name="checkmark-circle" size={22} color="#080C18" />
                     <Text style={dm.acceptTxt}>
-                      {req.expired ? 'Try Accept' : 'Accept'} · ₦{fmt(req.estimatedFee)}
+                      {req.expired ? t('incomingDeliveryQueue.tryAccept') : t('incomingDeliveryQueue.accept')} · {formatMoney(req.estimatedFee)}
                     </Text>
                   </>
                 ) : (
                   <>
                     <Ionicons name="wallet-outline" size={20} color={theme.hint} />
-                    <Text style={[dm.acceptTxt, { color: theme.hint }]}>Top Up First</Text>
+                    <Text style={[dm.acceptTxt, { color: theme.hint }]}>{t('incomingDeliveryQueue.topUpFirst')}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -501,6 +511,8 @@ const dm = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function IncomingDeliveryQueueScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
   const initReq         = route?.params?.initialRequest;
@@ -621,15 +633,15 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
       actingRef.current.delete(req.id);
       setAccepting(false);
       const status  = err?.status ?? err?.statusCode;
-      const message = err?.message ?? 'This delivery may no longer be available.';
+      const message = err?.message ?? t('incomingDeliveryQueue.deliveryUnavailable');
 
       if (status === 402) {
-        Alert.alert('Top-Up Required 💰', message, [
-          { text: 'Dismiss', style: 'cancel' },
-          { text: 'Top Up', onPress: () => navigation.navigate('EarningsHome') },
+        Alert.alert(t('incomingDeliveryQueue.topUpRequiredTitle'), message, [
+          { text: t('incomingDeliveryQueue.dismiss'), style: 'cancel' },
+          { text: t('incomingDeliveryQueue.topUp'), onPress: () => navigation.navigate('EarningsHome') },
         ]);
       } else {
-        Alert.alert('Could not accept', message);
+        Alert.alert(t('incomingDeliveryQueue.couldNotAccept'), message);
         setRequests(prev => prev.filter(r => r.id !== req.id));
       }
     }
@@ -676,10 +688,10 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
         </TouchableOpacity>
 
         <View style={{ flex: 1, marginLeft: 14 }}>
-          <Text style={[s.headerTitle, { color: theme.foreground }]}>Incoming Deliveries</Text>
+          <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('incomingDeliveryQueue.headerTitle')}</Text>
           <Text style={[s.headerSub, { color: theme.hint }]}>
-            {activeCount} active{expiredCount > 0 ? `  ·  ${expiredCount} expired` : ''}
-            {requests.length > 1 ? '  ·  Scroll to compare' : ''}
+            {t('incomingDeliveryQueue.activeCount', { count: activeCount })}{expiredCount > 0 ? t('incomingDeliveryQueue.expiredCountSuffix', { count: expiredCount }) : ''}
+            {requests.length > 1 ? t('incomingDeliveryQueue.scrollToCompareSuffix') : ''}
           </Text>
         </View>
 
@@ -696,7 +708,7 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
             onPress={dismissExpired}
             activeOpacity={0.8}
           >
-            <Text style={[s.clearTxt, { color: '#E05555' }]}>Clear expired</Text>
+            <Text style={[s.clearTxt, { color: '#E05555' }]}>{t('incomingDeliveryQueue.clearExpired')}</Text>
           </TouchableOpacity>
         )}
       </Animated.View>
@@ -710,7 +722,7 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
         >
           <Ionicons name="wallet-outline" size={14} color="#E05555" />
           <Text style={[s.walletBannerTxt, { color: '#E05555' }]}>
-            Low wallet balance (₦{fmt(walletBal)}) — some deliveries locked
+            {t('incomingDeliveryQueue.lowWalletBanner', { amount: formatMoney(walletBal) })}
           </Text>
           <Ionicons name="arrow-forward" size={14} color="#E05555" />
         </TouchableOpacity>
@@ -721,7 +733,7 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
         <View style={[s.hintStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
           <Ionicons name="swap-vertical-outline" size={13} color={theme.hint} />
           <Text style={[s.hintTxt, { color: theme.hint }]}>
-            Highest-paying deliveries shown first. Tap any card to see full details.
+            {t('incomingDeliveryQueue.hintStripTxt')}
           </Text>
         </View>
       )}
@@ -737,9 +749,9 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
               <View style={[s.emptyIcon, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                 <Ionicons name="cube-outline" size={36} color={theme.hint} />
               </View>
-              <Text style={[s.emptyTitle, { color: theme.foreground }]}>No pending deliveries</Text>
+              <Text style={[s.emptyTitle, { color: theme.foreground }]}>{t('incomingDeliveryQueue.emptyTitle')}</Text>
               <Text style={[s.emptySub,   { color: theme.hint }]}>
-                New delivery requests will appear here
+                {t('incomingDeliveryQueue.emptySub')}
               </Text>
             </View>
           )}
@@ -764,8 +776,8 @@ export default function IncomingDeliveryQueueScreen({ route, navigation }) {
         <View style={s.acceptingOverlay}>
           <View style={[s.acceptingCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
             <ActivityIndicator color={CA} size="large" />
-            <Text style={[s.acceptingTxt, { color: CA }]}>Accepting delivery…</Text>
-            <Text style={[s.acceptingSub, { color: theme.hint }]}>Connecting you to the customer</Text>
+            <Text style={[s.acceptingTxt, { color: CA }]}>{t('incomingDeliveryQueue.acceptingDelivery')}</Text>
+            <Text style={[s.acceptingSub, { color: theme.hint }]}>{t('incomingDeliveryQueue.connectingToCustomer')}</Text>
           </View>
         </View>
       )}

@@ -11,6 +11,8 @@ import { LinearGradient }    from 'expo-linear-gradient';
 import { Ionicons }          from '@expo/vector-icons';
 import { SafeAreaView }      from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
+import { useTranslation }    from 'react-i18next';
 import { useScrollY }        from '../../context/ScrollContext';
 import { rideAPI, deliveryAPI } from '../../services/api';
 
@@ -29,18 +31,20 @@ const G = {
 };
 
 const RIDE_STATUS = {
-  COMPLETED: { color: GREEN, icon: 'checkmark-circle-outline', label: 'Completed' },
-  CANCELLED: { color: RED,   icon: 'close-circle-outline',     label: 'Cancelled' },
+  COMPLETED: { color: GREEN, icon: 'checkmark-circle-outline', labelKey: 'historyScreen.statusCompleted' },
+  CANCELLED: { color: RED,   icon: 'close-circle-outline',     labelKey: 'historyScreen.statusCancelled' },
 };
 const DEL_STATUS = {
-  DELIVERED: { color: TEAL, icon: 'checkmark-circle-outline', label: 'Delivered' },
-  CANCELLED: { color: RED,  icon: 'close-circle-outline',     label: 'Cancelled'  },
+  DELIVERED: { color: TEAL, icon: 'checkmark-circle-outline', labelKey: 'historyScreen.statusDelivered' },
+  CANCELLED: { color: RED,  icon: 'close-circle-outline',     labelKey: 'historyScreen.statusCancelled'  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RIDE CARD
 // ─────────────────────────────────────────────────────────────────────────────
 const RideCard = ({ item, theme, mode, onPress }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const cfg  = RIDE_STATUS[item.status] ?? RIDE_STATUS.COMPLETED;
   const date = new Date(item.requestedAt).toLocaleDateString('en-NG',{ day:'numeric', month:'short', year:'numeric' });
   const time = new Date(item.requestedAt).toLocaleTimeString('en-NG',{ hour:'2-digit', minute:'2-digit' });
@@ -65,12 +69,12 @@ const RideCard = ({ item, theme, mode, onPress }) => {
           <Ionicons name="car-outline" size={18} color={cfg.color} />
         </View>
         <View style={{ flex:1 }}>
-          <Text style={[rc.typeLabel, { color: cfg.color }]}>RIDE</Text>
+          <Text style={[rc.typeLabel, { color: cfg.color }]}>{t('historyScreen.rideBadge')}</Text>
           <Text style={[rc.date, { color: theme.hint }]}>{date} · {time}</Text>
         </View>
         <View style={[rc.statusPill, { backgroundColor: cfg.color + '18', borderColor: cfg.color + '30', borderWidth:1 }]}>
           <Ionicons name={cfg.icon} size={10} color={cfg.color} />
-          <Text style={[rc.statusTxt, { color: cfg.color }]}>{cfg.label}</Text>
+          <Text style={[rc.statusTxt, { color: cfg.color }]}>{t(cfg.labelKey)}</Text>
         </View>
       </View>
 
@@ -98,7 +102,7 @@ const RideCard = ({ item, theme, mode, onPress }) => {
         </View>
         <View style={[rc.footerDivider, { backgroundColor: G.border(mode) }]} />
         <Text style={[rc.fareAmt, { color: item.status === 'CANCELLED' ? RED : theme.foreground }]}>
-          {item.status === 'CANCELLED' ? '—' : `₦${Number(fare).toLocaleString('en-NG',{ maximumFractionDigits:0 })}`}
+          {item.status === 'CANCELLED' ? '—' : formatMoney(fare)}
         </Text>
         {item.rating && (
           <>
@@ -146,6 +150,8 @@ const rc = StyleSheet.create({
 // DELIVERY CARD
 // ─────────────────────────────────────────────────────────────────────────────
 const DeliveryCard = ({ item, theme, mode, onPress }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const cfg  = DEL_STATUS[item.status] ?? DEL_STATUS.DELIVERED;
   const date = new Date(item.requestedAt).toLocaleDateString('en-NG',{ day:'numeric', month:'short', year:'numeric' });
   const time = new Date(item.requestedAt).toLocaleTimeString('en-NG',{ hour:'2-digit', minute:'2-digit' });
@@ -169,12 +175,12 @@ const DeliveryCard = ({ item, theme, mode, onPress }) => {
           <Ionicons name="cube-outline" size={18} color={TEAL} />
         </View>
         <View style={{ flex:1 }}>
-          <Text style={[dc.typeLabel, { color: TEAL }]}>DELIVERY</Text>
+          <Text style={[dc.typeLabel, { color: TEAL }]}>{t('historyScreen.deliveryBadge')}</Text>
           <Text style={[dc.date, { color: theme.hint }]}>{date} · {time}</Text>
         </View>
         <View style={[dc.statusPill, { backgroundColor: cfg.color + '18', borderColor: cfg.color + '30', borderWidth:1 }]}>
           <Ionicons name={cfg.icon} size={10} color={cfg.color} />
-          <Text style={[dc.statusTxt, { color: cfg.color }]}>{cfg.label}</Text>
+          <Text style={[dc.statusTxt, { color: cfg.color }]}>{t(cfg.labelKey)}</Text>
         </View>
       </View>
 
@@ -209,7 +215,7 @@ const DeliveryCard = ({ item, theme, mode, onPress }) => {
         </View>
         <View style={[dc.footerDivider, { backgroundColor: G.border(mode) }]} />
         <Text style={[dc.fareAmt, { color: item.status === 'CANCELLED' ? RED : theme.foreground }]}>
-          {item.status === 'CANCELLED' ? '—' : `₦${Number(fee).toLocaleString('en-NG',{ maximumFractionDigits:0 })}`}
+          {item.status === 'CANCELLED' ? '—' : formatMoney(fee)}
         </Text>
         {item.partner && (
           <View style={dc.partnerChip}>
@@ -251,15 +257,18 @@ const dc = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // EMPTY STATE
 // ─────────────────────────────────────────────────────────────────────────────
-const EmptyState = ({ icon, label, theme, mode }) => (
+const EmptyState = ({ icon, label, theme, mode }) => {
+  const { t } = useTranslation();
+  return (
   <View style={{ alignItems:'center', paddingTop:80, gap:14 }}>
     <View style={[em.circle, { backgroundColor: G.icon(mode), borderColor: G.border(mode) }]}>
       <Ionicons name={icon} size={32} color={theme.hint} />
     </View>
     <Text style={[em.title, { color: theme.foreground }]}>{label}</Text>
-    <Text style={[em.sub, { color: theme.hint }]}>Your history will appear here</Text>
+    <Text style={[em.sub, { color: theme.hint }]}>{t('historyScreen.yourHistoryWillAppearHere')}</Text>
   </View>
-);
+  );
+};
 const em = StyleSheet.create({
   circle: { width:70, height:70, borderRadius:22, borderWidth:1, justifyContent:'center', alignItems:'center' },
   title:  { fontSize:18, fontWeight:'800' },
@@ -275,7 +284,10 @@ const ListHeader = ({
   tab, setTab,
   rideStats, delStats,
   loading, navigation,
-}) => (
+}) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
+  return (
   <SafeAreaView edges={['top','left','right']} style={{ backgroundColor:'transparent' }}>
     {/* ── Header row with back button ── */}
     <View style={[lh.header, { borderBottomColor: G.border(mode) }]}>
@@ -292,8 +304,8 @@ const ListHeader = ({
       </TouchableOpacity>
 
       <View style={{ flex:1 }}>
-        <Text style={[lh.title, { color: theme.foreground }]}>History</Text>
-        <Text style={[lh.sub, { color: theme.hint }]}>Your rides and deliveries</Text>
+        <Text style={[lh.title, { color: theme.foreground }]}>{t('historyScreen.historyTitle')}</Text>
+        <Text style={[lh.sub, { color: theme.hint }]}>{t('historyScreen.historySub')}</Text>
       </View>
     </View>
 
@@ -314,7 +326,7 @@ const ListHeader = ({
             <StatPill value={rideStats.total}     label="Total"     color={GREEN} />
             <View style={[lh.statDiv, { backgroundColor: G.border(mode) }]} />
             <StatPill
-              value={`₦${rideStats.spent.toLocaleString('en-NG',{ maximumFractionDigits:0 })}`}
+              value={formatMoney(rideStats.spent)}
               label="Spent" color={GREEN}
             />
           </>
@@ -325,7 +337,7 @@ const ListHeader = ({
             <StatPill value={delStats.total}     label="Total"     color={TEAL} />
             <View style={[lh.statDiv, { backgroundColor: G.border(mode) }]} />
             <StatPill
-              value={`₦${delStats.spent.toLocaleString('en-NG',{ maximumFractionDigits:0 })}`}
+              value={formatMoney(delStats.spent)}
               label="Spent" color={TEAL}
             />
           </>
@@ -336,8 +348,8 @@ const ListHeader = ({
     {/* ── Tab row ── */}
     <View style={[lh.tabRow, { borderBottomColor: G.border(mode) }]}>
       {[
-        { key:'rides',      label:'Rides',      count: rideStats.total, color: GREEN },
-        { key:'deliveries', label:'Deliveries', count: delStats.total,  color: TEAL  },
+        { key:'rides',      label: t('historyScreen.tabRides'),      count: rideStats.total, color: GREEN },
+        { key:'deliveries', label: t('historyScreen.tabDeliveries'), count: delStats.total,  color: TEAL  },
       ].map(t => (
         <TouchableOpacity
           key={t.key}
@@ -357,7 +369,8 @@ const ListHeader = ({
     {/* Top padding for card list */}
     <View style={{ height: 14 }} />
   </SafeAreaView>
-);
+  );
+};
 
 const lh = StyleSheet.create({
   header:     { flexDirection:'row', alignItems:'center', gap:12, paddingHorizontal:20, paddingVertical:14, borderBottomWidth:1 },
@@ -378,6 +391,8 @@ const lh = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const darkMode = mode === 'dark';
   const scrollY  = useScrollY();
 
@@ -519,7 +534,7 @@ export default function HistoryScreen({ navigation }) {
                   : null
               }
               ListEmptyComponent={
-                <EmptyState icon="car-outline" label="No rides yet" theme={theme} mode={mode} />
+                <EmptyState icon="car-outline" label={t('historyScreen.noRidesYet')} theme={theme} mode={mode} />
               }
             />
           ) : (
@@ -550,7 +565,7 @@ export default function HistoryScreen({ navigation }) {
                   : null
               }
               ListEmptyComponent={
-                <EmptyState icon="cube-outline" label="No deliveries yet" theme={theme} mode={mode} />
+                <EmptyState icon="cube-outline" label={t('historyScreen.noDeliveriesYet')} theme={theme} mode={mode} />
               }
             />
           )}

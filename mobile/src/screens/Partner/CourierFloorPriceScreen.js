@@ -8,6 +8,8 @@ import {
 import { Ionicons }            from '@expo/vector-icons';
 import { useSafeAreaInsets }   from 'react-native-safe-area-context';
 import { useTheme }            from '../../context/ThemeContext';
+import { useCurrency }         from '../../context/CurrencyContext';
+import { useTranslation }      from 'react-i18next';
 import { partnerAPI, rideAPI } from '../../services/api';
 
 const COURIER_ACCENT = '#34D399';
@@ -66,6 +68,7 @@ const ir = StyleSheet.create({
 });
 
 const MarkupBar = ({ pct, theme }) => {
+  const { t } = useTranslation();
   const ratio = Math.min(pct, 30) / 30;
   const color = pct > 25 ? RED : pct > 15 ? '#FFB800' : GREEN;
   return (
@@ -74,7 +77,7 @@ const MarkupBar = ({ pct, theme }) => {
         <View style={[mb.fill, { width: `${ratio * 100}%`, backgroundColor: color }]} />
       </View>
       <Text style={[mb.label, { color }]}>
-        {pct <= 0 ? 'Platform rate' : `+${pct.toFixed(1)}% above platform`}
+        {pct <= 0 ? t('floorPricePartner.platformRate') : t('floorPricePartner.abovePlatform', { pct: pct.toFixed(1) })}
       </Text>
     </View>
   );
@@ -91,6 +94,8 @@ const mb = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function CourierFloorPriceScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney, currencySymbol } = useCurrency();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
 
@@ -201,12 +206,12 @@ export default function CourierFloorPriceScreen({ navigation }) {
     Keyboard.dismiss();
     if (enabled && (!floorNum || floorNum < 100)) {
       shake();
-      Alert.alert('Invalid Amount', 'Please enter a floor price of at least ₦100.');
+      Alert.alert(t('floorPricePartner.invalidAmount'), t('floorPricePartner.enterFloorAtLeast', { amount: formatMoney(100) })); // NOTE: 100 is an NG-specific minimum business rule, not just a currency swap
       return;
     }
     const saveValue = enabled ? effectiveFloor : 0;
     if (!platformEst && saveValue > 0) {
-      Alert.alert('Not ready', 'Platform rates are still loading. Please wait a moment.');
+      Alert.alert(t('floorPricePartner.notReady'), t('floorPricePartner.ratesLoading'));
       return;
     }
     setSaving(true);
@@ -217,14 +222,14 @@ export default function CourierFloorPriceScreen({ navigation }) {
           : 1.0,
       });
       Alert.alert(
-        saveValue > 0 ? 'Floor Price Set ✅' : 'Floor Price Disabled',
+        saveValue > 0 ? t('floorPricePartner.floorSetTitle') : t('floorPricePartner.floorDisabledTitle'),
         saveValue > 0
-          ? `Customers will see your minimum fee of ₦${saveValue.toLocaleString('en-NG')} when booking a delivery.`
-          : 'You will now receive deliveries at the standard platform rate.',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
+          ? t('floorPricePartner.floorSetMsg', { amount: formatMoney(saveValue) })
+          : t('floorPricePartner.floorDisabledMsg'),
+        [{ text: t('deleteAccount.ok'), onPress: () => navigation.goBack() }]
       );
     } catch (err) {
-      Alert.alert('Error', err?.message ?? 'Failed to save. Please try again.');
+      Alert.alert(t('common.error'), err?.message ?? t('floorPricePartner.saveError'));
     } finally {
       setSaving(false);
     }
@@ -249,13 +254,13 @@ export default function CourierFloorPriceScreen({ navigation }) {
           <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={[s.headerTitle, { color: theme.foreground }]}>Floor Price</Text>
-          <Text style={[s.headerSub,   { color: theme.hint }]}>Set your minimum delivery fee</Text>
+          <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('floorPricePartner.headerTitle')}</Text>
+          <Text style={[s.headerSub,   { color: theme.hint }]}>{t('floorPricePartner.headerSub')}</Text>
         </View>
         {enabled && floorNum > 0 && (
           <View style={[s.activePill, { backgroundColor: COURIER_ACCENT + '20', borderColor: COURIER_ACCENT + '50' }]}>
             <View style={[s.activeDot, { backgroundColor: COURIER_ACCENT }]} />
-            <Text style={[s.activeTxt, { color: COURIER_ACCENT }]}>ACTIVE</Text>
+            <Text style={[s.activeTxt, { color: COURIER_ACCENT }]}>{t('floorPricePartner.active')}</Text>
           </View>
         )}
       </View>
@@ -283,14 +288,14 @@ export default function CourierFloorPriceScreen({ navigation }) {
             <View style={[s.card, { backgroundColor: inputBg, borderColor: COURIER_ACCENT + '25' }]}>
               <View style={s.cardTitleRow}>
                 <Ionicons name="information-circle" size={16} color={COURIER_ACCENT} />
-                <Text style={[s.cardTitle, { color: COURIER_ACCENT }]}>How Floor Pricing Works</Text>
+                <Text style={[s.cardTitle, { color: COURIER_ACCENT }]}>{t('floorPricePartner.howItWorksTitle')}</Text>
               </View>
               <Text style={[s.cardBody, { color: theme.hint }]}>
-                Customers booking a delivery will see your floor price. If they choose you, the higher of{' '}
-                <Text style={{ color: theme.foreground, fontWeight: '700' }}>your floor</Text> or the{' '}
-                <Text style={{ color: theme.foreground, fontWeight: '700' }}>platform estimate</Text> applies.
-                Maximum markup is <Text style={{ color: COURIER_ACCENT, fontWeight: '800' }}>+30%</Text> above platform rate.
-                Platform takes <Text style={{ color: COURIER_ACCENT, fontWeight: '800' }}>{Math.round(commissionRate * 100)}% commission</Text> + booking fee.
+                {t('floorPricePartner.howItWorksBody1')}{' '}
+                <Text style={{ color: theme.foreground, fontWeight: '700' }}>{t('floorPricePartner.yourFloor')}</Text> {t('floorPricePartner.orThe')}{' '}
+                <Text style={{ color: theme.foreground, fontWeight: '700' }}>{t('floorPricePartner.platformEstimate')}</Text> {t('floorPricePartner.applies')}
+                {t('floorPricePartner.maxMarkup')} <Text style={{ color: COURIER_ACCENT, fontWeight: '800' }}>+30%</Text> {t('floorPricePartner.abovePlatformRate')}
+                {t('floorPricePartner.platformTakes')} <Text style={{ color: COURIER_ACCENT, fontWeight: '800' }}>{t('floorPricePartner.commissionPct', { pct: Math.round(commissionRate * 100) })}</Text> {t('floorPricePartner.plusBookingFee')}
               </Text>
             </View>
 
@@ -298,9 +303,9 @@ export default function CourierFloorPriceScreen({ navigation }) {
             <View style={[s.card, { backgroundColor: inputBg, borderColor: inputBorder }]}>
               <View style={s.toggleRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.toggleLabel, { color: theme.foreground }]}>Enable Floor Price</Text>
+                  <Text style={[s.toggleLabel, { color: theme.foreground }]}>{t('floorPricePartner.enableFloorPrice')}</Text>
                   <Text style={[s.toggleSub, { color: theme.hint }]}>
-                    {enabled ? 'Your floor price is shown to customers' : 'Accept deliveries at the platform rate'}
+                    {enabled ? t('floorPricePartner.floorShown') : t('floorPricePartner.acceptPlatformRate')}
                   </Text>
                 </View>
                 <Switch
@@ -316,18 +321,18 @@ export default function CourierFloorPriceScreen({ navigation }) {
             {/* ── Input ── */}
             {enabled && (
               <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
-                <SectionLabel text="YOUR MINIMUM FEE" theme={theme} />
+                <SectionLabel text={t('floorPricePartner.yourMinimumFee')} theme={theme} />
                 <View style={[s.inputCard, {
                   backgroundColor: inputBg,
                   borderColor: isClamped ? RED + '60' : floorNum > 0 ? COURIER_ACCENT + '60' : inputBorder,
                 }]}>
-                  <Text style={[s.currency, { color: COURIER_ACCENT }]}>₦</Text>
+                  <Text style={[s.currency, { color: COURIER_ACCENT }]}>{currencySymbol}</Text>
                   <TextInput
                     style={[s.input, { color: theme.foreground }]}
                     value={floorInput}
                     onChangeText={setFloorInput}
                     keyboardType="numeric"
-                    placeholder="e.g. 800"
+                    placeholder={t('floorPricePartner.placeholderExample')}
                     placeholderTextColor={theme.hint}
                     returnKeyType="done"
                     onSubmitEditing={Keyboard.dismiss}
@@ -344,7 +349,7 @@ export default function CourierFloorPriceScreen({ navigation }) {
                   <View style={[s.clampWarn, { backgroundColor: RED + '12', borderColor: RED + '40' }]}>
                     <Ionicons name="warning-outline" size={14} color={RED} />
                     <Text style={[s.clampTxt, { color: RED }]}>
-                      Capped at ₦{clampedMax.toLocaleString('en-NG')} (+30% max). Your effective floor will be ₦{clampedMax.toLocaleString('en-NG')}.
+                      {t('floorPricePartner.cappedAt', { amount: formatMoney(clampedMax) })}
                     </Text>
                   </View>
                 )}
@@ -358,20 +363,20 @@ export default function CourierFloorPriceScreen({ navigation }) {
             {/* ── Earnings preview ── */}
             {platformEst && (
               <>
-                <SectionLabel text={`EARNINGS PREVIEW • ${SAMPLE_KM}KM ${vehicleType} • ${SAMPLE_WEIGHT}KG`} theme={theme} />
+                <SectionLabel text={t('floorPricePartner.earningsPreview', { km: SAMPLE_KM, vehicleType, weight: SAMPLE_WEIGHT })} theme={theme} />
                 <View style={[s.card, { backgroundColor: inputBg, borderColor: inputBorder }]}>
                   <InfoRow
                     icon="calculator-outline"
-                    label="Platform estimate"
-                    value={`₦${platformEst.toLocaleString('en-NG')}`}
+                    label={t('floorPricePartner.platformEstimateLabel')}
+                    value={formatMoney(platformEst)}
                     valueColor={theme.foreground}
                     theme={theme}
                   />
                   {enabled && effectiveFloor > platformEst && (
                     <InfoRow
                       icon="trending-up-outline"
-                      label="Your floor price"
-                      value={`₦${effectiveFloor.toLocaleString('en-NG')}`}
+                      label={t('floorPricePartner.yourFloorPriceLabel')}
+                      value={formatMoney(effectiveFloor)}
                       valueColor={COURIER_ACCENT}
                       theme={theme}
                     />
@@ -379,27 +384,27 @@ export default function CourierFloorPriceScreen({ navigation }) {
                   <View style={[s.divider, { backgroundColor: inputBorder }]} />
                   <InfoRow
                     icon="wallet-outline"
-                    label="Your net earnings"
-                    value={`₦${(partnerEarnings ?? 0).toLocaleString('en-NG')}`}
+                    label={t('floorPricePartner.yourNetEarnings')}
+                    value={formatMoney(partnerEarnings ?? 0)}
                     valueColor={GREEN}
                     theme={theme}
                   />
                   <Text style={[s.earningsNote, { color: theme.hint }]}>
-                    After {Math.round(commissionRate * 100)}% platform commission + ₦{bookingFee} booking fee.
+                    {t('floorPricePartner.afterCommission', { pct: Math.round(commissionRate * 100), fee: formatMoney(bookingFee) })}
                   </Text>
                 </View>
               </>
             )}
 
             {/* ── Rate table ── */}
-            <SectionLabel text="PLATFORM DELIVERY RATES (ADMIN-SET)" theme={theme} />
+            <SectionLabel text={t('floorPricePartner.platformRates')} theme={theme} />
             <View style={[s.card, { backgroundColor: inputBg, borderColor: inputBorder }]}>
               {[
-                { label: 'Base fee',        value: `₦${deliveryRates.baseFee}` },
-                { label: 'Per kilometre',   value: `₦${deliveryRates.perKm}/km` },
-                { label: 'Per kg (weight)', value: `₦${deliveryRates.weightFeePerKg}/kg` },
-                { label: 'Booking fee',     value: `₦${bookingFee} (${vehicleType})` },
-                { label: 'Commission',      value: `${Math.round(commissionRate * 100)}%` },
+                { label: t('floorPricePartner.baseFee'),        value: formatMoney(deliveryRates.baseFee) },
+                { label: t('floorPricePartner.perKm'),   value: t('floorPricePartner.perKmValue', { amount: formatMoney(deliveryRates.perKm) }) },
+                { label: t('floorPricePartner.perKgWeight'), value: t('floorPricePartner.perKgValue', { amount: formatMoney(deliveryRates.weightFeePerKg) }) },
+                { label: t('floorPricePartner.bookingFee'),     value: `${formatMoney(bookingFee)} (${vehicleType})` },
+                { label: t('floorPricePartner.commission'),      value: `${Math.round(commissionRate * 100)}%` },
               ].map((row, i, arr) => (
                 <View key={row.label}>
                   <View style={s.rateRow}>
@@ -410,7 +415,7 @@ export default function CourierFloorPriceScreen({ navigation }) {
                 </View>
               ))}
               <Text style={[s.earningsNote, { color: theme.hint, marginTop: 8 }]}>
-                Rates are set by admin and updated in real time.
+                {t('floorPricePartner.ratesRealTime')}
               </Text>
             </View>
 
@@ -426,7 +431,7 @@ export default function CourierFloorPriceScreen({ navigation }) {
                 : (
                   <>
                     <Ionicons name="checkmark-circle" size={20} color="#080C18" />
-                    <Text style={s.saveTxt}>{enabled ? 'Save Floor Price' : 'Save (No Floor)'}</Text>
+                    <Text style={s.saveTxt}>{enabled ? t('floorPricePartner.saveFloorPrice') : t('floorPricePartner.saveNoFloor')}</Text>
                   </>
                 )
               }

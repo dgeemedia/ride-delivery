@@ -8,6 +8,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+import { useCurrency } from '../../context/CurrencyContext';
+import { useTranslation } from 'react-i18next';
 import { walletAPI } from '../../services/api';
 
 const { height } = Dimensions.get('window');
@@ -36,6 +38,8 @@ const StepDots = ({ current, accent, border }) => (
 
 export default function TransferScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney, currencySymbol } = useCurrency();
+  const { t }     = useTranslation();
   const insets   = useSafeAreaInsets();
   const accent   = theme.accent;
   const isDark   = mode === 'dark';
@@ -75,19 +79,19 @@ export default function TransferScreen({ navigation }) {
     const phone = recipientPhone.trim();
     if (phone.length < 10) {
       shake();
-      Alert.alert('Invalid number', 'Enter a valid Nigerian phone number.');
+      Alert.alert(t('transfer.invalidNumber'), t('transfer.invalidNumberMsg'));
       return;
     }
     setLookingUp(true);
     try {
       const res  = await walletAPI.lookupUser(phone);
       const user = res?.data?.user;
-      if (!user) throw new Error('User not found');
+      if (!user) throw new Error(t('transfer.userNotFound'));
       setRecipientInfo({ name: `${user.firstName} ${user.lastName}`, phone });
       setStep(2);
     } catch (err) {
       shake();
-      Alert.alert('User Not Found', err?.response?.data?.message ?? 'No account linked to this number.');
+      Alert.alert(t('transfer.userNotFoundTitle'), err?.response?.data?.message ?? t('transfer.noAccountLinked'));
     } finally {
       setLookingUp(false);
     }
@@ -97,10 +101,10 @@ export default function TransferScreen({ navigation }) {
   const handleAmountNext = () => {
     Keyboard.dismiss();
     const num = parseFloat(amount);
-    if (!num || num < 50) { shake(); Alert.alert('Minimum', 'Minimum transfer is ₦50.'); return; }
+    if (!num || num < 50) { shake(); Alert.alert(t('transfer.minimum'), t('transfer.minTransferIs', { amount: formatMoney(50) })); return; } // NOTE: 50 is a fixed NG minimum-transfer business rule
     if (num > (walletBalance ?? 0)) {
       shake();
-      Alert.alert('Insufficient Balance', `Your balance is ₦${formatNGN(walletBalance ?? 0)}.`);
+      Alert.alert(t('transfer.insufficientBalance'), t('transfer.yourBalanceIs', { amount: formatMoney(walletBalance ?? 0) }));
       return;
     }
     setStep(3);
@@ -116,12 +120,12 @@ export default function TransferScreen({ navigation }) {
         note: note.trim() || undefined,
       });
       Alert.alert(
-        'Transfer Submitted ✅',
-        `₦${formatNGN(parseFloat(amount))} to ${recipientInfo.name} is pending admin approval.\n\nFunds are held from your balance and will be released to the recipient once approved.`,
-        [{ text: 'Done', onPress: () => navigation.goBack() }]
+        t('transfer.submittedTitle'),
+        t('transfer.submittedMsg', { amount: formatMoney(parseFloat(amount)), name: recipientInfo.name }),
+        [{ text: t('walletTopUp.done'), onPress: () => navigation.goBack() }]
       );
     } catch (err) {
-      Alert.alert('Transfer Failed', err?.response?.data?.message ?? 'Could not submit transfer. Please try again.');
+      Alert.alert(t('transfer.transferFailed'), err?.response?.data?.message ?? t('transfer.submitErrorMsg'));
     } finally {
       setSubmitting(false);
     }
@@ -133,7 +137,7 @@ export default function TransferScreen({ navigation }) {
   const btnBg   = isDark ? '#FFFFFF' : accent;
   const btnText = isDark ? '#000000' : '#FFFFFF';
 
-  const headerSub = step === 1 ? 'Find recipient' : step === 2 ? 'Enter amount' : 'Confirm transfer';
+  const headerSub = step === 1 ? t('transfer.findRecipient') : step === 2 ? t('transfer.enterAmountStep') : t('transfer.confirmTransfer');
 
   // ── KEY: KVO offset = safeArea top + measured header height ──────────────
   const kvoOffset = insets.top + headerH + (Platform.OS === 'android' ? 16 : 0);
@@ -158,7 +162,7 @@ export default function TransferScreen({ navigation }) {
           <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={[s.headerTitle, { color: theme.foreground }]}>Send Money</Text>
+          <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('transfer.headerTitle')}</Text>
           <Text style={[s.headerSub,   { color: theme.hint }]}>{headerSub}</Text>
         </View>
         <StepDots current={step} accent={accent} border={theme.border} />
@@ -177,14 +181,14 @@ export default function TransferScreen({ navigation }) {
           <View style={[s.noticeCard, { backgroundColor: accent + '10', borderColor: accent + '30' }]}>
             <Ionicons name="shield-checkmark-outline" size={15} color={accent} />
             <Text style={[s.noticeTxt, { color: theme.hint }]}>
-              Transfers are reviewed by admin before the recipient receives funds. Your balance is held instantly.
+              {t('transfer.noticeTxt')}
             </Text>
           </View>
 
           {/* Balance pill */}
           <View style={[s.balancePill, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-            <Text style={[s.balanceLbl, { color: theme.hint }]}>Balance</Text>
-            <Text style={[s.balanceAmt, { color: accent }]}>₦{formatNGN(balance)}</Text>
+            <Text style={[s.balanceLbl, { color: theme.hint }]}>{t('transfer.balance')}</Text>
+            <Text style={[s.balanceAmt, { color: accent }]}>{formatMoney(balance)}</Text>
           </View>
 
           <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
@@ -192,14 +196,14 @@ export default function TransferScreen({ navigation }) {
             {/* ── STEP 1: Phone lookup ─────────────────────────────────── */}
             {step === 1 && (
               <View>
-                <Text style={[s.label, { color: theme.hint }]}>RECIPIENT'S PHONE NUMBER</Text>
+                <Text style={[s.label, { color: theme.hint }]}>{t('transfer.recipientPhoneLabel')}</Text>
                 <View style={[s.fieldCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                   <Ionicons name="call-outline" size={16} color={theme.hint} />
                   <TextInput
                     ref={phoneRef}
                     style={[s.field, { color: theme.foreground }]}
                     value={recipientPhone}
-                    onChangeText={t => setRecipientPhone(t.replace(/\D/g, '').slice(0, 11))}
+                    onChangeText={val => setRecipientPhone(val.replace(/\D/g, '').slice(0, 11))}
                     keyboardType="phone-pad"
                     placeholder="08012345678"
                     placeholderTextColor={theme.hint}
@@ -218,15 +222,15 @@ export default function TransferScreen({ navigation }) {
                 <View style={[s.infoBox, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                   <View style={s.infoRow}>
                     <Ionicons name="people-outline" size={13} color={theme.hint} />
-                    <Text style={[s.infoTxt, { color: theme.hint }]}>Recipient must have a registered account</Text>
+                    <Text style={[s.infoTxt, { color: theme.hint }]}>{t('transfer.infoRegisteredAccount')}</Text>
                   </View>
                   <View style={s.infoRow}>
                     <Ionicons name="lock-closed-outline" size={13} color={theme.hint} />
-                    <Text style={[s.infoTxt, { color: theme.hint }]}>Transfer requires admin approval (1–2 hrs)</Text>
+                    <Text style={[s.infoTxt, { color: theme.hint }]}>{t('transfer.infoApproval')}</Text>
                   </View>
                   <View style={s.infoRow}>
                     <Ionicons name="cash-outline" size={13} color={accent} />
-                    <Text style={[s.infoTxt, { color: theme.hint }]}>Minimum ₦50 • No fee</Text>
+                    <Text style={[s.infoTxt, { color: theme.hint }]}>{t('transfer.infoMinimum', { amount: formatMoney(50) })}</Text>
                   </View>
                 </View>
 
@@ -241,7 +245,7 @@ export default function TransferScreen({ navigation }) {
                   {lookingUp
                     ? <ActivityIndicator color={recipientPhone.length >= 10 ? '#fff' : theme.hint} />
                     : <Text style={[s.nextBtnTxt, { color: recipientPhone.length >= 10 ? '#fff' : theme.hint }]}>
-                        Find Recipient →
+                        {t('transfer.findRecipientBtn')}
                       </Text>
                   }
                 </TouchableOpacity>
@@ -265,12 +269,12 @@ export default function TransferScreen({ navigation }) {
                   </TouchableOpacity>
                 </View>
 
-                <Text style={[s.label, { color: theme.hint }]}>AMOUNT TO SEND</Text>
+                <Text style={[s.label, { color: theme.hint }]}>{t('transfer.amountToSend')}</Text>
                 <View style={[s.amountCard, {
                   backgroundColor: theme.backgroundAlt,
                   borderColor: amtNum > 0 ? accent + '70' : theme.border,
                 }]}>
-                  <Text style={[s.currencySymbol, { color: accent }]}>₦</Text>
+                  <Text style={[s.currencySymbol, { color: accent }]}>{currencySymbol}</Text>
                   <TextInput
                     style={[s.amountInput, { color: theme.foreground }]}
                     value={amount}
@@ -301,20 +305,20 @@ export default function TransferScreen({ navigation }) {
                         onPress={() => setAmount(String(q))}
                       >
                         <Text style={[s.quickTxt, { color: sel ? '#fff' : theme.foreground }]}>
-                          ₦{q.toLocaleString()}
+                          {formatMoney(q)}
                         </Text>
                       </TouchableOpacity>
                     );
                   })}
                 </View>
 
-                <Text style={[s.label, { color: theme.hint }]}>NOTE (OPTIONAL)</Text>
+                <Text style={[s.label, { color: theme.hint }]}>{t('transfer.noteOptional')}</Text>
                 <View style={[s.noteField, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                   <TextInput
                     style={[s.field, { color: theme.foreground }]}
                     value={note}
-                    onChangeText={t => setNote(t.slice(0, 200))}
-                    placeholder="What's this for?"
+                    onChangeText={val => setNote(val.slice(0, 200))}
+                    placeholder={t('transfer.notePlaceholder')}
                     placeholderTextColor={theme.hint}
                     multiline
                     returnKeyType="done"
@@ -327,7 +331,7 @@ export default function TransferScreen({ navigation }) {
                   disabled={amtNum < 50 || amtNum > balance}
                 >
                   <Text style={[s.nextBtnTxt, { color: amtNum >= 50 && amtNum <= balance ? '#fff' : theme.hint }]}>
-                    Review →
+                    {t('transfer.reviewBtn')}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -337,15 +341,15 @@ export default function TransferScreen({ navigation }) {
             {step === 3 && (
               <View>
                 <View style={[s.confirmCard, { backgroundColor: theme.backgroundAlt, borderColor: accent + '30' }]}>
-                  <Text style={[s.confirmTitle, { color: theme.foreground }]}>Review Transfer</Text>
+                  <Text style={[s.confirmTitle, { color: theme.foreground }]}>{t('transfer.reviewTransfer')}</Text>
 
                   {[
-                    { label: 'To',          value: recipientInfo?.name,    color: accent    },
-                    { label: 'Phone',        value: recipientInfo?.phone,   color: undefined },
-                    { label: 'Amount',       value: `₦${formatNGN(amtNum)}`, color: accent  },
-                    { label: 'Fee',          value: 'FREE',                 color: '#5DAA72' },
-                    { label: 'They receive', value: `₦${formatNGN(amtNum)}`, color: accent  },
-                    ...(note ? [{ label: 'Note', value: note, color: undefined }] : []),
+                    { label: t('transfer.confirmTo'),          value: recipientInfo?.name,    color: accent    },
+                    { label: t('transfer.confirmPhone'),        value: recipientInfo?.phone,   color: undefined },
+                    { label: t('transfer.confirmAmount'),       value: formatMoney(amtNum), color: accent  },
+                    { label: t('transfer.confirmFee'),          value: t('walletTopUp.free'),                 color: '#5DAA72' },
+                    { label: t('transfer.confirmTheyReceive'), value: formatMoney(amtNum), color: accent  },
+                    ...(note ? [{ label: t('transfer.confirmNote'), value: note, color: undefined }] : []),
                   ].map(({ label, value, color }) => (
                     <View key={label} style={[s.confirmRow, { borderBottomColor: theme.border }]}>
                       <Text style={[s.confirmLbl, { color: theme.hint }]}>{label}</Text>
@@ -359,7 +363,7 @@ export default function TransferScreen({ navigation }) {
                 <View style={[s.pendingNote, { backgroundColor: '#A78BFA0D', borderColor: '#A78BFA30' }]}>
                   <Ionicons name="time-outline" size={16} color={theme.accent} />
                   <Text style={[s.pendingNoteTxt, { color: theme.hint }]}>
-                    This transfer will be held and reviewed by our team. The recipient will be credited once approved — typically within 1–2 hours.
+                    {t('transfer.pendingNoteTxt')}
                   </Text>
                 </View>
 
@@ -372,7 +376,7 @@ export default function TransferScreen({ navigation }) {
                     ? <ActivityIndicator color={btnText} />
                     : <>
                         <Ionicons name="paper-plane-outline" size={18} color={btnText} />
-                        <Text style={[s.nextBtnTxt, { color: btnText }]}>Send ₦{formatNGN(amtNum)}</Text>
+                        <Text style={[s.nextBtnTxt, { color: btnText }]}>{t('transfer.sendAmount', { amount: formatMoney(amtNum) })}</Text>
                       </>
                   }
                 </TouchableOpacity>

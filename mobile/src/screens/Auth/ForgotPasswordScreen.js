@@ -11,6 +11,7 @@ import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
 import { authAPI }           from '../../services/api';
+import { useTranslation }    from 'react-i18next';
 
 const { width, height } = Dimensions.get('window');
 const LOGO = require('../../../assets/diakite_dark.png');
@@ -89,6 +90,7 @@ const fi = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ForgotPasswordScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { t: translate } = useTranslation();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
 
@@ -133,7 +135,7 @@ export default function ForgotPasswordScreen({ navigation }) {
 
   const handleSubmit = async () => {
     if (!email.trim() || !email.includes('@')) {
-      setError('Please enter a valid email address.');
+      setError(translate('forgotPassword.invalidEmail'));
       return;
     }
     setError('');
@@ -170,9 +172,9 @@ export default function ForgotPasswordScreen({ navigation }) {
 
   // ── Step data (renamed from `step` to avoid Hermes reserved word clash) ───
   const RECOVERY_STEPS = [
-    { icon: 'mail-outline',      text: 'Open the email from Diakite'      },
-    { icon: 'link-outline',      text: 'Tap the "Reset Password" button'  },
-    { icon: 'lock-open-outline', text: 'Choose a new password'            },
+    { icon: 'mail-outline',      text: translate('forgotPassword.step1')      },
+    { icon: 'link-outline',      text: translate('forgotPassword.step2')  },
+    { icon: 'lock-open-outline', text: translate('forgotPassword.step3')            },
   ];
 
   return (
@@ -219,17 +221,17 @@ export default function ForgotPasswordScreen({ navigation }) {
             <View style={[s.pill, { backgroundColor: G.card(mode), borderColor: G.border(mode), marginBottom: SMALL ? 8 : 12 }]}>
               <View style={[s.pillDot, { backgroundColor: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)' }]} />
               <Text style={[s.eyebrow, { color: darkMode ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)' }]}>
-                {sent ? 'CHECK YOUR EMAIL' : 'ACCOUNT RECOVERY'}
+                {sent ? translate('forgotPassword.checkYourEmail') : translate('forgotPassword.accountRecovery')}
               </Text>
             </View>
 
             <Text style={[s.title, { color: theme.foreground, fontSize: TINY ? 26 : SMALL ? 28 : MEDIUM ? 31 : 34 }]}>
-              {sent ? 'Email sent!' : 'Forgot\npassword?'}
+              {sent ? translate('forgotPassword.emailSent') : translate('forgotPassword.titleForgot')}
             </Text>
             <Text style={[s.subtitle, { color: theme.hint, fontSize: TINY ? 12 : 13, marginTop: TINY ? 3 : 6 }]}>
               {sent
-                ? `We sent a reset link to\n${email}`
-                : "Enter your email and we'll send\nyou a reset link."}
+                ? translate('forgotPassword.resetLinkSentTo', { email })
+                : translate('forgotPassword.enterEmailSubtitle')}
             </Text>
           </Animated.View>
 
@@ -240,7 +242,7 @@ export default function ForgotPasswordScreen({ navigation }) {
               // ── Email form ───────────────────────────────────────────────
               <>
                 <FloatInput
-                  label="Email address"
+                  label={translate('forgotPassword.emailAddress')}
                   iconName="mail-outline"
                   value={email}
                   onChangeText={(t) => { setEmail(t); setError(''); }}
@@ -268,7 +270,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                   {loading
                     ? <ActivityIndicator color={theme.accentFg} />
                     : <>
-                        <Text style={[s.primaryBtnTxt, { color: theme.accentFg, fontSize: SMALL ? 13 : 14 }]}>Send Reset Link</Text>
+                        <Text style={[s.primaryBtnTxt, { color: theme.accentFg, fontSize: SMALL ? 13 : 14 }]}>{translate('forgotPassword.sendResetLink')}</Text>
                         <Ionicons name="arrow-forward" size={16} color={theme.accentFg} />
                       </>
                   }
@@ -284,8 +286,8 @@ export default function ForgotPasswordScreen({ navigation }) {
                     style={StyleSheet.absoluteFill}
                   />
                   <Text style={[s.altTxt, { color: theme.hint, fontSize: SMALL ? 12 : 13 }]}>
-                    Remember it?{'  '}
-                    <Text style={[s.altBold, { color: theme.foreground }]}>Back to Sign In</Text>
+                    {translate('forgotPassword.rememberIt')}{'  '}
+                    <Text style={[s.altBold, { color: theme.foreground }]}>{translate('forgotPassword.backToSignIn')}</Text>
                   </Text>
                 </TouchableOpacity>
               </>
@@ -322,7 +324,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                 <View style={[s.noteBox, { backgroundColor: darkMode ? 'rgba(245,158,11,0.10)' : 'rgba(245,158,11,0.08)', borderColor: 'rgba(245,158,11,0.25)', marginTop: SMALL ? 4 : 8, marginBottom: SMALL ? 18 : 24 }]}>
                   <Ionicons name="information-circle-outline" size={15} color="#F59E0B" />
                   <Text style={[s.noteTxt, { color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)' }]}>
-                    Can't find it? Check your spam or junk folder.
+                    {translate('forgotPassword.cantFindIt')}
                   </Text>
                 </View>
 
@@ -343,7 +345,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                     ? <ActivityIndicator color={theme.accentFg} />
                     : <>
                         <Ionicons name="refresh-outline" size={16} color={theme.accentFg} />
-                        <Text style={[s.primaryBtnTxt, { color: theme.accentFg, fontSize: SMALL ? 13 : 14 }]}>Resend Email</Text>
+                        <Text style={[s.primaryBtnTxt, { color: theme.accentFg, fontSize: SMALL ? 13 : 14 }]}>{translate('forgotPassword.resendEmail')}</Text>
                       </>
                   }
                 </TouchableOpacity>
@@ -358,8 +360,8 @@ export default function ForgotPasswordScreen({ navigation }) {
                     style={StyleSheet.absoluteFill}
                   />
                   <Text style={[s.altTxt, { color: theme.hint, fontSize: SMALL ? 12 : 13 }]}>
-                    Back to{'  '}
-                    <Text style={[s.altBold, { color: theme.foreground }]}>Sign In</Text>
+                    {translate('forgotPassword.backTo')}{'  '}
+                    <Text style={[s.altBold, { color: theme.foreground }]}>{translate('forgotPassword.signIn')}</Text>
                   </Text>
                 </TouchableOpacity>
               </>

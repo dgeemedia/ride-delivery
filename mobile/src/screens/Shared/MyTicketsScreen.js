@@ -7,15 +7,16 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useTranslation }    from 'react-i18next';
 import { supportAPI }        from '../../services/api';
 
 const { width } = Dimensions.get('window');
 
 const STATUS_META = {
-  open:        { label: 'Open',        color: '#C9A96E', icon: 'time-outline'              },
-  in_progress: { label: 'In Progress', color: '#4E8DBD', icon: 'reload-circle-outline'     },
-  resolved:    { label: 'Resolved',    color: '#5DAA72', icon: 'checkmark-circle-outline'  },
-  closed:      { label: 'Closed',      color: '#888',    icon: 'lock-closed-outline'        },
+  open:        { labelKey: 'myTickets.statusOpen',       color: '#C9A96E', icon: 'time-outline'              },
+  in_progress: { labelKey: 'myTickets.statusInProgress', color: '#4E8DBD', icon: 'reload-circle-outline'     },
+  resolved:    { labelKey: 'myTickets.statusResolved',   color: '#5DAA72', icon: 'checkmark-circle-outline'  },
+  closed:      { labelKey: 'myTickets.statusClosed',     color: '#888',    icon: 'lock-closed-outline'        },
 };
 
 const PRIORITY_COLOR = {
@@ -29,6 +30,7 @@ const CATEGORY_ICON = {
 };
 
 const TicketCard = ({ ticket, onPress, theme }) => {
+  const { t } = useTranslation();
   const meta  = STATUS_META[ticket.status] ?? STATUS_META.open;
   const pColor = PRIORITY_COLOR[ticket.priority] ?? '#888';
   const catIcon = CATEGORY_ICON[ticket.category] ?? 'help-circle-outline';
@@ -50,7 +52,7 @@ const TicketCard = ({ ticket, onPress, theme }) => {
         </View>
         <View style={[tc.statusBadge, { backgroundColor: meta.color + '15' }]}>
           <Ionicons name={meta.icon} size={11} color={meta.color} />
-          <Text style={[tc.statusLabel, { color: meta.color }]}>{meta.label}</Text>
+          <Text style={[tc.statusLabel, { color: meta.color }]}>{t(meta.labelKey)}</Text>
         </View>
       </View>
 
@@ -58,7 +60,7 @@ const TicketCard = ({ ticket, onPress, theme }) => {
 
       <View style={tc.footer}>
         <View style={[tc.priorityDot, { backgroundColor: pColor }]} />
-        <Text style={[tc.priorityTxt, { color: pColor }]}>{ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1)} priority</Text>
+        <Text style={[tc.priorityTxt, { color: pColor }]}>{t('myTickets.priorityLine', { priority: ticket.priority.charAt(0).toUpperCase() + ticket.priority.slice(1) })}</Text>
         <Text style={[tc.date, { color: theme.hint }]}>{date}</Text>
       </View>
     </TouchableOpacity>
@@ -82,6 +84,7 @@ const tc = StyleSheet.create({
 
 export default function MyTicketsScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const fadeA           = useRef(new Animated.Value(0)).current;
 
@@ -107,10 +110,10 @@ export default function MyTicketsScreen({ navigation }) {
   useEffect(() => { load(); }, [load]);
 
   const FILTERS = [
-    { value: '',           label: 'All'         },
-    { value: 'open',       label: 'Open'        },
-    { value: 'in_progress',label: 'In Progress' },
-    { value: 'resolved',   label: 'Resolved'    },
+    { value: '',           label: t('myTickets.filterAll')        },
+    { value: 'open',       label: t('myTickets.statusOpen')       },
+    { value: 'in_progress',label: t('myTickets.statusInProgress') },
+    { value: 'resolved',   label: t('myTickets.statusResolved')   },
   ];
 
   return (
@@ -127,7 +130,7 @@ export default function MyTicketsScreen({ navigation }) {
         >
           <Ionicons name="arrow-back" size={20} color={theme.foreground} />
         </TouchableOpacity>
-        <Text style={[s.title, { color: theme.foreground }]}>My Tickets</Text>
+        <Text style={[s.title, { color: theme.foreground }]}>{t('myTickets.headerTitle')}</Text>
         <TouchableOpacity
           style={[s.newBtn, { backgroundColor: theme.accent }]}
           onPress={() => navigation.navigate('SubmitTicket')}
@@ -180,9 +183,9 @@ export default function MyTicketsScreen({ navigation }) {
               <View style={[s.emptyIcon, { backgroundColor: theme.accent + '12' }]}>
                 <Ionicons name="chatbubble-ellipses-outline" size={28} color={theme.accent} />
               </View>
-              <Text style={[s.emptyTitle, { color: theme.foreground }]}>No tickets yet</Text>
+              <Text style={[s.emptyTitle, { color: theme.foreground }]}>{t('myTickets.emptyTitle')}</Text>
               <Text style={[s.emptySub, { color: theme.hint }]}>
-                {statusFilter ? `No ${statusFilter.replace('_', ' ')} tickets` : "Submit a ticket and we'll help you out"}
+                {statusFilter ? t('myTickets.emptyFiltered', { status: statusFilter.replace('_', ' ') }) : t('myTickets.emptySub')}
               </Text>
               <TouchableOpacity
                 style={[s.emptyBtn, { borderColor: theme.accent + '40', backgroundColor: theme.accent + '10' }]}
@@ -190,7 +193,7 @@ export default function MyTicketsScreen({ navigation }) {
                 activeOpacity={0.8}
               >
                 <Ionicons name="add" size={14} color={theme.accent} />
-                <Text style={[s.emptyBtnTxt, { color: theme.accent }]}>New Ticket</Text>
+                <Text style={[s.emptyBtnTxt, { color: theme.accent }]}>{t('myTickets.newTicket')}</Text>
               </TouchableOpacity>
             </View>
           ) : (

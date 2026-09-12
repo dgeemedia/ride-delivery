@@ -1,7 +1,14 @@
 // mobile/src/utils/formatters.js
 
+// Kept in sync with CurrencyContext.js's map — used here only as a fallback
+// for call sites that haven't been updated to use useCurrency() yet.
+const LOCALE_BY_CURRENCY = {
+  NGN: 'en-NG', GHS: 'en-GH', KES: 'en-KE', ZAR: 'en-ZA', USD: 'en-US', EUR: 'en-IE', GBP: 'en-GB',
+};
+
 export const formatCurrency = (amount, currency = 'NGN') => {
-  return new Intl.NumberFormat('en-NG', {
+  const locale = LOCALE_BY_CURRENCY[currency] || 'en-NG';
+  return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     minimumFractionDigits: 0,

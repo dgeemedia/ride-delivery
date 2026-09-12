@@ -12,6 +12,8 @@ import * as FileSystem       from 'expo-file-system/legacy';
 
 import { useAuth }  from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useTranslation } from 'react-i18next';
+import i18n         from '../../i18n';
 import { userAPI }  from '../../services/api';
 import api          from '../../services/api';
 
@@ -29,7 +31,7 @@ async function uploadToCloudinary(uri) {
 
   const res = await api.post('/upload/base64', { base64Data, folder: 'diakite/profiles' });
   const url = res?.data?.url ?? res?.url;
-  if (!url) throw new Error('Upload succeeded but no URL returned.');
+  if (!url) throw new Error(i18n.t('editProfile.uploadNoUrl'));
   return url;
 }
 
@@ -38,6 +40,7 @@ async function uploadToCloudinary(uri) {
 // ─────────────────────────────────────────────────────────────────────────────
 const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, editable = true }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [focused, setFocused] = useState(false);
   const labelY  = useRef(new Animated.Value(value ? 1 : 0)).current;
   const borderV = useRef(new Animated.Value(0)).current;
@@ -87,16 +90,16 @@ async function pickFromLibrary() {
       cropperCircleOverlay:   false,
       mediaType:              'photo',
       compressImageQuality:   0.82,
-      cropperChooseText:      'Save',    // ← replaces "Crop"
-      cropperCancelText:      'Cancel',
+      cropperChooseText:      i18n.t('editProfile.cropperSave'),
+      cropperCancelText:      i18n.t('common.cancel'),
     });
     return image.path;
   } catch (err) {
     if (err?.code === 'E_PICKER_CANCELLED') return null;
     Alert.alert(
-      'Permission Required',
-      'Please enable photo library access in your device Settings to change your profile photo.',
-      [{ text: 'OK' }]
+      i18n.t('editProfile.permissionRequired'),
+      i18n.t('editProfile.libraryPermissionMsg'),
+      [{ text: i18n.t('deleteAccount.ok') }]
     );
     return null;
   }
@@ -111,16 +114,16 @@ async function pickFromCamera() {
       cropperCircleOverlay:   false,
       mediaType:              'photo',
       compressImageQuality:   0.82,
-      cropperChooseText:      'Save',    // ← replaces "Crop"
-      cropperCancelText:      'Cancel',
+      cropperChooseText:      i18n.t('editProfile.cropperSave'),
+      cropperCancelText:      i18n.t('common.cancel'),
     });
     return image.path;
   } catch (err) {
     if (err?.code === 'E_PICKER_CANCELLED') return null;
     Alert.alert(
-      'Permission Required',
-      'Please enable camera access in your device Settings to take a photo.',
-      [{ text: 'OK' }]
+      i18n.t('editProfile.permissionRequired'),
+      i18n.t('editProfile.cameraPermissionMsg'),
+      [{ text: i18n.t('deleteAccount.ok') }]
     );
     return null;
   }
@@ -132,6 +135,7 @@ async function pickFromCamera() {
 export default function EditProfileScreen({ navigation }) {
   const { user, updateUser } = useAuth();
   const { theme, mode }      = useTheme();
+  const { t }                 = useTranslation();
   const insets               = useSafeAreaInsets();
 
   const [firstName,     setFirstName]     = useState(user?.firstName    ?? '');
@@ -161,24 +165,24 @@ export default function EditProfileScreen({ navigation }) {
 
   const handleAvatarPress = () => {
     Alert.alert(
-      'Profile Photo',
-      'How would you like to update your photo?',
+      t('editProfile.photoTitle'),
+      t('editProfile.photoMsg'),
       [
         {
-          text: 'Choose from Library',
+          text: t('editProfile.chooseFromLibrary'),
           onPress: async () => {
             const uri = await pickFromLibrary();
             if (uri) setImageLocalUri(uri);
           },
         },
         {
-          text: 'Take a Photo',
+          text: t('editProfile.takeAPhoto'),
           onPress: async () => {
             const uri = await pickFromCamera();
             if (uri) setImageLocalUri(uri);
           },
         },
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
       ],
       { cancelable: true }
     );
@@ -191,8 +195,8 @@ export default function EditProfileScreen({ navigation }) {
     imageLocalUri !== null;
 
   const handleSave = async () => {
-    if (!firstName.trim()) return Alert.alert('Required', 'First name cannot be empty.');
-    if (!lastName.trim())  return Alert.alert('Required', 'Last name cannot be empty.');
+    if (!firstName.trim()) return Alert.alert(t('editProfile.requiredTitle'), t('editProfile.firstNameEmpty'));
+    if (!lastName.trim())  return Alert.alert(t('editProfile.requiredTitle'), t('editProfile.lastNameEmpty'));
 
     setSaving(true);
     try {
@@ -220,8 +224,8 @@ export default function EditProfileScreen({ navigation }) {
       setTimeout(() => setSaved(false), 2400);
     } catch (err) {
       setUploading(false);
-      const msg = err?.response?.data?.message ?? err?.message ?? 'Could not update profile.';
-      Alert.alert('Update Failed', msg);
+      const msg = err?.response?.data?.message ?? err?.message ?? t('editProfile.updateFailedMsg');
+      Alert.alert(t('editProfile.updateFailedTitle'), msg);
     } finally {
       setSaving(false);
     }
@@ -253,7 +257,7 @@ export default function EditProfileScreen({ navigation }) {
         >
           <Ionicons name="arrow-back" size={18} color={theme.muted} />
         </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: theme.foreground }]}>Edit Profile</Text>
+        <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('editProfile.headerTitle')}</Text>
         <View style={{ width: 38 }} />
       </View>
 
@@ -296,27 +300,27 @@ export default function EditProfileScreen({ navigation }) {
                 </TouchableOpacity>
 
                 <Text style={[s.avatarHint, { color: theme.hint }]}>
-                  {imageLocalUri ? 'New photo selected — tap Save to apply' : 'Tap photo to update'}
+                  {imageLocalUri ? t('editProfile.newPhotoSelected') : t('editProfile.tapPhotoToUpdate')}
                 </Text>
 
                 {imageLocalUri && (
                   <View style={[s.pendingPill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '28' }]}>
                     <Ionicons name="checkmark-circle-outline" size={12} color={theme.accent} />
-                    <Text style={[s.pendingPillTxt, { color: theme.accent }]}>Photo ready to upload</Text>
+                    <Text style={[s.pendingPillTxt, { color: theme.accent }]}>{t('editProfile.photoReady')}</Text>
                   </View>
                 )}
               </View>
 
               {/* ── Personal details ── */}
-              <Text style={[s.sectionLabel, { color: theme.hint }]}>PERSONAL DETAILS</Text>
-              <FloatInput label="First Name" iconName="person-outline" value={firstName} onChangeText={setFirstName} />
-              <FloatInput label="Last Name"  iconName="person-outline" value={lastName}  onChangeText={setLastName}  />
-              <FloatInput label="Phone"      iconName="call-outline"   value={phone}     onChangeText={setPhone}     keyboardType="phone-pad" />
+              <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('editProfile.personalDetails')}</Text>
+              <FloatInput label={t('editProfile.firstName')} iconName="person-outline" value={firstName} onChangeText={setFirstName} />
+              <FloatInput label={t('editProfile.lastName')}  iconName="person-outline" value={lastName}  onChangeText={setLastName}  />
+              <FloatInput label={t('editProfile.phone')}     iconName="call-outline"   value={phone}     onChangeText={setPhone}     keyboardType="phone-pad" />
 
               {/* ── Account (read-only) ── */}
-              <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 8 }]}>ACCOUNT</Text>
-              <FloatInput label="Email" iconName="mail-outline" value={user?.email ?? ''} editable={false} />
-              <Text style={[s.fieldNote, { color: theme.hint }]}>Email cannot be changed. Contact support if needed.</Text>
+              <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 8 }]}>{t('editProfile.account')}</Text>
+              <FloatInput label={t('editProfile.email')} iconName="mail-outline" value={user?.email ?? ''} editable={false} />
+              <Text style={[s.fieldNote, { color: theme.hint }]}>{t('editProfile.emailNote')}</Text>
 
               {/* ── Save button ── */}
               <TouchableOpacity
@@ -333,7 +337,7 @@ export default function EditProfileScreen({ navigation }) {
                   <View style={s.btnRow}>
                     <ActivityIndicator color={saved ? '#FFFFFF' : onAccent} size="small" />
                     <Text style={[s.saveBtnTxt, { color: saved ? '#FFFFFF' : onAccent }]}>
-                      {uploading ? 'Uploading photo…' : 'Saving…'}
+                      {uploading ? t('editProfile.uploadingPhoto') : t('editProfile.saving')}
                     </Text>
                   </View>
                 ) : (
@@ -344,7 +348,7 @@ export default function EditProfileScreen({ navigation }) {
                       color={saved ? '#FFFFFF' : onAccent}
                     />
                     <Text style={[s.saveBtnTxt, { color: saved ? '#FFFFFF' : onAccent }]}>
-                      {saved ? 'Saved!' : 'Save Changes'}
+                      {saved ? t('editProfile.saved') : t('editProfile.saveChanges')}
                     </Text>
                   </View>
                 )}

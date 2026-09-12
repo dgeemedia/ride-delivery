@@ -23,7 +23,10 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
 import { useAuth }           from '../../context/AuthContext';
+import { useTranslation }    from 'react-i18next';
+import i18n                  from '../../i18n';
 import { walletAPI }         from '../../services/api';
 
 // Lazy-load native-only deps so web doesn't crash
@@ -38,13 +41,20 @@ const PAGE_SIZE  = 30;
 
 // ── TX meta ─────────────────────────────────────────────────────────────────
 const TX_META = {
-  CREDIT:     { icon: 'arrow-down-circle-outline', color: '#5DAA72', sign: '+', label: 'Credit'     },
-  DEBIT:      { icon: 'arrow-up-circle-outline',   color: '#E05555', sign: '-', label: 'Debit'      },
-  WITHDRAWAL: { icon: 'cash-outline',              color: '#FFB800', sign: '-', label: 'Withdrawal' },
-  REFUND:     { icon: 'refresh-circle-outline',    color: '#A78BFA', sign: '+', label: 'Refund'     },
+  CREDIT:     { icon: 'arrow-down-circle-outline', color: '#5DAA72', sign: '+', labelKey: 'transactionHistory.txCredit'     },
+  DEBIT:      { icon: 'arrow-up-circle-outline',   color: '#E05555', sign: '-', labelKey: 'transactionHistory.txDebit'      },
+  WITHDRAWAL: { icon: 'cash-outline',              color: '#FFB800', sign: '-', labelKey: 'transactionHistory.txWithdrawal' },
+  REFUND:     { icon: 'refresh-circle-outline',    color: '#A78BFA', sign: '+', labelKey: 'transactionHistory.txRefund'     },
 };
 
 const TX_TYPES = ['ALL', 'CREDIT', 'DEBIT', 'WITHDRAWAL', 'REFUND'];
+const TX_TYPE_LABEL_KEYS = {
+  ALL:        'transactionHistory.filterAll',
+  CREDIT:     'transactionHistory.txCredit',
+  DEBIT:      'transactionHistory.txDebit',
+  WITHDRAWAL: 'transactionHistory.txWithdrawal',
+  REFUND:     'transactionHistory.txRefund',
+};
 
 const fmt     = (n) => Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -61,6 +71,7 @@ const defaultRange = () => {
 // DatePickerModal
 // ─────────────────────────────────────────────────────────────────────────────
 const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, label }) => {
+  const { t } = useTranslation();
   const [local,      setLocal]      = useState(value);
   const [dateString, setDateString] = useState(value.toISOString().split('T')[0]);
   const [dateError,  setDateError]  = useState('');
@@ -88,13 +99,13 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
             />
             <View style={dp.btns}>
               <TouchableOpacity style={[dp.btn, { borderColor: theme.border }]} onPress={onClose}>
-                <Text style={[dp.btnTxt, { color: theme.hint }]}>Cancel</Text>
+                <Text style={[dp.btnTxt, { color: theme.hint }]}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[dp.btnAccent, { backgroundColor: accent }]}
                 onPress={() => { onChange(local); onClose(); }}
               >
-                <Text style={[dp.btnTxt, { color: theme.accentFg }]}>Set Date</Text>
+                <Text style={[dp.btnTxt, { color: theme.accentFg }]}>{t('transactionHistory.setDate')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -121,13 +132,13 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
             />
             <View style={dp.btns}>
               <TouchableOpacity style={[dp.btn, { borderColor: theme.border }]} onPress={onClose}>
-                <Text style={[dp.btnTxt, { color: theme.hint }]}>Cancel</Text>
+                <Text style={[dp.btnTxt, { color: theme.hint }]}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[dp.btnAccent, { backgroundColor: accent }]}
                 onPress={() => { onChange(local); onClose(); }}
               >
-                <Text style={[dp.btnTxt, { color: theme.accentFg }]}>Set Date</Text>
+                <Text style={[dp.btnTxt, { color: theme.accentFg }]}>{t('transactionHistory.setDate')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -144,7 +155,7 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
   const handleManualSet = () => {
     const parsed = new Date(dateString);
     if (isNaN(parsed.getTime())) {
-      setDateError('Enter a valid date in YYYY-MM-DD format.');
+      setDateError(t('transactionHistory.invalidDateFormat'));
       return;
     }
     setDateError('');
@@ -162,7 +173,7 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
         <View style={dp.overlay}>
           <View style={[dp.centeredCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <Text style={[dp.title, { color: theme.foreground }]}>{label}</Text>
-            <Text style={[dp.hint, { color: theme.hint }]}>Enter date (YYYY-MM-DD)</Text>
+            <Text style={[dp.hint, { color: theme.hint }]}>{t('transactionHistory.enterDateHint')}</Text>
             <View style={[
               dp.inputRow,
               {
@@ -185,13 +196,13 @@ const DatePickerModal = ({ visible, value, onChange, onClose, theme, accent, lab
             {dateError ? <Text style={[dp.errorTxt, { color: '#E05555' }]}>{dateError}</Text> : null}
             <View style={dp.btns}>
               <TouchableOpacity style={[dp.btn, { borderColor: theme.border }]} onPress={onClose}>
-                <Text style={[dp.btnTxt, { color: theme.hint }]}>Cancel</Text>
+                <Text style={[dp.btnTxt, { color: theme.hint }]}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[dp.btnAccent, { backgroundColor: accent }]}
                 onPress={handleManualSet}
               >
-                <Text style={[dp.btnTxt, { color: theme.accentFg }]}>Set Date</Text>
+                <Text style={[dp.btnTxt, { color: theme.accentFg }]}>{t('transactionHistory.setDate')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -217,6 +228,8 @@ const dp = StyleSheet.create({
 
 // ── TxRow ─────────────────────────────────────────────────────────────────────
 const TxRow = React.memo(({ item, theme, last }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const meta = TX_META[item.type] ?? TX_META.DEBIT;
   return (
     <View style={[tr.row, !last && { borderBottomWidth: 1, borderBottomColor: theme.border }]}>
@@ -224,17 +237,17 @@ const TxRow = React.memo(({ item, theme, last }) => {
         <Ionicons name={meta.icon} size={19} color={meta.color} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[tr.desc, { color: theme.foreground }]} numberOfLines={1}>{item.description || meta.label}</Text>
+        <Text style={[tr.desc, { color: theme.foreground }]} numberOfLines={1}>{item.description || t(meta.labelKey)}</Text>
         <Text style={[tr.date, { color: theme.hint }]}>
           {new Date(item.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
         </Text>
         {item.reference && (
-          <Text style={[tr.ref, { color: theme.hint }]} numberOfLines={1}>Ref: {item.reference}</Text>
+          <Text style={[tr.ref, { color: theme.hint }]} numberOfLines={1}>{t('transactionHistory.ref', { ref: item.reference })}</Text>
         )}
       </View>
       <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
         <Text style={[tr.amount, { color: meta.color }]}>
-          {meta.sign}₦{fmt(item.amount)}
+          {meta.sign}{formatMoney(item.amount)}
         </Text>
         <View style={[tr.pill, { backgroundColor: meta.color + '14' }]}>
           <Text style={[tr.pillTxt, { color: meta.color }]}>{item.status}</Text>
@@ -257,7 +270,7 @@ const tr = StyleSheet.create({
 
 // ── PDF HTML builder ──────────────────────────────────────────────────────────
 // FIX #5 — userName param added; shown in the header and account info block
-const buildPdfHtml = ({ transactions, from, to, typeFilter, userEmail, userName }) => {
+const buildPdfHtml = ({ transactions, from, to, typeFilter, userEmail, userName, currencySymbol }) => {
   const totalCredit = transactions.filter(t => t.type === 'CREDIT' || t.type === 'REFUND').reduce((s, t) => s + Number(t.amount), 0);
   const totalDebit  = transactions.filter(t => t.type !== 'CREDIT' && t.type !== 'REFUND').reduce((s, t) => s + Number(t.amount), 0);
   const rows = transactions.map(t => {
@@ -266,8 +279,8 @@ const buildPdfHtml = ({ transactions, from, to, typeFilter, userEmail, userName 
     return `
       <tr>
         <td>${date}</td>
-        <td>${t.description || meta.label}</td>
-        <td style="color:${meta.color}; font-weight:700">${meta.sign}₦${fmt(t.amount)}</td>
+        <td>${t.description || i18n.t(meta.labelKey)}</td>
+        <td style="color:${meta.color}; font-weight:700">${meta.sign}${currencySymbol}${fmt(t.amount)}</td>
         <td>${t.type}</td>
         <td style="color:${t.status === 'COMPLETED' ? '#5DAA72' : '#FFB800'}">${t.status}</td>
         <td style="font-size:10px; color:#888">${t.reference ?? '—'}</td>
@@ -305,15 +318,15 @@ ${accountLine ? `<div class="acct">${accountLine}</div>` : ''}
 <div class="summary">
   <div class="sum-box">
     <div class="sum-lbl">TOTAL IN</div>
-    <div class="sum-val" style="color:#5DAA72">+₦${fmt(totalCredit)}</div>
+    <div class="sum-val" style="color:#5DAA72">+${currencySymbol}${fmt(totalCredit)}</div>
   </div>
   <div class="sum-box">
     <div class="sum-lbl">TOTAL OUT</div>
-    <div class="sum-val" style="color:#E05555">-₦${fmt(totalDebit)}</div>
+    <div class="sum-val" style="color:#E05555">-${currencySymbol}${fmt(totalDebit)}</div>
   </div>
   <div class="sum-box">
     <div class="sum-lbl">NET</div>
-    <div class="sum-val">₦${fmt(totalCredit - totalDebit)}</div>
+    <div class="sum-val">${currencySymbol}${fmt(totalCredit - totalDebit)}</div>
   </div>
 </div>
 <table>
@@ -327,7 +340,9 @@ ${accountLine ? `<div class="acct">${accountLine}</div>` : ''}
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 export default function TransactionHistoryScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney, currencySymbol } = useCurrency();
   const { user }        = useAuth();
+  const { t: tr }        = useTranslation();
   const insets          = useSafeAreaInsets();
   const accent          = theme.accent;
   const accentFg        = theme.accentFg;
@@ -381,7 +396,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
       }
       setTotal(data?.pagination?.total ?? list.length);
     } catch (err) {
-      Alert.alert('Error', err?.message ?? 'Could not load transactions.');
+      Alert.alert(tr('common.error'), err?.message ?? tr('transactionHistory.loadError'));
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -402,7 +417,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
     setExporting(true);
     try {
       // FIX #5 — pass userName so it appears in the PDF header
-      const html = buildPdfHtml({ transactions, from, to, typeFilter, userEmail: user?.email, userName });
+      const html = buildPdfHtml({ transactions, from, to, typeFilter, userEmail: user?.email, userName, currencySymbol });
 
       if (Print) {
         const { uri } = await Print.printToFileAsync({ html, base64: false });
@@ -413,7 +428,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
             UTI:         'com.adobe.pdf',
           });
         } else {
-          Alert.alert('Saved', `PDF saved to:\n${uri}`);
+          Alert.alert(tr('transactionHistory.savedTitle'), tr('transactionHistory.pdfSavedTo', { path: uri }));
         }
         return;
       }
@@ -438,17 +453,17 @@ export default function TransactionHistoryScreen({ route, navigation }) {
             dialogTitle: 'Save or share transaction history',
           });
         } else {
-          Alert.alert('Saved', `Statement saved to:\n${path}`);
+          Alert.alert(tr('transactionHistory.savedTitle'), tr('transactionHistory.statementSavedTo', { path }));
         }
         return;
       }
 
       Alert.alert(
-        'Export not available',
-        'Install expo-print and expo-file-system to enable PDF export:\n\nnpx expo install expo-print expo-file-system expo-sharing',
+        tr('transactionHistory.exportNotAvailable'),
+        tr('transactionHistory.exportNotAvailableMsg'),
       );
     } catch (err) {
-      Alert.alert('Export Failed', err?.message ?? 'Could not generate statement.');
+      Alert.alert(tr('transactionHistory.exportFailed'), err?.message ?? tr('transactionHistory.generateError'));
     } finally {
       setExporting(false);
     }
@@ -458,7 +473,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
   const handleEmailPdf = async () => {
     const email = emailInput.trim();
     if (!email || !email.includes('@')) {
-      Alert.alert('Invalid Email', 'Enter a valid email address.');
+      Alert.alert(tr('transactionHistory.invalidEmail'), tr('transactionHistory.enterValidEmail'));
       return;
     }
     setEmailing(true);
@@ -470,10 +485,10 @@ export default function TransactionHistoryScreen({ route, navigation }) {
         email,
       });
       setShowEmailBox(false);
-      Alert.alert('Sent! 📧', `Transaction history sent to ${email}.`);
+      Alert.alert(tr('transactionHistory.sentTitle'), tr('transactionHistory.sentMsg', { email }));
     } catch (err) {
       // FIX #4 — show the server's error message
-      Alert.alert('Failed', err?.message ?? 'Could not send email. Check your connection and try again.');
+      Alert.alert(tr('transactionHistory.emailFailed'), err?.message ?? tr('transactionHistory.emailFailedMsg'));
     } finally {
       setEmailing(false);
     }
@@ -494,9 +509,9 @@ export default function TransactionHistoryScreen({ route, navigation }) {
           <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={[s.headerTitle, { color: theme.foreground }]}>Transaction History</Text>
+          <Text style={[s.headerTitle, { color: theme.foreground }]}>{tr('transactionHistory.headerTitle')}</Text>
           <Text style={[s.headerSub, { color: theme.hint }]}>
-            {transactions.length} of {total} transaction{total !== 1 ? 's' : ''}
+            {tr('transactionHistory.countOf', { count: transactions.length, total })}
           </Text>
         </View>
         <TouchableOpacity
@@ -529,8 +544,8 @@ export default function TransactionHistoryScreen({ route, navigation }) {
           {/* ── Email panel ── */}
           {showEmailBox && (
             <View style={[s.emailPanel, { backgroundColor: theme.backgroundAlt, borderColor: accent + '40' }]}>
-              <Text style={[s.emailTitle, { color: theme.foreground }]}>Email Statement</Text>
-              <Text style={[s.emailSub, { color: theme.hint }]}>Send this history as a PDF attachment</Text>
+              <Text style={[s.emailTitle, { color: theme.foreground }]}>{tr('transactionHistory.emailStatement')}</Text>
+              <Text style={[s.emailSub, { color: theme.hint }]}>{tr('transactionHistory.emailStatementSub')}</Text>
               <View style={[s.emailRow, { backgroundColor: theme.background, borderColor: theme.border }]}>
                 <Ionicons name="mail-outline" size={15} color={theme.hint} />
                 <TextInput
@@ -548,7 +563,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
                   style={[s.emailCancelBtn, { borderColor: theme.border }]}
                   onPress={() => setShowEmailBox(false)}
                 >
-                  <Text style={[s.emailCancelTxt, { color: theme.hint }]}>Cancel</Text>
+                  <Text style={[s.emailCancelTxt, { color: theme.hint }]}>{tr('common.cancel')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[s.emailSendBtn, { backgroundColor: accent, opacity: emailing ? 0.7 : 1 }]}
@@ -560,7 +575,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
                     : (
                       <>
                         <Ionicons name="send-outline" size={13} color={accentFg} />
-                        <Text style={[s.emailSendTxt, { color: accentFg }]}>Send PDF</Text>
+                        <Text style={[s.emailSendTxt, { color: accentFg }]}>{tr('transactionHistory.sendPdf')}</Text>
                       </>
                     )
                   }
@@ -578,7 +593,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
             >
               <Ionicons name="calendar-outline" size={14} color={accent} />
               <View>
-                <Text style={[s.datePickerLbl, { color: theme.hint }]}>FROM</Text>
+                <Text style={[s.datePickerLbl, { color: theme.hint }]}>{tr('transactionHistory.from')}</Text>
                 <Text style={[s.datePickerVal, { color: theme.foreground }]}>{fmtDate(from)}</Text>
               </View>
             </TouchableOpacity>
@@ -590,7 +605,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
             >
               <Ionicons name="calendar-outline" size={14} color={accent} />
               <View>
-                <Text style={[s.datePickerLbl, { color: theme.hint }]}>TO</Text>
+                <Text style={[s.datePickerLbl, { color: theme.hint }]}>{tr('transactionHistory.to')}</Text>
                 <Text style={[s.datePickerVal, { color: theme.foreground }]}>{fmtDate(to)}</Text>
               </View>
             </TouchableOpacity>
@@ -602,11 +617,11 @@ export default function TransactionHistoryScreen({ route, navigation }) {
             style={s.presetsScroll} contentContainerStyle={s.presetsRow}
           >
             {[
-              { label: 'Today',     fn: () => { const d = new Date(); setFrom(d); setTo(d); } },
-              { label: '7 days',    fn: () => { const d = new Date(); const f = new Date(); f.setDate(f.getDate()-7);    setFrom(f); setTo(d); } },
-              { label: '30 days',   fn: () => { const d = new Date(); const f = new Date(); f.setDate(f.getDate()-30);   setFrom(f); setTo(d); } },
-              { label: '3 months',  fn: () => { const d = new Date(); const f = new Date(); f.setMonth(f.getMonth()-3);  setFrom(f); setTo(d); } },
-              { label: 'This year', fn: () => { const d = new Date(); const f = new Date(d.getFullYear(), 0, 1);         setFrom(f); setTo(d); } },
+              { label: tr('transactionHistory.presetToday'),     fn: () => { const d = new Date(); setFrom(d); setTo(d); } },
+              { label: tr('transactionHistory.preset7Days'),    fn: () => { const d = new Date(); const f = new Date(); f.setDate(f.getDate()-7);    setFrom(f); setTo(d); } },
+              { label: tr('transactionHistory.preset30Days'),   fn: () => { const d = new Date(); const f = new Date(); f.setDate(f.getDate()-30);   setFrom(f); setTo(d); } },
+              { label: tr('transactionHistory.preset3Months'),  fn: () => { const d = new Date(); const f = new Date(); f.setMonth(f.getMonth()-3);  setFrom(f); setTo(d); } },
+              { label: tr('transactionHistory.presetThisYear'), fn: () => { const d = new Date(); const f = new Date(d.getFullYear(), 0, 1);         setFrom(f); setTo(d); } },
             ].map(p => (
               <TouchableOpacity
                 key={p.label}
@@ -623,23 +638,23 @@ export default function TransactionHistoryScreen({ route, navigation }) {
             horizontal showsHorizontalScrollIndicator={false}
             style={s.filterScroll} contentContainerStyle={s.filterRow}
           >
-            {TX_TYPES.map(t => {
-              const active = typeFilter === t;
-              const meta   = TX_META[t];
+            {TX_TYPES.map(txType => {
+              const active = typeFilter === txType;
+              const meta   = TX_META[txType];
               const col    = meta?.color ?? accent;
               return (
                 <TouchableOpacity
-                  key={t}
+                  key={txType}
                   style={[
                     s.filterChip,
                     active
                       ? { backgroundColor: col + '20', borderColor: col }
                       : { backgroundColor: 'transparent', borderColor: theme.border },
                   ]}
-                  onPress={() => setTypeFilter(t)} activeOpacity={0.75}
+                  onPress={() => setTypeFilter(txType)} activeOpacity={0.75}
                 >
                   {meta && <Ionicons name={meta.icon} size={11} color={active ? col : theme.hint} style={{ marginRight: 4 }} />}
-                  <Text style={[s.filterChipTxt, { color: active ? col : theme.hint }]}>{t}</Text>
+                  <Text style={[s.filterChipTxt, { color: active ? col : theme.hint }]}>{tr(TX_TYPE_LABEL_KEYS[txType])}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -648,19 +663,19 @@ export default function TransactionHistoryScreen({ route, navigation }) {
           {/* ── Summary strip ── */}
           <View style={[s.summaryStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <View style={s.sumItem}>
-              <Text style={[s.sumLbl, { color: theme.hint }]}>IN</Text>
-              <Text style={[s.sumVal, { color: '#5DAA72' }]}>+₦{fmt(summary.credit)}</Text>
+              <Text style={[s.sumLbl, { color: theme.hint }]}>{tr('transactionHistory.in')}</Text>
+              <Text style={[s.sumVal, { color: '#5DAA72' }]}>+{formatMoney(summary.credit)}</Text>
             </View>
             <View style={[s.sumDiv, { backgroundColor: theme.border }]} />
             <View style={s.sumItem}>
-              <Text style={[s.sumLbl, { color: theme.hint }]}>OUT</Text>
-              <Text style={[s.sumVal, { color: '#E05555' }]}>-₦{fmt(summary.debit)}</Text>
+              <Text style={[s.sumLbl, { color: theme.hint }]}>{tr('transactionHistory.out')}</Text>
+              <Text style={[s.sumVal, { color: '#E05555' }]}>-{formatMoney(summary.debit)}</Text>
             </View>
             <View style={[s.sumDiv, { backgroundColor: theme.border }]} />
             <View style={s.sumItem}>
-              <Text style={[s.sumLbl, { color: theme.hint }]}>NET</Text>
+              <Text style={[s.sumLbl, { color: theme.hint }]}>{tr('transactionHistory.net')}</Text>
               <Text style={[s.sumVal, { color: summary.net >= 0 ? '#5DAA72' : '#E05555' }]}>
-                {summary.net >= 0 ? '+' : ''}₦{fmt(Math.abs(summary.net))}
+                {summary.net >= 0 ? '+' : ''}{formatMoney(Math.abs(summary.net))}
               </Text>
             </View>
           </View>
@@ -670,13 +685,13 @@ export default function TransactionHistoryScreen({ route, navigation }) {
             {loading ? (
               <View style={s.center}>
                 <ActivityIndicator color={accent} size="large" />
-                <Text style={[s.centerTxt, { color: theme.hint }]}>Loading transactions...</Text>
+                <Text style={[s.centerTxt, { color: theme.hint }]}>{tr('transactionHistory.loadingTx')}</Text>
               </View>
             ) : transactions.length === 0 ? (
               <View style={s.center}>
                 <Ionicons name="receipt-outline" size={40} color={theme.hint} style={{ marginBottom: 12 }} />
-                <Text style={[s.emptyTitle, { color: theme.foreground }]}>No transactions found</Text>
-                <Text style={[s.emptyHint, { color: theme.hint }]}>Try adjusting your date range or filter</Text>
+                <Text style={[s.emptyTitle, { color: theme.foreground }]}>{tr('transactionHistory.emptyTitle')}</Text>
+                <Text style={[s.emptyHint, { color: theme.hint }]}>{tr('transactionHistory.emptyHint')}</Text>
               </View>
             ) : (
               <Animated.View style={{ opacity: fadeA }}>
@@ -695,7 +710,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
                   >
                     {loadingMore
                       ? <ActivityIndicator color={accent} size="small" />
-                      : <Text style={[s.loadMoreTxt, { color: accent }]}>Load more ({total - transactions.length} remaining)</Text>
+                      : <Text style={[s.loadMoreTxt, { color: accent }]}>{tr('transactionHistory.loadMore', { count: total - transactions.length })}</Text>
                     }
                   </TouchableOpacity>
                 )}
@@ -712,7 +727,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
                 activeOpacity={0.8}
               >
                 <Ionicons name="mail-outline" size={15} color={theme.hint} />
-                <Text style={[s.exportBtnTxt, { color: theme.hint }]}>Email</Text>
+                <Text style={[s.exportBtnTxt, { color: theme.hint }]}>{tr('transactionHistory.email')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.exportBtn, { backgroundColor: accent, opacity: exporting ? 0.7 : 1 }]}
@@ -725,7 +740,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
                   : (
                     <>
                       <Ionicons name="document-text-outline" size={15} color={accentFg} />
-                      <Text style={[s.exportBtnTxt, { color: accentFg }]}>Download PDF</Text>
+                      <Text style={[s.exportBtnTxt, { color: accentFg }]}>{tr('transactionHistory.downloadPdf')}</Text>
                     </>
                   )
                 }
@@ -741,7 +756,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
       <DatePickerModal
         visible={pickerTarget === 'from'}
         value={from}
-        label="Select Start Date"
+        label={tr('transactionHistory.selectStartDate')}
         theme={theme}
         accent={accent}
         onChange={(d) => { setFrom(d); if (d > to) setTo(d); }}
@@ -750,7 +765,7 @@ export default function TransactionHistoryScreen({ route, navigation }) {
       <DatePickerModal
         visible={pickerTarget === 'to'}
         value={to}
-        label="Select End Date"
+        label={tr('transactionHistory.selectEndDate')}
         theme={theme}
         accent={accent}
         onChange={(d) => { setTo(d); if (d < from) setFrom(d); }}

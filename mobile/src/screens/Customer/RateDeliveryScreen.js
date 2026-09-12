@@ -19,6 +19,7 @@ import {
 import { Ionicons }     from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme }     from '../../context/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import { deliveryAPI }  from '../../services/api';
 
 const TEAL  = '#34D399';
@@ -44,16 +45,17 @@ const sr = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginVertical: 16 },
 });
 
-const LABELS = ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Excellent!'];
+const LABEL_KEYS = ['', 'rating.labelPoor', 'rating.labelFair', 'rating.labelGood', 'rating.labelVeryGood', 'rating.labelExcellent'];
 
-const QUICK_POSITIVE = ['Fast delivery', 'Very careful', 'Polite', 'On time', 'Package intact'];
-const QUICK_NEGATIVE = ['Late delivery', 'Rude', 'Package damaged', 'Wrong address', 'Unprofessional'];
+const QUICK_POSITIVE_KEYS = ['rating.chipFastDelivery', 'rating.chipVeryCareful', 'rating.chipPolite', 'rating.chipOnTime', 'rating.chipPackageIntact'];
+const QUICK_NEGATIVE_KEYS = ['rating.chipLateDelivery', 'rating.chipRude', 'rating.chipPackageDamaged', 'rating.chipWrongAddress', 'rating.chipUnprofessional'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RateDeliveryScreen({ navigation, route }) {
   const { theme, mode } = useTheme();
+  const { t } = useTranslation();
   const { deliveryId, partner, onRated } = route.params ?? {};
 
   const [rating,    setRating]    = useState(0);
@@ -70,7 +72,7 @@ export default function RateDeliveryScreen({ navigation, route }) {
     ]).start();
   }, []);
 
-  const chips = rating >= 4 ? QUICK_POSITIVE : QUICK_NEGATIVE;
+  const chips = (rating >= 4 ? QUICK_POSITIVE_KEYS : QUICK_NEGATIVE_KEYS).map(key => t(key));
 
   const toggleChip = (chip) => {
     setComment(prev => {
@@ -86,7 +88,7 @@ export default function RateDeliveryScreen({ navigation, route }) {
 
   const submit = async () => {
     if (rating === 0) {
-      Alert.alert('Rating Required', 'Please select a star rating before submitting.');
+      Alert.alert(t('rating.ratingRequiredTitle'), t('rating.ratingRequiredBody'));
       return;
     }
     setSubmitting(true);
@@ -95,8 +97,8 @@ export default function RateDeliveryScreen({ navigation, route }) {
       onRated?.();
       navigation.goBack();
     } catch (err) {
-      const msg = err?.response?.data?.message ?? 'Failed to submit rating. Please try again.';
-      Alert.alert('Error', msg);
+      const msg = err?.response?.data?.message ?? t('rating.failedToSubmit');
+      Alert.alert(t('rating.errorTitle'), msg);
     } finally {
       setSubmitting(false);
     }
@@ -106,7 +108,7 @@ export default function RateDeliveryScreen({ navigation, route }) {
 
   const partnerName = partner
     ? `${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim()
-    : 'Your Delivery Partner';
+    : t('rating.yourDeliveryPartner');
 
   const vehicleInfo = partner?.vehiclePlate
     ? `${partner.vehicleType ?? ''} · ${partner.vehiclePlate}`.trim()
@@ -136,8 +138,8 @@ export default function RateDeliveryScreen({ navigation, route }) {
               <Ionicons name="cube" size={56} color={TEAL} />
             </View>
 
-            <Text style={[s.title, { color: theme.foreground }]}>Package Delivered!</Text>
-            <Text style={[s.sub, { color: theme.hint }]}>How was your experience with</Text>
+            <Text style={[s.title, { color: theme.foreground }]}>{t('rating.packageDelivered')}</Text>
+            <Text style={[s.sub, { color: theme.hint }]}>{t('rating.howWasRideWith')}</Text>
             <Text style={[s.partnerName, { color: theme.foreground }]}>{partnerName}?</Text>
 
             {vehicleInfo && (
@@ -149,7 +151,7 @@ export default function RateDeliveryScreen({ navigation, route }) {
 
             {rating > 0 && (
               <Animated.Text style={[s.ratingLabel, { color: GOLD, opacity: fadeA }]}>
-                {LABELS[rating]}
+                {t(LABEL_KEYS[rating])}
               </Animated.Text>
             )}
 
@@ -181,7 +183,7 @@ export default function RateDeliveryScreen({ navigation, route }) {
             {/* ── Comment box ── */}
             <TextInput
               style={[s.input, { backgroundColor: theme.backgroundAlt, borderColor: theme.border, color: theme.foreground }]}
-              placeholder="Add a comment (optional)..."
+              placeholder={t('rating.commentPlaceholder')}
               placeholderTextColor={theme.hint}
               value={comment}
               onChangeText={setComment}
@@ -199,12 +201,12 @@ export default function RateDeliveryScreen({ navigation, route }) {
             >
               {submitting
                 ? <ActivityIndicator color="#080C18" size="small" />
-                : <Text style={s.submitTxt}>Submit Rating</Text>
+                : <Text style={s.submitTxt}>{t('rating.submitRating')}</Text>
               }
             </TouchableOpacity>
 
             <TouchableOpacity style={s.skipBtn} onPress={skip} activeOpacity={0.7}>
-              <Text style={[s.skipTxt, { color: theme.hint }]}>Skip for now</Text>
+              <Text style={[s.skipTxt, { color: theme.hint }]}>{t('rating.skipForNow')}</Text>
             </TouchableOpacity>
 
           </Animated.View>

@@ -9,6 +9,7 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useTranslation }    from 'react-i18next';
 import { userAPI }           from '../../services/api';
 
 const { height } = Dimensions.get('window');
@@ -16,6 +17,7 @@ const { height } = Dimensions.get('window');
 // ── Password input ────────────────────────────────────────────────────────────
 const PwdInput = ({ label, iconName, value, onChangeText }) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [focused,  setFocused]  = useState(false);
   const [showPwd,  setShowPwd]  = useState(false);
   const labelY  = useRef(new Animated.Value(value ? 1 : 0)).current;
@@ -65,10 +67,11 @@ function getStrength(pwd) {
   return score;
 }
 
-const STRENGTH_LABELS = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+const STRENGTH_LABEL_KEYS = ['', 'changePassword.strengthWeak', 'changePassword.strengthFair', 'changePassword.strengthGood', 'changePassword.strengthStrong'];
 const STRENGTH_COLORS = ['', '#E05555', '#C9A96E', '#5DAA72', '#5DAA72'];
 
 const StrengthBar = ({ password, theme }) => {
+  const { t } = useTranslation();
   const score = password.length ? getStrength(password) : 0;
   if (!password.length) return null;
   return (
@@ -78,7 +81,7 @@ const StrengthBar = ({ password, theme }) => {
           <View key={i} style={[sb.seg, { backgroundColor: i <= score ? STRENGTH_COLORS[score] : theme.border }]} />
         ))}
       </View>
-      <Text style={[sb.label, { color: STRENGTH_COLORS[score] }]}>{STRENGTH_LABELS[score]}</Text>
+      <Text style={[sb.label, { color: STRENGTH_COLORS[score] }]}>{score > 0 ? t(STRENGTH_LABEL_KEYS[score]) : ''}</Text>
     </View>
   );
 };
@@ -103,6 +106,7 @@ const r = StyleSheet.create({
 
 // ── Success Screen ────────────────────────────────────────────────────────────
 const SuccessScreen = ({ theme, onDone }) => {
+  const { t } = useTranslation();
   const scaleA  = useRef(new Animated.Value(0.6)).current;
   const fadeA   = useRef(new Animated.Value(0)).current;
   const slideA  = useRef(new Animated.Value(30)).current;
@@ -134,16 +138,16 @@ const SuccessScreen = ({ theme, onDone }) => {
       </Animated.View>
 
       <Animated.View style={{ opacity: fadeA, transform: [{ translateY: slideA }], alignItems: 'center' }}>
-        <Text style={[ss.title, { color: theme.foreground }]}>Password Changed!</Text>
+        <Text style={[ss.title, { color: theme.foreground }]}>{t('changePassword.passwordChanged')}</Text>
         <Text style={[ss.sub, { color: theme.hint }]}>
-          Your password has been updated successfully.{'\n'}Keep it safe and don't share it with anyone.
+          {t('changePassword.successSub')}
         </Text>
 
         {/* Security tip card */}
         <View style={[ss.tipCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
           <Ionicons name="shield-outline" size={15} color={theme.hint} style={{ marginTop: 1 }} />
           <Text style={[ss.tipTxt, { color: theme.hint }]}>
-            You'll stay logged in on this device. Other sessions may require you to sign in again.
+            {t('changePassword.tipTxt')}
           </Text>
         </View>
 
@@ -153,7 +157,7 @@ const SuccessScreen = ({ theme, onDone }) => {
           activeOpacity={0.85}
         >
           <Ionicons name="arrow-back-outline" size={18} color={theme.accentFg} />
-          <Text style={[ss.btnTxt, { color: theme.accentFg }]}>Back to Settings</Text>
+          <Text style={[ss.btnTxt, { color: theme.accentFg }]}>{t('changePassword.backToSettings')}</Text>
         </TouchableOpacity>
       </Animated.View>
     </View>
@@ -174,6 +178,7 @@ const ss = StyleSheet.create({
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 export default function ChangePasswordScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
 
   const [current, setCurrent] = useState('');
@@ -200,10 +205,10 @@ export default function ChangePasswordScreen({ navigation }) {
   }, []);
 
   const rules = [
-    { met: next.length >= 8,          text: 'At least 8 characters' },
-    { met: /[A-Z]/.test(next),        text: 'One uppercase letter'  },
-    { met: /[0-9]/.test(next),        text: 'One number'            },
-    { met: /[^A-Za-z0-9]/.test(next), text: 'One special character' },
+    { met: next.length >= 8,          text: t('changePassword.ruleLength') },
+    { met: /[A-Z]/.test(next),        text: t('changePassword.ruleUppercase')  },
+    { met: /[0-9]/.test(next),        text: t('changePassword.ruleNumber')            },
+    { met: /[^A-Za-z0-9]/.test(next), text: t('changePassword.ruleSpecial') },
   ];
 
   const allRulesMet    = rules.every(r => r.met);
@@ -235,7 +240,7 @@ export default function ChangePasswordScreen({ navigation }) {
         setSuccess(true);
       }
     } catch (e) {
-      Alert.alert('Error', e?.message ?? e?.error ?? 'Could not update password.');
+      Alert.alert(t('common.error'), e?.message ?? e?.error ?? t('changePassword.updateError'));
     } finally {
       setLoading(false);
     }
@@ -248,7 +253,7 @@ export default function ChangePasswordScreen({ navigation }) {
       await userAPI.verifyPasswordChangeOtp({ code: otpCode, tempToken, newPassword: next });
       setSuccess(true);
     } catch (e) {
-      Alert.alert('Error', e?.message ?? 'Invalid or expired code.');
+      Alert.alert(t('common.error'), e?.message ?? t('changePassword.invalidCode'));
     } finally {
       setLoading(false);
     }
@@ -277,7 +282,7 @@ export default function ChangePasswordScreen({ navigation }) {
         >
           <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: theme.foreground }]}>Change Password</Text>
+        <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('changePassword.headerTitle')}</Text>
         <View style={s.headerSpacer} />
       </View>
 
@@ -312,16 +317,16 @@ export default function ChangePasswordScreen({ navigation }) {
                   <Ionicons name="shield-checkmark-outline" size={28} color={theme.accent} />
                 </View>
                 <Text style={[s.intro, { color: theme.foreground, fontWeight: '700', marginBottom: 6 }]}>
-                  Verify it's you
+                  {t('changePassword.verifyItsYou')}
                 </Text>
                 <Text style={[s.intro, { color: theme.hint }]}>
-                  A code was sent to{' '}
+                  {t('changePassword.codeSentTo')}{' '}
                   {maskedEmail ? <Text style={{ color: theme.foreground }}>{maskedEmail}</Text> : null}
-                  {maskedEmail && maskedPhone ? ' and ' : ''}
+                  {maskedEmail && maskedPhone ? t('changePassword.and') : ''}
                   {maskedPhone ? <Text style={{ color: theme.foreground }}>{maskedPhone}</Text> : null}
                 </Text>
 
-                <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 12 }]}>VERIFICATION CODE</Text>
+                <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 12 }]}>{t('changePassword.verificationCode')}</Text>
                 <Animated.View style={[s.inputBox, { backgroundColor: theme.backgroundAlt, borderColor: theme.accent }]}>
                   <Ionicons name="key-outline" size={16} color={theme.accent} style={s.inputIcon} />
                   <TextInput
@@ -330,7 +335,7 @@ export default function ChangePasswordScreen({ navigation }) {
                     onChangeText={setOtpCode}
                     keyboardType="number-pad"
                     maxLength={6}
-                    placeholder="Enter 6-digit code"
+                    placeholder={t('changePassword.enterCode')}
                     placeholderTextColor={theme.hint}
                     autoFocus
                   />
@@ -351,13 +356,13 @@ export default function ChangePasswordScreen({ navigation }) {
                   ) : (
                     <>
                       <Ionicons name="shield-checkmark-outline" size={18} color={theme.accentFg} />
-                      <Text style={[s.submitTxt, { color: theme.accentFg }]}>Confirm Change</Text>
+                      <Text style={[s.submitTxt, { color: theme.accentFg }]}>{t('changePassword.confirmChange')}</Text>
                     </>
                   )}
                 </TouchableOpacity>
 
                 <TouchableOpacity onPress={() => setOtpStep(false)} style={{ alignItems: 'center', marginTop: 16 }}>
-                  <Text style={{ color: theme.hint, fontSize: 13 }}>← Go back</Text>
+                  <Text style={{ color: theme.hint, fontSize: 13 }}>{t('changePassword.goBack')}</Text>
                 </TouchableOpacity>
               </Animated.View>
 
@@ -369,18 +374,18 @@ export default function ChangePasswordScreen({ navigation }) {
                   <Ionicons name="lock-closed-outline" size={28} color={theme.accent} />
                 </View>
                 <Text style={[s.intro, { color: theme.hint }]}>
-                  Choose a strong password you don't use elsewhere.
+                  {t('changePassword.chooseStrong')}
                 </Text>
 
                 {/* Current password */}
-                <Text style={[s.sectionLabel, { color: theme.hint }]}>CURRENT PASSWORD</Text>
-                <PwdInput label="Current Password" iconName="lock-closed-outline" value={current} onChangeText={setCurrent} />
+                <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('changePassword.currentPassword')}</Text>
+                <PwdInput label={t('changePassword.currentPassword2')} iconName="lock-closed-outline" value={current} onChangeText={setCurrent} />
 
                 {/* New password */}
-                <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 4 }]}>NEW PASSWORD</Text>
-                <PwdInput label="New Password"         iconName="key-outline" value={next}    onChangeText={setNext}    />
+                <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 4 }]}>{t('changePassword.newPassword')}</Text>
+                <PwdInput label={t('changePassword.newPassword2')}         iconName="key-outline" value={next}    onChangeText={setNext}    />
                 <StrengthBar password={next} theme={theme} />
-                <PwdInput label="Confirm New Password" iconName="key-outline" value={confirm} onChangeText={setConfirm} />
+                <PwdInput label={t('changePassword.confirmNewPassword')} iconName="key-outline" value={confirm} onChangeText={setConfirm} />
 
                 {/* Match indicator */}
                 {confirm.length > 0 && (
@@ -391,14 +396,14 @@ export default function ChangePasswordScreen({ navigation }) {
                       color={passwordsMatch ? '#5DAA72' : '#E05555'}
                     />
                     <Text style={[s.matchTxt, { color: passwordsMatch ? '#5DAA72' : '#E05555' }]}>
-                      {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
+                      {passwordsMatch ? t('changePassword.passwordsMatch') : t('changePassword.passwordsNoMatch')}
                     </Text>
                   </View>
                 )}
 
                 {/* Rules */}
                 <View style={[s.rulesCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-                  <Text style={[s.rulesTitle, { color: theme.hint }]}>PASSWORD REQUIREMENTS</Text>
+                  <Text style={[s.rulesTitle, { color: theme.hint }]}>{t('changePassword.passwordRequirements')}</Text>
                   {rules.map(rule => <Rule key={rule.text} met={rule.met} text={rule.text} theme={theme} />)}
                 </View>
 
@@ -418,7 +423,7 @@ export default function ChangePasswordScreen({ navigation }) {
                   ) : (
                     <>
                       <Ionicons name="shield-checkmark-outline" size={18} color={theme.accentFg} />
-                      <Text style={[s.submitTxt, { color: theme.accentFg }]}>Update Password</Text>
+                      <Text style={[s.submitTxt, { color: theme.accentFg }]}>{t('changePassword.updatePassword')}</Text>
                     </>
                   )}
                 </TouchableOpacity>

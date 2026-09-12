@@ -11,6 +11,8 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }               from '../../context/ThemeContext';
+import { useCurrency }            from '../../context/CurrencyContext';
+import { useTranslation }         from 'react-i18next';
 import { deliveryAPI, walletAPI, placesAPI } from '../../services/api';
 import socketService              from '../../services/socket';
 
@@ -145,6 +147,7 @@ const pi = StyleSheet.create({
 
 // ── WaitingSheet ──────────────────────────────────────────────────────────────
 const WaitingSheet = ({ accentColor, theme, driverName, onCancel, rideAccepted }) => {
+  const { t } = useTranslation();
   const dotA = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
     if (rideAccepted) return;
@@ -163,10 +166,10 @@ const WaitingSheet = ({ accentColor, theme, driverName, onCancel, rideAccepted }
           <Ionicons name="bicycle-outline" size={32} color={accentColor} />
         </Animated.View>
       </View>
-      <Text style={[wt.title, { color: theme.foreground }]}>Request Sent!</Text>
+      <Text style={[wt.title, { color: theme.foreground }]}>{t('requestDelivery.requestSent')}</Text>
       <Text style={[wt.sub, { color: theme.hint }]}>Waiting for {driverName} to accept…</Text>
       <TouchableOpacity style={[wt.cancelBtn, { borderColor: theme.border }]} onPress={onCancel} activeOpacity={0.8}>
-        <Text style={[wt.cancelTxt, { color: theme.hint }]}>Cancel Request</Text>
+        <Text style={[wt.cancelTxt, { color: theme.hint }]}>{t('requestDelivery.cancelRequest')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -185,6 +188,8 @@ const wt = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RequestDeliveryScreen({ navigation }) {
   const { theme }   = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const insets      = useSafeAreaInsets();
   const accentColor = theme.accent;
   const accentFg    = theme.accentFg ?? '#111111';
@@ -278,7 +283,7 @@ export default function RequestDeliveryScreen({ navigation }) {
       if (data.deliveryId === pendingDeliveryId) {
         setPendingDeliveryId(null);
         setStep(2);
-        Alert.alert('Request Cancelled', 'The courier cancelled. Please choose another.');
+        Alert.alert(t('requestDelivery.requestCancelledTitle'), t('requestDelivery.requestCancelledBody'));
       }
     };
     socketService.on('delivery:status:update', handleStatus);
@@ -400,7 +405,7 @@ export default function RequestDeliveryScreen({ navigation }) {
         }
       }
     } catch (err) {
-      Alert.alert('Address error', 'Could not resolve that address. Try pinning it on the map instead.');
+      Alert.alert(t('requestDelivery.addressErrorTitle'), t('requestDelivery.addressErrorBody'));
     } finally {
       // Always start a fresh session token for the NEXT search.
       sessionTokenRef.current = newSessionToken();
@@ -464,9 +469,9 @@ export default function RequestDeliveryScreen({ navigation }) {
   }, [pickupCoords, dropoffCoords, pickupAddress, dropoffAddress]);
 
   const proceedToMap = useCallback(async () => {
-    if (!pickupCoords || !dropoffCoords) { Alert.alert('Set both locations', 'Please set both pickup and drop-off locations.'); return; }
-    if (!pickupContact || !dropoffContact) { Alert.alert('Missing contacts', 'Please enter phone numbers for both pickup and drop-off contacts.'); return; }
-    if (!packageDescription) { Alert.alert('Missing package info', 'Please describe what you are sending.'); return; }
+    if (!pickupCoords || !dropoffCoords) { Alert.alert(t('requestDelivery.setBothLocationsTitle'), t('requestDelivery.setBothLocationsBody')); return; }
+    if (!pickupContact || !dropoffContact) { Alert.alert(t('requestDelivery.missingContactsTitle'), t('requestDelivery.missingContactsBody')); return; }
+    if (!packageDescription) { Alert.alert(t('requestDelivery.missingPackageInfoTitle'), t('requestDelivery.missingPackageInfoBody')); return; }
     const km  = haversineKm(pickupCoords.lat, pickupCoords.lng, dropoffCoords.lat, dropoffCoords.lng);
     const wKg = parseFloat(packageWeight) || 0;
     setDistanceKm(km); setFeeEstimate(calcFee(km, wKg)); setEtaMinutes(Math.ceil(km / 0.4));
@@ -495,9 +500,9 @@ export default function RequestDeliveryScreen({ navigation }) {
   }, [pickupCoords, dropoffCoords, pickupContact, dropoffContact, packageDescription, packageWeight]);
 
   const confirmDelivery = async () => {
-    if (!selectedPartner) { Alert.alert('Select a partner', 'Please choose a delivery partner.'); return; }
+    if (!selectedPartner) { Alert.alert(t('requestDelivery.selectPartnerTitle'), t('requestDelivery.selectPartnerBody')); return; }
     if (paymentMethod === 'WALLET' && walletBalance < feeEstimate) {
-      Alert.alert('Insufficient Balance', 'Your wallet balance is less than the fee. Please top up or choose another payment method.');
+      Alert.alert(t('requestDelivery.insufficientBalanceTitle'), t('requestDelivery.insufficientBalanceBody'));
       return;
     }
     setRequesting(true);
@@ -517,7 +522,7 @@ export default function RequestDeliveryScreen({ navigation }) {
       if (newDeliveryId) socketService.joinRide(newDeliveryId);
       setStep(4);
     } catch (err) {
-      if (err?.message !== 'CANCELLED') Alert.alert('Request failed', err?.message ?? 'Could not place delivery.');
+      if (err?.message !== 'CANCELLED') Alert.alert(t('requestDelivery.requestFailedTitle'), err?.message ?? t('requestDelivery.couldNotPlaceDelivery'));
     } finally { setRequesting(false); }
   };
 
@@ -529,7 +534,7 @@ export default function RequestDeliveryScreen({ navigation }) {
     } catch (err) {
       const msg = err?.message ?? '';
       if (!msg.includes('Cannot cancel') && !msg.includes('not found')) {
-        Alert.alert('Note', 'Could not reach server, but your request has been removed locally.');
+        Alert.alert(t('requestDelivery.noteTitle'), t('requestDelivery.couldNotReachServer'));
       }
     }
     setPendingDeliveryId(null);
@@ -547,10 +552,10 @@ export default function RequestDeliveryScreen({ navigation }) {
   const mapRegion         = pickupCoords ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 } : LAGOS_DEFAULT;
 
   const confirmBtnLabel =
-    paymentMethod === 'WALLET'      ? 'Confirm • Pay via Wallet'      :
-    paymentMethod === 'PAYSTACK'    ? 'Confirm • Pay via Paystack'    :
-    paymentMethod === 'FLUTTERWAVE' ? 'Confirm • Pay via Flutterwave' :
-                                      'Confirm • Pay Cash';
+    paymentMethod === 'WALLET'      ? t('requestDelivery.confirmPayWallet')      :
+    paymentMethod === 'PAYSTACK'    ? t('requestDelivery.confirmPayPaystack')    :
+    paymentMethod === 'FLUTTERWAVE' ? t('requestDelivery.confirmPayFlutterwave') :
+                                      t('requestDelivery.confirmPayCash');
 
   return (
     <View style={s.root}>
@@ -638,7 +643,7 @@ export default function RequestDeliveryScreen({ navigation }) {
               onPress={confirmPin} disabled={resolvingAddr || !liveAddress} activeOpacity={0.88}
             >
               <Ionicons name="checkmark" size={18} color={pinFg} />
-              <Text style={[s.confirmBarBtnTxt, { color: pinFg }]}>Confirm Location</Text>
+              <Text style={[s.confirmBarBtnTxt, { color: pinFg }]}>{t('requestDelivery.confirmLocation')}</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -663,8 +668,8 @@ export default function RequestDeliveryScreen({ navigation }) {
                 keyboardDismissMode="interactive"
                 contentContainerStyle={[s.scrollContent, { paddingBottom: scrollPadBottom }]}
               >
-                <Text style={[s.sheetTitle, { color: theme.foreground }]}>Send a Package</Text>
-                <Text style={[s.sheetSub, { color: theme.hint }]}>Search or tap the map icon to pin your location</Text>
+                <Text style={[s.sheetTitle, { color: theme.foreground }]}>{t('requestDelivery.sendAPackage')}</Text>
+                <Text style={[s.sheetSub, { color: theme.hint }]}>{t('requestDelivery.searchOrPinSubtitle')}</Text>
 
                 <View style={s.locationRow}>
                   <View style={s.routeDots}>
@@ -675,8 +680,8 @@ export default function RequestDeliveryScreen({ navigation }) {
                   <View style={{ flex: 1 }}>
                     <TouchableOpacity style={[s.locBtn, { backgroundColor: theme.card, borderColor: accentColor + '50' }]} onPress={() => openSearchModal('pickup')} activeOpacity={0.85}>
                       <View style={{ flex: 1 }}>
-                        <Text style={[s.locBtnLabel, { color: accentColor }]}>PICKUP</Text>
-                        <Text style={[s.locBtnAddr, { color: pickupCoords ? theme.foreground : theme.hint }]} numberOfLines={1}>{pickupAddress || 'Search or pin pickup location'}</Text>
+                        <Text style={[s.locBtnLabel, { color: accentColor }]}>{t('requestDelivery.pickup')}</Text>
+                        <Text style={[s.locBtnAddr, { color: pickupCoords ? theme.foreground : theme.hint }]} numberOfLines={1}>{pickupAddress || t('requestDelivery.searchOrPinPickup')}</Text>
                       </View>
                       <View style={[s.locBtnIcon, { backgroundColor: accentColor + '18' }]}><Ionicons name="search" size={14} color={accentColor} /></View>
                       <TouchableOpacity style={[s.locBtnIconSecondary, { backgroundColor: accentColor + '10' }]} onPress={(e) => { e.stopPropagation(); startPickingLocation('pickup'); }} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
@@ -686,8 +691,8 @@ export default function RequestDeliveryScreen({ navigation }) {
                     <View style={{ height: 6 }} />
                     <TouchableOpacity style={[s.locBtn, { backgroundColor: theme.card, borderColor: '#E05555' + '50' }]} onPress={() => openSearchModal('dropoff')} activeOpacity={0.85}>
                       <View style={{ flex: 1 }}>
-                        <Text style={[s.locBtnLabel, { color: '#E05555' }]}>DROP-OFF</Text>
-                        <Text style={[s.locBtnAddr, { color: dropoffCoords ? theme.foreground : theme.hint }]} numberOfLines={1}>{dropoffAddress || 'Search or pin drop-off location'}</Text>
+                        <Text style={[s.locBtnLabel, { color: '#E05555' }]}>{t('requestDelivery.dropoff')}</Text>
+                        <Text style={[s.locBtnAddr, { color: dropoffCoords ? theme.foreground : theme.hint }]} numberOfLines={1}>{dropoffAddress || t('requestDelivery.searchOrPinDropoff')}</Text>
                       </View>
                       <View style={[s.locBtnIcon, { backgroundColor: '#E05555' + '18' }]}><Ionicons name="search" size={14} color="#E05555" /></View>
                       <TouchableOpacity style={[s.locBtnIconSecondary, { backgroundColor: '#E05555' + '10' }]} onPress={(e) => { e.stopPropagation(); startPickingLocation('dropoff'); }} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
@@ -699,7 +704,7 @@ export default function RequestDeliveryScreen({ navigation }) {
 
                 {(loadingNearby || nearbyPlaces.length > 0) && (
                   <>
-                    <Text style={[s.quickLabel, { color: theme.hint }]}>NEARBY PLACES</Text>
+                    <Text style={[s.quickLabel, { color: theme.hint }]}>{t('requestDelivery.nearbyPlaces')}</Text>
                     {loadingNearby
                       ? <ActivityIndicator color={accentColor} style={{ marginBottom: 20, alignSelf: 'flex-start' }} size="small" />
                       : <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
@@ -715,22 +720,22 @@ export default function RequestDeliveryScreen({ navigation }) {
                 )}
 
                 <Text style={[s.sectionLabel, { color: theme.hint }]}>CONTACT & PACKAGE</Text>
-                <PackageInput label="PICKUP CONTACT"      icon="call-outline"          placeholder="+234 801 234 5678"                    value={pickupContact}      onChangeText={setPickupContact}      keyboardType="phone-pad" theme={theme} accentColor={accentColor} />
-                <PackageInput label="DROP-OFF CONTACT"    icon="call-outline"          placeholder="+234 801 234 5678"                    value={dropoffContact}     onChangeText={setDropoffContact}     keyboardType="phone-pad" theme={theme} accentColor={accentColor} />
-                <PackageInput label="PACKAGE DESCRIPTION" icon="cube-outline"          placeholder="e.g. Documents, Clothes, Electronics" value={packageDescription} onChangeText={setPackageDescription}                         theme={theme} accentColor={accentColor} />
+                <PackageInput label={t('requestDelivery.pickupContactLabel')}      icon="call-outline"          placeholder="+234 801 234 5678"                    value={pickupContact}      onChangeText={setPickupContact}      keyboardType="phone-pad" theme={theme} accentColor={accentColor} />
+                <PackageInput label={t('requestDelivery.dropoffContactLabel')}    icon="call-outline"          placeholder="+234 801 234 5678"                    value={dropoffContact}     onChangeText={setDropoffContact}     keyboardType="phone-pad" theme={theme} accentColor={accentColor} />
+                <PackageInput label={t('requestDelivery.packageDescriptionLabel')} icon="cube-outline"          placeholder={t('requestDelivery.packageDescPlaceholder')} value={packageDescription} onChangeText={setPackageDescription}                         theme={theme} accentColor={accentColor} />
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <View style={{ flex: 1 }}>
-                    <PackageInput label="WEIGHT (kg)" icon="scale-outline" placeholder="Optional" value={packageWeight} onChangeText={setPackageWeight} keyboardType="numeric" theme={theme} accentColor={accentColor} />
+                    <PackageInput label={t('requestDelivery.weightLabel')} icon="scale-outline" placeholder={t('requestDelivery.optional')} value={packageWeight} onChangeText={setPackageWeight} keyboardType="numeric" theme={theme} accentColor={accentColor} />
                   </View>
                 </View>
-                <PackageInput label="SPECIAL NOTES" icon="document-text-outline" placeholder="Handle with care, fragile..." value={packageNotes} onChangeText={setPackageNotes} multiline theme={theme} accentColor={accentColor} />
+                <PackageInput label={t('requestDelivery.specialNotesLabel')} icon="document-text-outline" placeholder={t('requestDelivery.specialNotesPlaceholder')} value={packageNotes} onChangeText={setPackageNotes} multiline theme={theme} accentColor={accentColor} />
 
                 <TouchableOpacity
                   style={[s.primaryBtn, { backgroundColor: (pickupCoords && dropoffCoords) ? accentColor : theme.border }]}
                   onPress={proceedToMap} activeOpacity={0.88}
                 >
                   <Ionicons name="bicycle-outline" size={18} color={(pickupCoords && dropoffCoords) ? accentFg : theme.muted} />
-                  <Text style={[s.primaryBtnTxt, { color: (pickupCoords && dropoffCoords) ? accentFg : theme.muted }]}>Find Delivery Partners</Text>
+                  <Text style={[s.primaryBtnTxt, { color: (pickupCoords && dropoffCoords) ? accentFg : theme.muted }]}>{t('requestDelivery.findDeliveryPartners')}</Text>
                 </TouchableOpacity>
               </ScrollView>
             )}
@@ -738,7 +743,7 @@ export default function RequestDeliveryScreen({ navigation }) {
             {/* ── STEP 2 ── */}
             {step === 2 && (
               <>
-                <ScanningBar theme={theme} accentColor={accentColor} count={partners.length} done={scanDone} label="partner" />
+                <ScanningBar theme={theme} accentColor={accentColor} count={partners.length} done={scanDone} label={t('requestDelivery.partnerLabel')} />
                 {scanDone && (
                   <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={[s.scrollContent, { paddingBottom: scrollPadBottom, paddingTop: 8 }]}>
                     <View style={[s.feeBadge, { backgroundColor: theme.card, borderColor: theme.border, marginBottom: 14 }]}>
@@ -746,15 +751,15 @@ export default function RequestDeliveryScreen({ navigation }) {
                       <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
                       <View style={s.feeItem}><Ionicons name="time-outline" size={13} color={theme.hint} /><Text style={[s.feeVal, { color: theme.foreground }]}>~{etaMinutes} min</Text></View>
                       <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
-                      <View style={s.feeItem}><Ionicons name="cash-outline" size={13} color={theme.hint} /><Text style={[s.feeVal, { color: accentColor }]}>₦{feeEstimate?.toLocaleString('en-NG', { maximumFractionDigits: 0 })}</Text></View>
+                      <View style={s.feeItem}><Ionicons name="cash-outline" size={13} color={theme.hint} /><Text style={[s.feeVal, { color: accentColor }]}>{formatMoney(feeEstimate ?? 0)}</Text></View>
                     </View>
-                    <Text style={[s.sheetSub, { color: theme.hint, marginBottom: 12 }]}>Tap a pin on the map or select a partner below.</Text>
+                    <Text style={[s.sheetSub, { color: theme.hint, marginBottom: 12 }]}>{t('requestDelivery.tapPinOrSelectPartner')}</Text>
                     {partners.length === 0 ? (
                       <View style={s.empty}>
                         <Ionicons name="bicycle-outline" size={36} color={theme.hint} />
-                        <Text style={[s.emptyTxt, { color: theme.hint }]}>No partners available right now</Text>
+                        <Text style={[s.emptyTxt, { color: theme.hint }]}>{t('requestDelivery.noPartnersAvailable')}</Text>
                         <TouchableOpacity onPress={proceedToMap} style={[s.retryBtn, { borderColor: accentColor + '50' }]}>
-                          <Text style={[s.retryTxt, { color: accentColor }]}>Retry</Text>
+                          <Text style={[s.retryTxt, { color: accentColor }]}>{t('requestDelivery.retry')}</Text>
                         </TouchableOpacity>
                       </View>
                     ) : (
@@ -776,7 +781,7 @@ export default function RequestDeliveryScreen({ navigation }) {
             {/* ── STEP 3 ── */}
             {step === 3 && selectedPartner && (
               <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={[s.scrollContent, { paddingBottom: scrollPadBottom }]}>
-                <Text style={[s.sheetTitle, { color: theme.foreground }]}>Confirm Delivery</Text>
+                <Text style={[s.sheetTitle, { color: theme.foreground }]}>{t('requestDelivery.confirmDelivery')}</Text>
 
                 <View style={[s.confirmRoute, { backgroundColor: theme.card, borderColor: theme.border }]}>
                   <View style={s.confirmRow}>
@@ -818,8 +823,8 @@ export default function RequestDeliveryScreen({ navigation }) {
                       </View>
                     </View>
                     <View style={s.confirmFareBox}>
-                      <Text style={[s.confirmFareLabel, { color: theme.hint }]}>FEE</Text>
-                      <Text style={[s.confirmFare, { color: accentColor }]}>₦{feeEstimate?.toLocaleString('en-NG', { maximumFractionDigits: 0 })}</Text>
+                      <Text style={[s.confirmFareLabel, { color: theme.hint }]}>{t('requestDelivery.feeLabel')}</Text>
+                      <Text style={[s.confirmFare, { color: accentColor }]}>{formatMoney(feeEstimate ?? 0)}</Text>
                     </View>
                   </View>
                 </View>
@@ -852,7 +857,7 @@ export default function RequestDeliveryScreen({ navigation }) {
                 </TouchableOpacity>
 
                 <TouchableOpacity style={[s.secondaryBtn, { borderColor: theme.border }]} onPress={() => setStep(2)} activeOpacity={0.8}>
-                  <Text style={[s.secondaryBtnTxt, { color: theme.hint }]}>Change Partner</Text>
+                  <Text style={[s.secondaryBtnTxt, { color: theme.hint }]}>{t('requestDelivery.changePartner')}</Text>
                 </TouchableOpacity>
               </ScrollView>
             )}

@@ -11,6 +11,7 @@ import * as MediaLibrary  from 'expo-media-library';
 import * as FileSystem    from 'expo-file-system/legacy';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }       from '../../context/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import { driverAPI, uploadAPI } from '../../services/api';
 import { toBase64DataUri } from '../../utils/toBase64DataUri';
 
@@ -33,69 +34,69 @@ const VEHICLE_SUB_TYPES = {
 //  Document slots — returned based on vehicle type
 //  uploadKey maps to the uploadAPI function to call
 // ─────────────────────────────────────────────────────────────────────────────
-const getDocSlots = (vehicleType) => {
+const getDocSlots = (vehicleType, t) => {
   // Universal docs every driver must submit
   const base = [
     {
       key: 'applicantPhotoUrl',
-      label: 'Your Photograph',
-      hint: 'Clear chest-up photo, plain background',
+      label: t('driverDocs.yourPhotoLabel'),
+      hint: t('driverDocs.yourPhotoHint'),
       icon: 'person-outline',
       uploadKey: 'applicant_photo',
       required: true,
     },
     {
       key: 'govtIdUrl',
-      label: 'Government-Issued ID',
-      hint: 'NIN slip, Voter card, Passport or Licence (front)',
+      label: t('driverDocs.govtIdLabel'),
+      hint: t('driverDocs.govtIdHint'),
       icon: 'card-outline',
       uploadKey: 'govt_id',
       required: true,
     },
     {
       key: 'proofOfAddressUrl',
-      label: 'Proof of Address',
-      hint: 'Utility bill or bank statement — not older than 3 months',
+      label: t('driverDocs.proofOfAddressLabel'),
+      hint: t('driverDocs.proofOfAddressHint'),
       icon: 'home-outline',
       uploadKey: 'proof_of_address',
       required: true,
     },
     {
       key: 'licenseImageUrl',
-      label: "Driver's Licence",
-      hint: 'Front of your valid FRSC-issued licence',
+      label: t('driverDocs.driversLicenceLabel'),
+      hint: t('driverDocs.driversLicenceHint'),
       icon: 'ribbon-outline',
       uploadKey: 'license',
       required: true,
     },
     {
       key: 'vehicleRegUrl',
-      label: 'Vehicle Registration',
-      hint: 'Certificate of Ownership / tinted papers',
+      label: t('driverDocs.vehicleRegLabel'),
+      hint: t('driverDocs.vehicleRegHint'),
       icon: 'document-text-outline',
       uploadKey: 'registration',
       required: true,
     },
     {
       key: 'insuranceUrl',
-      label: 'Insurance Certificate',
-      hint: 'Third-party or comprehensive insurance',
+      label: t('driverDocs.insuranceLabel'),
+      hint: t('driverDocs.insuranceHint'),
       icon: 'shield-outline',
       uploadKey: 'insurance',
       required: true,
     },
     {
       key: 'roadWorthinessUrl',
-      label: 'Road Worthiness Cert',
-      hint: 'Issued by MVAA or your state agency',
+      label: t('driverDocs.roadWorthinessLabel'),
+      hint: t('driverDocs.roadWorthinessHint'),
       icon: 'checkmark-circle-outline',
       uploadKey: 'road_worthiness',
       required: true,
     },
     {
       key: 'vehiclePhotoExteriorUrl',
-      label: 'Vehicle Photo — Exterior',
-      hint: 'Front of vehicle with plate number clearly visible',
+      label: t('driverDocs.vehicleExteriorLabel'),
+      hint: t('driverDocs.vehicleExteriorHint'),
       icon: 'camera-outline',
       uploadKey: 'vehicle_exterior',
       required: true,
@@ -107,26 +108,24 @@ const getDocSlots = (vehicleType) => {
     base.push(
       {
         key: 'vehiclePhotoInteriorUrl',
-        label: vehicleType === 'VAN' ? 'Van Interior / Cargo Area' : 'Vehicle Interior / Salon',
-        hint: vehicleType === 'VAN'
-          ? 'Show load space and cargo capacity'
-          : 'Show passenger seats and interior condition',
+        label: vehicleType === 'VAN' ? t('driverDocs.vanInteriorLabel') : t('driverDocs.carInteriorLabel'),
+        hint: vehicleType === 'VAN' ? t('driverDocs.vanInteriorHint') : t('driverDocs.carInteriorHint'),
         icon: 'car-outline',
         uploadKey: 'vehicle_interior',
         required: true,
       },
       {
         key: 'hackneyCertUrl',
-        label: 'Hackney / Commercial Permit',
-        hint: 'State transport authority commercial operation permit',
+        label: t('driverDocs.hackneyLabel'),
+        hint: t('driverDocs.hackneyHint'),
         icon: 'newspaper-outline',
         uploadKey: 'hackney',
         required: true,
       },
       {
         key: 'vehicleInspectionUrl',
-        label: 'Vehicle Inspection Report',
-        hint: 'MVAA or authorised workshop inspection report',
+        label: t('driverDocs.vehicleInspectionLabel'),
+        hint: t('driverDocs.vehicleInspectionHint'),
         icon: 'construct-outline',
         uploadKey: 'inspection',
         required: false,
@@ -139,16 +138,16 @@ const getDocSlots = (vehicleType) => {
     base.push(
       {
         key: 'riderCardUrl',
-        label: "Rider's Card / Union Card",
-        hint: 'State or LGA-issued rider registration card',
+        label: t('driverDocs.riderCardLabel'),
+        hint: t('driverDocs.riderCardHint'),
         icon: 'id-card-outline',
         uploadKey: 'rider_card',
         required: true,
       },
       {
         key: 'helmetPhotoUrl',
-        label: 'Helmet Photo',
-        hint: 'Show your compliant safety helmet',
+        label: t('driverDocs.helmetLabel'),
+        hint: t('driverDocs.helmetHint'),
         icon: 'glasses-outline',
         uploadKey: 'helmet',
         required: true,
@@ -161,24 +160,24 @@ const getDocSlots = (vehicleType) => {
     base.push(
       {
         key: 'dispatchPermitUrl',
-        label: 'Dispatch / Courier Permit',
-        hint: 'Lagos dispatch pass or equivalent state permit',
+        label: t('driverDocs.dispatchPermitLabel'),
+        hint: t('driverDocs.dispatchPermitHint'),
         icon: 'bicycle-outline',
         uploadKey: 'dispatch_permit',
         required: true,
       },
       {
         key: 'guarantorLetterUrl',
-        label: 'Guarantor Letter',
-        hint: 'Letter from a verified guarantor on headed paper',
+        label: t('driverDocs.guarantorLetterLabel'),
+        hint: t('driverDocs.guarantorLetterHint'),
         icon: 'document-outline',
         uploadKey: 'guarantor_letter',
         required: true,
       },
       {
         key: 'guarantorIdUrl',
-        label: "Guarantor's ID",
-        hint: "Valid government ID of your guarantor",
+        label: t('driverDocs.guarantorIdLabel'),
+        hint: t('driverDocs.guarantorIdHint'),
         icon: 'person-add-outline',
         uploadKey: 'guarantor_id',
         required: true,
@@ -191,8 +190,8 @@ const getDocSlots = (vehicleType) => {
     base.push(
       {
         key: 'riderCardUrl',
-        label: 'Tricycle Operator Permit',
-        hint: 'State or LGA-issued keke operator permit',
+        label: t('driverDocs.tricycleOperatorLabel'),
+        hint: t('driverDocs.tricycleOperatorHint'),
         icon: 'document-lock-outline',
         uploadKey: 'rider_card',
         required: true,
@@ -243,6 +242,7 @@ const extractUrl = (res) =>
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DriverDocumentsScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { t } = useTranslation();
   const insets          = useSafeAreaInsets();
 
   const TAB_H        = 54;
@@ -277,7 +277,7 @@ export default function DriverDocumentsScreen({ navigation }) {
         err?.message?.toLowerCase().includes('not found') ||
         err?.statusCode === 404 ||
         err?.status    === 404;
-      if (!is404) Alert.alert('Error', 'Could not load your profile. Please try again.');
+      if (!is404) Alert.alert(t('driverDocs.errorTitle'), t('driverDocs.couldNotLoadProfile'));
       setProfile(null);
     } finally {
       setLoading(false);
@@ -289,16 +289,16 @@ export default function DriverDocumentsScreen({ navigation }) {
   // ── Create profile ─────────────────────────────────────────────────────────
   const handleCreateProfile = async () => {
     if (!licenseNumber.trim())
-      return Alert.alert('Missing Field', 'Please enter your driver licence number.');
+      return Alert.alert(t('driverDocs.missingFieldTitle'), t('driverDocs.enterLicenceNumber'));
     if (!vehicleMake.trim() || !vehicleModel.trim())
-      return Alert.alert('Missing Field', 'Please enter your vehicle make and model.');
+      return Alert.alert(t('driverDocs.missingFieldTitle'), t('driverDocs.enterVehicleMakeModel'));
     const yr = parseInt(vehicleYear, 10);
     if (!vehicleYear || isNaN(yr) || yr < 1990 || yr > new Date().getFullYear() + 1)
-      return Alert.alert('Invalid Year', 'Please enter a valid vehicle year (e.g. 2019).');
+      return Alert.alert(t('driverDocs.invalidYearTitle'), t('driverDocs.invalidYearBody'));
     if (!vehicleColor.trim())
-      return Alert.alert('Missing Field', 'Please enter your vehicle colour.');
+      return Alert.alert(t('driverDocs.missingFieldTitle'), t('driverDocs.enterVehicleColour'));
     if (!vehiclePlate.trim())
-      return Alert.alert('Missing Field', 'Please enter your plate number.');
+      return Alert.alert(t('driverDocs.missingFieldTitle'), t('driverDocs.enterPlateNumber'));
 
     const seats = parseInt(numberOfSeats, 10);
 
@@ -316,13 +316,13 @@ export default function DriverDocumentsScreen({ navigation }) {
         vehicleSubType: vehicleSubType || undefined,
       });
       Alert.alert(
-        'Profile Created ✅',
-        'Your driver profile has been submitted for review. Upload your documents below.'
+        t('driverDocs.profileCreatedTitle'),
+        t('driverDocs.profileCreatedBody')
       );
       await fetchProfile();
     } catch (err) {
-      const msg = err?.message || err?.errors?.[0]?.msg || 'Could not create profile. Please try again.';
-      Alert.alert('Error', msg);
+      const msg = err?.message || err?.errors?.[0]?.msg || t('driverDocs.couldNotCreateProfile');
+      Alert.alert(t('driverDocs.errorTitle'), msg);
     } finally {
       setSaving(false);
     }
@@ -332,7 +332,7 @@ export default function DriverDocumentsScreen({ navigation }) {
   const pickAndUpload = async (slot) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Needed', 'Please allow access to your photo library.');
+      Alert.alert(t('driverDocs.permissionNeededTitle'), t('driverDocs.photoLibraryPermission'));
       return;
     }
 
@@ -370,9 +370,9 @@ export default function DriverDocumentsScreen({ navigation }) {
 
       await driverAPI.uploadDocuments({ [slot.key]: url });
       await fetchProfile();
-      Alert.alert('Uploaded ✅', `${slot.label} uploaded successfully.`);
+      Alert.alert(t('driverDocs.uploadedTitle'), t('driverDocs.uploadedSuccessBody', { label: slot.label }));
     } catch (err) {
-      Alert.alert('Upload Failed', err?.message || 'Please try again.');
+      Alert.alert(t('driverDocs.uploadFailedTitle'), err?.message || t('driverDocs.pleaseTryAgain'));
     } finally {
       setUploading((prev) => ({ ...prev, [slot.key]: false }));
     }
@@ -382,22 +382,22 @@ export default function DriverDocumentsScreen({ navigation }) {
   const handleDownload = async (url) => {
     if (Platform.OS === 'web') {
       try { window.open(url, '_blank'); }
-      catch { Alert.alert('Download failed', 'Could not open image on web.'); }
+      catch { Alert.alert(t('driverDocs.downloadFailedTitle'), t('driverDocs.couldNotOpenImageOnWeb')); }
       return;
     }
     try {
       const perm = await MediaLibrary.requestPermissionsAsync(false);
       if (!perm.granted) {
-        Alert.alert('Permission needed', 'We need access to your media library to save the image.');
+        Alert.alert(t('driverDocs.permissionNeededLower'), t('driverDocs.mediaLibraryPermission'));
         return;
       }
       const localUri   = FileSystem.documentDirectory + `doc_${Date.now()}.jpg`;
       const downloadRes = await FileSystem.downloadAsync(url, localUri);
       if (downloadRes.status !== 200) throw new Error('Download failed');
       await MediaLibrary.saveToLibraryAsync(localUri);
-      Alert.alert('Saved ✅', 'Document saved to your photos.');
+      Alert.alert(t('driverDocs.savedTitle'), t('driverDocs.savedToPhotos'));
     } catch (err) {
-      Alert.alert('Download Failed', err?.message || 'Could not save document.');
+      Alert.alert(t('driverDocs.downloadFailedTitleCaps'), err?.message || t('driverDocs.couldNotSaveDocument'));
     }
   };
 
@@ -435,17 +435,17 @@ export default function DriverDocumentsScreen({ navigation }) {
               <View style={[sx.infoBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                 <Ionicons name="information-circle-outline" size={20} color={theme.accent} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[sx.infoTitle, { color: theme.foreground }]}>Complete Your Driver Profile</Text>
+                  <Text style={[sx.infoTitle, { color: theme.foreground }]}>{t('driverDocs.completeYourDriverProfile')}</Text>
                   <Text style={[sx.infoSub, { color: theme.hint }]}>
-                    Enter your licence and vehicle details to submit your application. You will upload KYC documents next.
+                    {t('driverDocs.enterLicenceAndVehicleDetails')}
                   </Text>
                 </View>
               </View>
 
               {/* Licence info */}
-              <Text style={[sx.sectionLabel, { color: theme.hint }]}>LICENCE INFO</Text>
+              <Text style={[sx.sectionLabel, { color: theme.hint }]}>{t('driverDocs.licenceInfo')}</Text>
               <InputField
-                placeholder="Licence Number (e.g. ABC123456)"
+                placeholder={t('driverDocs.licenceNumberPlaceholder')}
                 value={licenseNumber}
                 onChangeText={setLicenseNumber}
                 autoCapitalize="characters"
@@ -453,7 +453,7 @@ export default function DriverDocumentsScreen({ navigation }) {
               />
 
               {/* Vehicle type */}
-              <Text style={[sx.sectionLabel, { color: theme.hint }]}>VEHICLE TYPE</Text>
+              <Text style={[sx.sectionLabel, { color: theme.hint }]}>{t('driverDocs.vehicleType')}</Text>
               <View style={sx.chipRow}>
                 {VEHICLE_TYPES.map((vt) => {
                   const sel = vehicleType === vt;
@@ -475,7 +475,7 @@ export default function DriverDocumentsScreen({ navigation }) {
               {/* Sub type */}
               {subTypes.length > 0 && (
                 <>
-                  <Text style={[sx.sectionLabel, { color: theme.hint }]}>VEHICLE SUB-TYPE</Text>
+                  <Text style={[sx.sectionLabel, { color: theme.hint }]}>{t('driverDocs.vehicleSubType')}</Text>
                   <View style={sx.chipRow}>
                     {subTypes.map((st) => {
                       const sel = vehicleSubType === st;
@@ -497,30 +497,30 @@ export default function DriverDocumentsScreen({ navigation }) {
               )}
 
               {/* Vehicle details */}
-              <Text style={[sx.sectionLabel, { color: theme.hint }]}>VEHICLE DETAILS</Text>
+              <Text style={[sx.sectionLabel, { color: theme.hint }]}>{t('driverDocs.vehicleDetails')}</Text>
               <View style={sx.row}>
                 <View style={{ flex: 1 }}>
-                  <InputField placeholder="Make (Toyota)" value={vehicleMake} onChangeText={setVehicleMake} autoCapitalize="words" theme={theme} />
+                  <InputField placeholder={t('driverDocs.makePlaceholder')} value={vehicleMake} onChangeText={setVehicleMake} autoCapitalize="words" theme={theme} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <InputField placeholder="Model (Camry)" value={vehicleModel} onChangeText={setVehicleModel} autoCapitalize="words" theme={theme} />
+                  <InputField placeholder={t('driverDocs.modelPlaceholder')} value={vehicleModel} onChangeText={setVehicleModel} autoCapitalize="words" theme={theme} />
                 </View>
               </View>
               <View style={sx.row}>
                 <View style={{ flex: 1 }}>
-                  <InputField placeholder="Year (2019)" value={vehicleYear} onChangeText={setVehicleYear} keyboardType="numeric" theme={theme} />
+                  <InputField placeholder={t('driverDocs.yearPlaceholder')} value={vehicleYear} onChangeText={setVehicleYear} keyboardType="numeric" theme={theme} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <InputField placeholder="Colour (Black)" value={vehicleColor} onChangeText={setVehicleColor} autoCapitalize="words" theme={theme} />
+                  <InputField placeholder={t('driverDocs.colourPlaceholder')} value={vehicleColor} onChangeText={setVehicleColor} autoCapitalize="words" theme={theme} />
                 </View>
               </View>
               <View style={sx.row}>
                 <View style={{ flex: 1 }}>
-                  <InputField placeholder="Plate No. (ABC123XY)" value={vehiclePlate} onChangeText={setVehiclePlate} autoCapitalize="characters" theme={theme} />
+                  <InputField placeholder={t('driverDocs.platePlaceholder')} value={vehiclePlate} onChangeText={setVehiclePlate} autoCapitalize="characters" theme={theme} />
                 </View>
                 {(vehicleType === 'CAR' || vehicleType === 'VAN') && (
                   <View style={{ flex: 1 }}>
-                    <InputField placeholder="No. of Seats" value={numberOfSeats} onChangeText={setNumberOfSeats} keyboardType="numeric" theme={theme} />
+                    <InputField placeholder={t('driverDocs.seatsPlaceholder')} value={numberOfSeats} onChangeText={setNumberOfSeats} keyboardType="numeric" theme={theme} />
                   </View>
                 )}
               </View>
@@ -534,7 +534,7 @@ export default function DriverDocumentsScreen({ navigation }) {
               >
                 {saving
                   ? <ActivityIndicator color="#fff" />
-                  : <Text style={[sx.primaryBtnTxt, { color: theme.accentFg ?? '#fff' }]}>Submit Application →</Text>
+                  : <Text style={[sx.primaryBtnTxt, { color: theme.accentFg ?? '#fff' }]}>{t('driverDocs.submitApplication')}</Text>
                 }
               </TouchableOpacity>
             </ScrollView>
@@ -549,7 +549,7 @@ export default function DriverDocumentsScreen({ navigation }) {
   // ─────────────────────────────────────────────────────────────────────────
   const isApproved = profile?.isApproved ?? false;
   const isRejected = profile?.isRejected ?? false;
-  const docSlots   = getDocSlots(profile?.vehicleType ?? 'CAR');
+  const docSlots   = getDocSlots(profile?.vehicleType ?? 'CAR', t);
 
   const uploadedCount  = docSlots.filter((s) => !!profile?.[s.key]).length;
   const requiredCount  = docSlots.filter((s) => s.required).length;
@@ -570,7 +570,7 @@ export default function DriverDocumentsScreen({ navigation }) {
             <Ionicons name="arrow-back" size={22} color={theme.foreground} />
           </TouchableOpacity>
 
-          <Text style={[sx.title, { color: theme.foreground }]}>KYC Documents</Text>
+          <Text style={[sx.title, { color: theme.foreground }]}>{t('driverDocs.kycDocuments')}</Text>
           <Text style={[sx.subtitle, { color: theme.hint }]}>
             Upload clear, unobstructed photos of each document to speed up approval.
           </Text>
@@ -589,9 +589,9 @@ export default function DriverDocumentsScreen({ navigation }) {
             <View style={[sx.statusBanner, { backgroundColor: '#E0555510', borderColor: '#E05555' }]}>
               <Ionicons name="close-circle-outline" size={18} color="#E05555" />
               <View style={{ flex: 1 }}>
-                <Text style={[sx.statusTitle, { color: '#E05555' }]}>Application Not Approved</Text>
+                <Text style={[sx.statusTitle, { color: '#E05555' }]}>{t('driverDocs.applicationNotApproved')}</Text>
                 <Text style={[sx.statusSub, { color: theme.hint }]}>
-                  {profile.rejectionReason || 'Please contact support for more information.'}
+                  {profile.rejectionReason || t('driverDocs.contactSupportForInfo')}
                 </Text>
               </View>
             </View>
@@ -599,9 +599,9 @@ export default function DriverDocumentsScreen({ navigation }) {
             <View style={[sx.statusBanner, { backgroundColor: '#10B98110', borderColor: '#10B981' }]}>
               <Ionicons name="shield-checkmark-outline" size={18} color="#10B981" />
               <View style={{ flex: 1 }}>
-                <Text style={[sx.statusTitle, { color: '#10B981' }]}>Approved & Verified ✅</Text>
+                <Text style={[sx.statusTitle, { color: '#10B981' }]}>{t('driverDocs.approvedAndVerified')}</Text>
                 <Text style={[sx.statusSub, { color: theme.hint }]}>
-                  Your account is active. You can go online from the dashboard.
+                  {t('driverDocs.accountActiveBody')}
                 </Text>
               </View>
             </View>
@@ -609,9 +609,9 @@ export default function DriverDocumentsScreen({ navigation }) {
             <View style={[sx.statusBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <Ionicons name="time-outline" size={18} color={theme.hint} />
               <View style={{ flex: 1 }}>
-                <Text style={[sx.statusTitle, { color: theme.foreground }]}>Under Review</Text>
+                <Text style={[sx.statusTitle, { color: theme.foreground }]}>{t('driverDocs.underReview')}</Text>
                 <Text style={[sx.statusSub, { color: theme.hint }]}>
-                  Our team is reviewing your application. Upload all required documents to speed up approval.
+                  {t('driverDocs.reviewingApplicationBody')}
                 </Text>
               </View>
             </View>
@@ -627,13 +627,13 @@ export default function DriverDocumentsScreen({ navigation }) {
             <Text style={[sx.vehicleMeta, { color: theme.hint }]}>
               {profile.vehicleType}
               {profile.vehicleSubType ? ` · ${profile.vehicleSubType}` : ''}
-              {profile.numberOfSeats  ? ` · ${profile.numberOfSeats} seats` : ''}
-              {' · Licence: '}{profile.licenseNumber}
+              {profile.numberOfSeats  ? t('driverDocs.seatsSuffix', { count: profile.numberOfSeats }) : ''}
+              {t('driverDocs.licenceColon')}{profile.licenseNumber}
             </Text>
           </View>
 
           {/* Document slots */}
-          <Text style={[sx.sectionLabel, { color: theme.hint, marginTop: 4 }]}>DOCUMENTS</Text>
+          <Text style={[sx.sectionLabel, { color: theme.hint, marginTop: 4 }]}>{t('driverDocs.documents')}</Text>
 
           {docSlots.map((slot) => {
             const currentUrl  = profile?.[slot.key];
@@ -675,21 +675,21 @@ export default function DriverDocumentsScreen({ navigation }) {
                         onPress={() => setViewImage({ url: currentUrl })}
                       >
                         <Ionicons name="eye-outline" size={16} color={theme.accent} />
-                        <Text style={[sx.iconBtnText, { color: theme.accent }]}>View</Text>
+                        <Text style={[sx.iconBtnText, { color: theme.accent }]}>{t('driverDocs.view')}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[sx.iconBtn, { backgroundColor: theme.accent + '15' }]}
                         onPress={() => handleDownload(currentUrl)}
                       >
                         <Ionicons name="download-outline" size={16} color={theme.accent} />
-                        <Text style={[sx.iconBtnText, { color: theme.accent }]}>Download</Text>
+                        <Text style={[sx.iconBtnText, { color: theme.accent }]}>{t('driverDocs.download')}</Text>
                       </TouchableOpacity>
                     </View>
                   </>
                 ) : (
                   <View style={[sx.placeholder, { borderColor: theme.border }]}>
                     <Ionicons name="cloud-upload-outline" size={36} color={theme.hint} />
-                    <Text style={[sx.placeholderTxt, { color: theme.hint }]}>Not uploaded yet</Text>
+                    <Text style={[sx.placeholderTxt, { color: theme.hint }]}>{t('driverDocs.notUploadedYet')}</Text>
                   </View>
                 )}
 

@@ -10,6 +10,7 @@ import { LinearGradient }    from 'expo-linear-gradient';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useTranslation }    from 'react-i18next';
 import { useAuth }           from '../../context/AuthContext';
 import { shieldAPI }         from '../../services/api';
 import ShieldActivateSheet   from '../../components/ShieldActivateSheet';
@@ -80,7 +81,9 @@ const sb = StyleSheet.create({
 });
 
 // ── Beneficiary card ──────────────────────────────────────────────────────────
-const BeneficiaryCard = ({ item, onEdit, onDelete, onSetDefault, theme, mode }) => (
+const BeneficiaryCard = ({ item, onEdit, onDelete, onSetDefault, theme, mode }) => {
+  const { t } = useTranslation();
+  return (
   <View style={[bc.card, { borderColor: item.isDefault ? SHIELD_GREEN + '50' : G.border(mode), overflow:'hidden' }]}>
     <LinearGradient
       colors={item.isDefault
@@ -100,7 +103,7 @@ const BeneficiaryCard = ({ item, onEdit, onDelete, onSetDefault, theme, mode }) 
         {item.isDefault && (
           <View style={[bc.defaultBadge, { backgroundColor: SHIELD_GREEN + '18', borderColor: SHIELD_GREEN + '30', borderWidth:1 }]}>
             <Ionicons name="star" size={9} color={SHIELD_GREEN} />
-            <Text style={[bc.defaultTxt, { color: SHIELD_GREEN }]}>DEFAULT</Text>
+            <Text style={[bc.defaultTxt, { color: SHIELD_GREEN }]}>{t('shield.defaultBadge')}</Text>
           </View>
         )}
       </View>
@@ -120,7 +123,8 @@ const BeneficiaryCard = ({ item, onEdit, onDelete, onSetDefault, theme, mode }) 
       </TouchableOpacity>
     </View>
   </View>
-);
+  );
+};
 const bc = StyleSheet.create({
   card:       { flexDirection:'row', alignItems:'center', borderRadius:16, borderWidth:1.5, padding:14, marginBottom:10, gap:12, overflow:'hidden' },
   topEdge:    { position:'absolute', top:0, left:0, right:0, height:1 },
@@ -136,7 +140,9 @@ const bc = StyleSheet.create({
 });
 
 // ── Active session card ───────────────────────────────────────────────────────
-const ActiveSessionCard = ({ session, viewUrl, whatsappLink, onDeactivate, onArrivedSafe, theme, mode }) => (
+const ActiveSessionCard = ({ session, viewUrl, whatsappLink, onDeactivate, onArrivedSafe, theme, mode }) => {
+  const { t } = useTranslation();
+  return (
   <View style={[asc.card, { overflow:'hidden' }]}>
     <LinearGradient
       colors={['rgba(76,175,80,0.14)','rgba(76,175,80,0.06)']}
@@ -146,27 +152,28 @@ const ActiveSessionCard = ({ session, viewUrl, whatsappLink, onDeactivate, onArr
     <View style={[asc.topEdge, { backgroundColor: SHIELD_GREEN + '60' }]} />
     <View style={asc.header}>
       <Ionicons name="shield-checkmark" size={18} color={SHIELD_GREEN} />
-      <Text style={asc.title}>Guardian: {session.beneficiaryName}</Text>
+      <Text style={asc.title}>{t('shield.guardianLabel', { name: session.beneficiaryName })}</Text>
     </View>
     <Text style={[asc.phone, { color: theme.hint }]}>{session.beneficiaryPhone}</Text>
     <Text style={[asc.views, { color: theme.hint }]}>
-      👁 Viewed {session.viewCount} {session.viewCount === 1 ? 'time' : 'times'}
+      {t('shield.viewedTimes', { count: session.viewCount })}
     </Text>
     <View style={asc.btnRow}>
       <TouchableOpacity style={[asc.btn, { backgroundColor: '#25D366' }]} onPress={() => Linking.openURL(whatsappLink)}>
         <Ionicons name="logo-whatsapp" size={15} color="#FFF" />
-        <Text style={asc.btnTxt}>Share Again</Text>
+        <Text style={asc.btnTxt}>{t('shield.shareAgain')}</Text>
       </TouchableOpacity>
       <TouchableOpacity style={[asc.btn, { backgroundColor: SHIELD_GREEN }]} onPress={onArrivedSafe}>
         <Ionicons name="checkmark-circle" size={15} color="#FFF" />
-        <Text style={asc.btnTxt}>I'm Safe</Text>
+        <Text style={asc.btnTxt}>{t('shield.imSafe')}</Text>
       </TouchableOpacity>
     </View>
     <TouchableOpacity onPress={onDeactivate} style={asc.deactivate}>
-      <Text style={asc.deactivateTxt}>Deactivate SHIELD</Text>
+      <Text style={asc.deactivateTxt}>{t('shield.deactivateShield')}</Text>
     </TouchableOpacity>
   </View>
-);
+  );
+};
 const asc = StyleSheet.create({
   card:         { borderRadius:18, borderWidth:1.5, borderColor: SHIELD_GREEN + '40', padding:18, marginBottom:22, overflow:'hidden' },
   topEdge:      { position:'absolute', top:0, left:0, right:0, height:1 },
@@ -186,6 +193,7 @@ const asc = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ShieldScreen({ navigation, route }) {
   const { theme, mode } = useTheme();
+  const { t }           = useTranslation();
   const { user }        = useAuth();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
@@ -218,20 +226,20 @@ export default function ShieldScreen({ navigation, route }) {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const handleDelete = (id) => {
-    Alert.alert('Remove Guardian?', 'This person will no longer be a quick option.',[
+    Alert.alert(t('shield.removeGuardianTitle'), t('shield.removeGuardianBody'),[
       { text:'Cancel', style:'cancel' },
       { text:'Remove', style:'destructive', onPress: async () => {
         try {
           await shieldAPI.deleteBeneficiary(id);
           setBeneficiaries(prev => prev.filter(b => b.id !== id));
-        } catch(e) { Alert.alert('Error', e?.response?.data?.message ?? 'Could not remove guardian.'); }
+        } catch(e) { Alert.alert(t('shield.errorTitle'), e?.response?.data?.message ?? t('shield.couldNotRemoveGuardian')); }
       }},
     ]);
   };
 
   const handleSetDefault = async (id) => {
     try { await shieldAPI.updateBeneficiary(id,{ isDefault:true }); fetchAll(); }
-    catch(e) { Alert.alert('Error', e?.response?.data?.message ?? 'Could not update guardian.'); }
+    catch(e) { Alert.alert(t('shield.errorTitle'), e?.response?.data?.message ?? t('shield.couldNotUpdateGuardian')); }
   };
 
   const handleActivated = (result) => {
@@ -243,13 +251,13 @@ export default function ShieldScreen({ navigation, route }) {
   };
 
   const handleDeactivate = () => {
-    Alert.alert('Deactivate SHIELD?','Your guardian will no longer be able to track this trip.',[
+    Alert.alert(t('shield.deactivateTitle'), t('shield.deactivateBody'),[
       { text:'Cancel', style:'cancel' },
       { text:'Deactivate', style:'destructive', onPress: async () => {
         try {
           await shieldAPI.deactivate({ rideId, deliveryId });
           setActiveSession(null); setViewUrl(null); setWhatsappLink(null);
-        } catch(e) { Alert.alert('Error', e?.response?.data?.message ?? 'Could not deactivate.'); }
+        } catch(e) { Alert.alert(t('shield.errorTitle'), e?.response?.data?.message ?? t('shield.couldNotDeactivate')); }
       }},
     ]);
   };
@@ -257,8 +265,8 @@ export default function ShieldScreen({ navigation, route }) {
   const handleArrivedSafe = async () => {
     try {
       await shieldAPI.arrivedSafe({ rideId, deliveryId });
-      Alert.alert('✅ Confirmed!','Your guardian has been notified that you arrived safely.');
-    } catch(e) { Alert.alert('Error', e?.response?.data?.message ?? 'Could not confirm arrival.'); }
+      Alert.alert(t('shield.confirmedTitle'), t('shield.confirmedBody'));
+    } catch(e) { Alert.alert(t('shield.errorTitle'), e?.response?.data?.message ?? t('shield.couldNotConfirmArrival')); }
   };
 
   const hasActiveRide = !!(rideId || deliveryId);
@@ -278,15 +286,15 @@ export default function ShieldScreen({ navigation, route }) {
           <Ionicons name="arrow-back" size={22} color={theme.foreground} />
         </TouchableOpacity>
         <View style={{ flex:1 }}>
-          <Text style={[s.headerTitle, { color: theme.foreground }]}>SHIELD</Text>
-          <Text style={[s.headerSub, { color: theme.hint }]}>Safety Guardian</Text>
+          <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('shield.headerTitle')}</Text>
+          <Text style={[s.headerSub, { color: theme.hint }]}>{t('shield.headerSub')}</Text>
         </View>
         <TouchableOpacity
           onPress={() => navigation.navigate('ShieldBeneficiaries')}
           style={[s.manageBtn, { backgroundColor: G.icon(mode), borderColor: G.border(mode) }]}
         >
           <Ionicons name="people-outline" size={15} color={theme.foreground} />
-          <Text style={[s.manageBtnTxt, { color: theme.foreground }]}>Guardians</Text>
+          <Text style={[s.manageBtnTxt, { color: theme.foreground }]}>{t('shield.guardians')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -307,13 +315,13 @@ export default function ShieldScreen({ navigation, route }) {
                 start={{ x:0, y:0 }} end={{ x:1, y:1 }}
                 style={StyleSheet.absoluteFill}
               />
-              <Text style={[s.infoTitle, { color: theme.foreground }]}>How SHIELD Works</Text>
+              <Text style={[s.infoTitle, { color: theme.foreground }]}>{t('shield.howShieldWorks')}</Text>
               {[
-                { icon:'person-add-outline',    text:'Add a trusted guardian — no app download needed' },
-                { icon:'link-outline',           text:'Share a secure link via WhatsApp in one tap' },
-                { icon:'navigate-outline',       text:'They see live driver location, vehicle details & route' },
-                { icon:'alert-circle-outline',   text:'They can send a safety check alert directly to your driver' },
-                { icon:'checkmark-done-outline', text:"Tap \"I'm Safe\" when you arrive — they're instantly notified" },
+                { icon:'person-add-outline',    text: t('shield.step1') },
+                { icon:'link-outline',           text: t('shield.step2') },
+                { icon:'navigate-outline',       text: t('shield.step3') },
+                { icon:'alert-circle-outline',   text: t('shield.step4') },
+                { icon:'checkmark-done-outline', text: t('shield.step5') },
               ].map((item, i) => (
                 <View key={i} style={s.infoRow}>
                   <View style={[s.infoIcon, { backgroundColor: SHIELD_GREEN + '15' }]}>
@@ -338,7 +346,7 @@ export default function ShieldScreen({ navigation, route }) {
             <View style={[s.nightBanner, { backgroundColor:'rgba(123,104,238,0.10)', borderColor:'rgba(123,104,238,0.30)' }]}>
               <Ionicons name="moon-outline" size={15} color="#7B68EE" />
               <Text style={[s.nightTxt, { color:'#7B68EE' }]}>
-                Auto-SHIELD notifies your default guardian automatically for rides after 9 PM.
+                {t('shield.nightBannerText')}
               </Text>
             </View>
           )}
@@ -354,7 +362,7 @@ export default function ShieldScreen({ navigation, route }) {
               <View style={[s.activateBtnInner, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
                 <Ionicons name="shield-checkmark" size={18} color="#FFF" />
               </View>
-              <Text style={s.activateBtnTxt}>Activate SHIELD</Text>
+              <Text style={s.activateBtnTxt}>{t('shield.activateShield')}</Text>
             </TouchableOpacity>
           )}
 
@@ -367,12 +375,12 @@ export default function ShieldScreen({ navigation, route }) {
               />
               <Ionicons name="information-circle-outline" size={15} color={theme.hint} />
               <Text style={[s.noRideNoteTxt, { color: theme.hint }]}>
-                SHIELD can be activated from the ride or delivery tracking screen once your trip has started.
+                {t('shield.noRideNoteText')}
               </Text>
             </View>
           )}
 
-          <Text style={[s.sectionTitle, { color: theme.hint }]}>SAVED GUARDIANS</Text>
+          <Text style={[s.sectionTitle, { color: theme.hint }]}>{t('shield.savedGuardians')}</Text>
 
           {beneficiaries.length === 0 ? (
             <TouchableOpacity
@@ -385,7 +393,7 @@ export default function ShieldScreen({ navigation, route }) {
                 style={StyleSheet.absoluteFill}
               />
               <Ionicons name="add-circle-outline" size={22} color={SHIELD_GREEN} />
-              <Text style={[s.addFirstTxt, { color: SHIELD_GREEN }]}>Add your first guardian</Text>
+              <Text style={[s.addFirstTxt, { color: SHIELD_GREEN }]}>{t('shield.addFirstGuardian')}</Text>
             </TouchableOpacity>
           ) : (
             beneficiaries.slice(0,3).map(b => (
@@ -399,7 +407,7 @@ export default function ShieldScreen({ navigation, route }) {
           )}
           {beneficiaries.length > 3 && (
             <TouchableOpacity onPress={() => navigation.navigate('ShieldBeneficiaries')}>
-              <Text style={[s.viewAll, { color: SHIELD_GREEN }]}>View all {beneficiaries.length} guardians →</Text>
+              <Text style={[s.viewAll, { color: SHIELD_GREEN }]}>{t('shield.viewAllGuardians', { count: beneficiaries.length })}</Text>
             </TouchableOpacity>
           )}
         </ScrollView>

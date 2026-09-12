@@ -32,6 +32,7 @@ import {
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { walletAPI } from '../services/api';
+import { useCurrency } from '../context/CurrencyContext';
 
 // ── Paystack logomark ─────────────────────────────────────────────────────────
 const PaystackMark = ({ size = 18, style }) => (
@@ -112,6 +113,7 @@ export const PaymentSelector = ({
   theme,
   accentColor,
 }) => {
+  const { formatMoney } = useCurrency();
   const walletInsufficient = value === 'WALLET' && walletBalance !== null && walletBalance < fare;
 
   return (
@@ -143,8 +145,8 @@ export const PaymentSelector = ({
                     ? <ActivityIndicator size="small" color={theme.hint} style={{ marginTop: 2, alignSelf: 'flex-start' }} />
                     : <Text style={[ps.optionSub, { color: insuf ? '#E05555' : (selected ? m.color : theme.hint) }]}>
                         {insuf
-                          ? `Insufficient (₦${Number(walletBalance).toLocaleString('en-NG', { maximumFractionDigits: 0 })})`
-                          : `₦${Number(walletBalance ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}`
+                          ? `Insufficient (${formatMoney(walletBalance)})`
+                          : formatMoney(walletBalance ?? 0)
                         }
                       </Text>
                 ) : (
@@ -241,10 +243,11 @@ const ps = StyleSheet.create({
 //   await rideAPI.requestSpecificDriver({ ..., paymentMethod, transactionId: result?.transactionId });
 
 export const useCardPayment = () => {
+  const { formatMoney } = useCurrency();
   const handleCardPayment = async (method, fare) => {
     if (method === 'CASH' || method === 'WALLET') return null;
-    if (method === 'PAYSTACK')    return _handlePaystack(fare);
-    if (method === 'FLUTTERWAVE') return _handleFlutterwave(fare);
+    if (method === 'PAYSTACK')    return _handlePaystack(fare, formatMoney);
+    if (method === 'FLUTTERWAVE') return _handleFlutterwave(fare, formatMoney);
     return null;
   };
 
@@ -252,7 +255,7 @@ export const useCardPayment = () => {
 };
 
 // ── Paystack flow (card / bank / USSD via Paystack checkout) ─────────────────
-const _handlePaystack = (fare) =>
+const _handlePaystack = (fare, formatMoney) =>
   new Promise(async (resolve, reject) => {
     try {
       const res       = await walletAPI.initializeTopUp({ amount: fare });
@@ -265,7 +268,7 @@ const _handlePaystack = (fare) =>
 
       Alert.alert(
         'Complete Payment 💳',
-        `Pay ₦${Number(fare).toLocaleString('en-NG', { maximumFractionDigits: 0 })} in your browser (card, bank transfer, or USSD), then tap Verify.`,
+        `Pay ${formatMoney(fare)} in your browser (card, bank transfer, or USSD), then tap Verify.`,
         [
           {
             text: 'Verify & Confirm',
@@ -292,7 +295,7 @@ const _handlePaystack = (fare) =>
   });
 
 // ── Flutterwave flow (card / bank / USSD via Flutterwave checkout) ────────────
-const _handleFlutterwave = (fare) =>
+const _handleFlutterwave = (fare, formatMoney) =>
   new Promise(async (resolve, reject) => {
     try {
       const res = await walletAPI.flutterwaveTopup({ amount: fare });
@@ -308,7 +311,7 @@ const _handleFlutterwave = (fare) =>
       if (Platform.OS === 'ios') {
         Alert.prompt(
           'Verify Flutterwave Payment',
-          `After paying ₦${Number(fare).toLocaleString('en-NG', { maximumFractionDigits: 0 })} (card, bank, or USSD), paste your Flutterwave transaction ID:`,
+          `After paying ${formatMoney(fare)} (card, bank, or USSD), paste your Flutterwave transaction ID:`,
           [
             {
               text: 'Verify & Confirm',
@@ -331,7 +334,7 @@ const _handleFlutterwave = (fare) =>
         // Android: webhook credits the wallet; pass txRef along
         Alert.alert(
           'Complete Payment 💳',
-          `Pay ₦${Number(fare).toLocaleString('en-NG', { maximumFractionDigits: 0 })} in your browser (card, bank, or USSD).\n\nOnce done, tap Confirm below.`,
+          `Pay ${formatMoney(fare)} in your browser (card, bank, or USSD).\n\nOnce done, tap Confirm below.`,
           [
             {
               text: "I've Paid — Confirm",

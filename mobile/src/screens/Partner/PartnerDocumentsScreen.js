@@ -12,6 +12,8 @@ import * as FileSystem   from 'expo-file-system/legacy';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }      from '../../context/ThemeContext';
 import { useScrollY }    from '../../context/ScrollContext';
+import { useTranslation } from 'react-i18next';
+import i18n              from '../../i18n';
 import { partnerAPI, uploadAPI } from '../../services/api';
 import { toBase64DataUri } from '../../utils/toBase64DataUri';
 
@@ -21,11 +23,11 @@ const { height } = Dimensions.get('window');
 //  Vehicle type options
 // ─────────────────────────────────────────────────────────────────────────────
 const VEHICLE_TYPES = [
-  { value: 'BIKE',       label: 'Bike',       icon: 'bicycle-outline' },
-  { value: 'MOTORCYCLE', label: 'Motorcycle', icon: 'bicycle-outline' },
-  { value: 'CAR',        label: 'Car',        icon: 'car-outline'     },
-  { value: 'VAN',        label: 'Van',        icon: 'bus-outline'     },
-  { value: 'TRICYCLE',   label: 'Tricycle',   icon: 'bicycle-outline' },
+  { value: 'BIKE',       labelKey: 'partnerDocuments.vtBike',       icon: 'bicycle-outline' },
+  { value: 'MOTORCYCLE', labelKey: 'partnerDocuments.vtMotorcycle', icon: 'bicycle-outline' },
+  { value: 'CAR',        labelKey: 'partnerDocuments.vtCar',        icon: 'car-outline'     },
+  { value: 'VAN',        labelKey: 'partnerDocuments.vtVan',        icon: 'bus-outline'     },
+  { value: 'TRICYCLE',   labelKey: 'partnerDocuments.vtTricycle',   icon: 'bicycle-outline' },
 ];
 
 const VEHICLE_SUB_TYPES = {
@@ -44,32 +46,32 @@ const getDocSlots = (vehicleType) => {
   const base = [
     {
       key: 'applicantPhotoUrl',
-      label: 'Your Photograph',
-      hint: 'Clear chest-up photo, plain background',
+      labelKey: 'partnerDocuments.docApplicantPhotoLabel',
+      hintKey: 'partnerDocuments.docApplicantPhotoHint',
       icon: 'person-outline',
       uploadKey: 'applicant_photo',
       required: true,
     },
     {
       key: 'govtIdUrl',
-      label: 'Government-Issued ID',
-      hint: 'NIN slip, Voter card, or Passport (front)',
+      labelKey: 'partnerDocuments.docGovtIdLabel',
+      hintKey: 'partnerDocuments.docGovtIdHint',
       icon: 'card-outline',
       uploadKey: 'govt_id',
       required: true,
     },
     {
       key: 'idImageUrl',
-      label: 'ID Card Photo',
-      hint: 'Full photo of your ID card — front and back if possible',
+      labelKey: 'partnerDocuments.docIdCardPhotoLabel',
+      hintKey: 'partnerDocuments.docIdCardPhotoHint',
       icon: 'id-card-outline',
       uploadKey: 'partner_id',
       required: true,
     },
     {
       key: 'vehicleImageUrl',
-      label: 'Vehicle Photo',
-      hint: 'Clear photo of your vehicle showing plate number',
+      labelKey: 'partnerDocuments.docVehiclePhotoLabel',
+      hintKey: 'partnerDocuments.docVehiclePhotoHint',
       icon: 'camera-outline',
       uploadKey: 'partner_vehicle',
       required: true,
@@ -81,32 +83,32 @@ const getDocSlots = (vehicleType) => {
     base.push(
       {
         key: 'insuranceUrl',
-        label: 'Insurance Certificate',
-        hint: 'Third-party insurance for your motorcycle',
+        labelKey: 'partnerDocuments.docInsuranceLabel',
+        hintKey: 'partnerDocuments.docInsuranceMotoHint',
         icon: 'shield-outline',
         uploadKey: 'insurance',
         required: true,
       },
       {
         key: 'roadWorthinessUrl',
-        label: 'Road Worthiness Cert',
-        hint: 'State-issued road worthiness certificate',
+        labelKey: 'partnerDocuments.docRoadWorthinessLabel',
+        hintKey: 'partnerDocuments.docRoadWorthinessMotoHint',
         icon: 'checkmark-circle-outline',
         uploadKey: 'road_worthiness',
         required: true,
       },
       {
         key: 'riderCardUrl',
-        label: "Rider's Card / Union Card",
-        hint: 'State or LGA-issued rider registration card',
+        labelKey: 'partnerDocuments.docRiderCardLabel',
+        hintKey: 'partnerDocuments.docRiderCardHint',
         icon: 'ribbon-outline',
         uploadKey: 'rider_card',
         required: true,
       },
       {
         key: 'helmetPhotoUrl',
-        label: 'Helmet Photo',
-        hint: 'Show your compliant safety helmet',
+        labelKey: 'partnerDocuments.docHelmetPhotoLabel',
+        hintKey: 'partnerDocuments.docHelmetPhotoHint',
         icon: 'glasses-outline',
         uploadKey: 'helmet',
         required: true,
@@ -119,24 +121,24 @@ const getDocSlots = (vehicleType) => {
     base.push(
       {
         key: 'dispatchPermitUrl',
-        label: 'Dispatch / Courier Permit',
-        hint: 'Lagos dispatch pass or equivalent state permit',
+        labelKey: 'partnerDocuments.docDispatchPermitLabel',
+        hintKey: 'partnerDocuments.docDispatchPermitHint',
         icon: 'bicycle-outline',
         uploadKey: 'dispatch_permit',
         required: true,
       },
       {
         key: 'guarantorLetterUrl',
-        label: 'Guarantor Letter',
-        hint: 'Letter from a verified guarantor on headed paper',
+        labelKey: 'partnerDocuments.docGuarantorLetterLabel',
+        hintKey: 'partnerDocuments.docGuarantorLetterHint',
         icon: 'document-outline',
         uploadKey: 'guarantor_letter',
         required: true,
       },
       {
         key: 'guarantorIdUrl',
-        label: "Guarantor's ID",
-        hint: 'Valid government ID belonging to your guarantor',
+        labelKey: 'partnerDocuments.docGuarantorIdLabel',
+        hintKey: 'partnerDocuments.docGuarantorIdHint',
         icon: 'person-add-outline',
         uploadKey: 'guarantor_id',
         required: true,
@@ -149,24 +151,24 @@ const getDocSlots = (vehicleType) => {
     base.push(
       {
         key: 'insuranceUrl',
-        label: 'Insurance Certificate',
-        hint: 'Third-party or comprehensive insurance',
+        labelKey: 'partnerDocuments.docInsuranceLabel',
+        hintKey: 'partnerDocuments.docInsuranceGenericHint',
         icon: 'shield-outline',
         uploadKey: 'insurance',
         required: true,
       },
       {
         key: 'roadWorthinessUrl',
-        label: 'Road Worthiness Cert',
-        hint: 'Issued by MVAA or your state agency',
+        labelKey: 'partnerDocuments.docRoadWorthinessLabel',
+        hintKey: 'partnerDocuments.docRoadWorthinessGenericHint',
         icon: 'checkmark-circle-outline',
         uploadKey: 'road_worthiness',
         required: true,
       },
       {
         key: 'vehiclePhotoInteriorUrl',
-        label: 'Vehicle Interior / Salon',
-        hint: 'Show passenger seating condition',
+        labelKey: 'partnerDocuments.docVehicleInteriorCarLabel',
+        hintKey: 'partnerDocuments.docVehicleInteriorCarHint',
         icon: 'car-outline',
         uploadKey: 'vehicle_interior',
         required: false,
@@ -195,8 +197,8 @@ const getDocSlots = (vehicleType) => {
       },
       {
         key: 'vehiclePhotoInteriorUrl',
-        label: 'Van Interior / Cargo Area',
-        hint: 'Show load space and cargo capacity',
+        labelKey: 'partnerDocuments.docVehicleInteriorVanLabel',
+        hintKey: 'partnerDocuments.docVehicleInteriorVanHint',
         icon: 'cube-outline',
         uploadKey: 'vehicle_interior',
         required: true,
@@ -209,16 +211,16 @@ const getDocSlots = (vehicleType) => {
     base.push(
       {
         key: 'operatorPermitUrl',
-        label: 'Tricycle Operator Permit',
-        hint: 'State or LGA-issued keke operator permit',
+        labelKey: 'partnerDocuments.docOperatorPermitLabel',
+        hintKey: 'partnerDocuments.docOperatorPermitHint',
         icon: 'document-lock-outline',
         uploadKey: 'operator_permit',
         required: true,
       },
       {
         key: 'insuranceUrl',
-        label: 'Insurance Certificate',
-        hint: 'Third-party insurance for your tricycle',
+        labelKey: 'partnerDocuments.docInsuranceLabel',
+        hintKey: 'partnerDocuments.docInsuranceTricycleHint',
         icon: 'shield-outline',
         uploadKey: 'insurance',
         required: false,
@@ -263,6 +265,7 @@ const extractUrl = (res) =>
 // ─────────────────────────────────────────────────────────────────────────────
 const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, autoCapitalize }) => {
   const { theme }  = useTheme();
+  const { t } = useTranslation();
   const [focused, setFocused] = useState(false);
   const labelY  = useRef(new Animated.Value(value ? 1 : 0)).current;
   const borderV = useRef(new Animated.Value(0)).current;
@@ -305,6 +308,7 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, autoCa
 // ─────────────────────────────────────────────────────────────────────────────
 export default function PartnerDocumentsScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { t }    = useTranslation();
   const insets  = useSafeAreaInsets();
   const scrollY = useScrollY();
 
@@ -339,7 +343,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
         setProfileMissing(true);
         setProfile(null);
       } else {
-        Alert.alert('Error', err?.message || 'Could not load profile');
+        Alert.alert(t('common.error'), err?.message || t('partnerDocuments.loadProfileError'));
       }
     } finally {
       setLoading(false);
@@ -351,7 +355,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
   // ── Create profile ─────────────────────────────────────────────────────────
   const handleCreateProfile = async () => {
     if (!vehicleType) {
-      Alert.alert('Vehicle type required', 'Please select a vehicle type.');
+      Alert.alert(t('partnerDocuments.vehicleTypeRequired'), t('partnerDocuments.selectVehicleType'));
       return;
     }
     setCreatingProfile(true);
@@ -365,8 +369,8 @@ export default function PartnerDocumentsScreen({ navigation }) {
       });
       await fetchProfile();
     } catch (err) {
-      const msg = err?.message || err?.response?.data?.message || 'Failed to create profile.';
-      Alert.alert('Error', msg);
+      const msg = err?.message || err?.response?.data?.message || t('partnerDocuments.createProfileError');
+      Alert.alert(t('common.error'), msg);
     } finally {
       setCreatingProfile(false);
     }
@@ -375,12 +379,12 @@ export default function PartnerDocumentsScreen({ navigation }) {
   // ── Pick & upload ──────────────────────────────────────────────────────────
   const pickAndUpload = async (docType) => {
     if (!profile) {
-      Alert.alert('No Profile', 'Please complete your courier profile first.');
+      Alert.alert(t('partnerDocuments.noProfile'), t('partnerDocuments.completeProfileFirst'));
       return;
     }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'We need camera roll access to upload documents.');
+      Alert.alert(t('partnerDocuments.permissionNeeded'), t('partnerDocuments.cameraRollAccess'));
       return;
     }
 
@@ -412,13 +416,13 @@ export default function PartnerDocumentsScreen({ navigation }) {
         url = extractUrl(uploadRes);
       }
 
-      if (!url) throw new Error('Upload succeeded but no URL was returned.');
+      if (!url) throw new Error(t('partnerDocuments.uploadNoUrl'));
 
       await partnerAPI.uploadDocuments({ [docType.key]: url });
       await fetchProfile();
-      Alert.alert('Uploaded ✅', `${docType.label} uploaded successfully.`);
+      Alert.alert(t('partnerDocuments.uploadedTitle'), t('partnerDocuments.uploadedMsg', { label: t(docType.labelKey) }));
     } catch (err) {
-      Alert.alert('Upload Failed', err?.response?.data?.message || err?.message || 'Please try again.');
+      Alert.alert(t('partnerDocuments.uploadFailed'), err?.response?.data?.message || err?.message || t('partnerDocuments.pleaseTryAgain'));
     } finally {
       setUploading((prev) => ({ ...prev, [docType.key]: false }));
     }
@@ -428,22 +432,22 @@ export default function PartnerDocumentsScreen({ navigation }) {
   const handleDownload = async (url) => {
     if (Platform.OS === 'web') {
       try { window.open(url, '_blank'); }
-      catch { Alert.alert('Download failed', 'Could not open image on web.'); }
+      catch { Alert.alert(t('partnerDocuments.downloadFailed'), t('partnerDocuments.couldNotOpenWeb')); }
       return;
     }
     try {
       const perm = await MediaLibrary.requestPermissionsAsync(false);
       if (!perm.granted) {
-        Alert.alert('Permission needed', 'We need access to your media library to save the image.');
+        Alert.alert(t('partnerDocuments.permissionNeeded'), t('partnerDocuments.mediaLibraryAccess'));
         return;
       }
       const localUri    = FileSystem.documentDirectory + `doc_${Date.now()}.jpg`;
       const downloadRes = await FileSystem.downloadAsync(url, localUri);
-      if (downloadRes.status !== 200) throw new Error('Download failed');
+      if (downloadRes.status !== 200) throw new Error(t('partnerDocuments.downloadFailedGeneric'));
       await MediaLibrary.saveToLibraryAsync(localUri);
-      Alert.alert('Saved ✅', 'Document saved to your photos.');
+      Alert.alert(t('partnerDocuments.savedTitle'), t('partnerDocuments.savedMsg'));
     } catch (err) {
-      Alert.alert('Download Failed', err?.message || 'Could not save document.');
+      Alert.alert(t('partnerDocuments.downloadFailed'), err?.message || t('partnerDocuments.couldNotSaveDoc'));
     }
   };
 
@@ -478,13 +482,13 @@ export default function PartnerDocumentsScreen({ navigation }) {
               <Ionicons name="arrow-back" size={20} color={theme.foreground} />
             </TouchableOpacity>
 
-            <Text style={[styles.emptyTitle, { color: theme.foreground }]}>Complete Your Courier Profile</Text>
+            <Text style={[styles.emptyTitle, { color: theme.foreground }]}>{t('partnerDocuments.completeCourierProfile')}</Text>
             <Text style={[styles.emptyText, { color: theme.hint }]}>
-              Select your vehicle type and enter your plate number to get started.
+              {t('partnerDocuments.selectVehicleAndPlate')}
             </Text>
 
             {/* Vehicle type */}
-            <Text style={[styles.sectionLabel, { color: theme.hint }]}>VEHICLE TYPE</Text>
+            <Text style={[styles.sectionLabel, { color: theme.hint }]}>{t('partnerDocuments.vehicleType')}</Text>
             <View style={styles.vehicleTypeGrid}>
               {VEHICLE_TYPES.map((vt) => {
                 const selected = vehicleType === vt.value;
@@ -500,7 +504,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
                   >
                     <Ionicons name={vt.icon} size={18} color={selected ? theme.accent : theme.hint} />
                     <Text style={[styles.vehicleTypeLabel, { color: selected ? theme.accent : theme.hint }]}>
-                      {vt.label}
+                      {t(vt.labelKey)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -510,7 +514,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
             {/* Sub type */}
             {subTypes.length > 0 && (
               <>
-                <Text style={[styles.sectionLabel, { color: theme.hint }]}>SUB-TYPE</Text>
+                <Text style={[styles.sectionLabel, { color: theme.hint }]}>{t('partnerDocuments.subType')}</Text>
                 <View style={styles.vehicleTypeGrid}>
                   {subTypes.map((st) => {
                     const selected = vehicleSubType === st;
@@ -536,7 +540,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
 
             {/* Plate & seats */}
             <FloatInput
-              label="Plate Number (optional)"
+              label={t('partnerDocuments.plateNumberOptional')}
               iconName="document-text-outline"
               value={vehiclePlate}
               onChangeText={setVehiclePlate}
@@ -544,7 +548,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
             />
             {(vehicleType === 'CAR' || vehicleType === 'VAN') && (
               <FloatInput
-                label="Number of Seats (optional)"
+                label={t('partnerDocuments.numberOfSeatsOptional')}
                 iconName="people-outline"
                 value={numberOfSeats}
                 onChangeText={setNumberOfSeats}
@@ -561,7 +565,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
               {creatingProfile
                 ? <ActivityIndicator color={theme.accentFg ?? '#fff'} />
                 : <Text style={[styles.createProfileBtnText, { color: theme.accentFg ?? '#fff' }]}>
-                    Save & Continue →
+                    {t('partnerDocuments.saveAndContinue')}
                   </Text>
               }
             </TouchableOpacity>
@@ -598,9 +602,9 @@ export default function PartnerDocumentsScreen({ navigation }) {
             <Ionicons name="arrow-back" size={20} color={theme.foreground} />
           </TouchableOpacity>
 
-          <Text style={[styles.title, { color: theme.foreground }]}>KYC Documents</Text>
+          <Text style={[styles.title, { color: theme.foreground }]}>{t('partnerDocuments.kycDocuments')}</Text>
           <Text style={[styles.subtitle, { color: theme.hint }]}>
-            Upload clear photos of each document for verification and approval.
+            {t('partnerDocuments.uploadClearPhotos')}
           </Text>
 
           {/* Progress */}
@@ -608,8 +612,8 @@ export default function PartnerDocumentsScreen({ navigation }) {
             <View style={[styles.progressBar, { width: `${progressPct}%`, backgroundColor: theme.accent }]} />
           </View>
           <Text style={[styles.progressLabel, { color: theme.hint }]}>
-            {requiredUploaded} of {requiredSlots.length} required documents uploaded
-            {totalUploaded > requiredUploaded ? ` (+${totalUploaded - requiredUploaded} optional)` : ''}
+            {t('partnerDocuments.progressLabel', { uploaded: requiredUploaded, total: requiredSlots.length })}
+            {totalUploaded > requiredUploaded ? t('partnerDocuments.plusOptional', { count: totalUploaded - requiredUploaded }) : ''}
           </Text>
 
           {/* Status banner */}
@@ -617,9 +621,9 @@ export default function PartnerDocumentsScreen({ navigation }) {
             <View style={[styles.statusBanner, { backgroundColor: '#E0555510', borderColor: '#E05555' }]}>
               <Ionicons name="close-circle-outline" size={18} color="#E05555" />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.statusTitle, { color: '#E05555' }]}>Application Not Approved</Text>
+                <Text style={[styles.statusTitle, { color: '#E05555' }]}>{t('partnerDocuments.applicationNotApproved')}</Text>
                 <Text style={[styles.statusSub, { color: theme.hint }]}>
-                  {profile.rejectionReason || 'Please contact support for more information.'}
+                  {profile.rejectionReason || t('partnerDocuments.contactSupportInfo')}
                 </Text>
               </View>
             </View>
@@ -627,9 +631,9 @@ export default function PartnerDocumentsScreen({ navigation }) {
             <View style={[styles.statusBanner, { backgroundColor: '#10B98110', borderColor: '#10B981' }]}>
               <Ionicons name="shield-checkmark-outline" size={18} color="#10B981" />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.statusTitle, { color: '#10B981' }]}>Approved & Verified ✅</Text>
+                <Text style={[styles.statusTitle, { color: '#10B981' }]}>{t('partnerDocuments.approvedVerified')}</Text>
                 <Text style={[styles.statusSub, { color: theme.hint }]}>
-                  Your account is active. You can go online and start accepting deliveries.
+                  {t('partnerDocuments.accountActive')}
                 </Text>
               </View>
             </View>
@@ -637,9 +641,9 @@ export default function PartnerDocumentsScreen({ navigation }) {
             <View style={[styles.statusBanner, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <Ionicons name="time-outline" size={18} color={theme.hint} />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.statusTitle, { color: theme.foreground }]}>Under Review</Text>
+                <Text style={[styles.statusTitle, { color: theme.foreground }]}>{t('partnerDocuments.underReview')}</Text>
                 <Text style={[styles.statusSub, { color: theme.hint }]}>
-                  Our team is reviewing your application. Upload all required documents to speed up approval.
+                  {t('partnerDocuments.underReviewSub')}
                 </Text>
               </View>
             </View>
@@ -656,12 +660,12 @@ export default function PartnerDocumentsScreen({ navigation }) {
               <Text style={[styles.vehiclePlate, { color: theme.accent }]}>{profile.vehiclePlate}</Text>
             ) : null}
             {profile.numberOfSeats ? (
-              <Text style={[styles.vehicleMeta, { color: theme.hint }]}>{profile.numberOfSeats} seats</Text>
+              <Text style={[styles.vehicleMeta, { color: theme.hint }]}>{t('partnerDocuments.seatsCount', { count: profile.numberOfSeats })}</Text>
             ) : null}
           </View>
 
           {/* Document cards */}
-          <Text style={[styles.sectionLabel, { color: theme.hint, marginTop: 4 }]}>DOCUMENTS</Text>
+          <Text style={[styles.sectionLabel, { color: theme.hint, marginTop: 4 }]}>{t('partnerDocuments.documents')}</Text>
 
           {docSlots.map((doc) => {
             const currentUrl  = profile?.[doc.key];
@@ -679,13 +683,13 @@ export default function PartnerDocumentsScreen({ navigation }) {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.cardTitle, { color: theme.foreground }]}>
-                      {doc.label}
+                      {t(doc.labelKey)}
                       {doc.required
                         ? <Text style={{ color: '#E05555' }}> *</Text>
-                        : <Text style={[styles.optional, { color: theme.hint }]}> (optional)</Text>
+                        : <Text style={[styles.optional, { color: theme.hint }]}> {t('partnerDocuments.optionalSuffix')}</Text>
                       }
                     </Text>
-                    <Text style={[styles.docHint, { color: theme.hint }]}>{doc.hint}</Text>
+                    <Text style={[styles.docHint, { color: theme.hint }]}>{t(doc.hintKey)}</Text>
                   </View>
                   <View style={[styles.statusDot, {
                     backgroundColor: currentUrl ? '#5DAA72' : theme.hint,
@@ -702,21 +706,21 @@ export default function PartnerDocumentsScreen({ navigation }) {
                         onPress={() => setViewImage({ url: currentUrl })}
                       >
                         <Ionicons name="eye-outline" size={16} color={theme.accent} />
-                        <Text style={[styles.iconBtnText, { color: theme.accent }]}>View</Text>
+                        <Text style={[styles.iconBtnText, { color: theme.accent }]}>{t('partnerDocuments.view')}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.iconBtn, { backgroundColor: theme.accent + '15' }]}
                         onPress={() => handleDownload(currentUrl)}
                       >
                         <Ionicons name="download-outline" size={16} color={theme.accent} />
-                        <Text style={[styles.iconBtnText, { color: theme.accent }]}>Download</Text>
+                        <Text style={[styles.iconBtnText, { color: theme.accent }]}>{t('partnerDocuments.download')}</Text>
                       </TouchableOpacity>
                     </View>
                   </>
                 ) : (
                   <View style={[styles.placeholder, { borderColor: theme.border }]}>
                     <Ionicons name="cloud-upload-outline" size={32} color={theme.hint} />
-                    <Text style={[styles.placeholderText, { color: theme.hint }]}>No file uploaded</Text>
+                    <Text style={[styles.placeholderText, { color: theme.hint }]}>{t('partnerDocuments.noFileUploaded')}</Text>
                   </View>
                 )}
 
@@ -733,7 +737,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
                     <>
                       <Ionicons name="cloud-upload-outline" size={15} color={theme.accentFg ?? '#fff'} />
                       <Text style={[styles.uploadBtnText, { color: theme.accentFg ?? '#fff' }]}>
-                        {currentUrl ? 'Replace' : 'Upload'}
+                        {currentUrl ? t('partnerDocuments.replace') : t('partnerDocuments.upload')}
                       </Text>
                     </>
                   )}
@@ -743,7 +747,7 @@ export default function PartnerDocumentsScreen({ navigation }) {
           })}
 
           <Text style={[styles.note, { color: theme.hint }]}>
-            An admin will review your documents. You can start accepting deliveries once approved.
+            {t('partnerDocuments.adminReviewNote')}
           </Text>
         </ScrollView>
       </View>

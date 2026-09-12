@@ -6,6 +6,7 @@ const { AppError } = require('../middleware/errorHandler');
 const notificationService = require('../services/notification.service');
 const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog'); // ← ADDED
+const { getCountryForUser } = require('../services/country.service');
 
 console.log('[DRIVER-CTRL] Prisma driver controller loaded');
 
@@ -326,7 +327,7 @@ exports.getEarnings = async (req, res) => {
 
   const wallet = await prisma.wallet.findUnique({
     where: { userId: req.user.id },
-    select: { balance: true },
+    select: { balance: true, currency: true },
   });
 
   res.status(200).json({
@@ -339,7 +340,7 @@ exports.getEarnings = async (req, res) => {
       totalRides: rides.length,
       averagePerRide:
         rides.length > 0 ? (totalNetEarnings / rides.length).toFixed(2) : '0.00',
-      currency: 'NGN',
+      currency: wallet?.currency ?? 'NGN',
       period,
       rides: rides.map((r) => ({
         id: r.id,
@@ -523,6 +524,24 @@ exports.requestPayout = async (req, res) => {
 
   if (amount < 1000) throw new AppError('Minimum payout amount is ₦1,000', 400);
 
+  const requester = await prisma.user.findUnique({ where: { id: req.user.id }, select: { countryCode: true } });
+  const country = await getCountryForUser(requester);
+
+  // Guard: this endpoint only knows how to verify/pay out via Nigerian bank
+  // transfer (NUBAN + Paystack). If a driver's country is configured for a
+  // different payout method, fail clearly now rather than silently sending
+  // a Nigerian-format account number to Paystack's verify API, which would
+  // either error confusingly or — worse — resolve to the wrong account.
+  // Supporting another payout method is a real feature (a new verify/payout
+  // provider integration), not a currency-label fix, so it's intentionally
+  // out of scope here until that provider work is done.
+  if (country.payoutMethod !== 'NG_BANK_TRANSFER') {
+    throw new AppError(
+      `Payouts for ${country.name} aren't supported yet. Contact support.`,
+      400
+    );
+  }
+
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   if (!wallet) throw new AppError('Wallet not found', 404);
   if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
@@ -562,6 +581,11 @@ exports.requestPayout = async (req, res) => {
         accountName: resolvedAccountName,
         status: 'PENDING',
         reference,
+        // ← ADDED — dual-write into the new generic fields alongside the
+        // existing NG-specific ones, so future non-NG payout code can read
+        // from payoutDetails without a backfill once it exists.
+        payoutMethod: 'NG_BANK_TRANSFER',
+        payoutDetails: { accountNumber, bankCode, accountName: resolvedAccountName },
       },
     }),
   ]);

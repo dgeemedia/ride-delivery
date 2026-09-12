@@ -16,6 +16,7 @@ const { broadcastToDrivers } = require('../services/socket.service');
 const shieldService = require('../services/shield.service');
 const commissionService = require('../services/commission.service');
 const cashbackService = require('../services/cashback.service');
+const { getCurrencyForUserId } = require('../services/country.service');
 
 const getIO = (req) => req.app.get('io');
 
@@ -53,7 +54,7 @@ exports.getFareEstimate = async (req, res) => {
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
 
-  const estimate = await estimateFare(distance, vehicleType.toUpperCase());
+  const estimate = await estimateFare(distance, vehicleType.toUpperCase(), new Date(), 1.0, await getCurrencyForUserId(req.user.id));
 
   res.status(200).json({ success: true, data: { ...estimate, distance: distance.toFixed(2) } });
 };
@@ -74,7 +75,8 @@ exports.requestRide = async (req, res) => {
   if (activeRide) throw new AppError('You already have an active ride', 400);
  
   const distance      = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
-  const fareBreakdown = await estimateFare(distance, vehicleType.toUpperCase());
+  const rideCurrency  = await getCurrencyForUserId(req.user.id);
+  const fareBreakdown = await estimateFare(distance, vehicleType.toUpperCase(), new Date(), 1.0, rideCurrency);
   let   finalFare     = fareBreakdown.estimatedFare;
  
   // Promo code handling (unchanged)
@@ -116,6 +118,7 @@ exports.requestRide = async (req, res) => {
       dropoffAddress, dropoffLat, dropoffLng,
       distance,
       estimatedFare: finalFare,
+      currency:      rideCurrency,
       notes,
       promoCode:     appliedPromo?.code || null,
       status:        'REQUESTED',
@@ -362,6 +365,7 @@ exports.completeRide = async (req, res) => {
     vehicleType:          ride.driver?.driverProfile?.vehicleType ?? 'CAR',
     requestedAt:          ride.requestedAt,
     driverFloorMultiplier,
+    currency:             ride.currency, // ← locked in at request time, not re-derived
   });
 
   const finalFare      = finalFareBreakdown.finalFare;
@@ -378,7 +382,7 @@ exports.completeRide = async (req, res) => {
         userId:        ride.customerId,
         rideId:        id,
         amount:        finalFare,
-        currency:      'NGN',
+        currency:      ride.currency,
         method:        paymentMethod,
         status:        paymentMethod === 'WALLET' ? 'COMPLETED' : 'PENDING',
         transactionId: `RIDE-${id}-${Date.now()}`,
@@ -430,6 +434,7 @@ exports.completeRide = async (req, res) => {
     commissionAmount: platformFee,
     earnerAmount:     driverEarnings,
     surgeMultiplier:  finalFareBreakdown.surgeMultiplier ?? 1.0,
+    currency:         ride.currency,
   }).catch(err => {
     console.error('[commission] Failed to write ledger for ride', id, err.message);
   });
@@ -479,7 +484,7 @@ exports.cancelRide = async (req, res) => {
     await prisma.payment.create({
       data: {
         userId: ride.customerId, rideId: id, amount: cancellationFee,
-        currency: 'NGN', method: 'WALLET', status: 'PENDING',
+        currency: ride.currency, method: 'WALLET', status: 'PENDING',
         transactionId: `CANCEL-${id}-${Date.now()}`, platformFee: 0, driverEarnings: 0
       }
     });
@@ -614,6 +619,7 @@ exports.getNearbyDrivers = async (req, res) => {
   const routeKm = (dropoffLat && dropoffLng)
     ? calculateDistance(lat, lng, parseFloat(dropoffLat), parseFloat(dropoffLng))
     : null;
+  const requesterCurrency = await getCurrencyForUserId(req.user.id); // ← looked up once, not per driver
  
   const drivers = await prisma.driverProfile.findMany({
     where: {
@@ -659,7 +665,7 @@ exports.getNearbyDrivers = async (req, res) => {
   const formatted = await Promise.all(nearby.map(async (d) => {
     const driverVehicle    = d.vehicleType ?? 'CAR';
     const estimateKm       = routeKm ?? 3;         // use actual route or fallback
-    const baseFareEstimate = await estimateFare(estimateKm, driverVehicle);
+    const baseFareEstimate = await estimateFare(estimateKm, driverVehicle, new Date(), 1.0, requesterCurrency);
  
     // Driver floor price — stored as floorMultiplier on driverProfile (>= 1.0)
     // If not yet migrated, defaults to 1.0 (no floor applied)
@@ -762,7 +768,8 @@ exports.requestSpecificDriver = async (req, res) => {
   );
   const usedVehicleType = vehicleType?.toUpperCase() ?? driverProfile.vehicleType ?? 'CAR';
 
-  const fareBreakdown   = await estimateFare(distance, usedVehicleType);
+  const requestCurrency = await getCurrencyForUserId(req.user.id);
+  const fareBreakdown   = await estimateFare(distance, usedVehicleType, new Date(), 1.0, requestCurrency);
   let   finalFare       = fareBreakdown.estimatedFare;
 
   let driverFloorResult = null;
@@ -806,6 +813,7 @@ exports.requestSpecificDriver = async (req, res) => {
       dropoffAddress, dropoffLat: parseFloat(dropoffLat), dropoffLng: parseFloat(dropoffLng),
       distance,
       estimatedFare:  finalFare,
+      currency:       requestCurrency,
       notes:          rideNotes,
       promoCode:      promoCode || null,
       status:         'REQUESTED',

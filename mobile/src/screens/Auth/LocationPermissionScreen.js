@@ -8,12 +8,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons }       from '@expo/vector-icons';
 import * as Location      from 'expo-location';
 import { useTheme }       from '../../context/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 const { width } = Dimensions.get('window');
 const LOGO = require('../../../assets/diakite_dark.png');
 
 export default function LocationPermissionScreen({ onRequest, onSkip }) {
   const { theme, mode } = useTheme();
+  const { t } = useTranslation();
   const dark = mode === 'dark';
 
   // 'initial'  -> hasn't hit the real OS prompt yet
@@ -50,24 +52,24 @@ export default function LocationPermissionScreen({ onRequest, onSkip }) {
           <Image source={LOGO} style={s.logoImg} resizeMode="contain" />
         </View>
 
-        <Text style={[s.title, { color: theme.foreground }]}>Location Access</Text>
+        <Text style={[s.title, { color: theme.foreground }]}>{t('locationPermission.title')}</Text>
         <Text style={[s.subtitle, { color: theme.hint }]}>
           {status === 'denied'
-            ? 'Location is currently off. Some features like nearby drivers and live tracking won\'t work until you enable it in Settings.'
-            : 'Diakite needs your location to find rides, show nearby drivers, and track deliveries in real time.'}
+            ? t('locationPermission.deniedBody')
+            : t('locationPermission.requestBody')}
         </Text>
 
         <View style={[s.feature, { backgroundColor: dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)', borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
           <Ionicons name="navigate-circle-outline" size={24} color={dark ? '#FFB800' : '#10B981'} />
-          <Text style={[s.featureText, { color: theme.foreground }]}>Find nearby drivers & delivery partners</Text>
+          <Text style={[s.featureText, { color: theme.foreground }]}>{t('locationPermission.featureNearby')}</Text>
         </View>
         <View style={[s.feature, { backgroundColor: dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)', borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
           <Ionicons name="map-outline" size={24} color={dark ? '#FFB800' : '#10B981'} />
-          <Text style={[s.featureText, { color: theme.foreground }]}>Real time tracking during your trip</Text>
+          <Text style={[s.featureText, { color: theme.foreground }]}>{t('locationPermission.featureTracking')}</Text>
         </View>
         <View style={[s.feature, { backgroundColor: dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)', borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
           <Ionicons name="shield-checkmark-outline" size={24} color={dark ? '#FFB800' : '#10B981'} />
-          <Text style={[s.featureText, { color: theme.foreground }]}>Emergency & SHIELD features</Text>
+          <Text style={[s.featureText, { color: theme.foreground }]}>{t('locationPermission.featureShield')}</Text>
         </View>
 
         {status === 'initial' && (
@@ -80,7 +82,7 @@ export default function LocationPermissionScreen({ onRequest, onSkip }) {
             <Ionicons name="location-outline" size={20} color="#000" />
             {/* Renamed from "Enable Location" per Apple 5.1.1(iv) — must not
                 imply this button itself grants permission. */}
-            <Text style={[s.primaryTxt, { color: '#000' }]}>Continue</Text>
+            <Text style={[s.primaryTxt, { color: '#000' }]}>{t('locationPermission.continue')}</Text>
           </TouchableOpacity>
         )}
 
@@ -93,7 +95,7 @@ export default function LocationPermissionScreen({ onRequest, onSkip }) {
                 style={StyleSheet.absoluteFill}
               />
               <Ionicons name="settings-outline" size={20} color="#000" />
-              <Text style={[s.primaryTxt, { color: '#000' }]}>Open Settings</Text>
+              <Text style={[s.primaryTxt, { color: '#000' }]}>{t('locationPermission.openSettings')}</Text>
             </TouchableOpacity>
 
             {/* This is now safe: the real OS permission dialog has already
@@ -103,7 +105,7 @@ export default function LocationPermissionScreen({ onRequest, onSkip }) {
               onPress={() => onSkip?.()}
               activeOpacity={0.7}
             >
-              <Text style={[s.skipTxt, { color: theme.hint }]}>Continue Without Location</Text>
+              <Text style={[s.skipTxt, { color: theme.hint }]}>{t('locationPermission.continueWithoutLocation')}</Text>
             </TouchableOpacity>
           </>
         )}

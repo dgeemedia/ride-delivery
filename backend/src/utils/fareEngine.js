@@ -259,7 +259,7 @@ const AVERAGE_SPEED_KMPH = 18; // Lagos average
  * Estimate fare before ride starts.
  * async because it reads live settings from DB (with cache).
  */
-const estimateFare = async (distanceKm, vehicleType = 'CAR', atTime = new Date(), driverFloorMultiplier = 1.0) => {
+const estimateFare = async (distanceKm, vehicleType = 'CAR', atTime = new Date(), driverFloorMultiplier = 1.0, currency = 'NGN') => {
   const { rates, platform } = await getSettings();   // ← single call
   const r     = rates[vehicleType] ?? rates.CAR;
   const surge = getSurgeMultiplier(atTime);
@@ -286,7 +286,7 @@ const estimateFare = async (distanceKm, vehicleType = 'CAR', atTime = new Date()
     estimatedMinutes: Math.ceil(estMin),
     distanceKm:       parseFloat(distanceKm.toFixed(2)),
     vehicleType,
-    currency:         'NGN',
+    currency,
     platformRevenue: {
       bookingFee:  r.bookingFee,
       commission:  Math.round(platformCommission),
@@ -308,6 +308,7 @@ const calculateFinalFare = async ({
   vehicleType = 'CAR',
   requestedAt,
   driverFloorMultiplier = 1.0,
+  currency = 'NGN',
 }) => {
   const { rates, platform } = await getSettings();
   const r      = rates[vehicleType] ?? rates.CAR;
@@ -340,6 +341,7 @@ const calculateFinalFare = async ({
       total:       Math.round(r.bookingFee + platformCommission),
     },
     driverEarnings: Math.round(driverEarnings),
+    currency,
   };
 };
 
@@ -351,7 +353,7 @@ const calculateFinalFare = async ({
  * Calculate delivery fee from DB-backed settings.
  * Returns { estimatedFee, baseFee, distanceCharge, weightCharge, platformFee, partnerEarnings }
  */
-const calculateDeliveryFee = async (distanceKm, packageWeightKg = 0) => {
+const calculateDeliveryFee = async (distanceKm, packageWeightKg = 0, currency = 'NGN') => {
   const { delivery } = await getSettings();
 
   const baseFee       = delivery.baseFee;
@@ -370,7 +372,7 @@ const calculateDeliveryFee = async (distanceKm, packageWeightKg = 0) => {
     weightCharge:    Math.round(weightCharge),
     platformFee,
     partnerEarnings,
-    currency:        'NGN',
+    currency,
   };
 };
 

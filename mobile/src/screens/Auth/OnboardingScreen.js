@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 const { width } = Dimensions.get('window');
 
@@ -20,6 +21,7 @@ const LOGO_LIGHT = require('../../../assets/diakite_dark.png');  // black logo �
 
 export default function OnboardingScreen({ navigation }) {
   const { theme, accentId, mode, changeAccent, changeMode } = useTheme();
+  const { t } = useTranslation();
 
   const logoS  = useRef(new Animated.Value(0)).current;
   const logoO  = useRef(new Animated.Value(0)).current;
@@ -83,14 +85,14 @@ export default function OnboardingScreen({ navigation }) {
         </Animated.View>
 
         <Animated.Text style={[styles.tagline, { color: theme.muted, opacity: subO, transform: [{ translateY: subY }] }]}>
-          Rides & deliveries,{'\n'}built around you.
+          {t('onboarding.tagline')}
         </Animated.Text>
 
         <Animated.View style={[styles.features, { opacity: subO, transform: [{ translateY: subY }] }]}>
           {[
-            ['arrow-forward-circle-outline', 'Book a ride in seconds'],
-            ['cube-outline',                 'Send packages city-wide'],
-            ['wallet-outline',               'Earn on your schedule'],
+            ['arrow-forward-circle-outline', t('onboarding.featureBookRide')],
+            ['cube-outline',                 t('onboarding.featureSendPackages')],
+            ['wallet-outline',               t('onboarding.featureEarn')],
           ].map(([icon, label]) => (
             <View key={label} style={styles.featureRow}>
               <Ionicons name={icon} size={16} color={theme.accent} />
@@ -102,7 +104,7 @@ export default function OnboardingScreen({ navigation }) {
 
       {/* ── THEME PICKER ── */}
       <Animated.View style={[styles.picker, { opacity: ftrO, transform: [{ translateY: ftrY }] }]}>
-        <Text style={[styles.pickerLabel, { color: theme.hint }]}>APPEARANCE</Text>
+        <Text style={[styles.pickerLabel, { color: theme.hint }]}>{t('onboarding.appearance')}</Text>
 
         <View style={styles.swatchRow}>
           {ACCENT_OPTIONS.map(opt => {
@@ -145,7 +147,7 @@ export default function OnboardingScreen({ navigation }) {
                   color={active ? theme.accent : theme.hint}
                 />
                 <Text style={[styles.modeTxt, { color: active ? theme.accent : theme.hint }]}>
-                  {m === 'dark' ? 'Dark' : 'Light'}
+                  {m === 'dark' ? t('profile.dark') : t('profile.light')}
                 </Text>
               </TouchableOpacity>
             );
@@ -160,14 +162,14 @@ export default function OnboardingScreen({ navigation }) {
           activeOpacity={0.88}
           onPress={() => navigation.navigate('Register')}
         >
-          <Text style={styles.ctaTxt}>Get Started</Text>
+          <Text style={styles.ctaTxt}>{t('onboarding.getStarted')}</Text>
           <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.ghost} onPress={() => navigation.navigate('Login')}>
           <Text style={[styles.ghostTxt, { color: theme.hint }]}>
-            Have an account?{' '}
-            <Text style={[styles.ghostAccent, { color: theme.accent }]}>Sign In</Text>
+            {t('onboarding.haveAccount')}{' '}
+            <Text style={[styles.ghostAccent, { color: theme.accent }]}>{t('onboarding.signIn')}</Text>
           </Text>
         </TouchableOpacity>
       </Animated.View>

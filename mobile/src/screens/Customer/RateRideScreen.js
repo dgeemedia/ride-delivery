@@ -9,6 +9,7 @@ import {
 import { Ionicons }     from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme }     from '../../context/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import { rideAPI }      from '../../services/api';
 
 const GOLD   = '#FFB800';
@@ -34,18 +35,19 @@ const sr = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginVertical: 16 },
 });
 
-// ── Rating label ──────────────────────────────────────────────────────────────
-const LABELS = ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Excellent!'];
+// ── Rating label keys (index 0 unused, ratings are 1-5) ────────────────────────
+const LABEL_KEYS = ['', 'rating.labelPoor', 'rating.labelFair', 'rating.labelGood', 'rating.labelVeryGood', 'rating.labelExcellent'];
 
-// ── Quick-comment chips ───────────────────────────────────────────────────────
-const QUICK_POSITIVE = ['Great driver', 'Very polite', 'Safe driving', 'On time', 'Clean car'];
-const QUICK_NEGATIVE = ['Rude', 'Speeding', 'Wrong route', 'Late', 'Dirty car'];
+// ── Quick-comment chip keys ─────────────────────────────────────────────────────
+const QUICK_POSITIVE_KEYS = ['rating.chipGreatDriver', 'rating.chipVeryPolite', 'rating.chipSafeDriving', 'rating.chipOnTime', 'rating.chipCleanCar'];
+const QUICK_NEGATIVE_KEYS = ['rating.chipRude', 'rating.chipSpeeding', 'rating.chipWrongRoute', 'rating.chipLate', 'rating.chipDirtyCar'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RateRideScreen({ navigation, route }) {
   const { theme, mode } = useTheme();
+  const { t } = useTranslation();
   const { rideId, driver, onRated } = route.params ?? {};
 
   const [rating,    setRating]    = useState(0);
@@ -62,7 +64,7 @@ export default function RateRideScreen({ navigation, route }) {
     ]).start();
   }, []);
 
-  const chips = rating >= 4 ? QUICK_POSITIVE : QUICK_NEGATIVE;
+  const chips = (rating >= 4 ? QUICK_POSITIVE_KEYS : QUICK_NEGATIVE_KEYS).map(key => t(key));
 
   const toggleChip = (chip) => {
     setComment(prev => {
@@ -78,7 +80,7 @@ export default function RateRideScreen({ navigation, route }) {
 
   const submit = async () => {
     if (rating === 0) {
-      Alert.alert('Rating Required', 'Please select a star rating before submitting.');
+      Alert.alert(t('rating.ratingRequiredTitle'), t('rating.ratingRequiredBody'));
       return;
     }
     setSubmitting(true);
@@ -87,8 +89,8 @@ export default function RateRideScreen({ navigation, route }) {
       onRated?.();
       navigation.goBack();
     } catch (err) {
-      const msg = err?.response?.data?.message ?? 'Failed to submit rating. Please try again.';
-      Alert.alert('Error', msg);
+      const msg = err?.response?.data?.message ?? t('rating.failedToSubmit');
+      Alert.alert(t('rating.errorTitle'), msg);
     } finally {
       setSubmitting(false);
     }
@@ -98,7 +100,7 @@ export default function RateRideScreen({ navigation, route }) {
 
   const driverName = driver
     ? `${driver.firstName ?? ''} ${driver.lastName ?? ''}`.trim()
-    : 'Your Driver';
+    : t('rating.yourDriver');
 
   const vehicleInfo = driver?.vehiclePlate
     ? `${driver.vehicleColor ?? ''} ${driver.vehicleMake ?? ''} · ${driver.vehiclePlate}`.trim()
@@ -128,8 +130,8 @@ export default function RateRideScreen({ navigation, route }) {
               <Ionicons name="checkmark-circle" size={64} color={GREEN} />
             </View>
 
-            <Text style={[s.title, { color: theme.foreground }]}>Ride Completed!</Text>
-            <Text style={[s.sub, { color: theme.hint }]}>How was your experience with</Text>
+            <Text style={[s.title, { color: theme.foreground }]}>{t('rating.rideCompleted')}</Text>
+            <Text style={[s.sub, { color: theme.hint }]}>{t('rating.howWasRideWith')}</Text>
             <Text style={[s.driverName, { color: theme.foreground }]}>{driverName}?</Text>
 
             {vehicleInfo && (
@@ -141,7 +143,7 @@ export default function RateRideScreen({ navigation, route }) {
 
             {rating > 0 && (
               <Animated.Text style={[s.ratingLabel, { color: GOLD, opacity: fadeA }]}>
-                {LABELS[rating]}
+                {t(LABEL_KEYS[rating])}
               </Animated.Text>
             )}
 
@@ -173,7 +175,7 @@ export default function RateRideScreen({ navigation, route }) {
             {/* ── Comment box ── */}
             <TextInput
               style={[s.input, { backgroundColor: theme.backgroundAlt, borderColor: theme.border, color: theme.foreground }]}
-              placeholder="Add a comment (optional)..."
+              placeholder={t('rating.commentPlaceholder')}
               placeholderTextColor={theme.hint}
               value={comment}
               onChangeText={setComment}
@@ -191,12 +193,12 @@ export default function RateRideScreen({ navigation, route }) {
             >
               {submitting
                 ? <ActivityIndicator color="#080C18" size="small" />
-                : <Text style={s.submitTxt}>Submit Rating</Text>
+                : <Text style={s.submitTxt}>{t('rating.submitRating')}</Text>
               }
             </TouchableOpacity>
 
             <TouchableOpacity style={s.skipBtn} onPress={skip} activeOpacity={0.7}>
-              <Text style={[s.skipTxt, { color: theme.hint }]}>Skip for now</Text>
+              <Text style={[s.skipTxt, { color: theme.hint }]}>{t('rating.skipForNow')}</Text>
             </TouchableOpacity>
 
           </Animated.View>

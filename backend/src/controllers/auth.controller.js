@@ -10,6 +10,7 @@ const notificationService  = require('../services/notification.service');
 const otpService           = require('../services/otp.service');
 const emailService         = require('../services/email.service');
 const { logActivity }      = require('../utils/auditLog'); // ← ADDED
+const { ensureWallet }     = require('../utils/walletHelpers');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -66,7 +67,7 @@ exports.register = async (req, res) => {
   if (!errors.isEmpty())
     return res.status(400).json({ success: false, errors: errors.array() });
 
-  const { email, phone, password, firstName, lastName, role } = req.body;
+  const { email, phone, password, firstName, lastName, role, countryCode } = req.body;
 
   const existingUser = await prisma.user.findFirst({
     where: { OR: [{ email }, { phone }] },
@@ -81,6 +82,7 @@ exports.register = async (req, res) => {
     data: {
       email, phone, password: hashedPassword,
       firstName, lastName, role,
+      countryCode:        countryCode || 'NG', // ← optional; defaults to NG same as before
       emailVerifyToken:   hashedVerifyToken,
       emailVerifyExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
     },
@@ -137,9 +139,7 @@ exports.register = async (req, res) => {
   }
 
 // ── Default: issue token immediately (all gates disabled) ─────────────────
-  await prisma.wallet.create({
-    data: { userId: user.id, balance: 0, currency: 'NGN' },
-  });
+  await ensureWallet(user.id, countryCode || 'NG');
 
   const token = generateToken(user.id);
 
@@ -798,11 +798,7 @@ exports.verifyEmail = async (req, res) => {
     data:  { isVerified: true, emailVerifyToken: null, emailVerifyExpires: null },
   });
 
-  await prisma.wallet.upsert({
-    where:  { userId: user.id },
-    update: {},
-    create: { userId: user.id, balance: 0, currency: 'NGN' },
-  });
+  await ensureWallet(user.id, user);
 
   await notificationService.notify({
     userId:  user.id,

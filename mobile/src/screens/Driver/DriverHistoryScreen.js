@@ -8,6 +8,8 @@ import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }     from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }     from '../../context/ThemeContext';
+import { useCurrency }  from '../../context/CurrencyContext';
+import { useTranslation } from 'react-i18next';
 import { useScrollY }   from '../../context/ScrollContext';
 import { rideAPI }      from '../../services/api';
 
@@ -17,17 +19,19 @@ const RED    = '#E05555';
 const AMBER  = '#FFB800';
 
 const STATUS_CONFIG = {
-  COMPLETED:  { color: GREEN,  icon: 'checkmark-circle-outline', label: 'Completed'  },
-  CANCELLED:  { color: RED,    icon: 'close-circle-outline',     label: 'Cancelled'  },
-  IN_PROGRESS:{ color: AMBER,  icon: 'time-outline',             label: 'In Progress'},
-  ACCEPTED:   { color: AMBER,  icon: 'car-outline',              label: 'Accepted'   },
-  ARRIVED:    { color: AMBER,  icon: 'location-outline',         label: 'Arrived'    },
+  COMPLETED:  { color: GREEN,  icon: 'checkmark-circle-outline', labelKey: 'historyScreen.statusCompleted'  },
+  CANCELLED:  { color: RED,    icon: 'close-circle-outline',     labelKey: 'historyScreen.statusCancelled'  },
+  IN_PROGRESS:{ color: AMBER,  icon: 'time-outline',             labelKey: 'driverHistory.statusInProgress'},
+  ACCEPTED:   { color: AMBER,  icon: 'car-outline',              labelKey: 'driverHistory.statusAccepted'   },
+  ARRIVED:    { color: AMBER,  icon: 'location-outline',         labelKey: 'driverHistory.statusArrived'    },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RideCard
 // ─────────────────────────────────────────────────────────────────────────────
 const RideCard = ({ item, theme, onPress }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const cfg  = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.COMPLETED;
   const fare = Number(item.driverEarnings ?? item.fare ?? 0);
   return (
@@ -39,7 +43,7 @@ const RideCard = ({ item, theme, onPress }) => {
       {/* Status pill */}
       <View style={[rc.statusPill, { backgroundColor: cfg.color + '18' }]}>
         <Ionicons name={cfg.icon} size={12} color={cfg.color} />
-        <Text style={[rc.statusTxt, { color: cfg.color }]}>{cfg.label}</Text>
+        <Text style={[rc.statusTxt, { color: cfg.color }]}>{t(cfg.labelKey)}</Text>
       </View>
 
       {/* Route */}
@@ -66,7 +70,7 @@ const RideCard = ({ item, theme, onPress }) => {
             : '—'}
         </Text>
         <Text style={[rc.fare, { color: fare > 0 ? GREEN : theme.hint }]}>
-          {fare > 0 ? `+₦${fare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}` : '—'}
+          {fare > 0 ? `+${formatMoney(fare)}` : '—'}
         </Text>
       </View>
     </TouchableOpacity>
@@ -92,6 +96,7 @@ const rc = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DriverHistoryScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { t } = useTranslation();
   const scrollY         = useScrollY();
   const insets          = useSafeAreaInsets();
 
@@ -199,8 +204,8 @@ export default function DriverHistoryScreen({ navigation }) {
             <Ionicons name="arrow-back" size={18} color={theme.foreground} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={[s.eyebrow, { color: theme.hint }]}>DRIVER</Text>
-            <Text style={[s.title, { color: theme.foreground }]}>Ride History</Text>
+            <Text style={[s.eyebrow, { color: theme.hint }]}>{t('driverHistory.driverEyebrow')}</Text>
+            <Text style={[s.title, { color: theme.foreground }]}>{t('driverHistory.rideHistory')}</Text>
           </View>
         </View>
 
@@ -251,7 +256,7 @@ export default function DriverHistoryScreen({ navigation }) {
               {rides.length === 0 ? (
                 <View style={s.empty}>
                   <Ionicons name="car-outline" size={40} color={theme.hint} />
-                  <Text style={[s.emptyTitle, { color: theme.foreground }]}>No rides yet</Text>
+                  <Text style={[s.emptyTitle, { color: theme.foreground }]}>{t('driverHistory.noRidesYet')}</Text>
                   <Text style={[s.emptySub, { color: theme.hint }]}>
                     {filter !== 'ALL'
                       ? `No ${filter.toLowerCase()} rides found.`
@@ -278,7 +283,7 @@ export default function DriverHistoryScreen({ navigation }) {
                   onPress={loadMore}
                   activeOpacity={0.8}
                 >
-                  <Text style={[s.loadMoreTxt, { color: theme.hint }]}>Load more</Text>
+                  <Text style={[s.loadMoreTxt, { color: theme.hint }]}>{t('driverHistory.loadMore')}</Text>
                 </TouchableOpacity>
               )}
             </AnimatedRN.ScrollView>

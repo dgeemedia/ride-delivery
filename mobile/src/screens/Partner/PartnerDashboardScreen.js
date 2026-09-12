@@ -13,6 +13,8 @@ import { useSafeAreaInsets }                   from 'react-native-safe-area-cont
 import * as Location                           from '../../shims/Location';
 import { useAuth }                             from '../../context/AuthContext';
 import { useTheme }                            from '../../context/ThemeContext';
+import { useCurrency }                         from '../../context/CurrencyContext';
+import { useTranslation }                      from 'react-i18next';
 import { partnerAPI, userAPI, walletAPI, deliveryAPI } from '../../services/api';
 import socketService                           from '../../services/socket';
 import ActiveDeliveryBanner                    from '../../components/ActiveDeliveryBanner';
@@ -37,7 +39,8 @@ const SHEET_SNAP = height * 0.65;
 const getRealLocation = async () => {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') {
-    throw new Error('Location permission denied. Please enable location access in settings to go online.');
+    const i18n = require('../../i18n').default;
+    throw new Error(i18n.t('partnerDashboard.locationPermissionDenied'));
   }
   const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
   return { lat: loc.coords.latitude, lng: loc.coords.longitude };
@@ -46,34 +49,43 @@ const getRealLocation = async () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // BADGES
 // ─────────────────────────────────────────────────────────────────────────────
-const VerifiedBadge = ({ theme }) => (
+const VerifiedBadge = ({ theme }) => {
+  const { t } = useTranslation();
+  return (
   <View style={[vb.wrap, { backgroundColor: CA, borderColor: theme.border }]}>
     <Ionicons name="shield-checkmark" size={11} color="#080C18" />
-    <Text style={vb.txt}>VERIFIED COURIER</Text>
+    <Text style={vb.txt}>{t('partnerDashboard.verifiedCourier')}</Text>
   </View>
-);
+  );
+};
 const vb = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
   txt:  { fontSize: 9, fontWeight: '900', color: '#080C18', letterSpacing: 1.5 },
 });
 
-const PendingBadge = ({ theme }) => (
+const PendingBadge = ({ theme }) => {
+  const { t } = useTranslation();
+  return (
   <View style={[pb.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <Ionicons name="time-outline" size={11} color={theme.hint} />
-    <Text style={[pb.txt, { color: theme.hint }]}>PENDING APPROVAL</Text>
+    <Text style={[pb.txt, { color: theme.hint }]}>{t('partnerDashboard.pendingApproval')}</Text>
   </View>
-);
+  );
+};
 const pb = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
   txt:  { fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
 });
 
-const RejectedBadge = () => (
+const RejectedBadge = () => {
+  const { t } = useTranslation();
+  return (
   <View style={[rb.wrap, { backgroundColor: '#E0555518', borderColor: '#E05555' }]}>
     <Ionicons name="close-circle-outline" size={11} color="#E05555" />
-    <Text style={[rb.txt, { color: '#E05555' }]}>APPLICATION REJECTED</Text>
+    <Text style={[rb.txt, { color: '#E05555' }]}>{t('partnerDashboard.applicationRejected')}</Text>
   </View>
-);
+  );
+};
 const rb = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
   txt:  { fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
@@ -83,6 +95,7 @@ const rb = StyleSheet.create({
 // ONLINE TOGGLE
 // ─────────────────────────────────────────────────────────────────────────────
 const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, isRejected, maintenanceOn, theme, darkMode }) => {
+  const { t } = useTranslation();
   const pulseA = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     let anim;
@@ -97,12 +110,12 @@ const OnlineToggle = ({ isOnline, toggling, onToggle, isApproved, isRejected, ma
   }, [isOnline]);
 
   const bg       = isOnline ? CA : (darkMode ? '#2C2C2E' : '#E5E5EA');
-  const labelTxt = isOnline ? "You're Online" : "You're Offline";
-  const subTxt   = maintenanceOn        ? 'Unavailable during maintenance'
-                 : isRejected           ? 'Application rejected — contact support'
-                 : isOnline             ? 'GPS active • accepting deliveries'
-                 : isApproved           ? 'Tap to start accepting deliveries'
-                 :                        'Awaiting admin approval';
+  const labelTxt = isOnline ? t('partnerDashboard.youreOnline') : t('partnerDashboard.youreOffline');
+  const subTxt   = maintenanceOn        ? t('partnerDashboard.subUnavailableMaintenance')
+                 : isRejected           ? t('partnerDashboard.subRejected')
+                 : isOnline             ? t('partnerDashboard.subGpsActive')
+                 : isApproved           ? t('partnerDashboard.subTapToStart')
+                 :                        t('partnerDashboard.subAwaitingApproval');
 
   return (
     <TouchableOpacity
@@ -151,20 +164,23 @@ const ot = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // WALLET STRIP
 // ─────────────────────────────────────────────────────────────────────────────
-const WalletStrip = ({ balance, todayEarnings, onTopUp, onWithdraw, theme, darkMode }) => (
+const WalletStrip = ({ balance, todayEarnings, onTopUp, onWithdraw, theme, darkMode }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
+  return (
   <View style={[ws.card, {
     backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : '#F2F2F7',
     borderColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
   }]}>
     <View style={ws.left}>
-      <Text style={[ws.lbl, { color: theme.hint }]}>WALLET BALANCE</Text>
+      <Text style={[ws.lbl, { color: theme.hint }]}>{t('partnerDashboard.walletBalance')}</Text>
       <Text style={[ws.amount, { color: '#5DAA72' }]}>
-        ₦{Number(balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+        {formatMoney(balance ?? 0, { decimals: 2 })}
       </Text>
       <Text style={[ws.todayLbl, { color: theme.hint }]}>
-        Today:{' '}
+        {t('partnerDashboard.today')}{' '}
         <Text style={{ color: CA, fontWeight: '700' }}>
-          +₦{Number(todayEarnings ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+          +{formatMoney(todayEarnings ?? 0)}
         </Text>
       </Text>
     </View>
@@ -174,18 +190,19 @@ const WalletStrip = ({ balance, todayEarnings, onTopUp, onWithdraw, theme, darkM
         onPress={onTopUp} activeOpacity={0.88}
       >
         <Ionicons name="add-circle-outline" size={13} color={theme.foreground} />
-        <Text style={[ws.btnTxt, { color: theme.foreground }]}>Top Up</Text>
+        <Text style={[ws.btnTxt, { color: theme.foreground }]}>{t('partnerDashboard.topUp')}</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={[ws.btn, { backgroundColor: CA }]}
         onPress={onWithdraw} activeOpacity={0.88}
       >
         <Ionicons name="arrow-up-circle-outline" size={13} color="#080C18" />
-        <Text style={[ws.btnTxt, { color: '#080C18' }]}>Withdraw</Text>
+        <Text style={[ws.btnTxt, { color: '#080C18' }]}>{t('partnerDashboard.withdraw')}</Text>
       </TouchableOpacity>
     </View>
   </View>
-);
+  );
+};
 const ws = StyleSheet.create({
   card:     { borderRadius: 18, borderWidth: 1, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   left:     { flex: 1 },
@@ -223,6 +240,7 @@ const mc = StyleSheet.create({
 // WAITING BANNER
 // ─────────────────────────────────────────────────────────────────────────────
 const WaitingBanner = ({ theme }) => {
+  const { t } = useTranslation();
   const dotA = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
     const loop = Animated.loop(Animated.sequence([
@@ -235,7 +253,7 @@ const WaitingBanner = ({ theme }) => {
   return (
     <View style={[wb.wrap, { backgroundColor: CA + '10', borderColor: CA + '30' }]}>
       <Animated.View style={[wb.dot, { backgroundColor: CA, opacity: dotA }]} />
-      <Text style={[wb.txt, { color: CA }]}>Waiting for delivery requests...</Text>
+      <Text style={[wb.txt, { color: CA }]}>{t('partnerDashboard.waitingForRequests')}</Text>
     </View>
   );
 };
@@ -251,6 +269,8 @@ const wb = StyleSheet.create({
 export default function PartnerDashboardScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
 
@@ -337,11 +357,11 @@ export default function PartnerDashboardScreen({ navigation }) {
         if (!profile || profile.isApproved || profile.isRejected) return;
         setTimeout(() => {
           Alert.alert(
-            'Complete Your Profile',
-            'Upload your ID and vehicle documents to start receiving deliveries. Approval is fast!',
+            t('partnerDashboard.completeProfileTitle'),
+            t('partnerDashboard.completeProfileMsg'),
             [
-              { text: 'Later',      style: 'cancel', onPress: () => AsyncStorage.setItem('@partner_docs_prompt_seen', 'true') },
-              { text: 'Upload Now', onPress: () => { AsyncStorage.setItem('@partner_docs_prompt_seen', 'true'); navigation.navigate('PartnerDocuments'); } },
+              { text: t('partnerDashboard.later'),      style: 'cancel', onPress: () => AsyncStorage.setItem('@partner_docs_prompt_seen', 'true') },
+              { text: t('partnerDashboard.uploadNow'), onPress: () => { AsyncStorage.setItem('@partner_docs_prompt_seen', 'true'); navigation.navigate('PartnerDocuments'); } },
             ],
             { cancelable: false }
           );
@@ -389,27 +409,27 @@ export default function PartnerDashboardScreen({ navigation }) {
   const toggleOnline = async () => {
     if (isRejected) {
       Alert.alert(
-        'Application Not Approved',
+        t('partnerDashboard.applicationNotApproved'),
         profile?.rejectionReason
-          ? `Your application was rejected: ${profile.rejectionReason}`
-          : 'Your application was not approved. Please contact support.',
+          ? t('partnerDashboard.applicationRejectedReason', { reason: profile.rejectionReason })
+          : t('partnerDashboard.applicationNotApprovedMsg'),
       );
       return;
     }
     if (maintenance.isOn && !isOnline) {
       const endsStr = maintenance.endsAt
-        ? `\nMaintenance ends: ${new Date(maintenance.endsAt).toLocaleString('en-NG')}`
+        ? t('partnerDashboard.maintenanceEnds', { time: new Date(maintenance.endsAt).toLocaleString('en-NG') })
         : '';
-      Alert.alert('Platform Under Maintenance', 'You cannot go online until maintenance ends.' + endsStr);
+      Alert.alert(t('partnerDashboard.platformMaintenanceTitle'), t('partnerDashboard.platformMaintenanceMsg') + endsStr);
       return;
     }
     if (!profile?.isApproved) {
       Alert.alert(
-        'Pending Approval',
-        'Your account is under review. You will be notified when approved.',
+        t('partnerDashboard.pendingApprovalTitle'),
+        t('partnerDashboard.pendingApprovalMsg'),
         [
-          { text: 'Later',            style: 'cancel' },
-          { text: 'Upload Documents', onPress: () => navigation.navigate('PartnerDocuments') },
+          { text: t('partnerDashboard.later'),            style: 'cancel' },
+          { text: t('partnerDashboard.uploadDocuments'), onPress: () => navigation.navigate('PartnerDocuments') },
         ]
       );
       return;
@@ -420,7 +440,7 @@ export default function PartnerDashboardScreen({ navigation }) {
       if (next) {
         let coords;
         try { coords = await getRealLocation(); }
-        catch (e) { Alert.alert('Location Required', e.message); return; }
+        catch (e) { Alert.alert(t('partnerDashboard.locationRequired'), e.message); return; }
         await partnerAPI.updateStatus({ isOnline: true, currentLat: coords.lat, currentLng: coords.lng });
         socketService.goOnline({ latitude: coords.lat, longitude: coords.lng });
       } else {
@@ -430,7 +450,7 @@ export default function PartnerDashboardScreen({ navigation }) {
       setIsOnline(next);
       fetchData(true);
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message ?? 'Failed to update status.');
+      Alert.alert(t('common.error'), err?.response?.data?.message ?? t('partnerDashboard.updateStatusFailed'));
     } finally {
       setToggling(false);
     }
@@ -445,11 +465,11 @@ export default function PartnerDashboardScreen({ navigation }) {
   const goToHistory   = () => navigation.navigate('PartnerHistory');
 
   const quickActions = [
-    { Icon: EarningsIcon,        label: 'Earnings',         color: CA,        onPress: goToEarnings },
-    { Icon: DeliveryHistoryIcon, label: 'Delivery History', color: '#5DAA72', onPress: goToHistory }, // ← updated
-    { Icon: FloorPriceIcon,      label: 'Floor Price',      color: PURPLE,    onPress: () => navigation.navigate('FloorPrice') },
-    { Icon: DocumentsIcon,       label: 'Documents',        color: '#4E8DBD', onPress: goToDocuments },
-    { Icon: SupportIcon,         label: 'Support',          color: CA,        onPress: () => navigation.navigate('Support') },
+    { Icon: EarningsIcon,        label: t('partnerDashboard.qaEarnings'),         color: CA,        onPress: goToEarnings },
+    { Icon: DeliveryHistoryIcon, label: t('partnerDashboard.qaDeliveryHistory'), color: '#5DAA72', onPress: goToHistory }, // ← updated
+    { Icon: FloorPriceIcon,      label: t('partnerDashboard.qaFloorPrice'),      color: PURPLE,    onPress: () => navigation.navigate('FloorPrice') },
+    { Icon: DocumentsIcon,       label: t('partnerDashboard.qaDocuments'),        color: '#4E8DBD', onPress: goToDocuments },
+    { Icon: SupportIcon,         label: t('partnerDashboard.qaSupport'),          color: CA,        onPress: () => navigation.navigate('Support') },
   ];
 
   const mapRegion = { latitude: 6.5244, longitude: 3.3792, latitudeDelta: 0.03, longitudeDelta: 0.03 };
@@ -487,7 +507,7 @@ export default function PartnerDashboardScreen({ navigation }) {
         <Animated.View style={[s.mapTopBar, { paddingTop: hasMaintBanner ? 8 : insets.top + 8, opacity: fadeA }]}>
           <View style={[s.statusPill, { backgroundColor: pillBg }]}>
             <View style={[s.pillDot, { backgroundColor: isOnline ? 'rgba(0,0,0,0.4)' : (darkMode ? '#555' : '#aaa') }]} />
-            <Text style={[s.pillTxt, { color: pillTxt }]}>{isOnline ? 'Online' : 'Offline'}</Text>
+            <Text style={[s.pillTxt, { color: pillTxt }]}>{isOnline ? t('partnerDashboard.online') : t('partnerDashboard.offline')}</Text>
           </View>
           <View style={s.mapTopRight}>
             <TouchableOpacity
@@ -535,7 +555,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             {/* Header */}
             <View style={s.sheetHeader}>
               <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
-                <Text style={[s.eyebrow, { color: theme.hint }]}>COURIER DASHBOARD</Text>
+                <Text style={[s.eyebrow, { color: theme.hint }]}>{t('partnerDashboard.courierDashboard')}</Text>
                 <Text style={[s.name, { color: theme.foreground }]} numberOfLines={1}>{user?.firstName} {user?.lastName}</Text>
                 <View style={{ marginTop: 6 }}>
                   {isRejected ? <RejectedBadge /> : isApproved ? <VerifiedBadge theme={theme} /> : <PendingBadge theme={theme} />}
@@ -552,9 +572,9 @@ export default function PartnerDashboardScreen({ navigation }) {
               >
                 <Ionicons name="cloud-upload-outline" size={18} color="#E05555" />
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.alertTitle, { color: '#E05555' }]}>Application Rejected</Text>
+                  <Text style={[s.alertTitle, { color: '#E05555' }]}>{t('partnerDashboard.applicationRejected')}</Text>
                   <Text style={[s.alertSub, { color: theme.hint }]}>
-                    {profile?.rejectionReason ? `Reason: ${profile.rejectionReason}` : 'Upload updated documents to re-submit.'}
+                    {profile?.rejectionReason ? t('partnerDashboard.reasonPrefix', { reason: profile.rejectionReason }) : t('partnerDashboard.uploadUpdatedDocs')}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={15} color="#E05555" />
@@ -570,8 +590,8 @@ export default function PartnerDashboardScreen({ navigation }) {
               >
                 <Ionicons name="cloud-upload-outline" size={18} color={theme.hint} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.alertTitle, { color: theme.foreground }]}>Upload Documents</Text>
-                  <Text style={[s.alertSub, { color: theme.hint }]}>Upload your ID & vehicle photos to speed up approval.</Text>
+                  <Text style={[s.alertTitle, { color: theme.foreground }]}>{t('partnerDashboard.uploadDocuments')}</Text>
+                  <Text style={[s.alertSub, { color: theme.hint }]}>{t('partnerDashboard.uploadIdVehicle')}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={15} color={theme.hint} />
               </TouchableOpacity>
@@ -619,9 +639,9 @@ export default function PartnerDashboardScreen({ navigation }) {
               <ActivityIndicator color={CA} style={{ marginBottom: 16 }} />
             ) : (
               <View style={s.statsRow}>
-                <MetricCard IconComponent={DeliveryHistoryIcon} value={stats?.completedDeliveries ?? profile?.totalDeliveries ?? 0} label="Deliveries" color={CA}        theme={theme} darkMode={darkMode} />
-                <MetricCard IconComponent={RatingIcon}          value={(profile?.rating ?? stats?.rating ?? 0).toFixed(1)}          label="Rating"     color={PURPLE}     theme={theme} darkMode={darkMode} />
-                <MetricCard IconComponent={OnTimeIcon}          value={isApproved ? '96%' : '—'}                                    label="On Time"    color="#5DAA72"    theme={theme} darkMode={darkMode} />
+                <MetricCard IconComponent={DeliveryHistoryIcon} value={stats?.completedDeliveries ?? profile?.totalDeliveries ?? 0} label={t('partnerDashboard.deliveries')} color={CA}        theme={theme} darkMode={darkMode} />
+                <MetricCard IconComponent={RatingIcon}          value={(profile?.rating ?? stats?.rating ?? 0).toFixed(1)}          label={t('partnerDashboard.rating')}     color={PURPLE}     theme={theme} darkMode={darkMode} />
+                <MetricCard IconComponent={OnTimeIcon}          value={isApproved ? '96%' : '—'}                                    label={t('partnerDashboard.onTime')}    color="#5DAA72"    theme={theme} darkMode={darkMode} />
               </View>
             )}
 
@@ -646,7 +666,7 @@ export default function PartnerDashboardScreen({ navigation }) {
                 </View>
                 <View style={[s.vehicleStatusBadge, { backgroundColor: isApproved ? CA + '20' : '#FFB80020' }]}>
                   <Text style={[s.vehicleStatusTxt, { color: isApproved ? CA : '#FFB800' }]}>
-                    {isApproved ? 'Approved' : 'Pending'}
+                    {isApproved ? t('partnerDashboard.approved') : t('partnerDashboard.pending')}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={theme.hint} />
@@ -664,9 +684,9 @@ export default function PartnerDashboardScreen({ navigation }) {
                   <FloorPriceIcon size={36} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.rowCardTitle, { color: theme.foreground }]}>Floor Price Active</Text>
+                  <Text style={[s.rowCardTitle, { color: theme.foreground }]}>{t('partnerDashboard.floorPriceActive')}</Text>
                   <Text style={[s.rowCardSub, { color: PURPLE }]}>
-                    Min ₦{activeFloorAmount.toLocaleString('en-NG', { maximumFractionDigits: 0 })} per delivery
+                    {t('partnerDashboard.minPerDelivery', { amount: formatMoney(activeFloorAmount) })}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={theme.hint} />
@@ -674,7 +694,7 @@ export default function PartnerDashboardScreen({ navigation }) {
             )}
 
             {/* Quick actions */}
-            <Text style={[s.sectionTitle, { color: theme.hint }]}>QUICK ACTIONS</Text>
+            <Text style={[s.sectionTitle, { color: theme.hint }]}>{t('partnerDashboard.quickActions')}</Text>
             <View style={s.actionGrid}>
               {quickActions.map(item => (
                 <TouchableOpacity
@@ -687,10 +707,10 @@ export default function PartnerDashboardScreen({ navigation }) {
                     <item.Icon size={44} />
                   </View>
                   <Text style={[s.actionLabel, { color: theme.foreground }]}>{item.label}</Text>
-                  {item.label === 'Floor Price' && floorPriceActive && (
+                  {item.label === t('partnerDashboard.qaFloorPrice') && floorPriceActive && (
                     <View style={[s.floorBadge, { backgroundColor: PURPLE }]}>
                       <Text style={s.floorBadgeTxt}>
-                        ₦{activeFloorAmount.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                        {formatMoney(activeFloorAmount)}
                       </Text>
                     </View>
                   )}
@@ -706,7 +726,7 @@ export default function PartnerDashboardScreen({ navigation }) {
                 color={isApproved ? '#5DAA72' : theme.hint}
               />
               <Text style={[s.footerTxt, { color: isApproved ? '#5DAA72' : theme.hint }]}>
-                {isApproved ? 'Verified & Approved Courier' : 'Verification Pending'}
+                {isApproved ? t('partnerDashboard.verifiedApprovedCourier') : t('partnerDashboard.verificationPending')}
               </Text>
             </View>
 

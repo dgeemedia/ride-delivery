@@ -10,6 +10,8 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }           from '../../context/ThemeContext';
+import { useCurrency }        from '../../context/CurrencyContext';
+import { useTranslation }     from 'react-i18next';
 import { rideAPI, walletAPI, placesAPI } from '../../services/api';
 import socketService          from '../../services/socket';
 
@@ -37,6 +39,7 @@ const fareColor = (fare) => {
 
 // ── DriverPin ─────────────────────────────────────────────────────────────────
 const DriverPin = ({ driver, selected, onPress, accentColor }) => {
+  const { formatMoney } = useCurrency();
   const scaleA = useRef(new Animated.Value(0)).current;
   const color  = fareColor(driver.effectiveFare ?? driver.estimatedFare ?? 0);
 
@@ -60,7 +63,7 @@ const DriverPin = ({ driver, selected, onPress, accentColor }) => {
         </View>
         <View style={[dp.fareBadge, { backgroundColor: color }]}>
           <Text style={dp.fareText}>
-            ₦{Number(driver.effectiveFare ?? driver.estimatedFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+            {formatMoney(driver.effectiveFare ?? driver.estimatedFare ?? 0)}
           </Text>
         </View>
         {selected && <View style={[dp.pulse, { borderColor: color }]} />}
@@ -78,6 +81,8 @@ const dp = StyleSheet.create({
 
 // ── DriverCard ────────────────────────────────────────────────────────────────
 const DriverCard = ({ driver, selected, onSelect, accentColor, theme }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const fare  = driver.effectiveFare ?? driver.estimatedFare ?? 0;
   const color = fareColor(fare);
   return (
@@ -100,7 +105,7 @@ const DriverCard = ({ driver, selected, onSelect, accentColor, theme }) => {
           <Text style={[dc.name, { color: theme.foreground }]} numberOfLines={1}>{driver.firstName} {driver.lastName}</Text>
           {driver.floorMultiplier > 1.0 && (
             <View style={[dc.floorBadge, { backgroundColor: color + '20', borderColor: color + '50' }]}>
-              <Text style={[dc.floorTxt, { color }]}>FLOOR</Text>
+              <Text style={[dc.floorTxt, { color }]}>{t('requestRide.floorBadge')}</Text>
             </View>
           )}
         </View>
@@ -119,7 +124,7 @@ const DriverCard = ({ driver, selected, onSelect, accentColor, theme }) => {
         </View>
       </View>
       <View style={{ alignItems: 'flex-end', marginLeft: 8 }}>
-        <Text style={[dc.fare, { color }]}>₦{Number(fare).toLocaleString('en-NG', { maximumFractionDigits: 0 })}</Text>
+        <Text style={[dc.fare, { color }]}>{formatMoney(fare)}</Text>
         <View style={[dc.radio, { borderColor: selected ? accentColor : theme.border }]}>
           {selected && <View style={[dc.radioDot, { backgroundColor: accentColor }]} />}
         </View>
@@ -148,6 +153,7 @@ const dc = StyleSheet.create({
 
 // ── WaitingSheet ──────────────────────────────────────────────────────────────
 const WaitingSheet = ({ accentColor, theme, driverName, onCancel, rideAccepted }) => {
+  const { t } = useTranslation();
   const dotA = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
     if (rideAccepted) return;
@@ -165,7 +171,7 @@ const WaitingSheet = ({ accentColor, theme, driverName, onCancel, rideAccepted }
         <View style={[wt.iconWrap, { backgroundColor: '#5DAA7218' }]}>
           <Ionicons name="checkmark-circle" size={36} color="#5DAA72" />
         </View>
-        <Text style={[wt.title, { color: theme.foreground }]}>Driver Accepted!</Text>
+        <Text style={[wt.title, { color: theme.foreground }]}>{t('requestRide.driverAccepted')}</Text>
         <Text style={[wt.sub, { color: theme.hint }]}>{driverName} is on the way</Text>
       </View>
     );
@@ -177,10 +183,10 @@ const WaitingSheet = ({ accentColor, theme, driverName, onCancel, rideAccepted }
           <Ionicons name="car" size={32} color={accentColor} />
         </Animated.View>
       </View>
-      <Text style={[wt.title, { color: theme.foreground }]}>Request Sent!</Text>
+      <Text style={[wt.title, { color: theme.foreground }]}>{t('requestRide.requestSent')}</Text>
       <Text style={[wt.sub, { color: theme.hint }]}>Waiting for {driverName} to accept…</Text>
       <TouchableOpacity style={[wt.cancelBtn, { borderColor: theme.border }]} onPress={onCancel} activeOpacity={0.8}>
-        <Text style={[wt.cancelTxt, { color: theme.hint }]}>Cancel Request</Text>
+        <Text style={[wt.cancelTxt, { color: theme.hint }]}>{t('requestDelivery.cancelRequest')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -199,6 +205,8 @@ const wt = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RequestRideScreen({ navigation }) {
   const { theme }   = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const insets      = useSafeAreaInsets();
   const accentColor = theme.accent;
   const accentFg    = theme.accentFg ?? '#111111';
@@ -337,7 +345,7 @@ export default function RequestRideScreen({ navigation }) {
     const handleCancelled = (data) => {
       if (data.rideId === pendingRideId) {
         setPendingRideId(null); setRideAccepted(false); setStep(2);
-        Alert.alert('Request Cancelled', 'The driver cancelled. Please choose another driver.');
+        Alert.alert(t('requestRide.requestCancelledTitle'), t('requestRide.requestCancelledBody'));
       }
     };
     socketService.on('ride:status:update', handleStatus);
@@ -408,7 +416,7 @@ export default function RequestRideScreen({ navigation }) {
         }
       }
     } catch (err) {
-      Alert.alert('Address error', 'Could not resolve that address. Try pinning it on the map instead.');
+      Alert.alert(t('requestDelivery.addressErrorTitle'), t('requestDelivery.addressErrorBody'));
     } finally {
       // Always start a fresh session token for the NEXT search.
       sessionTokenRef.current = newSessionToken();
@@ -471,7 +479,7 @@ export default function RequestRideScreen({ navigation }) {
   };
 
   const proceedToMap = useCallback(async () => {
-    if (!pickupCoords || !dropoffCoords) { Alert.alert('Set both locations', 'Please set both pickup and drop-off locations.'); return; }
+    if (!pickupCoords || !dropoffCoords) { Alert.alert(t('requestRide.setBothLocationsTitle'), t('requestRide.setBothLocationsBody')); return; }
     const km = haversineKm(pickupCoords.lat, pickupCoords.lng, dropoffCoords.lat, dropoffCoords.lng);
     setDistanceKm(km); setFareEstimate(calcFare(km)); setEtaMinutes(Math.ceil(km / 0.5));
     setStep(2); setScanning(true); setScanDone(false);  // radar starts via useEffect
@@ -495,14 +503,14 @@ export default function RequestRideScreen({ navigation }) {
     } catch (err) {
       setScanning(false); setScanDone(true);
       Animated.spring(sheetH, { toValue: height * 0.55, tension: 60, friction: 12, useNativeDriver: false }).start();
-      Alert.alert('Drivers unavailable', err?.message ?? 'Could not load nearby drivers.');
+      Alert.alert(t('requestRide.driversUnavailableTitle'), err?.message ?? t('requestRide.couldNotLoadDrivers'));
     }
   }, [pickupCoords, dropoffCoords]);
 
   const confirmRide = async () => {
-    if (!selectedDriver) { Alert.alert('Select a driver', 'Please choose a driver.'); return; }
+    if (!selectedDriver) { Alert.alert(t('requestRide.selectDriverTitle'), t('requestRide.selectDriverBody')); return; }
     if (paymentMethod === 'WALLET' && walletBalance < (selectedDriver.effectiveFare ?? fareEstimate)) {
-      Alert.alert('Insufficient Balance', 'Your wallet balance is less than the fare. Please top up or choose another payment method.');
+      Alert.alert(t('requestDelivery.insufficientBalanceTitle'), t('requestRide.insufficientBalanceBody'));
       return;
     }
     setRequesting(true);
@@ -522,7 +530,7 @@ export default function RequestRideScreen({ navigation }) {
       setStep(4);
       Animated.timing(sheetH, { toValue: SHEET_SNAP, duration: 300, useNativeDriver: false }).start();
     } catch (err) {
-      if (err?.message !== 'CANCELLED') Alert.alert('Request failed', err?.message ?? 'Could not book the ride.');
+      if (err?.message !== 'CANCELLED') Alert.alert(t('requestRide.requestFailedTitle'), err?.message ?? t('requestRide.couldNotBookRide'));
     } finally { setRequesting(false); }
   };
 
@@ -535,7 +543,7 @@ const cancelPendingRide = async () => {
     // If already cancelled or not found, still proceed to clean up locally
     const msg = err?.message ?? '';
     if (!msg.includes('Cannot cancel') && !msg.includes('not found')) {
-      Alert.alert('Note', 'Could not reach server, but your request has been removed locally.');
+      Alert.alert(t('requestDelivery.noteTitle'), t('requestDelivery.couldNotReachServer'));
     }
   }
   setPendingRideId(null);
@@ -557,10 +565,10 @@ const cancelPendingRide = async () => {
   const sheetStyle = step === 2 ? { height: sheetH } : { height: SHEET_SNAP };
 
   const confirmBtnLabel =
-    paymentMethod === 'WALLET'      ? 'Confirm • Pay via Wallet'      :
-    paymentMethod === 'PAYSTACK'    ? 'Confirm • Pay via Paystack'    :
-    paymentMethod === 'FLUTTERWAVE' ? 'Confirm • Pay via Flutterwave' :
-                                      'Confirm • Pay Cash';
+    paymentMethod === 'WALLET'      ? t('requestDelivery.confirmPayWallet')      :
+    paymentMethod === 'PAYSTACK'    ? t('requestDelivery.confirmPayPaystack')    :
+    paymentMethod === 'FLUTTERWAVE' ? t('requestDelivery.confirmPayFlutterwave') :
+                                      t('requestDelivery.confirmPayCash');
 
   return (
     <View style={s.root}>
@@ -648,7 +656,7 @@ const cancelPendingRide = async () => {
             </View>
             <TouchableOpacity style={[s.confirmBarBtn, { backgroundColor: pinColor, opacity: resolvingAddr ? 0.6 : 1 }]} onPress={confirmPin} disabled={resolvingAddr || !liveAddress} activeOpacity={0.88}>
               <Ionicons name="checkmark" size={18} color={pinFg} />
-              <Text style={[s.confirmBarBtnTxt, { color: pinFg }]}>Confirm Location</Text>
+              <Text style={[s.confirmBarBtnTxt, { color: pinFg }]}>{t('requestDelivery.confirmLocation')}</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -662,8 +670,8 @@ const cancelPendingRide = async () => {
               <StepDots current={1} accentColor={accentColor} theme={theme} />
               <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
                 <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                  <Text style={[s.sheetTitle, { color: theme.foreground }]}>Where to?</Text>
-                  <Text style={[s.sheetSub, { color: theme.hint }]}>Search or tap the map icon to pin your location</Text>
+                  <Text style={[s.sheetTitle, { color: theme.foreground }]}>{t('requestRide.whereTo')}</Text>
+                  <Text style={[s.sheetSub, { color: theme.hint }]}>{t('requestDelivery.searchOrPinSubtitle')}</Text>
                   <View style={s.locationRow}>
                     <View style={s.routeDots}>
                       <View style={[s.routeDot, { backgroundColor: accentColor }]} />
@@ -673,8 +681,8 @@ const cancelPendingRide = async () => {
                     <View style={{ flex: 1 }}>
                       <TouchableOpacity style={[s.locBtn, { backgroundColor: theme.card, borderColor: accentColor + '50' }]} onPress={() => openSearchModal('pickup')} activeOpacity={0.85}>
                         <View style={{ flex: 1 }}>
-                          <Text style={[s.locBtnLabel, { color: accentColor }]}>PICKUP</Text>
-                          <Text style={[s.locBtnAddr, { color: pickupCoords ? theme.foreground : theme.hint }]} numberOfLines={1}>{pickupAddress || 'Search or pin pickup location'}</Text>
+                          <Text style={[s.locBtnLabel, { color: accentColor }]}>{t('requestDelivery.pickup')}</Text>
+                          <Text style={[s.locBtnAddr, { color: pickupCoords ? theme.foreground : theme.hint }]} numberOfLines={1}>{pickupAddress || t('requestDelivery.searchOrPinPickup')}</Text>
                         </View>
                         <View style={[s.locBtnIcon, { backgroundColor: accentColor + '18' }]}><Ionicons name="search" size={14} color={accentColor} /></View>
                         <TouchableOpacity style={[s.locBtnIconSecondary, { backgroundColor: accentColor + '10' }]} onPress={(e) => { e.stopPropagation(); startPickingLocation('pickup'); }} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
@@ -684,8 +692,8 @@ const cancelPendingRide = async () => {
                       <View style={{ height: 6 }} />
                       <TouchableOpacity style={[s.locBtn, { backgroundColor: theme.card, borderColor: '#E05555' + '50' }]} onPress={() => openSearchModal('dropoff')} activeOpacity={0.85}>
                         <View style={{ flex: 1 }}>
-                          <Text style={[s.locBtnLabel, { color: '#E05555' }]}>DROP-OFF</Text>
-                          <Text style={[s.locBtnAddr, { color: dropoffCoords ? theme.foreground : theme.hint }]} numberOfLines={1}>{dropoffAddress || 'Search or pin drop-off location'}</Text>
+                          <Text style={[s.locBtnLabel, { color: '#E05555' }]}>{t('requestDelivery.dropoff')}</Text>
+                          <Text style={[s.locBtnAddr, { color: dropoffCoords ? theme.foreground : theme.hint }]} numberOfLines={1}>{dropoffAddress || t('requestDelivery.searchOrPinDropoff')}</Text>
                         </View>
                         <View style={[s.locBtnIcon, { backgroundColor: '#E05555' + '18' }]}><Ionicons name="search" size={14} color="#E05555" /></View>
                         <TouchableOpacity style={[s.locBtnIconSecondary, { backgroundColor: '#E05555' + '10' }]} onPress={(e) => { e.stopPropagation(); startPickingLocation('dropoff'); }} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
@@ -696,7 +704,7 @@ const cancelPendingRide = async () => {
                   </View>
                   {(loadingNearby || nearbyPlaces.length > 0) && (
                     <>
-                      <Text style={[s.quickLabel, { color: theme.hint }]}>NEARBY PLACES</Text>
+                      <Text style={[s.quickLabel, { color: theme.hint }]}>{t('requestDelivery.nearbyPlaces')}</Text>
                       {loadingNearby
                         ? <ActivityIndicator color={accentColor} style={{ marginBottom: 20, alignSelf: 'flex-start' }} size="small" />
                         : <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
@@ -715,7 +723,7 @@ const cancelPendingRide = async () => {
                     onPress={proceedToMap} activeOpacity={0.88}
                   >
                     <Ionicons name="radio-outline" size={18} color={(pickupCoords && dropoffCoords) ? accentFg : theme.muted} />
-                    <Text style={[s.primaryBtnTxt, { color: (pickupCoords && dropoffCoords) ? accentFg : theme.muted }]}>Find Available Riders</Text>
+                    <Text style={[s.primaryBtnTxt, { color: (pickupCoords && dropoffCoords) ? accentFg : theme.muted }]}>{t('requestRide.findAvailableRiders')}</Text>
                   </TouchableOpacity>
                 </ScrollView>
               </KeyboardAvoidingView>
@@ -724,7 +732,7 @@ const cancelPendingRide = async () => {
 
           {step === 2 && (
             <>
-              <ScanningBar theme={theme} accentColor={accentColor} count={drivers.length} done={scanDone} label="driver" />
+              <ScanningBar theme={theme} accentColor={accentColor} count={drivers.length} done={scanDone} label={t('requestRide.driverLabel')} />
               {scanDone && (
                 <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: sheetPadBottom, paddingTop: 8 }}>
                   <View style={[s.fareBadge, { backgroundColor: theme.card, borderColor: theme.border, marginBottom: 14 }]}>
@@ -732,15 +740,15 @@ const cancelPendingRide = async () => {
                     <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
                     <View style={s.fareItem}><Ionicons name="time-outline" size={14} color={theme.hint} /><Text style={[s.fareVal, { color: theme.foreground }]}>~{etaMinutes} min</Text></View>
                     <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
-                    <View style={s.fareItem}><Ionicons name="cash-outline" size={14} color={theme.hint} /><Text style={[s.fareVal, { color: accentColor }]}>from ₦{Number(Math.min(...drivers.map(d => d.effectiveFare ?? fareEstimate))).toLocaleString('en-NG', { maximumFractionDigits: 0 })}</Text></View>
+                    <View style={s.fareItem}><Ionicons name="cash-outline" size={14} color={theme.hint} /><Text style={[s.fareVal, { color: accentColor }]}>from {formatMoney(Math.min(...drivers.map(d => d.effectiveFare ?? fareEstimate)))}</Text></View>
                   </View>
-                  <Text style={[s.sheetSub, { color: theme.hint, marginBottom: 12 }]}>Tap a pin on the map or select a driver below.</Text>
+                  <Text style={[s.sheetSub, { color: theme.hint, marginBottom: 12 }]}>{t('requestRide.tapPinOrSelectDriver')}</Text>
                   {drivers.length === 0 ? (
                     <View style={s.noDrivers}>
                       <Ionicons name="car-outline" size={36} color={theme.hint} />
-                      <Text style={[s.noDriversTxt, { color: theme.hint }]}>No drivers available right now</Text>
+                      <Text style={[s.noDriversTxt, { color: theme.hint }]}>{t('requestRide.noDriversAvailable')}</Text>
                       <TouchableOpacity onPress={proceedToMap} style={[s.retryBtn, { borderColor: accentColor + '50' }]}>
-                        <Text style={[s.retryTxt, { color: accentColor }]}>Retry</Text>
+                        <Text style={[s.retryTxt, { color: accentColor }]}>{t('requestDelivery.retry')}</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -762,7 +770,7 @@ const cancelPendingRide = async () => {
           {step === 3 && selectedDriver && (
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 22, paddingBottom: sheetPadBottom }}>
              <StepDots current={3} accentColor={accentColor} theme={theme} />
-              <Text style={[s.sheetTitle, { color: theme.foreground }]}>Confirm Ride</Text>
+              <Text style={[s.sheetTitle, { color: theme.foreground }]}>{t('requestRide.confirmRide')}</Text>
               <View style={[s.confirmRoute, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <View style={s.confirmRow}><View style={[s.cDot, { backgroundColor: accentColor }]} /><Text style={[s.confirmAddr, { color: theme.foreground }]} numberOfLines={2}>{pickupAddress}</Text></View>
                 <View style={[s.confirmRouteLine, { backgroundColor: theme.border }]} />
@@ -788,9 +796,9 @@ const cancelPendingRide = async () => {
                     </View>
                   </View>
                   <View style={s.confirmFareBox}>
-                    <Text style={[s.confirmFareLabel, { color: theme.hint }]}>FARE</Text>
+                    <Text style={[s.confirmFareLabel, { color: theme.hint }]}>{t('requestRide.fareLabel')}</Text>
                     <Text style={[s.confirmFare, { color: fareColor(selectedDriver.effectiveFare ?? fareEstimate) }]}>
-                      ₦{Number(selectedDriver.effectiveFare ?? fareEstimate).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                      {formatMoney(selectedDriver.effectiveFare ?? fareEstimate)}
                     </Text>
                   </View>
                 </View>
@@ -806,7 +814,7 @@ const cancelPendingRide = async () => {
                 )}
               </TouchableOpacity>
               <TouchableOpacity style={[s.secondaryBtn, { borderColor: theme.border }]} onPress={() => setStep(2)} activeOpacity={0.8}>
-                <Text style={[s.secondaryBtnTxt, { color: theme.hint }]}>Change Driver</Text>
+                <Text style={[s.secondaryBtnTxt, { color: theme.hint }]}>{t('requestRide.changeDriver')}</Text>
               </TouchableOpacity>
             </ScrollView>
           )}

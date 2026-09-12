@@ -10,15 +10,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';   // <-- ADDED
 import { useTheme }          from '../../context/ThemeContext';
 import { useAuth }           from '../../context/AuthContext';
+import { useTranslation }    from 'react-i18next';
 import { supportAPI }        from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
 
 const STATUS_META = {
-  open:        { label: 'Open',        color: '#C9A96E' },
-  in_progress: { label: 'In Progress', color: '#4E8DBD' },
-  resolved:    { label: 'Resolved',    color: '#5DAA72' },
-  closed:      { label: 'Closed',      color: '#888'    },
+  open:        { labelKey: 'ticketDetail.statusOpen',       color: '#C9A96E' },
+  in_progress: { labelKey: 'ticketDetail.statusInProgress', color: '#4E8DBD' },
+  resolved:    { labelKey: 'ticketDetail.statusResolved',   color: '#5DAA72' },
+  closed:      { labelKey: 'ticketDetail.statusClosed',     color: '#888'    },
 };
 
 const formatTime = (iso) => {
@@ -28,7 +29,9 @@ const formatTime = (iso) => {
 };
 
 // ── Message bubble ─────────────────────────────────────────────────────────────
-const Bubble = ({ message, isAdmin, theme }) => (
+const Bubble = ({ message, isAdmin, theme }) => {
+  const { t } = useTranslation();
+  return (
   <View style={[bu.row, isAdmin && bu.rowReverse]}>
     <View style={[bu.avatar, { backgroundColor: isAdmin ? theme.accent + '20' : theme.backgroundAlt, borderColor: theme.border }]}>
       <Ionicons
@@ -39,7 +42,7 @@ const Bubble = ({ message, isAdmin, theme }) => (
     </View>
     <View style={[bu.wrap, { maxWidth: width * 0.72 }]}>
       <Text style={[bu.sender, { color: theme.hint }]}>
-        {isAdmin ? 'Support Agent' : 'You'}
+        {isAdmin ? t('ticketDetail.supportAgent') : t('ticketDetail.you')}
       </Text>
       <View style={[
         bu.bubble,
@@ -52,7 +55,8 @@ const Bubble = ({ message, isAdmin, theme }) => (
       <Text style={[bu.time, { color: theme.hint }]}>{formatTime(message.createdAt)}</Text>
     </View>
   </View>
-);
+  );
+};
 
 const bu = StyleSheet.create({
   row:        { flexDirection: 'row', gap: 8, marginBottom: 16, alignItems: 'flex-end' },
@@ -66,7 +70,9 @@ const bu = StyleSheet.create({
 });
 
 // ── Original message card ──────────────────────────────────────────────────────
-const OriginalMessage = ({ ticket, theme }) => (
+const OriginalMessage = ({ ticket, theme }) => {
+  const { t } = useTranslation();
+  return (
   <View style={[om.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
     <View style={om.top}>
       <Text style={[om.ticketNo, { color: theme.accent }]}>{ticket.ticketNumber}</Text>
@@ -76,9 +82,10 @@ const OriginalMessage = ({ ticket, theme }) => (
     </View>
     <Text style={[om.subject, { color: theme.foreground }]}>{ticket.subject}</Text>
     <Text style={[om.desc, { color: theme.hint }]}>{ticket.description}</Text>
-    <Text style={[om.date, { color: theme.hint }]}>Submitted {formatTime(ticket.createdAt)}</Text>
+    <Text style={[om.date, { color: theme.hint }]}>{t('ticketDetail.submitted', { time: formatTime(ticket.createdAt) })}</Text>
   </View>
-);
+  );
+};
 const om = StyleSheet.create({
   card:    { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 20 },
   top:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
@@ -95,6 +102,7 @@ export default function TicketDetailScreen({ navigation, route }) {
   const { ticketId }    = route.params;
   const { theme, mode } = useTheme();
   const { user }        = useAuth();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const tabBarHeight    = useBottomTabBarHeight();                         // <-- ADDED
 
@@ -127,8 +135,8 @@ export default function TicketDetailScreen({ navigation, route }) {
   useEffect(() => {
     if (!ticket) return;
     if (['resolved', 'closed'].includes(ticket.status)) return;
-    const t = setInterval(() => load(true), 15000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => load(true), 15000);
+    return () => clearInterval(timer);
   }, [ticket?.status, load]);
 
   const isClosed = ticket && ['resolved', 'closed'].includes(ticket.status);
@@ -177,11 +185,11 @@ export default function TicketDetailScreen({ navigation, route }) {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={[s.title, { color: theme.foreground }]} numberOfLines={1}>
-            {ticket?.subject ?? 'Ticket Detail'}
+            {ticket?.subject ?? t('ticketDetail.headerTitle')}
           </Text>
           {status && (
             <Text style={[s.statusLine, { color: status.color }]}>
-              {ticket?.ticketNumber} • {status.label}
+              {ticket?.ticketNumber} • {t(status.labelKey)}
             </Text>
           )}
         </View>
@@ -193,7 +201,7 @@ export default function TicketDetailScreen({ navigation, route }) {
         </View>
       ) : !ticket ? (
         <View style={[s.center, { height: BODY_H }]}>
-          <Text style={[s.notFound, { color: theme.hint }]}>Ticket not found.</Text>
+          <Text style={[s.notFound, { color: theme.hint }]}>{t('ticketDetail.notFound')}</Text>
         </View>
       ) : (
         <KeyboardAvoidingView
@@ -236,7 +244,7 @@ export default function TicketDetailScreen({ navigation, route }) {
                 <View style={[s.awaitingWrap, { backgroundColor: theme.backgroundAlt + '80', borderColor: theme.border }]}>
                   <Ionicons name="time-outline" size={18} color={theme.hint} />
                   <Text style={[s.awaitingTxt, { color: theme.hint }]}>
-                    Awaiting a response from our team. We typically reply within 24 hours.
+                    {t('ticketDetail.awaiting')}
                   </Text>
                 </View>
               )}
@@ -246,7 +254,7 @@ export default function TicketDetailScreen({ navigation, route }) {
                   <Ionicons name="checkmark-circle-outline" size={18} color="#5DAA72" />
                   <View style={{ flex: 1 }}>
                     <Text style={[s.resolvedTitle, { color: '#5DAA72' }]}>
-                      {ticket.status === 'resolved' ? 'Ticket Resolved' : 'Ticket Closed'}
+                      {ticket.status === 'resolved' ? t('ticketDetail.ticketResolved') : t('ticketDetail.ticketClosed')}
                     </Text>
                     {ticket.resolution ? (
                       <Text style={[s.resolvedSub, { color: theme.hint }]}>{ticket.resolution}</Text>
@@ -268,7 +276,7 @@ export default function TicketDetailScreen({ navigation, route }) {
                     backgroundColor: theme.background,
                     borderColor:     theme.border,
                   }]}
-                  placeholder="Add a follow-up message..."
+                  placeholder={t('ticketDetail.replyPlaceholder')}
                   placeholderTextColor={theme.hint}
                   value={reply}
                   onChangeText={setReply}

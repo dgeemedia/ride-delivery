@@ -11,6 +11,7 @@ import { Ionicons }        from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth }         from '../../context/AuthContext';
 import { useTheme }        from '../../context/ThemeContext';
+import { useTranslation }  from 'react-i18next';
 import { useBiometric }    from '../../hooks/useBiometric';
 import { LoginHeroIllustration } from '../../components/ServiceIcons';
 import { authAPI }         from '../../services/api';
@@ -107,6 +108,7 @@ const fi = StyleSheet.create({
 export default function LoginScreen({ navigation }) {
   const { theme, mode }                   = useTheme();
   const { login, biometricLogin }         = useAuth();
+  const { t }                             = useTranslation();
   const insets                            = useSafeAreaInsets();
   const darkMode                          = mode === 'dark';
 
@@ -166,7 +168,7 @@ export default function LoginScreen({ navigation }) {
     submitLockRef.current = true;
 
     if (!email.trim() || !password) {
-      Alert.alert('Missing Fields', 'Please fill in all fields.');
+      Alert.alert(t('login.missingFieldsTitle'), t('login.missingFieldsBody'));
       submitLockRef.current = false;
       return;
     }
@@ -188,7 +190,7 @@ export default function LoginScreen({ navigation }) {
           setVerificationBlocked(true);
           return;
         }
-        Alert.alert('Login Failed', res.message ?? 'Please check your credentials.');
+        Alert.alert(t('login.loginFailedTitle'), res.message ?? t('login.loginFailedBody'));
         return;
       }
 
@@ -246,14 +248,14 @@ export default function LoginScreen({ navigation }) {
     const storedToken = await getSecureToken();
     if (!storedToken) {
       setBioLoading(false);
-      Alert.alert('Setup Required', 'Please sign in with your password to re-enable biometric login.');
+      Alert.alert(t('login.setupRequiredTitle'), t('login.setupRequiredBody'));
       return;
     }
     const res = await biometricLogin(storedToken);
     setBioLoading(false);
     if (!res.success) {
       await disableBiometric();
-      Alert.alert('Session Expired', res.message || 'Please sign in with your password to continue.');
+      Alert.alert(t('login.sessionExpiredTitle'), res.message || t('login.sessionExpiredBody'));
     }
   };
 
@@ -304,10 +306,10 @@ export default function LoginScreen({ navigation }) {
               <View style={{ flex: 1 }}>
                 <View style={[s.pill, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}>
                   <View style={[s.pillDot, { backgroundColor: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)' }]} />
-                  <Text style={[s.eyebrow, { color: darkMode ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)' }]}>WELCOME BACK</Text>
+                  <Text style={[s.eyebrow, { color: darkMode ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)' }]}>{t('login.welcomeBack')}</Text>
                 </View>
-                <Text style={[s.title, { color: theme.foreground, fontSize: TINY ? 26 : SMALL ? 28 : MEDIUM ? 31 : 34, marginTop: TINY ? 6 : 10 }]}>Sign in</Text>
-                <Text style={[s.subtitle, { color: theme.hint, fontSize: TINY ? 12 : 13, marginTop: TINY ? 2 : 4 }]}>Good to see you again.</Text>
+                <Text style={[s.title, { color: theme.foreground, fontSize: TINY ? 26 : SMALL ? 28 : MEDIUM ? 31 : 34, marginTop: TINY ? 6 : 10 }]}>{t('login.signIn')}</Text>
+                <Text style={[s.subtitle, { color: theme.hint, fontSize: TINY ? 12 : 13, marginTop: TINY ? 2 : 4 }]}>{t('login.subtitle')}</Text>
               </View>
             </View>
           </Animated.View>
@@ -339,7 +341,7 @@ export default function LoginScreen({ navigation }) {
               style={[s.forgot, { marginBottom: TINY ? 14 : SMALL ? 18 : 22 }]}
               onPress={() => navigation.navigate('ForgotPassword')}
             >
-              <Text style={[s.forgotTxt, { color: theme.hint, fontSize: TINY ? 11 : 12 }]}>Forgot password?</Text>
+              <Text style={[s.forgotTxt, { color: theme.hint, fontSize: TINY ? 11 : 12 }]}>{t('login.forgotPassword')}</Text>
             </TouchableOpacity>
 
             {/* ── ADDED: Email verification banner ─────────────────────── */}
@@ -355,11 +357,10 @@ export default function LoginScreen({ navigation }) {
                 <Ionicons name="mail-unread-outline" size={20} color="#F59E0B" style={{ marginTop: 2 }} />
                 <View style={{ flex: 1, gap: 8 }}>
                   <Text style={[vb.title, { color: darkMode ? '#FCD34D' : '#92400E' }]}>
-                    Email not verified
+                    {t('login.emailNotVerified')}
                   </Text>
                   <Text style={[vb.body, { color: darkMode ? 'rgba(252,211,77,0.80)' : 'rgba(146,64,14,0.80)' }]}>
-                    Your account exists but hasn't been verified yet.
-                    Check your inbox or request a new link below.
+                    {t('login.emailNotVerifiedBody')}
                   </Text>
                   <TouchableOpacity
                     style={[vb.resendBtn, { opacity: (resendLoading || resendCooldown > 0) ? 0.5 : 1 }]}
@@ -374,10 +375,10 @@ export default function LoginScreen({ navigation }) {
                     />
                     <Text style={vb.resendTxt}>
                       {resendLoading
-                        ? 'Sending…'
+                        ? t('login.sendingEllipsis')
                         : resendCooldown > 0
-                        ? `Resend in ${resendCooldown}s`
-                        : 'Resend verification email'}
+                        ? t('login.resendIn', { seconds: resendCooldown })
+                        : t('login.resendVerificationEmail')}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -398,7 +399,7 @@ export default function LoginScreen({ navigation }) {
               />
               <View style={[s.shimmer, { backgroundColor: darkMode ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.15)' }]} />
               <Text style={[s.signBtnTxt, { color: theme.accentFg, fontSize: TINY ? 13 : 14 }]}>
-                {loading ? 'Signing in…' : 'Sign In'}
+                {loading ? t('login.signingInEllipsis') : t('login.signInButton')}
               </Text>
               {!loading && <Ionicons name="arrow-forward" size={16} color={theme.accentFg} />}
             </TouchableOpacity>
@@ -422,7 +423,7 @@ export default function LoginScreen({ navigation }) {
                 />
                 <Ionicons name={bioLoading ? 'hourglass-outline' : bioIcon} size={18} color={theme.foreground} />
                 <Text style={[s.bioTxt, { color: theme.foreground, fontSize: TINY ? 12 : 13 }]}>
-                  {bioLoading ? 'Verifying…' : `Sign in with ${bioLabel}`}
+                  {bioLoading ? t('login.verifyingEllipsis') : t('login.signInWith', { method: bioLabel })}
                 </Text>
               </TouchableOpacity>
             )}
@@ -431,14 +432,14 @@ export default function LoginScreen({ navigation }) {
             {(!bioAvailable || !bioEnabled) && (
               <View style={[s.divRow, { marginVertical: TINY ? 10 : 14 }]}>
                 <View style={[s.divLine, { backgroundColor: G.border(mode) }]} />
-                <Text style={[s.divTxt, { color: theme.hint }]}>or</Text>
+                <Text style={[s.divTxt, { color: theme.hint }]}>{t('login.or')}</Text>
                 <View style={[s.divLine, { backgroundColor: G.border(mode) }]} />
               </View>
             )}
             {bioAvailable && bioEnabled && (
               <View style={[s.divRow, { marginBottom: TINY ? 10 : 14, marginTop: 0 }]}>
                 <View style={[s.divLine, { backgroundColor: G.border(mode) }]} />
-                <Text style={[s.divTxt, { color: theme.hint }]}>or</Text>
+                <Text style={[s.divTxt, { color: theme.hint }]}>{t('login.or')}</Text>
                 <View style={[s.divLine, { backgroundColor: G.border(mode) }]} />
               </View>
             )}
@@ -457,8 +458,8 @@ export default function LoginScreen({ navigation }) {
                 style={StyleSheet.absoluteFill}
               />
               <Text style={[s.regTxt, { color: theme.hint, fontSize: TINY ? 12 : 13 }]}>
-                New to Diakite?{'  '}
-                <Text style={[s.regBold, { color: theme.foreground }]}>Create Account</Text>
+                {t('login.newToApp')}{'  '}
+                <Text style={[s.regBold, { color: theme.foreground }]}>{t('login.createAccount')}</Text>
               </Text>
             </TouchableOpacity>
 

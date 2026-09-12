@@ -9,6 +9,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useCurrency } from '../../context/CurrencyContext';
+import { useTranslation } from 'react-i18next';
+import { SUPPORTED_LANGUAGES, changeLanguage } from '../../i18n';
 import { userAPI, driverAPI, partnerAPI, authAPI } from '../../services/api';
 import { useBiometric } from '../../hooks/useBiometric';
 
@@ -299,6 +302,9 @@ const rbd = StyleSheet.create({
 export default function ProfileScreen({ navigation }) {
   const { user, logout, updateUser }                               = useAuth();
   const { theme, mode, changeMode }                                = useTheme();
+  const { formatMoney }                                            = useCurrency();
+  const { t, i18n }                                                = useTranslation();
+  const [languagePickerVisible, setLanguagePickerVisible]          = useState(false);
   const { isAvailable, isEnabled, biometricType, enable, disable } = useBiometric();
   const insets                                                     = useSafeAreaInsets();
 
@@ -560,7 +566,7 @@ export default function ProfileScreen({ navigation }) {
                     <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
                     {/* Tapping the wallet balance strip also jumps to the wallet tab */}
                     <TouchableOpacity style={s.stripItem} onPress={handleWalletOrEarningsPress} activeOpacity={0.7}>
-                      <Text style={[s.stripVal, { color: theme.foreground }]}>₦{(stats?.walletBalance ?? 0).toLocaleString()}</Text>
+                      <Text style={[s.stripVal, { color: theme.foreground }]}>{formatMoney(stats?.walletBalance ?? 0)}</Text>
                       <Text style={[s.stripLbl, { color: theme.hint }]}>Wallet ›</Text>
                     </TouchableOpacity>
                   </>
@@ -581,7 +587,7 @@ export default function ProfileScreen({ navigation }) {
                     <View style={[s.stripDivider, { backgroundColor: theme.border }]} />
                     {/* Tapping earnings strip jumps to the earnings tab */}
                     <TouchableOpacity style={s.stripItem} onPress={handleWalletOrEarningsPress} activeOpacity={0.7}>
-                      <Text style={[s.stripVal, { color: theme.foreground }]}>₦{(stats?.totalEarnings ?? 0).toLocaleString()}</Text>
+                      <Text style={[s.stripVal, { color: theme.foreground }]}>{formatMoney(stats?.totalEarnings ?? 0)}</Text>
                       <Text style={[s.stripLbl, { color: theme.hint }]}>Earned ›</Text>
                     </TouchableOpacity>
                   </>
@@ -674,39 +680,79 @@ export default function ProfileScreen({ navigation }) {
                     <Ionicons name="finger-print-outline" size={17} color={theme.accent} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[tr.label, { color: theme.foreground }]}>Biometric Login</Text>
-                    <Text style={[tr.sublabel, { color: theme.hint }]}>Not available on this device</Text>
+                    <Text style={[tr.label, { color: theme.foreground }]}>{t('profile.biometricLogin')}</Text>
+                    <Text style={[tr.sublabel, { color: theme.hint }]}>{t('profile.biometricUnavailable')}</Text>
                   </View>
                 </View>
               )}
             </Section>
 
             {/* Appearance */}
-            <Section title="APPEARANCE" theme={theme}>
+            <Section title={t('profile.appearance')} theme={theme}>
               <View style={[s.modeToggle, { backgroundColor: theme.background, borderColor: theme.border }]}>
                 {['dark', 'light'].map(m => {
                   const active = mode === m;
                   return (
                     <TouchableOpacity key={m} onPress={() => changeMode(m)} style={[s.modeBtn, active && { backgroundColor: theme.accent + '20' }]} activeOpacity={0.8}>
                       <Ionicons name={m === 'dark' ? 'moon-outline' : 'sunny-outline'} size={13} color={active ? theme.accent : theme.hint} />
-                      <Text style={[s.modeTxt, { color: active ? theme.accent : theme.hint }]}>{m === 'dark' ? 'Dark' : 'Light'}</Text>
+                      <Text style={[s.modeTxt, { color: active ? theme.accent : theme.hint }]}>{m === 'dark' ? t('profile.dark') : t('profile.light')}</Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
+              <MenuItem
+                icon="language-outline"
+                label={t('profile.language')}
+                theme={theme}
+                value={SUPPORTED_LANGUAGES.find(l => l.code === i18n.language)?.nativeLabel}
+                onPress={() => setLanguagePickerVisible(true)}
+                last
+              />
             </Section>
 
+            <Modal
+              visible={languagePickerVisible}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setLanguagePickerVisible(false)}
+            >
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}
+                activeOpacity={1}
+                onPress={() => setLanguagePickerVisible(false)}
+              >
+                <View style={{ backgroundColor: theme.background, borderRadius: 16, padding: 16 }}>
+                  <Text style={{ color: theme.foreground, fontSize: 16, fontWeight: '700', marginBottom: 4 }}>
+                    {t('languagePicker.title')}
+                  </Text>
+                  <Text style={{ color: theme.hint, fontSize: 12, marginBottom: 12 }}>
+                    {t('languagePicker.subtitle')}
+                  </Text>
+                  {SUPPORTED_LANGUAGES.map(l => (
+                    <TouchableOpacity
+                      key={l.code}
+                      onPress={async () => { await changeLanguage(l.code); setLanguagePickerVisible(false); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 10 }}
+                    >
+                      <Text style={{ flex: 1, color: theme.foreground, fontSize: 15, fontWeight: '600' }}>{l.nativeLabel}</Text>
+                      {l.code === i18n.language && <Ionicons name="checkmark" size={18} color={theme.accent} />}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </TouchableOpacity>
+            </Modal>
+
             {/* Account */}
-            <Section title="ACCOUNT" theme={theme}>
-              <MenuItem icon="create-outline"        label="Edit Profile"       theme={theme} onPress={() => navigation.navigate('EditProfile')} />
+            <Section title={t('profile.account')} theme={theme}>
+              <MenuItem icon="create-outline"        label={t('profile.editProfile')}       theme={theme} onPress={() => navigation.navigate('EditProfile')} />
 
               {/* ── CUSTOMER: My Wallet → switches to WalletTab ── */}
               {role === 'CUSTOMER' && (
                 <MenuItem
                   icon="wallet-outline"
-                  label="My Wallet"
+                  label={t('profile.myWallet')}
                   theme={theme}
-                  value={stats ? `₦${(stats.walletBalance ?? 0).toLocaleString()}` : null}
+                  value={stats ? formatMoney(stats.walletBalance ?? 0) : null}
                   onPress={handleWalletOrEarningsPress}
                 />
               )}
@@ -715,27 +761,27 @@ export default function ProfileScreen({ navigation }) {
               {isProviderRole && (
                 <MenuItem
                   icon="cash-outline"
-                  label="Earnings & Payouts"
+                  label={t('profile.earningsAndPayouts')}
                   theme={theme}
                   onPress={handleWalletOrEarningsPress}
                 />
               )}
 
-              <MenuItem icon="notifications-outline" label="Notifications"      theme={theme} onPress={() => navigation.navigate('Notifications')} />
-              <MenuItem icon="lock-closed-outline" label="Change Password" theme={theme} onPress={() => navigation.navigate('ChangePassword')} />
-              <MenuItem icon="trash-outline" label="Delete Account" theme={theme} danger last onPress={() => navigation.navigate('DeleteAccount')} />
+              <MenuItem icon="notifications-outline" label={t('profile.notifications')}      theme={theme} onPress={() => navigation.navigate('Notifications')} />
+              <MenuItem icon="lock-closed-outline" label={t('profile.changePassword')} theme={theme} onPress={() => navigation.navigate('ChangePassword')} />
+              <MenuItem icon="trash-outline" label={t('profile.deleteAccount')} theme={theme} danger last onPress={() => navigation.navigate('DeleteAccount')} />
             </Section>
 
             {/* Support */}
-            <Section title="SUPPORT" theme={theme}>
-              <MenuItem icon="help-circle-outline" label="Help & Support" theme={theme} onPress={() => navigation.navigate('Support')} />
-              <MenuItem icon="star-outline"        label="Rate the App"   theme={theme} onPress={() => navigation.navigate('AppFeedback')} />
+            <Section title={t('profile.support')} theme={theme}>
+              <MenuItem icon="help-circle-outline" label={t('profile.helpAndSupport')} theme={theme} onPress={() => navigation.navigate('Support')} />
+              <MenuItem icon="star-outline"        label={t('profile.rateTheApp')}   theme={theme} onPress={() => navigation.navigate('AppFeedback')} />
             </Section>
 
             {/* Sign out */}
             <TouchableOpacity style={[s.logoutBtn, { borderColor: theme.border }]} onPress={confirmLogout} activeOpacity={0.75}>
               <Ionicons name="log-out-outline" size={18} color="#E05555" />
-              <Text style={s.logoutTxt}>Sign Out</Text>
+              <Text style={s.logoutTxt}>{t('profile.signOut')}</Text>
             </TouchableOpacity>
 
             <Text style={[s.version, { color: theme.hint }]}>Diakite v1.0.0</Text>

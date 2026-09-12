@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView, Platform, TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { shieldAPI } from '../services/api';
 
 export default function ShieldActivateSheet({
@@ -21,6 +22,7 @@ export default function ShieldActivateSheet({
   deliveryId,
   theme,
 }) {
+  const { t } = useTranslation();
   const [mode,       setMode]       = useState('saved'); // 'saved' | 'manual'
   const [selectedId, setSelectedId] = useState(null);
   const [manualName, setManualName] = useState('');
@@ -31,12 +33,12 @@ export default function ShieldActivateSheet({
 
   const handleActivate = async () => {
     if (mode === 'saved' && !selectedId) {
-      Alert.alert('Select a guardian', 'Please pick a saved guardian or switch to manual entry.');
+      Alert.alert(t('shieldActivateSheet.selectGuardianTitle'), t('shieldActivateSheet.selectGuardianBody'));
       return;
     }
     if (mode === 'manual') {
       if (!manualName.trim() || !manualPhone.trim()) {
-        Alert.alert('Missing info', 'Please enter both a name and phone number.');
+        Alert.alert(t('shieldActivateSheet.missingInfoTitle'), t('shieldActivateSheet.missingInfoBody'));
         return;
       }
     }
@@ -53,7 +55,7 @@ export default function ShieldActivateSheet({
       const res = await shieldAPI.activate(payload);
       onActivated(res.data);
     } catch (e) {
-      Alert.alert('Could not activate', e?.response?.data?.message ?? 'Please try again.');
+      Alert.alert(t('shieldActivateSheet.couldNotActivateTitle'), e?.response?.data?.message ?? t('shieldActivateSheet.pleaseTryAgain'));
     } finally {
       setLoading(false);
     }
@@ -86,11 +88,11 @@ export default function ShieldActivateSheet({
           {/* Title */}
           <View style={s.titleRow}>
             <Ionicons name="shield-checkmark" size={22} color="#4CAF50" />
-            <Text style={[s.title, { color: theme.foreground }]}>Activate SHIELD</Text>
+            <Text style={[s.title, { color: theme.foreground }]}>{t('shieldActivateSheet.activateShieldTitle')}</Text>
           </View>
           <Text style={[s.sub, { color: theme.hint }]}>
-            Choose who will watch over your {rideId ? 'ride' : 'delivery'}.
-            They'll get a live tracking link — no app needed.
+            {rideId ? t('shieldActivateSheet.chooseWhoWillWatchRide') : t('shieldActivateSheet.chooseWhoWillWatchDelivery')}
+            {' '}{t('shieldActivateSheet.noAppNeeded')}
           </Text>
 
           {/* Mode toggle */}
@@ -102,7 +104,7 @@ export default function ShieldActivateSheet({
                 onPress={() => setMode(m)}
               >
                 <Text style={[s.toggleTxt, { color: mode === m ? accentFg : theme.hint }]}>
-                  {m === 'saved' ? '📋 Saved Guardians' : '✏️ Enter Manually'}
+                  {m === 'saved' ? t('shieldActivateSheet.savedGuardiansTab') : t('shieldActivateSheet.enterManuallyTab')}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -113,7 +115,7 @@ export default function ShieldActivateSheet({
               beneficiaries.length === 0 ? (
                 <View style={s.emptyRow}>
                   <Text style={[s.emptyTxt, { color: theme.hint }]}>
-                    No saved guardians yet. Switch to manual entry or add one in SHIELD settings.
+                    {t('shieldActivateSheet.noSavedGuardiansYet')}
                   </Text>
                 </View>
               ) : (
@@ -134,7 +136,7 @@ export default function ShieldActivateSheet({
                         <Text style={[s.bName, { color: theme.foreground }]}>{b.name}</Text>
                         {b.isDefault && (
                           <View style={[s.defaultPill, { backgroundColor: theme.accent }]}>
-                            <Text style={[s.defaultPillTxt, { color: accentFg }]}>DEFAULT</Text>
+                            <Text style={[s.defaultPillTxt, { color: accentFg }]}>{t('shieldActivateSheet.defaultBadge')}</Text>
                           </View>
                         )}
                       </View>
@@ -150,15 +152,15 @@ export default function ShieldActivateSheet({
 
             {mode === 'manual' && (
               <View style={s.manualForm}>
-                <Text style={[s.inputLabel, { color: theme.hint }]}>Guardian Name</Text>
+                <Text style={[s.inputLabel, { color: theme.hint }]}>{t('shieldActivateSheet.guardianName')}</Text>
                 <TextInput
                   style={[s.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.foreground }]}
-                  placeholder="e.g. Mum"
+                  placeholder={t('shieldActivateSheet.namePlaceholder')}
                   placeholderTextColor={theme.hint}
                   value={manualName}
                   onChangeText={setManualName}
                 />
-                <Text style={[s.inputLabel, { color: theme.hint }]}>Phone Number</Text>
+                <Text style={[s.inputLabel, { color: theme.hint }]}>{t('shieldActivateSheet.phoneNumber')}</Text>
                 <TextInput
                   style={[s.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.foreground }]}
                   placeholder="+234 800 000 0000"
@@ -183,13 +185,13 @@ export default function ShieldActivateSheet({
             ) : (
               <>
                 <Ionicons name="shield-checkmark" size={18} color="#FFF" />
-                <Text style={s.activateBtnTxt}>Activate & Send Link</Text>
+                <Text style={s.activateBtnTxt}>{t('shieldActivateSheet.activateAndSendLink')}</Text>
               </>
             )}
           </TouchableOpacity>
 
           <Text style={[s.disclaimer, { color: theme.hint }]}>
-            A WhatsApp link will open automatically. The link expires when your trip ends.
+            {t('shieldActivateSheet.whatsappDisclaimer')}
           </Text>
         </View>
       </KeyboardAvoidingView>

@@ -8,28 +8,30 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useTranslation }    from 'react-i18next';
 import { supportAPI }        from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
 
 const CATEGORIES = [
-  { value: 'account',   label: 'Account',   icon: 'person-circle-outline' },
-  { value: 'payment',   label: 'Payment',   icon: 'card-outline'          },
-  { value: 'ride',      label: 'Ride',       icon: 'car-outline'           },
-  { value: 'delivery',  label: 'Delivery',  icon: 'cube-outline'          },
-  { value: 'technical', label: 'Technical', icon: 'settings-outline'      },
-  { value: 'other',     label: 'Other',      icon: 'help-circle-outline'   },
+  { value: 'account',   labelKey: 'submitTicket.catAccount',   icon: 'person-circle-outline' },
+  { value: 'payment',   labelKey: 'submitTicket.catPayment',   icon: 'card-outline'          },
+  { value: 'ride',      labelKey: 'submitTicket.catRide',      icon: 'car-outline'           },
+  { value: 'delivery',  labelKey: 'submitTicket.catDelivery',  icon: 'cube-outline'          },
+  { value: 'technical', labelKey: 'submitTicket.catTechnical', icon: 'settings-outline'      },
+  { value: 'other',     labelKey: 'submitTicket.catOther',     icon: 'help-circle-outline'   },
 ];
 
 const PRIORITIES = [
-  { value: 'low',    label: 'Low',    color: '#5DAA72' },
-  { value: 'medium', label: 'Medium', color: '#C9A96E' },
-  { value: 'high',   label: 'High',   color: '#E07B55' },
-  { value: 'urgent', label: 'Urgent', color: '#E05555' },
+  { value: 'low',    labelKey: 'submitTicket.priorityLow',    color: '#5DAA72' },
+  { value: 'medium', labelKey: 'submitTicket.priorityMedium', color: '#C9A96E' },
+  { value: 'high',   labelKey: 'submitTicket.priorityHigh',   color: '#E07B55' },
+  { value: 'urgent', labelKey: 'submitTicket.priorityUrgent', color: '#E05555' },
 ];
 
 export default function SubmitTicketScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const fadeA           = useRef(new Animated.Value(0)).current;
   const messageRef      = useRef(null);
@@ -61,14 +63,14 @@ export default function SubmitTicketScreen({ navigation }) {
         description: message.trim(),
       });
       Alert.alert(
-        'Ticket Submitted ✅',
-        "Your request has been received. We'll get back to you within 24 hours.",
-        [{ text: 'OK', onPress: () => navigation.goBack() }],
+        t('submitTicket.submittedTitle'),
+        t('submitTicket.submittedMsg'),
+        [{ text: t('submitTicket.ok'), onPress: () => navigation.goBack() }],
       );
     } catch (err) {
       Alert.alert(
-        'Error',
-        err?.message ?? err?.error ?? 'Failed to submit ticket. Please try again.',
+        t('common.error'),
+        err?.message ?? err?.error ?? t('submitTicket.submitError'),
       );
     } finally {
       setLoading(false);
@@ -119,7 +121,7 @@ export default function SubmitTicketScreen({ navigation }) {
         >
           <Ionicons name="arrow-back" size={20} color={theme.foreground} />
         </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: theme.foreground }]}>Submit a Ticket</Text>
+        <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('submitTicket.headerTitle')}</Text>
         <View style={s.headerSpacer} />
       </View>
 
@@ -145,14 +147,14 @@ export default function SubmitTicketScreen({ navigation }) {
               <View style={[s.heroIcon, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '30' }]}>
                 <Ionicons name="chatbubble-ellipses-outline" size={28} color={theme.accent} />
               </View>
-              <Text style={[s.heroTitle, { color: theme.foreground }]}>How can we help?</Text>
+              <Text style={[s.heroTitle, { color: theme.foreground }]}>{t('submitTicket.heroTitle')}</Text>
               <Text style={[s.heroSub, { color: theme.hint }]}>
-                Describe your issue and our team will respond within 24 hours.
+                {t('submitTicket.heroSub')}
               </Text>
             </View>
 
             {/* Category */}
-            <Text style={[s.sectionLabel, { color: theme.hint }]}>CATEGORY</Text>
+            <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('submitTicket.category')}</Text>
             <View style={s.categoryGrid}>
               {CATEGORIES.map(cat => {
                 const active = category === cat.value;
@@ -172,7 +174,7 @@ export default function SubmitTicketScreen({ navigation }) {
                       color={active ? (theme.accentFg ?? '#111') : theme.hint}
                     />
                     <Text style={[s.categoryLabel, { color: active ? (theme.accentFg ?? '#111') : theme.foreground }]}>
-                      {cat.label}
+                      {t(cat.labelKey)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -180,7 +182,7 @@ export default function SubmitTicketScreen({ navigation }) {
             </View>
 
             {/* Priority */}
-            <Text style={[s.sectionLabel, { color: theme.hint }]}>PRIORITY</Text>
+            <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('submitTicket.priority')}</Text>
             <View style={[s.priorityRow, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               {PRIORITIES.map(p => {
                 const active = priority === p.value;
@@ -191,21 +193,21 @@ export default function SubmitTicketScreen({ navigation }) {
                     onPress={() => setPriority(p.value)}
                     activeOpacity={0.75}
                   >
-                    <Text style={[s.priorityLabel, { color: active ? p.color : theme.hint }]}>{p.label}</Text>
+                    <Text style={[s.priorityLabel, { color: active ? p.color : theme.hint }]}>{t(p.labelKey)}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
 
             {/* Subject */}
-            <Text style={[s.sectionLabel, { color: theme.hint }]}>SUBJECT</Text>
+            <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('submitTicket.subject')}</Text>
             <View style={[s.inputWrap, {
               backgroundColor: theme.backgroundAlt,
               borderColor: subject.trim().length >= 5 ? theme.accent + '60' : theme.border,
             }]}>
               <TextInput
                 style={[s.input, { color: theme.foreground }]}
-                placeholder="Brief description of your issue"
+                placeholder={t('submitTicket.subjectPlaceholder')}
                 placeholderTextColor={theme.hint}
                 value={subject}
                 onChangeText={setSubject}
@@ -216,11 +218,11 @@ export default function SubmitTicketScreen({ navigation }) {
               />
             </View>
             <Text style={[s.charCount, { color: subject.trim().length >= 5 ? theme.accent : theme.hint }]}>
-              {subject.length}/200{subject.trim().length < 5 && subject.length > 0 ? ' • min 5 chars' : ''}
+              {subject.length}/200{subject.trim().length < 5 && subject.length > 0 ? t('submitTicket.minCharsSuffix', { count: 5 }) : ''}
             </Text>
 
             {/* Message */}
-            <Text style={[s.sectionLabel, { color: theme.hint }]}>DETAILS</Text>
+            <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('submitTicket.details')}</Text>
             <View style={[s.textareaWrap, {
               backgroundColor: theme.backgroundAlt,
               borderColor: message.trim().length >= 10 ? theme.accent + '60' : theme.border,
@@ -228,7 +230,7 @@ export default function SubmitTicketScreen({ navigation }) {
               <TextInput
                 ref={messageRef}
                 style={[s.textarea, { color: theme.foreground }]}
-                placeholder="Describe your issue in detail. Include any relevant information like order IDs, amounts, or error messages."
+                placeholder={t('submitTicket.detailsPlaceholder')}
                 placeholderTextColor={theme.hint}
                 value={message}
                 onChangeText={setMessage}
@@ -239,7 +241,7 @@ export default function SubmitTicketScreen({ navigation }) {
               />
             </View>
             <Text style={[s.charCount, { color: message.trim().length >= 10 ? theme.accent : theme.hint }]}>
-              {message.length}/2000{message.trim().length < 10 && message.length > 0 ? ' • min 10 chars' : ''}
+              {message.length}/2000{message.trim().length < 10 && message.length > 0 ? t('submitTicket.minCharsSuffix', { count: 10 }) : ''}
             </Text>
 
             {/* Submit button */}
@@ -265,7 +267,7 @@ export default function SubmitTicketScreen({ navigation }) {
                     color={canSubmit ? (theme.accentFg ?? '#111') : theme.hint}
                   />
                   <Text style={[s.submitLabel, { color: canSubmit ? (theme.accentFg ?? '#111') : theme.hint }]}>
-                    Submit Ticket
+                    {t('submitTicket.submitTicket')}
                   </Text>
                 </>
               )}
@@ -277,10 +279,10 @@ export default function SubmitTicketScreen({ navigation }) {
                 <Ionicons name="information-circle-outline" size={14} color={theme.hint} />
                 <Text style={[s.validationTxt, { color: theme.hint }]}>
                   {!category
-                    ? 'Select a category to continue'
+                    ? t('submitTicket.hintCategory')
                     : subject.trim().length < 5
-                    ? 'Subject needs at least 5 characters'
-                    : 'Details need at least 10 characters'}
+                    ? t('submitTicket.hintSubject')
+                    : t('submitTicket.hintDetails')}
                 </Text>
               </View>
             )}
@@ -291,7 +293,7 @@ export default function SubmitTicketScreen({ navigation }) {
               onPress={() => navigation.navigate('MyTickets')}
               activeOpacity={0.7}
             >
-              <Text style={[s.viewExistingTxt, { color: theme.accent }]}>View my existing tickets</Text>
+              <Text style={[s.viewExistingTxt, { color: theme.accent }]}>{t('submitTicket.viewExisting')}</Text>
               <Ionicons name="chevron-forward" size={14} color={theme.accent} />
             </TouchableOpacity>
 

@@ -8,7 +8,9 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
 import { useAuth }           from '../../context/AuthContext';
+import { useTranslation }    from 'react-i18next';
 import { walletAPI, driverAPI, partnerAPI } from '../../services/api';
 
 const { height } = Dimensions.get('window');
@@ -43,6 +45,7 @@ const BANKS = [
 ];
 
 const BankPicker = ({ selected, onSelect, theme }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const bank   = BANKS.find(b => b.code === selected);
   const accent = theme.accent;
@@ -56,7 +59,7 @@ const BankPicker = ({ selected, onSelect, theme }) => {
       >
         <Ionicons name="business-outline" size={16} color={selected ? accent : theme.hint} />
         <Text style={[bp.btnTxt, { color: selected ? theme.foreground : theme.hint, flex: 1 }]}>
-          {bank?.name ?? 'Select your bank'}
+          {bank?.name ?? t('withdrawal.selectYourBank')}
         </Text>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={theme.hint} />
       </TouchableOpacity>
@@ -100,7 +103,9 @@ const bp = StyleSheet.create({
 
 export default function WithdrawalScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney, currencySymbol } = useCurrency();
   const { user }        = useAuth();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
 
   // FIX: derive all selected-state colors from theme tokens so every accent
@@ -174,12 +179,12 @@ export default function WithdrawalScreen({ navigation }) {
     Keyboard.dismiss();
     if (amtNum < MIN_WITHDRAWAL) {
       shake();
-      Alert.alert('Minimum withdrawal', `Minimum is ₦${formatNGN(MIN_WITHDRAWAL)}.`);
+      Alert.alert(t('withdrawal.minimumWithdrawal'), t('withdrawal.minimumIs', { amount: formatMoney(MIN_WITHDRAWAL) })); // NOTE: 500 is a fixed NG minimum-withdrawal business rule
       return;
     }
     if (amtNum > balance) {
       shake();
-      Alert.alert('Insufficient balance', `Balance is ₦${formatNGN(balance)}`);
+      Alert.alert(t('withdrawal.insufficientBalance'), t('withdrawal.balanceIs', { amount: formatMoney(balance) }));
       return;
     }
     setStep(2);
@@ -187,9 +192,9 @@ export default function WithdrawalScreen({ navigation }) {
 
   const handleStep2 = () => {
     Keyboard.dismiss();
-    if (accountNumber.length !== 10) { shake(); Alert.alert('Invalid account', 'Enter 10-digit account number'); return; }
-    if (!bankCode)                   { shake(); Alert.alert('Select bank',     'Please select your bank');        return; }
-    if (!accountName)                { shake(); Alert.alert('Verify account',  'Account verification failed');   return; }
+    if (accountNumber.length !== 10) { shake(); Alert.alert(t('withdrawal.invalidAccount'), t('withdrawal.enter10Digit')); return; }
+    if (!bankCode)                   { shake(); Alert.alert(t('withdrawal.selectBankTitle'),     t('withdrawal.pleaseSelectBank'));        return; }
+    if (!accountName)                { shake(); Alert.alert(t('withdrawal.verifyAccount'),  t('withdrawal.verificationFailed'));   return; }
     setStep(3);
   };
 
@@ -198,13 +203,13 @@ export default function WithdrawalScreen({ navigation }) {
     try {
       await walletAPI.withdraw({ amount: amtNum, accountNumber, bankCode, accountName });
       Alert.alert(
-        'Withdrawal Requested ✅',
-        `₦${formatNGN(amtNum)} to ${accountName} submitted.\n\nOur team will review and process within 1–2 business days.`,
-        [{ text: 'Done', onPress: () => navigation.goBack() }]
+        t('withdrawal.requestedTitle'),
+        t('withdrawal.requestedMsg', { amount: formatMoney(amtNum), name: accountName }),
+        [{ text: t('walletTopUp.done'), onPress: () => navigation.goBack() }]
       );
     } catch (err) {
       // FIX: axios interceptor already unwraps error.response.data
-      Alert.alert('Request Failed', err?.message ?? err?.error ?? 'Could not submit withdrawal');
+      Alert.alert(t('withdrawal.requestFailed'), err?.message ?? err?.error ?? t('withdrawal.submitErrorMsg'));
     } finally {
       setSubmitting(false);
     }
@@ -240,9 +245,9 @@ export default function WithdrawalScreen({ navigation }) {
           <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={[s.headerTitle, { color: theme.foreground }]}>Withdraw Funds</Text>
+          <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('withdrawal.headerTitle')}</Text>
           <Text style={[s.headerSub, { color: theme.hint }]}>
-            {step === 1 ? 'Enter amount' : step === 2 ? 'Bank details' : 'Confirm withdrawal'}
+            {step === 1 ? t('withdrawal.stepEnterAmount') : step === 2 ? t('withdrawal.stepBankDetails') : t('withdrawal.stepConfirm')}
           </Text>
         </View>
         <View style={s.stepRow}>
@@ -265,22 +270,22 @@ export default function WithdrawalScreen({ navigation }) {
           overScrollMode="always"
         >
           <View style={[s.balanceCard, { backgroundColor: accent + '12', borderColor: accent + '30' }]}>
-            <Text style={[s.balanceLbl, { color: accent }]}>AVAILABLE BALANCE</Text>
-            <Text style={[s.balanceAmt, { color: accent }]}>₦{formatNGN(balance)}</Text>
+            <Text style={[s.balanceLbl, { color: accent }]}>{t('withdrawal.availableBalance')}</Text>
+            <Text style={[s.balanceAmt, { color: accent }]}>{formatMoney(balance)}</Text>
             {amtNum > 0 && amtNum <= balance && (
-              <Text style={[s.balanceAfter, { color: theme.hint }]}>After: ₦{formatNGN(balance - amtNum)}</Text>
+              <Text style={[s.balanceAfter, { color: theme.hint }]}>{t('withdrawal.after', { amount: formatMoney(balance - amtNum) })}</Text>
             )}
           </View>
 
           {/* ── STEP 1 ── */}
           {step === 1 && (
             <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
-              <Text style={[s.sectionLabel, { color: theme.hint }]}>WITHDRAWAL AMOUNT</Text>
+              <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('withdrawal.withdrawalAmount')}</Text>
               <View style={[s.inputCard, {
                 backgroundColor: theme.backgroundAlt,
                 borderColor: amtNum > 0 ? accent + '70' : theme.border,
               }]}>
-                <Text style={[s.currency, { color: accent }]}>₦</Text>
+                <Text style={[s.currency, { color: accent }]}>{currencySymbol}</Text>
                 <TextInput
                   style={[s.input, { color: theme.foreground }]}
                   value={amount}
@@ -307,7 +312,7 @@ export default function WithdrawalScreen({ navigation }) {
                       activeOpacity={0.8}
                     >
                       <Text style={[s.quickTxt, { color: isActive ? activeTxtColor : inactiveTxtColor }]}>
-                        ₦{formatNGN(q)}
+                        {formatMoney(q)}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -315,9 +320,9 @@ export default function WithdrawalScreen({ navigation }) {
               </View>
 
               <View style={[s.noteBox, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-                <View style={s.noteRow}><Ionicons name="time-outline"             size={13} color={theme.hint} /><Text style={[s.noteTxt, { color: theme.hint }]}>1–2 business days</Text></View>
-                <View style={s.noteRow}><Ionicons name="shield-checkmark-outline" size={13} color={accent}     /><Text style={[s.noteTxt, { color: theme.hint }]}>Admin review required</Text></View>
-                <View style={s.noteRow}><Ionicons name="cash-outline"             size={13} color={accent}     /><Text style={[s.noteTxt, { color: theme.hint }]}>Min ₦{formatNGN(MIN_WITHDRAWAL)} • No fee</Text></View>
+                <View style={s.noteRow}><Ionicons name="time-outline"             size={13} color={theme.hint} /><Text style={[s.noteTxt, { color: theme.hint }]}>{t('withdrawal.businessDays')}</Text></View>
+                <View style={s.noteRow}><Ionicons name="shield-checkmark-outline" size={13} color={accent}     /><Text style={[s.noteTxt, { color: theme.hint }]}>{t('withdrawal.adminReviewRequired')}</Text></View>
+                <View style={s.noteRow}><Ionicons name="cash-outline"             size={13} color={accent}     /><Text style={[s.noteTxt, { color: theme.hint }]}>{t('withdrawal.minNoFee', { amount: formatMoney(MIN_WITHDRAWAL) })}</Text></View>
               </View>
 
               {/* FIX: Continue button uses accentFg when active */}
@@ -328,7 +333,7 @@ export default function WithdrawalScreen({ navigation }) {
                 activeOpacity={0.88}
               >
                 <Text style={[s.nextBtnTxt, { color: step1Ready ? accentFg : theme.hint }]}>
-                  Continue →
+                  {t('withdrawal.continueBtn')}
                 </Text>
               </TouchableOpacity>
             </Animated.View>
@@ -337,10 +342,10 @@ export default function WithdrawalScreen({ navigation }) {
           {/* ── STEP 2 ── */}
           {step === 2 && (
             <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
-              <Text style={[s.sectionLabel, { color: theme.hint }]}>SELECT BANK</Text>
+              <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('withdrawal.selectBank')}</Text>
               <BankPicker selected={bankCode} onSelect={setBankCode} theme={theme} />
 
-              <Text style={[s.sectionLabel, { color: theme.hint }]}>ACCOUNT NUMBER</Text>
+              <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('withdrawal.accountNumber')}</Text>
               <View style={[s.fieldCard, {
                 backgroundColor: theme.backgroundAlt,
                 borderColor: accountName
@@ -353,9 +358,9 @@ export default function WithdrawalScreen({ navigation }) {
                 <TextInput
                   style={[s.field, { color: theme.foreground }]}
                   value={accountNumber}
-                  onChangeText={t => setAccountNumber(t.replace(/\D/g, '').slice(0, 10))}
+                  onChangeText={val => setAccountNumber(val.replace(/\D/g, '').slice(0, 10))}
                   keyboardType="numeric"
-                  placeholder="10-digit account number"
+                  placeholder={t('withdrawal.accountNumberPlaceholder')}
                   placeholderTextColor={theme.hint}
                   maxLength={10}
                 />
@@ -379,7 +384,7 @@ export default function WithdrawalScreen({ navigation }) {
                 activeOpacity={0.88}
               >
                 <Text style={[s.nextBtnTxt, { color: step2Ready ? accentFg : theme.hint }]}>
-                  Review →
+                  {t('withdrawal.reviewBtn')}
                 </Text>
               </TouchableOpacity>
             </Animated.View>
@@ -389,13 +394,13 @@ export default function WithdrawalScreen({ navigation }) {
           {step === 3 && (
             <View>
               <View style={[s.confirmCard, { backgroundColor: theme.backgroundAlt, borderColor: accent + '30' }]}>
-                <Text style={[s.confirmTitle, { color: theme.foreground }]}>Review Your Withdrawal</Text>
+                <Text style={[s.confirmTitle, { color: theme.foreground }]}>{t('withdrawal.reviewYourWithdrawal')}</Text>
                 {[
-                  { label: 'Amount',       value: `₦${formatNGN(amtNum)}`,                               color: accent    },
-                  { label: 'Bank',         value: BANKS.find(b => b.code === bankCode)?.name ?? bankCode, color: undefined },
-                  { label: 'Account No.', value: accountNumber,                                           color: undefined },
-                  { label: 'Account Name',value: accountName,                                             color: undefined },
-                  { label: 'Processing',  value: '1–2 business days',                                    color: undefined },
+                  { label: t('withdrawal.confirmAmount'),       value: formatMoney(amtNum),                               color: accent    },
+                  { label: t('withdrawal.confirmBank'),         value: BANKS.find(b => b.code === bankCode)?.name ?? bankCode, color: undefined },
+                  { label: t('withdrawal.confirmAccountNo'), value: accountNumber,                                           color: undefined },
+                  { label: t('withdrawal.confirmAccountName'),value: accountName,                                             color: undefined },
+                  { label: t('withdrawal.confirmProcessing'),  value: t('withdrawal.businessDays'),                                    color: undefined },
                 ].map(({ label, value, color }) => (
                   <View key={label} style={[s.confirmRow, { borderBottomColor: theme.border }]}>
                     <Text style={[s.confirmLbl, { color: theme.hint }]}>{label}</Text>
@@ -407,7 +412,7 @@ export default function WithdrawalScreen({ navigation }) {
               <View style={[s.adminNote, { backgroundColor: accent + '0D', borderColor: accent + '30' }]}>
                 <Ionicons name="information-circle-outline" size={16} color={accent} />
                 <Text style={[s.adminNoteTxt, { color: theme.hint }]}>
-                  Your request will be reviewed by our admin team and processed within 1–2 business days.
+                  {t('withdrawal.adminNoteTxt')}
                 </Text>
               </View>
 
@@ -424,7 +429,7 @@ export default function WithdrawalScreen({ navigation }) {
                 ) : (
                   <>
                     <Ionicons name="checkmark-circle" size={20} color={accentFg} />
-                    <Text style={[s.nextBtnTxt, { color: accentFg }]}>Submit Withdrawal</Text>
+                    <Text style={[s.nextBtnTxt, { color: accentFg }]}>{t('withdrawal.submitWithdrawal')}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -434,7 +439,7 @@ export default function WithdrawalScreen({ navigation }) {
           {/* Recent payouts (step 1 only) */}
           {payoutHistory.length > 0 && step === 1 && (
             <>
-              <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 24 }]}>RECENT WITHDRAWALS</Text>
+              <Text style={[s.sectionLabel, { color: theme.hint, marginTop: 24 }]}>{t('withdrawal.recentWithdrawals')}</Text>
               <View style={[s.historyCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                 {payoutHistory.slice(0, 5).map((p, i) => (
                   <View key={p.id ?? i} style={[s.histRow, { borderBottomColor: theme.border, borderBottomWidth: i < 4 ? 1 : 0 }]}>
@@ -446,7 +451,7 @@ export default function WithdrawalScreen({ navigation }) {
                       <Text style={[s.histDate, { color: theme.hint }]}>{new Date(p.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={[s.histAmt, { color: theme.foreground }]}>₦{formatNGN(p.amount)}</Text>
+                      <Text style={[s.histAmt, { color: theme.foreground }]}>{formatMoney(p.amount)}</Text>
                       <Text style={[s.histStatus, { color: theme.hint }]}>{p.status}</Text>
                     </View>
                   </View>

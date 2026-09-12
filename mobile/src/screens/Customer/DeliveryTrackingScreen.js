@@ -9,6 +9,8 @@ import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
+import { useTranslation }    from 'react-i18next';
 import { deliveryAPI }       from '../../services/api';
 import socketService         from '../../services/socket';
 
@@ -23,42 +25,43 @@ const DRAG_HANDLE_H  = 28;
 
 const goHome = (navigation) => navigation.getParent()?.navigate('HomeTab');
 
-const callPhone = (phone) => {
+const callPhone = (phone, t) => {
   if (!phone) return;
   const url = `tel:${String(phone).replace(/\s+/g, '')}`;
   Linking.canOpenURL(url)
     .then(ok => {
       if (ok) return Linking.openURL(url);
-      Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
+      Alert.alert(t('deliveryTracking.cannotCallTitle'), t('deliveryTracking.cannotCallBody'));
     })
-    .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
+    .catch(() => Alert.alert(t('deliveryTracking.errorTitle'), t('deliveryTracking.couldNotInitiateCall')));
 };
 
 // ── Delivery status timeline entries ─────────────────────────────────────────
 const TIMELINE = [
-  { key: 'PENDING',    label: 'Finding Partner',   icon: 'search-outline'            },
-  { key: 'ASSIGNED',   label: 'Heading to Pickup', icon: 'navigate-outline'          },
-  { key: 'PICKED_UP',  label: 'Package Picked',    icon: 'cube-outline'              },
-  { key: 'IN_TRANSIT', label: 'In Transit',         icon: 'car-sport-outline'        },
-  { key: 'DELIVERED',  label: 'Delivered',           icon: 'checkmark-circle-outline' },
+  { key: 'PENDING',    labelKey: 'deliveryTracking.timelineFindingPartner',   icon: 'search-outline'            },
+  { key: 'ASSIGNED',   labelKey: 'deliveryTracking.timelineHeadingToPickup', icon: 'navigate-outline'          },
+  { key: 'PICKED_UP',  labelKey: 'deliveryTracking.timelinePackagePicked',    icon: 'cube-outline'              },
+  { key: 'IN_TRANSIT', labelKey: 'deliveryTracking.timelineInTransit',         icon: 'car-sport-outline'        },
+  { key: 'DELIVERED',  labelKey: 'deliveryTracking.timelineDelivered',           icon: 'checkmark-circle-outline' },
 ];
 
 const STATUS_CONFIG = {
-  PENDING:    { label: 'Finding a delivery partner', sublabel: 'Matching with nearest courier',       color: '#4E8DBD',     icon: 'time-outline'              },
-  ASSIGNED:   { label: 'Partner on the way',         sublabel: 'Heading to pick up your package',    color: COURIER_ACCENT, icon: 'bicycle-outline'           },
-  PICKED_UP:  { label: 'Package picked up',          sublabel: 'Your package is in safe hands',      color: '#FFB800',     icon: 'cube-outline'              },
-  IN_TRANSIT: { label: 'Package in transit',         sublabel: 'On the way to the destination',      color: '#A78BFA',     icon: 'navigate-outline'          },
-  DELIVERED:  { label: 'Package delivered!',         sublabel: 'Delivery completed successfully',    color: COURIER_ACCENT, icon: 'checkmark-circle-outline'  },
-  CANCELLED:  { label: 'Delivery cancelled',         sublabel: '',                                   color: '#E05555',     icon: 'close-circle-outline'      },
+  PENDING:    { labelKey: 'deliveryTracking.statusPendingLabel', sublabelKey: 'deliveryTracking.statusPendingSub',       color: '#4E8DBD',     icon: 'time-outline'              },
+  ASSIGNED:   { labelKey: 'deliveryTracking.statusAssignedLabel',         sublabelKey: 'deliveryTracking.statusAssignedSub',    color: COURIER_ACCENT, icon: 'bicycle-outline'           },
+  PICKED_UP:  { labelKey: 'deliveryTracking.statusPickedUpLabel',          sublabelKey: 'deliveryTracking.statusPickedUpSub',      color: '#FFB800',     icon: 'cube-outline'              },
+  IN_TRANSIT: { labelKey: 'deliveryTracking.statusInTransitLabel',         sublabelKey: 'deliveryTracking.statusInTransitSub',      color: '#A78BFA',     icon: 'navigate-outline'          },
+  DELIVERED:  { labelKey: 'deliveryTracking.statusDeliveredLabel',         sublabelKey: 'deliveryTracking.statusDeliveredSub',    color: COURIER_ACCENT, icon: 'checkmark-circle-outline'  },
+  CANCELLED:  { labelKey: 'deliveryTracking.statusCancelledLabel',         sublabelKey: '',                                   color: '#E05555',     icon: 'close-circle-outline'      },
 };
 
 // ── PackageTimeline — `step` map variable renamed to `entry` ─────────────────
 const PackageTimeline = ({ status, theme }) => {
-  const currentIdx = TIMELINE.findIndex(t => t.key === status);
+  const { t } = useTranslation();
+  const currentIdx = TIMELINE.findIndex(entry => entry.key === status);
 
   return (
     <View style={[pt.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-      <Text style={[pt.heading, { color: theme.hint }]}>DELIVERY PROGRESS</Text>
+      <Text style={[pt.heading, { color: theme.hint }]}>{t('deliveryTracking.deliveryProgress')}</Text>
       {TIMELINE.map((entry, i) => {
         const done    = i < currentIdx;
         const current = i === currentIdx;
@@ -87,7 +90,7 @@ const PackageTimeline = ({ status, theme }) => {
               color:      future ? theme.hint : theme.foreground,
               fontWeight: current ? '800' : '500',
               opacity:    future ? 0.5 : 1,
-            }]}>{entry.label}</Text>
+            }]}>{t(entry.labelKey)}</Text>
           </View>
         );
       })}
@@ -107,6 +110,7 @@ const pt = StyleSheet.create({
 
 // ── PartnerHeroCard ───────────────────────────────────────────────────────────
 const PartnerHeroCard = ({ delivery, theme }) => {
+  const { t } = useTranslation();
   const partner = delivery?.partner;
   if (!partner) return null;
   const dp = partner.deliveryProfile;
@@ -148,7 +152,7 @@ const PartnerHeroCard = ({ delivery, theme }) => {
       {partner.phone && (
         <TouchableOpacity
           style={[ph.callBtn, { backgroundColor: COURIER_ACCENT, shadowColor: COURIER_ACCENT }]}
-          onPress={() => callPhone(partner.phone)}
+          onPress={() => callPhone(partner.phone, t)}
           activeOpacity={0.75}
         >
           <Ionicons name="call" size={18} color="#080C18" />
@@ -173,19 +177,22 @@ const ph = StyleSheet.create({
 });
 
 // ── PackageDetailCard ─────────────────────────────────────────────────────────
-const PackageDetailCard = ({ delivery, theme }) => (
+const PackageDetailCard = ({ delivery, theme }) => {
+  const { t } = useTranslation();
+  return (
   <View style={[pd.card, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '25' }]}>
     <View style={pd.row}>
       <View style={[pd.iconWrap, { backgroundColor: COURIER_ACCENT + '15' }]}>
         <Ionicons name="cube-outline" size={16} color={COURIER_ACCENT} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[pd.label, { color: theme.hint }]}>PACKAGE</Text>
+        <Text style={[pd.label, { color: theme.hint }]}>{t('deliveryTracking.packageLabel')}</Text>
         <Text style={[pd.value, { color: theme.foreground }]}>{delivery?.packageDescription}</Text>
       </View>
     </View>
   </View>
-);
+  );
+};
 const pd = StyleSheet.create({
   card:    { borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 14 },
   row:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -199,6 +206,8 @@ const pd = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DeliveryTrackingScreen({ route, navigation }) {
   const { theme } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const insets    = useSafeAreaInsets();
   const deliveryId = route?.params?.deliveryId;
 
@@ -297,8 +306,8 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
         setTimeout(() => navigation.navigate('RateDelivery', { deliveryId, partner: data.partner }), 500);
       }
       if (data.status === 'CANCELLED') {
-        Alert.alert('Delivery Cancelled', 'Your delivery was cancelled.', [
-          { text: 'OK', onPress: () => goHome(navigation) },
+        Alert.alert(t('deliveryTracking.deliveryCancelledTitle'), t('deliveryTracking.deliveryCancelledBody'), [
+          { text: t('deliveryTracking.ok'), onPress: () => goHome(navigation) },
         ]);
       }
     };
@@ -318,18 +327,18 @@ export default function DeliveryTrackingScreen({ route, navigation }) {
   }, [deliveryId]);
 
   const handleCancel = () => {
-    Alert.alert('Cancel Delivery?', 'Are you sure?', [
-      { text: 'Keep Delivery', style: 'cancel' },
+    Alert.alert(t('deliveryTracking.cancelDeliveryTitle'), t('deliveryTracking.areYouSure'), [
+      { text: t('deliveryTracking.keepDelivery'), style: 'cancel' },
       {
-        text: 'Cancel', style: 'destructive',
+        text: t('deliveryTracking.cancel'), style: 'destructive',
         onPress: async () => {
           setCancelling(true);
 try {
   await deliveryAPI.cancelDelivery(delivery.id, { reason: 'Customer cancelled from tracking screen' });
   goHome(navigation);
 } catch (err) {
-  const msg = err?.response?.data?.message ?? err?.data?.message ?? err?.message ?? 'Could not cancel.';
-  Alert.alert('Error', msg);
+  const msg = err?.response?.data?.message ?? err?.data?.message ?? err?.message ?? t('deliveryTracking.couldNotCancel');
+  Alert.alert(t('deliveryTracking.errorTitle'), msg);
 } finally { setCancelling(false); }
         },
       },
@@ -367,7 +376,7 @@ try {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
         <ActivityIndicator color={COURIER_ACCENT} size="large" />
-        <Text style={[s.centerTxt, { color: '#666' }]}>Loading your delivery...</Text>
+        <Text style={[s.centerTxt, { color: '#666' }]}>{t('deliveryTracking.loadingYourDelivery')}</Text>
       </View>
     );
   }
@@ -376,9 +385,9 @@ try {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
         <Ionicons name="alert-circle-outline" size={40} color="#555" />
-        <Text style={[s.centerTxt, { color: '#666' }]}>Delivery not found.</Text>
+        <Text style={[s.centerTxt, { color: '#666' }]}>{t('deliveryTracking.deliveryNotFound')}</Text>
         <TouchableOpacity style={[s.goHomeBtn, { borderColor: '#333' }]} onPress={() => goHome(navigation)}>
-          <Text style={[s.goHomeTxt, { color: '#ccc' }]}>Go Home</Text>
+          <Text style={[s.goHomeTxt, { color: '#ccc' }]}>{t('deliveryTracking.goHome')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -445,7 +454,7 @@ try {
         bottom:          statusPillBottom,
       }]}>
         <View style={[s.statusDot, { backgroundColor: statusCfg.color }]} />
-        <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+        <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{t(statusCfg.labelKey)}</Text>
       </Animated.View>
 
       <Animated.View style={[s.sheet, {
@@ -462,28 +471,28 @@ try {
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
 
             <View style={s.sheetHeader}>
-              <Text style={[s.statusTitle, { color: theme.foreground }]}>{statusCfg.label}</Text>
-              <Text style={[s.statusSub, { color: theme.hint }]}>{statusCfg.sublabel}</Text>
+              <Text style={[s.statusTitle, { color: theme.foreground }]}>{t(statusCfg.labelKey)}</Text>
+              <Text style={[s.statusSub, { color: theme.hint }]}>{statusCfg.sublabelKey ? t(statusCfg.sublabelKey) : ''}</Text>
             </View>
 
             <View style={[s.feeStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <View style={s.feeItem}>
-                <Text style={[s.feeLabel, { color: theme.hint }]}>FEE</Text>
+                <Text style={[s.feeLabel, { color: theme.hint }]}>{t('deliveryTracking.feeLabel')}</Text>
                 <Text style={[s.feeValue, { color: COURIER_ACCENT }]}>
-                  ₦{Number(delivery.estimatedFee ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                  {formatMoney(delivery.estimatedFee ?? 0)}
                 </Text>
               </View>
               <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
               <View style={s.feeItem}>
-                <Text style={[s.feeLabel, { color: theme.hint }]}>DISTANCE</Text>
+                <Text style={[s.feeLabel, { color: theme.hint }]}>{t('deliveryTracking.distanceLabel')}</Text>
                 <Text style={[s.feeValue, { color: theme.foreground }]}>
                   {delivery.distance?.toFixed(1) ?? '—'} km
                 </Text>
               </View>
               <View style={[s.feeDivider, { backgroundColor: theme.border }]} />
               <View style={s.feeItem}>
-                <Text style={[s.feeLabel, { color: theme.hint }]}>PAYMENT</Text>
-                <Text style={[s.feeValue, { color: theme.foreground }]}>CASH</Text>
+                <Text style={[s.feeLabel, { color: theme.hint }]}>{t('deliveryTracking.paymentLabel')}</Text>
+                <Text style={[s.feeValue, { color: theme.foreground }]}>{t('deliveryTracking.cash')}</Text>
               </View>
             </View>
 
@@ -501,7 +510,7 @@ try {
                 {cancelling ? <ActivityIndicator color="#E05555" size="small" /> : (
                   <>
                     <Ionicons name="close-circle-outline" size={16} color="#E05555" />
-                    <Text style={s.cancelTxt}>Cancel Delivery</Text>
+                    <Text style={s.cancelTxt}>{t('deliveryTracking.cancelDeliveryButton')}</Text>
                   </>
                 )}
               </TouchableOpacity>

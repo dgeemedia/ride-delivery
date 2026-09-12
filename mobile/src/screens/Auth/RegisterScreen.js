@@ -12,6 +12,7 @@ import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth }           from '../../context/AuthContext';
 import { useTheme }          from '../../context/ThemeContext';
+import { useTranslation }    from 'react-i18next';
 import { RegisterHeroIllustration } from '../../components/ServiceIcons';
 
 const { width, height } = Dimensions.get('window');
@@ -28,6 +29,11 @@ const G = {
 };
 
 // ── Phone formatter ───────────────────────────────────────────────────────────
+// NOTE: this only formats Nigerian numbers correctly. Fine for now since
+// COUNTRIES below only offers Nigeria — but this needs to become
+// country-aware (using the selected country's dial prefix) before adding
+// a second country to the picker, or non-NG numbers will pass through
+// unformatted.
 const formatPhone = (raw) => {
   const digits = raw.replace(/\D/g, '');
   if (digits.startsWith('0') && digits.length === 11)   return `+234${digits.slice(1)}`;
@@ -40,6 +46,23 @@ const ROLES = [
   { id: 'CUSTOMER',         label: 'Customer', sub: 'Book rides & send packages', icon: 'person-outline',    accent: '#6366F1' },
   { id: 'DRIVER',           label: 'Driver',   sub: 'Drive passengers and earn',  icon: 'car-sport-outline', accent: '#10B981' },
   { id: 'DELIVERY_PARTNER', label: 'Courier',  sub: 'Deliver packages daily',     icon: 'bicycle-outline',   accent: '#F59E0B' },
+];
+
+// Maps each role id to its translation keys — used at render time instead of
+// the raw label/sub above, which stay as English fallback/reference values.
+const ROLE_I18N_KEYS = {
+  CUSTOMER:         { label: 'register.roleCustomerLabel', sub: 'register.roleCustomerSub' },
+  DRIVER:           { label: 'register.roleDriverLabel',   sub: 'register.roleDriverSub' },
+  DELIVERY_PARTNER: { label: 'register.roleCourierLabel',  sub: 'register.roleCourierSub' },
+};
+
+// ── Countries — add a row here only once that country's Country DB record,
+// payment-provider integration, and payout method are actually live on the
+// backend (see backend/src/services/country.service.js). Listing a country
+// here before that work is done would let someone register into a country
+// whose payments/payouts silently don't work yet.
+const COUNTRIES = [
+  { code: 'NG', flag: '🇳🇬', name: 'Nigeria', dialPrefix: '+234' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -368,6 +391,7 @@ const fi = StyleSheet.create({
 export default function RegisterScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const { register }    = useAuth();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
 
@@ -377,6 +401,8 @@ export default function RegisterScreen({ navigation }) {
   const [lastName,        setLastName]        = useState('');
   const [email,           setEmail]           = useState('');
   const [phone,           setPhone]           = useState('');
+  const [countryCode,     setCountryCode]     = useState(COUNTRIES[0].code);
+  const [countryPickerVisible, setCountryPickerVisible] = useState(false);
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading,         setLoading]         = useState(false);
@@ -444,14 +470,14 @@ export default function RegisterScreen({ navigation }) {
   };
 
   const handleFinalRegister = async () => {
-    if (!firstName.trim() || !lastName.trim()) return Alert.alert('Missing Fields',    'Please enter your full name.');
-    if (!email.trim() || !email.includes('@'))  return Alert.alert('Invalid Email',    'Please enter a valid email address.');
-    if (!phone.trim())                           return Alert.alert('Missing Phone',   'Please enter your phone number.');
-    if (password.length < 8)                    return Alert.alert('Weak Password',   'Password must be at least 8 characters.');
-    if (password !== confirmPassword)           return Alert.alert('Password Mismatch','Passwords do not match.');
-    if (!roleId)                                return Alert.alert('Select Role',      'Please choose a role.');
-    if (!agreedToTerms)   return Alert.alert('Terms Required',   'Please read and agree to our Terms of Service to continue.');
-    if (!agreedToPrivacy) return Alert.alert('Privacy Required', 'Please read and agree to our Privacy Policy to continue.');
+    if (!firstName.trim() || !lastName.trim()) return Alert.alert(t('register.missingFieldsTitle'),    t('register.missingFieldsBody'));
+    if (!email.trim() || !email.includes('@'))  return Alert.alert(t('register.invalidEmailTitle'),    t('register.invalidEmailBody'));
+    if (!phone.trim())                           return Alert.alert(t('register.missingPhoneTitle'),   t('register.missingPhoneBody'));
+    if (password.length < 8)                    return Alert.alert(t('register.weakPasswordTitle'),   t('register.weakPasswordBody'));
+    if (password !== confirmPassword)           return Alert.alert(t('register.passwordMismatchTitle'),t('register.passwordMismatchBody'));
+    if (!roleId)                                return Alert.alert(t('register.selectRoleTitle'),      t('register.selectRoleBody'));
+    if (!agreedToTerms)   return Alert.alert(t('register.termsRequiredTitle'),   t('register.termsRequiredBody'));
+    if (!agreedToPrivacy) return Alert.alert(t('register.privacyRequiredTitle'), t('register.privacyRequiredBody'));
 
     setLoading(true);
     try {
@@ -462,8 +488,9 @@ export default function RegisterScreen({ navigation }) {
         phone:     formatPhone(phone.trim()),
         password,
         role:      roleId,
+        countryCode,
       });
-      if (!res.success) { Alert.alert('Registration Failed', res.message || 'Please try again.'); return; }
+      if (!res.success) { Alert.alert(t('register.registrationFailedTitle'), res.message || t('register.pleaseTryAgain')); return; }
 
       // ✅ Email verification required
       if (res.requiresVerification) {
@@ -484,9 +511,9 @@ export default function RegisterScreen({ navigation }) {
       }
 
       // ✅ Immediate token (all gates off)
-      Alert.alert('Welcome to Diakite 🎉', 'Your account has been created!');
+      Alert.alert(t('register.welcomeTitle'), t('register.welcomeBody'));
     } catch (err) {
-      Alert.alert('Error', err?.message || 'Something went wrong. Please try again.');
+      Alert.alert(t('register.errorTitle'), err?.message || t('register.somethingWentWrong'));
     } finally {
       setLoading(false);
     }
@@ -636,15 +663,15 @@ export default function RegisterScreen({ navigation }) {
             <View style={[s.pill, { backgroundColor: G.card(mode), borderColor: G.border(mode), marginBottom: SMALL ? 8 : 12 }]}>
               <View style={[s.pillDot, { backgroundColor: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)' }]} />
               <Text style={[s.eyebrow, { color: darkMode ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)' }]}>
-                {step === 1 ? 'GET STARTED' : 'YOUR DETAILS'}
+                {step === 1 ? t('register.getStarted') : t('register.yourDetails')}
               </Text>
             </View>
 
             <Text style={[s.title, { color: theme.foreground, fontSize: TINY ? 24 : SMALL ? 26 : MEDIUM ? 29 : 32, marginBottom: TINY ? 2 : 4 }]}>
-              {step === 1 ? 'Choose your\nrole' : 'Create your\naccount'}
+              {step === 1 ? t('register.chooseRole') : t('register.createAccount')}
             </Text>
             <Text style={[s.subtitle, { color: theme.hint, fontSize: TINY ? 11 : 12 }]}>
-              {step === 1 ? 'How will you use Diakite?' : `Registering as ${activeRole?.label ?? ''}`}
+              {step === 1 ? t('register.howWillYouUse') : t('register.registeringAs', { role: activeRole ? t(ROLE_I18N_KEYS[activeRole.id].label) : '' })}
             </Text>
           </Animated.View>
 
@@ -708,8 +735,8 @@ export default function RegisterScreen({ navigation }) {
                         <Ionicons name={role.icon} size={SMALL ? 18 : 20} color={role.accent} />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={[s.roleLabel, { color: theme.foreground, fontSize: SMALL ? 14 : 15 }]}>{role.label}</Text>
-                        <Text style={[s.roleSub,   { color: theme.hint,       fontSize: SMALL ? 11 : 12 }]}>{role.sub}</Text>
+                        <Text style={[s.roleLabel, { color: theme.foreground, fontSize: SMALL ? 14 : 15 }]}>{t(ROLE_I18N_KEYS[role.id].label)}</Text>
+                        <Text style={[s.roleSub,   { color: theme.hint,       fontSize: SMALL ? 11 : 12 }]}>{t(ROLE_I18N_KEYS[role.id].sub)}</Text>
                       </View>
                       <View style={[s.radioOuter, { borderColor: sel ? role.accent : G.border(mode) }]}>
                         {sel && <View style={[s.radioInner, { backgroundColor: role.accent }]} />}
@@ -730,7 +757,7 @@ export default function RegisterScreen({ navigation }) {
                     style={StyleSheet.absoluteFill}
                   />
                   <View style={[s.shimmer, { backgroundColor: darkMode ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.15)' }]} />
-                  <Text style={[s.primaryBtnTxt, { color: theme.accentFg, fontSize: SMALL ? 13 : 14 }]}>Continue</Text>
+                  <Text style={[s.primaryBtnTxt, { color: theme.accentFg, fontSize: SMALL ? 13 : 14 }]}>{t('register.continue')}</Text>
                   <Ionicons name="arrow-forward" size={16} color={theme.accentFg} />
                 </TouchableOpacity>
 
@@ -744,8 +771,8 @@ export default function RegisterScreen({ navigation }) {
                     style={StyleSheet.absoluteFill}
                   />
                   <Text style={[s.altTxt, { color: theme.hint, fontSize: SMALL ? 12 : 13 }]}>
-                    Already have an account?{'  '}
-                    <Text style={[s.altBold, { color: theme.foreground }]}>Sign In</Text>
+                    {t('register.alreadyHaveAccount')}{'  '}
+                    <Text style={[s.altBold, { color: theme.foreground }]}>{t('register.signIn')}</Text>
                   </Text>
                 </TouchableOpacity>
               </>
@@ -780,15 +807,57 @@ export default function RegisterScreen({ navigation }) {
                 {/* Name row */}
                 <View style={[s.nameRow, { gap: SMALL ? 7 : 9 }]}>
                   <View style={{ flex: 1 }}>
-                    <FloatInput label="First Name" iconName="person-outline" value={firstName} onChangeText={setFirstName} autoCapitalize="words" />
+                    <FloatInput label={t('register.firstName')} iconName="person-outline" value={firstName} onChangeText={setFirstName} autoCapitalize="words" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <FloatInput label="Last Name" iconName="person-outline" value={lastName} onChangeText={setLastName} autoCapitalize="words" />
+                    <FloatInput label={t('register.lastName')} iconName="person-outline" value={lastName} onChangeText={setLastName} autoCapitalize="words" />
                   </View>
                 </View>
 
-                <FloatInput label="Email Address" iconName="mail-outline" value={email} onChangeText={setEmail} keyboardType="email-address" />
-                <FloatInput label="Phone Number"  iconName="call-outline" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+                <FloatInput label={t('register.emailAddress')} iconName="mail-outline" value={email} onChangeText={setEmail} keyboardType="email-address" />
+                <FloatInput label={t('register.phoneNumber')}  iconName="call-outline" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+
+                {/* Country selector */}
+                <TouchableOpacity
+                  onPress={() => setCountryPickerVisible(true)}
+                  activeOpacity={0.8}
+                  style={[s.countryRow, { backgroundColor: G.card(mode), borderColor: G.border(mode) }]}
+                >
+                  <Text style={{ fontSize: 18, marginRight: 8 }}>
+                    {COUNTRIES.find(c => c.code === countryCode)?.flag}
+                  </Text>
+                  <Text style={{ flex: 1, color: theme.foreground, fontSize: SMALL ? 13 : 14, fontWeight: '600' }}>
+                    {COUNTRIES.find(c => c.code === countryCode)?.name}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color={theme.hint} />
+                </TouchableOpacity>
+
+                <Modal
+                  visible={countryPickerVisible}
+                  transparent
+                  animationType="fade"
+                  onRequestClose={() => setCountryPickerVisible(false)}
+                >
+                  <TouchableOpacity
+                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}
+                    activeOpacity={1}
+                    onPress={() => setCountryPickerVisible(false)}
+                  >
+                    <View style={{ backgroundColor: theme.background, borderRadius: 16, padding: 8 }}>
+                      {COUNTRIES.map(c => (
+                        <TouchableOpacity
+                          key={c.code}
+                          onPress={() => { setCountryCode(c.code); setCountryPickerVisible(false); }}
+                          style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 10 }}
+                        >
+                          <Text style={{ fontSize: 20, marginRight: 12 }}>{c.flag}</Text>
+                          <Text style={{ flex: 1, color: theme.foreground, fontSize: 15, fontWeight: '600' }}>{c.name}</Text>
+                          {c.code === countryCode && <Ionicons name="checkmark" size={18} color={theme.accent} />}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </TouchableOpacity>
+                </Modal>
 
                 {/* Divider */}
                 <View style={[s.divRow, { marginVertical: SMALL ? 6 : 9 }]}>
@@ -797,8 +866,8 @@ export default function RegisterScreen({ navigation }) {
                   <View style={[s.divLine, { backgroundColor: G.border(mode) }]} />
                 </View>
 
-                <FloatInput label="Password (min 8 characters)"  iconName="lock-closed-outline"     value={password}        onChangeText={setPassword}        secureTextEntry />
-                <FloatInput label="Confirm Password"             iconName="shield-checkmark-outline" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
+                <FloatInput label={t('register.passwordMin8')}  iconName="lock-closed-outline"     value={password}        onChangeText={setPassword}        secureTextEntry />
+                <FloatInput label={t('register.confirmPassword')}             iconName="shield-checkmark-outline" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
 
                 {/* Password match indicator */}
                 {confirmPassword.length > 0 && (
@@ -817,21 +886,21 @@ export default function RegisterScreen({ navigation }) {
                 {/* ── Agreement section ──────────────────────────────────── */}
                 <View style={[s.agreementSection, { marginTop: SMALL ? 8 : 12, marginBottom: SMALL ? 10 : 14 }]}>
                   <Text style={[s.agreementHint, { color: theme.hint, fontSize: TINY ? 10 : 11, marginBottom: SMALL ? 6 : 8 }]}>
-                    Read and accept to continue
+                    {t('register.readAndAccept')}
                   </Text>
 
                   <AgreementRow
                     agreed={agreedToTerms}
                     onToggle={() => setAgreedToTerms(p => !p)}
                     onReadPress={() => openModal('terms')}
-                    label="Terms of Service"
+                    label={t('register.termsOfService')}
                   />
 
                   <AgreementRow
                     agreed={agreedToPrivacy}
                     onToggle={() => setAgreedToPrivacy(p => !p)}
                     onReadPress={() => openModal('privacy')}
-                    label="Privacy Policy"
+                    label={t('register.privacyPolicy')}
                   />
                 </View>
 
@@ -855,7 +924,7 @@ export default function RegisterScreen({ navigation }) {
                   {loading
                     ? <ActivityIndicator color={theme.accentFg} />
                     : <>
-                        <Text style={[s.primaryBtnTxt, { color: theme.accentFg, fontSize: SMALL ? 13 : 14 }]}>Create Account</Text>
+                        <Text style={[s.primaryBtnTxt, { color: theme.accentFg, fontSize: SMALL ? 13 : 14 }]}>{t('register.createAccountButton')}</Text>
                         <Ionicons name="arrow-forward" size={16} color={theme.accentFg} />
                       </>
                   }
@@ -871,6 +940,7 @@ export default function RegisterScreen({ navigation }) {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
+  countryRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
   root:   { flex: 1 },
   orb1:   { position: 'absolute', width: width * 1.3, height: width * 1.3, borderRadius: width * 0.65, top: -width * 0.8, alignSelf: 'center' },
   orb2:   { position: 'absolute', width: width * 0.7, height: width * 0.7, borderRadius: width * 0.35, bottom: -width * 0.2, right: -width * 0.1 },

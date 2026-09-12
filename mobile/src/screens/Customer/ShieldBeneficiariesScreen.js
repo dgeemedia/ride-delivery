@@ -11,6 +11,7 @@ import { LinearGradient }    from 'expo-linear-gradient';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useTranslation }    from 'react-i18next';
 import { shieldAPI }         from '../../services/api';
 
 const SHIELD_GREEN = '#4CAF50';
@@ -27,6 +28,7 @@ const G = {
 
 export default function ShieldBeneficiariesScreen({ navigation, route }) {
   const { theme, mode } = useTheme();
+  const { t } = useTranslation();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
 
@@ -57,10 +59,10 @@ export default function ShieldBeneficiariesScreen({ navigation, route }) {
 
   const validate = () => {
     const e = {};
-    if (!form.name.trim())  e.name  = 'Name is required';
-    if (!form.phone.trim()) e.phone = 'Phone is required';
-    else if (!/^\+?[\d\s\-()]{7,}$/.test(form.phone)) e.phone = 'Invalid phone number';
-    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email';
+    if (!form.name.trim())  e.name  = t('shieldBeneficiaries.nameRequired');
+    if (!form.phone.trim()) e.phone = t('shieldBeneficiaries.phoneRequired');
+    else if (!/^\+?[\d\s\-()]{7,}$/.test(form.phone)) e.phone = t('shieldBeneficiaries.invalidPhone');
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = t('shieldBeneficiaries.invalidEmail');
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -77,25 +79,25 @@ export default function ShieldBeneficiariesScreen({ navigation, route }) {
       setModalVisible(false);
       fetchBeneficiaries();
     } catch(e) {
-      Alert.alert('Error', e?.response?.data?.message ?? 'Could not save guardian.');
+      Alert.alert(t('shieldBeneficiaries.errorTitle'), e?.response?.data?.message ?? t('shieldBeneficiaries.couldNotSave'));
     } finally { setSaving(false); }
   };
 
   const handleDelete = (id, name) => {
-    Alert.alert(`Remove ${name}?`,'They will no longer be a saved guardian.',[
-      { text:'Cancel', style:'cancel' },
-      { text:'Remove', style:'destructive', onPress: async () => {
+    Alert.alert(t('shieldBeneficiaries.removeTitle', { name }), t('shieldBeneficiaries.removeBody'),[
+      { text: t('shieldBeneficiaries.cancel'), style:'cancel' },
+      { text: t('shieldBeneficiaries.remove'), style:'destructive', onPress: async () => {
         try {
           await shieldAPI.deleteBeneficiary(id);
           setBeneficiaries(prev => prev.filter(b => b.id !== id));
-        } catch(e) { Alert.alert('Error', e?.response?.data?.message ?? 'Could not remove.'); }
+        } catch(e) { Alert.alert(t('shieldBeneficiaries.errorTitle'), e?.response?.data?.message ?? t('shieldBeneficiaries.couldNotRemove')); }
       }},
     ]);
   };
 
   const handleSetDefault = async (id) => {
     try { await shieldAPI.updateBeneficiary(id,{ isDefault:true }); fetchBeneficiaries(); }
-    catch(e) { Alert.alert('Error', e?.response?.data?.message ?? 'Could not update.'); }
+    catch(e) { Alert.alert(t('shieldBeneficiaries.errorTitle'), e?.response?.data?.message ?? t('shieldBeneficiaries.couldNotUpdate')); }
   };
 
   // ── Glass field ──────────────────────────────────────────────────────────
@@ -128,10 +130,10 @@ export default function ShieldBeneficiariesScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
           <Ionicons name="arrow-back" size={22} color={theme.foreground} />
         </TouchableOpacity>
-        <Text style={[s.title, { color: theme.foreground }]}>My Guardians</Text>
+        <Text style={[s.title, { color: theme.foreground }]}>{t('shieldBeneficiaries.myGuardians')}</Text>
         <TouchableOpacity style={[s.addBtn, { backgroundColor: SHIELD_GREEN }]} onPress={openAdd}>
           <Ionicons name="add" size={18} color="#FFF" />
-          <Text style={s.addBtnTxt}>Add</Text>
+          <Text style={s.addBtnTxt}>{t('shieldBeneficiaries.add')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -151,9 +153,9 @@ export default function ShieldBeneficiariesScreen({ navigation, route }) {
             />
             <Ionicons name="shield-checkmark" size={16} color={SHIELD_GREEN} />
             <Text style={[s.infoTxt, { color: theme.hint }]}>
-              Up to 5 guardians. Mark one as{' '}
-              <Text style={{ fontWeight:'700', color: SHIELD_GREEN }}>Default</Text>{' '}
-              for Auto-SHIELD on night rides.
+              {t('shieldBeneficiaries.infoBannerPre')}{' '}
+              <Text style={{ fontWeight:'700', color: SHIELD_GREEN }}>{t('shieldBeneficiaries.default')}</Text>{' '}
+              {t('shieldBeneficiaries.infoBannerPost')}
             </Text>
           </View>
 
@@ -162,11 +164,11 @@ export default function ShieldBeneficiariesScreen({ navigation, route }) {
               <View style={[s.emptyIcon, { backgroundColor: SHIELD_GREEN + '12', borderColor: SHIELD_GREEN + '25', borderWidth:1 }]}>
                 <Ionicons name="people-outline" size={32} color={SHIELD_GREEN} />
               </View>
-              <Text style={[s.emptyTitle, { color: theme.foreground }]}>No guardians yet</Text>
-              <Text style={[s.emptySub, { color: theme.hint }]}>Add a trusted person who will receive your live location during rides.</Text>
+              <Text style={[s.emptyTitle, { color: theme.foreground }]}>{t('shieldBeneficiaries.noGuardiansYet')}</Text>
+              <Text style={[s.emptySub, { color: theme.hint }]}>{t('shieldBeneficiaries.noGuardiansBody')}</Text>
               <TouchableOpacity style={[s.emptyAddBtn, { backgroundColor: SHIELD_GREEN }]} onPress={openAdd}>
                 <Ionicons name="add" size={16} color="#FFF" />
-                <Text style={s.emptyAddTxt}>Add First Guardian</Text>
+                <Text style={s.emptyAddTxt}>{t('shieldBeneficiaries.addFirstGuardian')}</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -194,7 +196,7 @@ export default function ShieldBeneficiariesScreen({ navigation, route }) {
                     {b.isDefault && (
                       <View style={[s.defaultBadge, { backgroundColor: SHIELD_GREEN + '18', borderColor: SHIELD_GREEN + '30', borderWidth:1 }]}>
                         <Ionicons name="star" size={9} color={SHIELD_GREEN} />
-                        <Text style={[s.defaultBadgeTxt, { color: SHIELD_GREEN }]}>AUTO-SHIELD</Text>
+                        <Text style={[s.defaultBadgeTxt, { color: SHIELD_GREEN }]}>{t('shieldBeneficiaries.autoShield')}</Text>
                       </View>
                     )}
                   </View>
@@ -234,11 +236,11 @@ export default function ShieldBeneficiariesScreen({ navigation, route }) {
               style={StyleSheet.absoluteFill}
             />
             <View style={[m.handle, { backgroundColor: G.border(mode) }]} />
-            <Text style={[m.title, { color: theme.foreground }]}>{editId ? 'Edit Guardian' : 'New Guardian'}</Text>
+            <Text style={[m.title, { color: theme.foreground }]}>{editId ? t('shieldBeneficiaries.editGuardian') : t('shieldBeneficiaries.newGuardian')}</Text>
 
-            <Field label="FULL NAME"          field="name"  placeholder="e.g. Mum"               error={errors.name}  />
-            <Field label="PHONE NUMBER"        field="phone" placeholder="+234 800 000 0000" keyboard="phone-pad"   error={errors.phone} />
-            <Field label="EMAIL (OPTIONAL)"    field="email" placeholder="email@example.com" keyboard="email-address" error={errors.email} />
+            <Field label={t('shieldBeneficiaries.fullName')}          field="name"  placeholder={t('shieldBeneficiaries.namePlaceholder')}               error={errors.name}  />
+            <Field label={t('shieldBeneficiaries.phoneNumber')}        field="phone" placeholder="+234 800 000 0000" keyboard="phone-pad"   error={errors.phone} />
+            <Field label={t('shieldBeneficiaries.emailOptional')}    field="email" placeholder="email@example.com" keyboard="email-address" error={errors.email} />
 
             <TouchableOpacity
               style={[m.toggleRow, { borderColor: form.isDefault ? SHIELD_GREEN + '50' : G.border(mode), backgroundColor: form.isDefault ? SHIELD_GREEN + '10' : 'transparent' }]}
@@ -246,8 +248,8 @@ export default function ShieldBeneficiariesScreen({ navigation, route }) {
             >
               <Ionicons name={form.isDefault ? 'star' : 'star-outline'} size={18} color={form.isDefault ? SHIELD_GREEN : theme.hint} />
               <View style={{ flex:1 }}>
-                <Text style={[m.toggleTitle, { color: theme.foreground }]}>Set as Default Guardian</Text>
-                <Text style={[m.toggleSub, { color: theme.hint }]}>Automatically notified on night rides (9 PM – 5 AM)</Text>
+                <Text style={[m.toggleTitle, { color: theme.foreground }]}>{t('shieldBeneficiaries.setAsDefault')}</Text>
+                <Text style={[m.toggleSub, { color: theme.hint }]}>{t('shieldBeneficiaries.autoNotified')}</Text>
               </View>
             </TouchableOpacity>
 
@@ -263,7 +265,7 @@ export default function ShieldBeneficiariesScreen({ navigation, route }) {
               />
               {saving
                 ? <ActivityIndicator color="#FFF" />
-                : <Text style={m.saveBtnTxt}>{editId ? 'Save Changes' : 'Add Guardian'}</Text>
+                : <Text style={m.saveBtnTxt}>{editId ? t('shieldBeneficiaries.saveChanges') : t('shieldBeneficiaries.addGuardian')}</Text>
               }
             </TouchableOpacity>
           </View>

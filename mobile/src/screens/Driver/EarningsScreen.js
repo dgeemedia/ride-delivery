@@ -13,6 +13,8 @@ import AnimatedRN, { useAnimatedScrollHandler } from 'react-native-reanimated';
 import { Ionicons }     from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }     from '../../context/ThemeContext';
+import { useCurrency }  from '../../context/CurrencyContext';
+import { useTranslation } from 'react-i18next';
 import { useScrollY }   from '../../context/ScrollContext';
 import { driverAPI, walletAPI } from '../../services/api';
 
@@ -23,10 +25,10 @@ const RED    = '#E05555';
 const PURPLE = '#A78BFA';
 
 const PERIODS = [
-  { key: 'today', label: 'Today' },
-  { key: 'week',  label: 'Week'  },
-  { key: 'month', label: 'Month' },
-  { key: 'all',   label: 'All'   },
+  { key: 'today', labelKey: 'driverEarningsScreen.periodToday' },
+  { key: 'week',  labelKey: 'driverEarningsScreen.periodWeek'  },
+  { key: 'month', labelKey: 'driverEarningsScreen.periodMonth' },
+  { key: 'all',   labelKey: 'driverEarningsScreen.periodAll'   },
 ];
 
 const TX_CONFIG = {
@@ -39,28 +41,32 @@ const TX_CONFIG = {
 // ─────────────────────────────────────────────────────────────────────────────
 // StatStrip
 // ─────────────────────────────────────────────────────────────────────────────
-const StatStrip = ({ earnings, walletBalance, theme }) => (
+const StatStrip = ({ earnings, walletBalance, theme }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
+  return (
   <View style={[ss.card, { backgroundColor: theme.backgroundAlt, borderColor: DA + '30' }]}>
     <View style={ss.item}>
-      <Text style={[ss.lbl, { color: theme.hint }]}>WALLET</Text>
+      <Text style={[ss.lbl, { color: theme.hint }]}>{t('driverEarningsScreen.wallet')}</Text>
       <Text style={[ss.val, { color: GREEN }]}>
-        ₦{Number(walletBalance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+        {formatMoney(walletBalance ?? 0, { decimals: 2 })}
       </Text>
     </View>
     <View style={[ss.div, { backgroundColor: theme.border }]} />
     <View style={ss.item}>
-      <Text style={[ss.lbl, { color: theme.hint }]}>NET EARNED</Text>
+      <Text style={[ss.lbl, { color: theme.hint }]}>{t('driverEarningsScreen.netEarned')}</Text>
       <Text style={[ss.val, { color: DA }]}>
-        ₦{Number(earnings?.netEarnings ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+        {formatMoney(earnings?.netEarnings ?? 0)}
       </Text>
     </View>
     <View style={[ss.div, { backgroundColor: theme.border }]} />
     <View style={ss.item}>
-      <Text style={[ss.lbl, { color: theme.hint }]}>RIDES</Text>
+      <Text style={[ss.lbl, { color: theme.hint }]}>{t('driverEarningsScreen.rides')}</Text>
       <Text style={[ss.val, { color: theme.foreground }]}>{earnings?.totalRides ?? 0}</Text>
     </View>
   </View>
-);
+  );
+};
 const ss = StyleSheet.create({
   card: { flexDirection: 'row', borderRadius: 20, borderWidth: 1, padding: 20, marginBottom: 14 },
   item: { flex: 1, alignItems: 'center', gap: 5 },
@@ -72,7 +78,9 @@ const ss = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // EarningRow
 // ─────────────────────────────────────────────────────────────────────────────
-const EarningRow = ({ item, theme, last }) => (
+const EarningRow = ({ item, theme, last }) => {
+  const { formatMoney } = useCurrency();
+  return (
   <View style={[er.row, !last && { borderBottomWidth: 1, borderBottomColor: theme.border }]}>
     <View style={[er.icon, { backgroundColor: DA + '18' }]}>
       <Ionicons name="car-outline" size={16} color={DA} />
@@ -87,10 +95,11 @@ const EarningRow = ({ item, theme, last }) => (
       </Text>
     </View>
     <Text style={[er.fare, { color: DA }]}>
-      +₦{Number(item.driverEarnings ?? item.fare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+      +{formatMoney(item.driverEarnings ?? item.fare ?? 0)}
     </Text>
   </View>
-);
+  );
+};
 const er = StyleSheet.create({
   row:  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
   icon: { width: 38, height: 38, borderRadius: 11, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
@@ -104,6 +113,7 @@ const er = StyleSheet.create({
 // TxRow
 // ─────────────────────────────────────────────────────────────────────────────
 const TxRow = ({ item, theme, last }) => {
+  const { formatMoney } = useCurrency();
   const cfg = TX_CONFIG[item.type] ?? TX_CONFIG.DEBIT;
   return (
     <View style={[tr.row, !last && { borderBottomWidth: 1, borderBottomColor: theme.border }]}>
@@ -120,7 +130,7 @@ const TxRow = ({ item, theme, last }) => {
       </View>
       <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
         <Text style={[tr.amount, { color: cfg.color }]}>
-          {cfg.prefix}₦{Number(item.amount ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+          {cfg.prefix}{formatMoney(item.amount ?? 0)}
         </Text>
         <View style={[tr.statusPill, { backgroundColor: cfg.color + '18' }]}>
           <Text style={[tr.statusTxt, { color: cfg.color }]}>{item.status}</Text>
@@ -144,6 +154,8 @@ const tr = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function EarningsScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const insets          = useSafeAreaInsets();
   const scrollY         = useScrollY();
 
@@ -214,8 +226,8 @@ export default function EarningsScreen({ navigation }) {
           </TouchableOpacity>
         )}
         <View style={{ flex: 1 }}>
-          <Text style={[s.eyebrow, { color: DA + '80' }]}>DRIVER EARNINGS</Text>
-          <Text style={[s.title,   { color: theme.foreground }]}>My Wallet</Text>
+          <Text style={[s.eyebrow, { color: DA + '80' }]}>{t('driverEarningsScreen.driverEarnings')}</Text>
+          <Text style={[s.title,   { color: theme.foreground }]}>{t('driverEarningsScreen.myWallet')}</Text>
         </View>
         <View style={s.headerBtns}>
           <TouchableOpacity
@@ -224,7 +236,7 @@ export default function EarningsScreen({ navigation }) {
             activeOpacity={0.88}
           >
             <Ionicons name="add-circle-outline" size={15} color={theme.foreground} />
-            <Text style={[s.headerActionTxt, { color: theme.foreground }]}>Top Up</Text>
+            <Text style={[s.headerActionTxt, { color: theme.foreground }]}>{t('driverEarningsScreen.topUp')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[s.headerActionBtn, { backgroundColor: DA }]}
@@ -232,7 +244,7 @@ export default function EarningsScreen({ navigation }) {
             activeOpacity={0.88}
           >
             <Ionicons name="arrow-up-circle-outline" size={15} color="#080C18" />
-            <Text style={[s.headerActionTxt, { color: '#080C18' }]}>Withdraw</Text>
+            <Text style={[s.headerActionTxt, { color: '#080C18' }]}>{t('driverEarningsScreen.withdraw')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -265,8 +277,8 @@ export default function EarningsScreen({ navigation }) {
                   <View style={[s.walletActionIcon, { backgroundColor: GREEN + '20' }]}>
                     <Ionicons name="add-circle-outline" size={20} color={GREEN} />
                   </View>
-                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Top Up</Text>
-                  <Text style={[s.walletActionSub, { color: theme.hint }]}>Add money</Text>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>{t('driverEarningsScreen.topUp')}</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>{t('driverEarningsScreen.addMoney')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -277,8 +289,8 @@ export default function EarningsScreen({ navigation }) {
                   <View style={[s.walletActionIcon, { backgroundColor: DA + '20' }]}>
                     <Ionicons name="arrow-up-circle-outline" size={20} color={DA} />
                   </View>
-                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>Withdraw</Text>
-                  <Text style={[s.walletActionSub, { color: theme.hint }]}>To bank</Text>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>{t('driverEarningsScreen.withdraw')}</Text>
+                  <Text style={[s.walletActionSub, { color: theme.hint }]}>{t('driverEarningsScreen.toBank')}</Text>
                 </TouchableOpacity>
 
                 {/* WIRED: History → TransactionHistoryScreen */}
@@ -290,14 +302,14 @@ export default function EarningsScreen({ navigation }) {
                   <View style={[s.walletActionIcon, { backgroundColor: PURPLE + '20' }]}>
                     <Ionicons name="time-outline" size={20} color={PURPLE} />
                   </View>
-                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>History</Text>
+                  <Text style={[s.walletActionLbl, { color: theme.foreground }]}>{t('driverEarningsScreen.history')}</Text>
                   <Text style={[s.walletActionSub, { color: theme.hint }]}>& Export</Text>
                 </TouchableOpacity>
               </View>
 
               {/* ── Breakdown card ── */}
               <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
-                <Text style={[s.sectionEyebrow, { color: theme.hint }]}>EARNINGS BREAKDOWN</Text>
+                <Text style={[s.sectionEyebrow, { color: theme.hint }]}>{t('driverEarningsScreen.earningsBreakdown')}</Text>
                 {[
                   ['Gross Earnings',     earnings?.totalEarnings,  DA],
                   ['Platform Fee (20%)', earnings?.platformFee,    RED],
@@ -307,7 +319,7 @@ export default function EarningsScreen({ navigation }) {
                   <View key={lbl} style={[s.breakRow, { borderBottomColor: theme.border }]}>
                     <Text style={[s.breakLbl, { color: theme.hint }]}>{lbl}</Text>
                     <Text style={[s.breakVal, { color: col }]}>
-                      ₦{Number(val ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                      {formatMoney(val ?? 0, { decimals: 2 })}
                     </Text>
                   </View>
                 ))}
@@ -329,7 +341,7 @@ export default function EarningsScreen({ navigation }) {
                       onPress={() => setPeriod(p.key)}
                       activeOpacity={0.8}
                     >
-                      <Text style={[s.periodTxt, { color: active ? '#080C18' : theme.hint }]}>{p.label}</Text>
+                      <Text style={[s.periodTxt, { color: active ? '#080C18' : theme.hint }]}>{t(p.labelKey)}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -358,7 +370,7 @@ export default function EarningsScreen({ navigation }) {
                   rides.length === 0 ? (
                     <View style={s.empty}>
                       <Ionicons name="car-outline" size={32} color={theme.hint} />
-                      <Text style={[s.emptyTxt, { color: theme.hint }]}>No rides for this period</Text>
+                      <Text style={[s.emptyTxt, { color: theme.hint }]}>{t('driverEarningsScreen.noRidesForPeriod')}</Text>
                     </View>
                   ) : (
                     rides.map((item, i) => (
@@ -369,7 +381,7 @@ export default function EarningsScreen({ navigation }) {
                   transactions.length === 0 ? (
                     <View style={s.empty}>
                       <Ionicons name="wallet-outline" size={32} color={theme.hint} />
-                      <Text style={[s.emptyTxt, { color: theme.hint }]}>No transactions yet</Text>
+                      <Text style={[s.emptyTxt, { color: theme.hint }]}>{t('driverEarningsScreen.noTransactionsYet')}</Text>
                     </View>
                   ) : (
                     <>

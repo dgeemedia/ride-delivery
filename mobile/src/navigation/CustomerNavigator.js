@@ -8,6 +8,7 @@ import { Ionicons }   from '@expo/vector-icons';
 import { BlurView }   from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }   from '../context/ThemeContext';
+import { useCurrency } from '../context/CurrencyContext';
 import { ScrollProvider } from '../context/ScrollContext';
 import AnimatedTabBar from '../components/AnimatedTabBar';
 import { walletAPI }  from '../services/api';
@@ -124,6 +125,7 @@ const GlassTabBar = ({ mode }) => {
 
 // ── WalletBadge ───────────────────────────────────────────────────────────────
 const WalletBadge = ({ balance, focused, darkMode }) => {
+  const { currencySymbol } = useCurrency();
   const scaleA = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -135,9 +137,9 @@ const WalletBadge = ({ balance, focused, darkMode }) => {
   if (balance === null) return null;
 
   const fmt = (n) => {
-    if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000)     return `₦${(n / 1_000).toFixed(1)}k`;
-    return `₦${Math.round(n)}`;
+    if (n >= 1_000_000) return `${currencySymbol}${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000)     return `${currencySymbol}${(n / 1_000).toFixed(1)}k`;
+    return `${currencySymbol}${Math.round(n)}`;
   };
 
   const bgColor  = darkMode

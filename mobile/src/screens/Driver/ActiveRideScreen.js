@@ -9,6 +9,8 @@ import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
+import { useTranslation }    from 'react-i18next';
 import { rideAPI }           from '../../services/api';
 import socketService         from '../../services/socket';
 import * as Location         from '../../shims/Location';
@@ -24,22 +26,22 @@ const DRAG_HANDLE_H  = 28;
 const ACTION_H       = 8 + 54;
 
 const STATUS_CONFIG = {
-  ACCEPTED:    { label: 'Head to Pickup',   sublabel: 'Navigate to the pickup point', color: DA,        icon: 'navigate-outline'         },
-  ARRIVED:     { label: 'Arrived',          sublabel: 'Let the customer know you\'ve arrived', color: '#A78BFA', icon: 'location-outline'  },
-  IN_PROGRESS: { label: 'Ride in Progress', sublabel: 'Drive safely to the destination', color: '#5DAA72', icon: 'car-sport-outline'      },
-  COMPLETED:   { label: 'Completed',        sublabel: 'Great job! Ride completed successfully', color: '#5DAA72', icon: 'checkmark-circle-outline' },
-  CANCELLED:   { label: 'Cancelled',        sublabel: 'This ride has been cancelled', color: '#E05555', icon: 'close-circle-outline'      },
+  ACCEPTED:    { labelKey: 'activeRideScreen.statusHeadToPickup',   sublabelKey: 'activeRideScreen.statusHeadToPickupSub', color: DA,        icon: 'navigate-outline'         },
+  ARRIVED:     { labelKey: 'rideTracking.statusDriverArrived',          sublabelKey: 'activeRideScreen.statusArrivedSub', color: '#A78BFA', icon: 'location-outline'  },
+  IN_PROGRESS: { labelKey: 'activeRideScreen.statusRideInProgress', sublabelKey: 'activeRideScreen.statusRideInProgressSub', color: '#5DAA72', icon: 'car-sport-outline'      },
+  COMPLETED:   { labelKey: 'historyScreen.statusCompleted',        sublabelKey: 'activeRideScreen.statusCompletedSub', color: '#5DAA72', icon: 'checkmark-circle-outline' },
+  CANCELLED:   { labelKey: 'historyScreen.statusCancelled',        sublabelKey: 'activeRideScreen.statusCancelledSub', color: '#E05555', icon: 'close-circle-outline'      },
 };
 
-const callPhone = (phone) => {
+const callPhone = (phone, t) => {
   if (!phone) return;
   const url = `tel:${String(phone).replace(/\s+/g, '')}`;
   Linking.canOpenURL(url)
     .then(ok => {
       if (ok) return Linking.openURL(url);
-      Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
+      Alert.alert(t('activeRideScreen.cannotCallTitle'), t('activeRideScreen.cannotCallBody'));
     })
-    .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
+    .catch(() => Alert.alert(t('activeRideScreen.errorTitle'), t('activeRideScreen.couldNotInitiateCall')));
 };
 
 // ── ArrivalGlow — pulsing halo shown when driver has ARRIVED ─────────────────
@@ -63,6 +65,7 @@ const ag = StyleSheet.create({
 
 // ── CustomerHeroCard ──────────────────────────────────────────────────────────
 const CustomerHeroCard = ({ ride, theme, statusColor }) => {
+  const { t } = useTranslation();
   const c = ride?.customer;
   if (!c) return null;
 
@@ -105,7 +108,7 @@ const CustomerHeroCard = ({ ride, theme, statusColor }) => {
       {c.phone && (
         <TouchableOpacity
           style={[ch.callBtn, { backgroundColor: DA, shadowColor: DA }]}
-          onPress={() => callPhone(c.phone)}
+          onPress={() => callPhone(c.phone, t)}
           activeOpacity={0.75}
         >
           <Ionicons name="call" size={18} color="#080C18" />
@@ -131,26 +134,27 @@ const ch = StyleSheet.create({
 
 // ── RouteCard ─────────────────────────────────────────────────────────────────
 const RouteCard = ({ ride, status, theme }) => {
+  const { t } = useTranslation();
   const atPickup = ['ACCEPTED', 'ARRIVED'].includes(status);
   return (
     <View style={[rc.card, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
       <View style={rc.row}>
         <View style={[rc.dot, { backgroundColor: atPickup ? DA : DA + '40' }]} />
         <View style={{ flex: 1 }}>
-          <Text style={[rc.lbl, { color: theme.hint }]}>PICKUP</Text>
+          <Text style={[rc.lbl, { color: theme.hint }]}>{t('activeRideScreen.pickup')}</Text>
           <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={2}>{ride.pickupAddress}</Text>
         </View>
-        {atPickup && <View style={[rc.activeChip, { backgroundColor: DA }]}><Text style={rc.activeChipTxt}>NEXT</Text></View>}
+        {atPickup && <View style={[rc.activeChip, { backgroundColor: DA }]}><Text style={rc.activeChipTxt}>{t('activeRideScreen.next')}</Text></View>}
       </View>
       <View style={[rc.line, { backgroundColor: theme.border }]} />
       <View style={rc.row}>
         <View style={[rc.dot, { backgroundColor: !atPickup ? '#E05555' : '#E05555' + '40' }]} />
         <View style={{ flex: 1 }}>
-          <Text style={[rc.lbl, { color: theme.hint }]}>DROP-OFF</Text>
+          <Text style={[rc.lbl, { color: theme.hint }]}>{t('activeRideScreen.dropoff')}</Text>
           <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={2}>{ride.dropoffAddress}</Text>
         </View>
         {!atPickup && status === 'IN_PROGRESS' && (
-          <View style={[rc.activeChip, { backgroundColor: '#E05555' }]}><Text style={rc.activeChipTxt}>NEXT</Text></View>
+          <View style={[rc.activeChip, { backgroundColor: '#E05555' }]}><Text style={rc.activeChipTxt}>{t('activeRideScreen.next')}</Text></View>
         )}
       </View>
     </View>
@@ -172,6 +176,8 @@ const rc = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ActiveRideScreen({ route, navigation }) {
   const { theme } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const insets    = useSafeAreaInsets();
   const rideId    = route?.params?.rideId;
 
@@ -281,8 +287,8 @@ export default function ActiveRideScreen({ route, navigation }) {
 
     const handleCancelled = (data) => {
       if (data.rideId !== rideId) return;
-      Alert.alert('Ride Cancelled', 'The customer has cancelled this ride.', [
-        { text: 'OK', onPress: goToDashboard },
+      Alert.alert(t('activeRideScreen.rideCancelledTitle'), t('activeRideScreen.rideCancelledBody'), [
+        { text: t('activeRideScreen.ok'), onPress: goToDashboard },
       ]);
     };
     const handleStatus = (data) => {
@@ -306,7 +312,7 @@ export default function ActiveRideScreen({ route, navigation }) {
       await rideAPI.arrivedAtPickup(ride.id);
       setRide(prev => ({ ...prev, status: 'ARRIVED' }));
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message ?? 'Could not update status.');
+      Alert.alert(t('activeRideScreen.errorTitle'), err?.response?.data?.message ?? t('activeRideScreen.couldNotUpdateStatus'));
     } finally { setActing(false); }
   };
 
@@ -326,7 +332,7 @@ export default function ActiveRideScreen({ route, navigation }) {
         ), 400);
       }
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message ?? 'Could not start ride.');
+      Alert.alert(t('activeRideScreen.errorTitle'), err?.response?.data?.message ?? t('activeRideScreen.couldNotStartRide'));
     } finally { setActing(false); }
   };
 
@@ -337,15 +343,15 @@ export default function ActiveRideScreen({ route, navigation }) {
         await rideAPI.completeRide(ride.id, { paymentMethod: 'CASH' });
         goToDashboard();
       } catch (err) {
-        Alert.alert('Error', err?.response?.data?.message ?? 'Could not complete ride.');
+        Alert.alert(t('activeRideScreen.errorTitle'), err?.response?.data?.message ?? t('activeRideScreen.couldNotCompleteRide'));
       } finally { setActing(false); }
     };
     if (Platform.OS === 'web') {
       if (window.confirm('Mark this ride as completed?')) doComplete();
     } else {
-      Alert.alert('Complete Ride', 'Mark this ride as completed?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Complete', onPress: doComplete },
+      Alert.alert(t('activeRideScreen.completeRideTitle'), t('activeRideScreen.markAsCompletedConfirm'), [
+        { text: t('activeRideScreen.cancel'), style: 'cancel' },
+        { text: t('activeRideScreen.complete'), onPress: doComplete },
       ]);
     }
   };
@@ -379,7 +385,7 @@ export default function ActiveRideScreen({ route, navigation }) {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
         <ActivityIndicator color={DA} size="large" />
-        <Text style={[s.centerTxt, { color: '#666' }]}>Loading ride...</Text>
+        <Text style={[s.centerTxt, { color: '#666' }]}>{t('activeRideScreen.loadingRide')}</Text>
       </View>
     );
   }
@@ -388,9 +394,9 @@ export default function ActiveRideScreen({ route, navigation }) {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
         <Ionicons name="alert-circle-outline" size={40} color="#555" />
-        <Text style={[s.centerTxt, { color: '#666' }]}>No active ride found.</Text>
+        <Text style={[s.centerTxt, { color: '#666' }]}>{t('activeRideScreen.noActiveRideFound')}</Text>
         <TouchableOpacity onPress={goToDashboard} style={[s.goBackBtn, { borderColor: '#333' }]}>
-          <Text style={[s.goBackTxt, { color: '#ccc' }]}>Go to Dashboard</Text>
+          <Text style={[s.goBackTxt, { color: '#ccc' }]}>{t('activeRideScreen.goToDashboard')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -470,7 +476,7 @@ export default function ActiveRideScreen({ route, navigation }) {
         bottom:          statusPillBottom,
       }]}>
         <View style={[s.statusDot, { backgroundColor: statusCfg.color }]} />
-        <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+        <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{t(statusCfg.labelKey)}</Text>
       </Animated.View>
 
       {/* ── Bottom sheet ── */}
@@ -489,28 +495,28 @@ export default function ActiveRideScreen({ route, navigation }) {
 
             {/* Status header */}
             <View style={s.sheetHeader}>
-              <Text style={[s.statusTitle, { color: theme.foreground }]}>{statusCfg.label}</Text>
-              <Text style={[s.statusSub, { color: theme.hint }]}>{statusCfg.sublabel}</Text>
+              <Text style={[s.statusTitle, { color: theme.foreground }]}>{t(statusCfg.labelKey)}</Text>
+              <Text style={[s.statusSub, { color: theme.hint }]}>{t(statusCfg.sublabelKey)}</Text>
             </View>
 
             {/* Fare strip */}
             <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <View style={s.fareItem}>
-                <Text style={[s.fareLabel, { color: theme.hint }]}>FARE</Text>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>{t('activeRideScreen.fareLabel')}</Text>
                 <Text style={[s.fareValue, { color: DA }]}>
-                  ₦{Number(ride.estimatedFare ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                  {formatMoney(ride.estimatedFare ?? 0)}
                 </Text>
               </View>
               <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
               <View style={s.fareItem}>
-                <Text style={[s.fareLabel, { color: theme.hint }]}>DISTANCE</Text>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>{t('activeRideScreen.distanceLabel')}</Text>
                 <Text style={[s.fareValue, { color: theme.foreground }]}>
                   {ride.distance?.toFixed(1) ?? '—'} km
                 </Text>
               </View>
               <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
               <View style={s.fareItem}>
-                <Text style={[s.fareLabel, { color: theme.hint }]}>PAYMENT</Text>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>{t('activeRideScreen.paymentLabel')}</Text>
                 <Text style={[s.fareValue, { color: theme.foreground }]}>
                   {ride.paymentMethod ?? 'CASH'}
                 </Text>
@@ -550,7 +556,7 @@ export default function ActiveRideScreen({ route, navigation }) {
                 {acting ? <ActivityIndicator color="#080C18" /> : (
                   <>
                     <Ionicons name="car-sport-outline" size={18} color="#080C18" />
-                    <Text style={s.actionBtnTxt}>Start Ride</Text>
+                    <Text style={s.actionBtnTxt}>{t('activeRideScreen.startRide')}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -561,7 +567,7 @@ export default function ActiveRideScreen({ route, navigation }) {
               {acting ? <ActivityIndicator color="#080C18" /> : (
                 <>
                   <Ionicons name="checkmark-circle-outline" size={18} color="#080C18" />
-                  <Text style={s.actionBtnTxt}>Complete Ride</Text>
+                  <Text style={s.actionBtnTxt}>{t('activeRideScreen.completeRideButton')}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -573,7 +579,7 @@ export default function ActiveRideScreen({ route, navigation }) {
               activeOpacity={0.85}
             >
               <Ionicons name="home-outline" size={18} color={theme.foreground} />
-              <Text style={[s.actionBtnTxt, { color: theme.foreground }]}>Back to Dashboard</Text>
+              <Text style={[s.actionBtnTxt, { color: theme.foreground }]}>{t('activeRideScreen.backToDashboard')}</Text>
             </TouchableOpacity>
           )}
         </View>

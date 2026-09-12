@@ -9,6 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { useTheme } from '../../context/ThemeContext';
+import { useCurrency } from '../../context/CurrencyContext';
+import { useTranslation } from 'react-i18next';
 import { rideAPI, placesAPI } from '../../services/api';
 import SmartMapView, { Marker } from '../../components/SmartMapView';
 
@@ -83,6 +85,8 @@ const chipS = StyleSheet.create({
 // Each driver already has effectiveFare (route-based, from backend getNearbyDrivers).
 // We show that + bookingFee as the total. No separate estimate call needed.
 const DriverCard = ({ driver, onPress, theme }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const scaleA      = useRef(new Animated.Value(1)).current;
   const effectiveFare = driver.effectiveFare ?? 0;
   const bookingFee    = driver.bookingFee ?? 100;
@@ -108,7 +112,7 @@ const DriverCard = ({ driver, onPress, theme }) => {
         {floorActive && (
           <View style={[dc.rateBadge, { backgroundColor: C.surge }]}>
             <Ionicons name="trending-up" size={9} color="#1a1208" />
-            <Text style={dc.rateBadgeTxt}>DRIVER RATE</Text>
+            <Text style={dc.rateBadgeTxt}>{t('nearbyDrivers.driverRateBadge')}</Text>
           </View>
         )}
         <View style={dc.row}>
@@ -128,10 +132,10 @@ const DriverCard = ({ driver, onPress, theme }) => {
           <View style={dc.fareBlock}>
             {/* Total = effectiveFare + bookingFee — exactly what backend will charge */}
             <Text style={[dc.fareMain, { color: fareColor }]}>
-              ₦{totalFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+              {formatMoney(totalFare)}
             </Text>
             <Text style={[dc.fareBreakdown, { color: theme.hint }]}>
-              fare + ₦{bookingFee} fee
+              fare + {formatMoney(bookingFee)} fee
             </Text>
             <Text style={[dc.etaTxt, { color: theme.hint }]}>~{driver.etaMinutes} min</Text>
           </View>
@@ -180,15 +184,19 @@ const sgS = StyleSheet.create({
 
 // ─── LocationSearchSheet ──────────────────────────────────────────────────────
 const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, theme }) => {
+  const { t } = useTranslation();
   const [query,     setQuery]     = useState('');
   const [results,   setResults]   = useState([]);
   const [loading,   setLoading]   = useState(false);
-  const [tab,       setTab]       = useState('search'); // 'search' | 'map'
-  const [mapPin,    setMapPin]    = useState(null);     // { lat, lng, address }
-  const [geocoding, setGeocoding] = useState(false);
-  const searchTimer = useRef(null);
+  const [tab,          setTab]          = useState('search'); // 'search' | 'map'
+  const [mapCenter,    setMapCenter]    = useState(null);     // { lat, lng } — live center pin
+  const [liveAddress,  setLiveAddress]  = useState('');
+  const [resolvingAddr,setResolvingAddr]= useState(false);
+  const searchTimer  = useRef(null);
+  const geocodeTimer = useRef(null);
   const sessionTokenRef = useRef(newSessionToken());
   const slideA      = useRef(new Animated.Value(height)).current;
+  const pinBounce   = useRef(new Animated.Value(0)).current;
 
   const isPickup = type === 'pickup';
   const accent   = isPickup ? C.brand : C.red;
@@ -201,13 +209,23 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
 
   useEffect(() => {
     if (visible) {
-      setQuery(''); setResults([]); setMapPin(null); setTab('search');
+      setQuery(''); setResults([]); setTab('search');
+      setMapCenter(null); setLiveAddress(''); setResolvingAddr(false);
       sessionTokenRef.current = newSessionToken();
       Animated.spring(slideA, { toValue: 0, tension: 70, friction: 12, useNativeDriver: true }).start();
     } else {
       Animated.timing(slideA, { toValue: height, duration: 220, useNativeDriver: true }).start();
     }
   }, [visible]);
+
+  // Seed the center pin + resolve its address whenever the Map tab becomes active
+  useEffect(() => {
+    if (!visible || tab !== 'map') return;
+    const c = { lat: initialRegion.latitude, lng: initialRegion.longitude };
+    setMapCenter(c);
+    setResolvingAddr(true); setLiveAddress(t('nearbyDrivers.locating'));
+    reverseGeocode(c.lat, c.lng).then(addr => { setLiveAddress(addr); setResolvingAddr(false); });
+  }, [visible, tab]);
 
   const search = (text) => {
     setQuery(text);
@@ -238,18 +256,28 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
     }, 400);
   };
 
-  const handleMapPress = async (e) => {
-    const { latitude: lat, longitude: lng } = e.nativeEvent?.coordinate ?? {};
-    if (!lat || !lng) return;
-    setGeocoding(true);
-    const address = await reverseGeocode(lat, lng);
-    setMapPin({ lat, lng, address });
-    setGeocoding(false);
-  };
+  const onRegionChange = useCallback((region) => {
+    setMapCenter({ lat: region.latitude, lng: region.longitude });
+    setResolvingAddr(true); setLiveAddress(t('nearbyDrivers.locating'));
+    Animated.spring(pinBounce, { toValue: -14, tension: 200, friction: 8, useNativeDriver: true }).start();
+    clearTimeout(geocodeTimer.current);
+  }, [t]);
+
+  const onRegionChangeComplete = useCallback((region) => {
+    Animated.spring(pinBounce, { toValue: 0, tension: 160, friction: 7, useNativeDriver: true }).start();
+    setMapCenter({ lat: region.latitude, lng: region.longitude });
+    clearTimeout(geocodeTimer.current);
+    setResolvingAddr(true);
+    geocodeTimer.current = setTimeout(async () => {
+      const address = await reverseGeocode(region.latitude, region.longitude);
+      setLiveAddress(address);
+      setResolvingAddr(false);
+    }, 400);
+  }, []);
 
   const confirmMapPin = () => {
-    if (!mapPin) return;
-    onSelect({ lat: mapPin.lat, lng: mapPin.lng, description: mapPin.address });
+    if (!mapCenter || !liveAddress || resolvingAddr) return;
+    onSelect({ lat: mapCenter.lat, lng: mapCenter.lng, description: liveAddress });
     onClose();
   };
 
@@ -270,7 +298,7 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
       if (!details) return;
       onSelect({ lat: details.lat, lng: details.lng, description: details.formattedAddress || item.description });
     } catch {
-      Alert.alert('Address error', 'Could not resolve that address. Try the map tab instead.');
+      Alert.alert(t('nearbyDrivers.addressErrorTitle'), t('nearbyDrivers.addressErrorBody'));
     } finally {
       sessionTokenRef.current = newSessionToken();
       onClose();
@@ -325,7 +353,7 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
                 <Ionicons name="search" size={16} color={accent} style={{ marginRight: 8 }} />
                 <TextInput
                   style={[lss.input, { color: theme.foreground }]}
-                  placeholder={isPickup ? 'Search pickup location…' : 'Search drop-off location…'}
+                  placeholder={isPickup ? t('nearbyDrivers.searchPickupPlaceholder') : t('nearbyDrivers.searchDropoffPlaceholder')}
                   placeholderTextColor={theme.hint}
                   value={query}
                   onChangeText={search}
@@ -357,53 +385,50 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
                   </TouchableOpacity>
                 ))}
                 {results.length === 0 && query.length >= 3 && !loading && (
-                  <Text style={[lss.noResults, { color: theme.hint }]}>No results found</Text>
+                  <Text style={[lss.noResults, { color: theme.hint }]}>{t('nearbyDrivers.noResultsFound')}</Text>
                 )}
               </ScrollView>
             </>
           ) : (
-            /* ── Map tab ── */
+            /* ── Map tab — fixed center pin, drag the map underneath ── */
             <View style={{ flex: 1 }}>
               <Text style={[lss.mapHint, { color: theme.hint }]}>
-                Tap anywhere on the map to place a pin
+                {t('nearbyDrivers.mapHint')}
               </Text>
               <View style={{ flex: 1 }}>
                 <SmartMapView
                   style={StyleSheet.absoluteFillObject}
                   initialRegion={initialRegion}
                   showsUserLocation
-                  onPress={handleMapPress}
-                >
-                  {mapPin && (
-                    <Marker
-                      coordinate={{ latitude: mapPin.lat, longitude: mapPin.lng }}
-                      pinColor={accent}
-                    />
-                  )}
-                </SmartMapView>
-                {geocoding && (
-                  <View style={lss.geocodingOverlay}>
-                    <ActivityIndicator color={accent} />
-                    <Text style={[lss.geocodingTxt, { color: theme.foreground }]}>Getting address…</Text>
-                  </View>
-                )}
-              </View>
-              {mapPin && (
-                <View style={[lss.mapConfirm, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[lss.mapConfirmLabel, { color: theme.hint }]}>SELECTED</Text>
-                    <Text style={[lss.mapConfirmAddr, { color: theme.foreground }]} numberOfLines={2}>
-                      {mapPin.address}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[lss.mapConfirmBtn, { backgroundColor: accent }]}
-                    onPress={confirmMapPin}
-                  >
-                    <Text style={lss.mapConfirmBtnTxt}>Confirm</Text>
-                  </TouchableOpacity>
+                  onRegionChange={onRegionChange}
+                  onRegionChangeComplete={onRegionChangeComplete}
+                />
+                <View style={lss.crosshairWrap} pointerEvents="none">
+                  <View style={[lss.pinShadow, { backgroundColor: accent + '40' }]} />
+                  <Animated.View style={[lss.pinAnimWrap, { transform: [{ translateY: pinBounce }] }]}>
+                    <View style={[lss.pinCircle, { backgroundColor: accent, shadowColor: accent }]}>
+                      <Ionicons name={isPickup ? 'radio-button-on' : 'location'} size={20} color="#FFFFFF" />
+                    </View>
+                    <View style={[lss.pinPoint, { borderTopColor: accent }]} />
+                  </Animated.View>
                 </View>
-              )}
+              </View>
+              <View style={[lss.mapConfirm, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[lss.mapConfirmLabel, { color: theme.hint }]}>{t('nearbyDrivers.selected')}</Text>
+                  <Text style={[lss.mapConfirmAddr, { color: theme.foreground }]} numberOfLines={2}>
+                    {resolvingAddr ? t('nearbyDrivers.locating') : (liveAddress || t('nearbyDrivers.moveMapToSelect'))}
+                  </Text>
+                </View>
+                {resolvingAddr && <ActivityIndicator color={accent} size="small" style={{ marginRight: 8 }} />}
+                <TouchableOpacity
+                  style={[lss.mapConfirmBtn, { backgroundColor: accent, opacity: (resolvingAddr || !liveAddress) ? 0.6 : 1 }]}
+                  onPress={confirmMapPin}
+                  disabled={resolvingAddr || !liveAddress}
+                >
+                  <Text style={lss.mapConfirmBtnTxt}>{t('nearbyDrivers.confirm')}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </Animated.View>
@@ -438,10 +463,17 @@ const lss = StyleSheet.create({
   mapConfirmAddr:  { fontSize: 13, fontWeight: '600', lineHeight: 18 },
   mapConfirmBtn:   { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14 },
   mapConfirmBtnTxt:{ fontSize: 14, fontWeight: '800', color: '#000' },
+  crosshairWrap:   { position: 'absolute', top: '50%', left: '50%', marginTop: -56, marginLeft: -20, alignItems: 'center', zIndex: 50 },
+  pinShadow:       { width: 16, height: 8, borderRadius: 8, marginTop: 4 },
+  pinAnimWrap:     { alignItems: 'center', position: 'absolute', bottom: 8 },
+  pinCircle:       { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 8, elevation: 8 },
+  pinPoint:        { width: 0, height: 0, borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 10, borderLeftColor: 'transparent', borderRightColor: 'transparent' },
 });
 
 // ─── ConfirmSheet ─────────────────────────────────────────────────────────────
 const ConfirmSheet = ({ driver, routeParams, onClose, onSuccess, theme }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const [requesting,     setRequesting]     = useState(false);
   const [pickupAddress,  setPickupAddress]  = useState(routeParams.pickupAddress  ?? '');
   const [pickupLat,      setPickupLat]      = useState(routeParams.pickupLat      ?? null);
@@ -503,10 +535,10 @@ const ConfirmSheet = ({ driver, routeParams, onClose, onSuccess, theme }) => {
 
   const handleRequest = async () => {
     if (!pickupAddress || pickupLat == null || pickupLng == null) {
-      Alert.alert('Missing Pickup', 'Please set a pickup location.'); return;
+      Alert.alert(t('nearbyDrivers.missingPickupTitle'), t('nearbyDrivers.missingPickupBody')); return;
     }
     if (!dropoffAddress || dropoffLat == null || dropoffLng == null) {
-      Alert.alert('Missing Drop-off', 'Please set a drop-off location.'); return;
+      Alert.alert(t('nearbyDrivers.missingDropoffTitle'), t('nearbyDrivers.missingDropoffBody')); return;
     }
     setRequesting(true);
     try {
@@ -526,26 +558,26 @@ const ConfirmSheet = ({ driver, routeParams, onClose, onSuccess, theme }) => {
       onSuccess(res?.data?.ride ?? res?.ride);
     } catch (err) {
       Alert.alert(
-        'Could not request',
-        err?.response?.data?.message ?? err?.message ?? err?.error ?? 'Please try again.'
+        t('nearbyDrivers.couldNotRequestTitle'),
+        err?.response?.data?.message ?? err?.message ?? err?.error ?? t('nearbyDrivers.pleaseTryAgain')
       );
       setRequesting(false);
     }
   };
 
-  // Location field row — search only (no map pin on this screen, no map available)
+  // Location field row — opens LocationSearchSheet, which offers both search and draggable map-pin tabs
   const LocationField = ({ label, value, accent: ac, onSearch }) => (
     <View style={[lfS.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
       <View style={[lfS.dot, { backgroundColor: ac }]} />
       <View style={{ flex: 1 }}>
         <Text style={[lfS.label, { color: theme.hint }]}>{label}</Text>
         <Text style={[lfS.addr, { color: value ? theme.foreground : theme.hint }]} numberOfLines={2}>
-          {value || 'Tap to set'}
+          {value || t('nearbyDrivers.tapToSet')}
         </Text>
       </View>
       <TouchableOpacity style={[lfS.btn, { backgroundColor: ac + '15', borderColor: ac + '40' }]} onPress={onSearch}>
         <Ionicons name="pencil-outline" size={13} color={ac} />
-        <Text style={[lfS.btnTxt, { color: ac }]}>Change</Text>
+        <Text style={[lfS.btnTxt, { color: ac }]}>{t('nearbyDrivers.change')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -592,64 +624,64 @@ const ConfirmSheet = ({ driver, routeParams, onClose, onSuccess, theme }) => {
               </View>
 
               {/* Editable pickup & dropoff */}
-              <Text style={[csS.sectionLabel, { color: theme.hint }]}>ROUTE</Text>
+              <Text style={[csS.sectionLabel, { color: theme.hint }]}>{t('nearbyDrivers.route')}</Text>
               <LocationField
-                label="PICKUP"
+                label={t('nearbyDrivers.pickup')}
                 value={pickupAddress}
                 accent={C.brand}
                 onSearch={() => setSearchType('pickup')}
               />
               <View style={[csS.connector, { borderColor: theme.border }]} />
               <LocationField
-                label="DROP-OFF"
+                label={t('nearbyDrivers.dropoff')}
                 value={dropoffAddress}
                 accent={C.red}
                 onSearch={() => setSearchType('dropoff')}
               />
 
               {/* Fare breakdown — all from driver object, no assumptions */}
-              <Text style={[csS.sectionLabel, { color: theme.hint, marginTop: 16 }]}>FARE BREAKDOWN</Text>
+              <Text style={[csS.sectionLabel, { color: theme.hint, marginTop: 16 }]}>{t('nearbyDrivers.fareBreakdown')}</Text>
               <View style={[csS.fareCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
 
                 <View style={csS.fareRow}>
-                  <Text style={[csS.fareLabel, { color: theme.hint }]}>Route distance</Text>
+                  <Text style={[csS.fareLabel, { color: theme.hint }]}>{t('nearbyDrivers.routeDistance')}</Text>
                   <Text style={[csS.fareVal, { color: theme.foreground }]}>
                     {driver.routeKm?.toFixed(2) ?? '—'} km
                   </Text>
                 </View>
 
                 <View style={csS.fareRow}>
-                  <Text style={[csS.fareLabel, { color: theme.hint }]}>Ride fare</Text>
+                  <Text style={[csS.fareLabel, { color: theme.hint }]}>{t('nearbyDrivers.rideFare')}</Text>
                   <Text style={[csS.fareVal, { color: theme.foreground }]}>
-                    ₦{effectiveFare.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                    {formatMoney(effectiveFare)}
                   </Text>
                 </View>
 
                 {floorActive && (
                   <View style={csS.fareRow}>
-                    <Text style={[csS.fareLabel, { color: C.surge }]}>Floor price applied (+{Math.round((driver.floorMultiplier - 1) * 100)}%)</Text>
+                    <Text style={[csS.fareLabel, { color: C.surge }]}>{t('nearbyDrivers.floorPriceApplied', { percent: Math.round((driver.floorMultiplier - 1) * 100) })}</Text>
                     <Ionicons name="trending-up" size={13} color={C.surge} />
                   </View>
                 )}
 
                 <View style={csS.fareRow}>
-                  <Text style={[csS.fareLabel, { color: theme.hint }]}>Booking fee</Text>
-                  <Text style={[csS.fareVal, { color: theme.foreground }]}>₦{bookingFee}</Text>
+                  <Text style={[csS.fareLabel, { color: theme.hint }]}>{t('nearbyDrivers.bookingFee')}</Text>
+                  <Text style={[csS.fareVal, { color: theme.foreground }]}>{formatMoney(bookingFee)}</Text>
                 </View>
 
                 <View style={[csS.fareSep, { backgroundColor: theme.border }]} />
 
                 <View style={csS.fareRow}>
-                  <Text style={[csS.fareLabel, { color: theme.foreground, fontWeight: '700' }]}>Estimated total</Text>
+                  <Text style={[csS.fareLabel, { color: theme.foreground, fontWeight: '700' }]}>{t('nearbyDrivers.estimatedTotal')}</Text>
                   <Text style={[csS.fareTotal, { color: accent }]}>
-                    ₦{estimatedTotal.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                    {formatMoney(estimatedTotal)}
                   </Text>
                 </View>
 
                 <View style={[csS.fareNote, { backgroundColor: theme.background, borderColor: theme.border }]}>
                   <Ionicons name="information-circle-outline" size={13} color={theme.hint} />
                   <Text style={[csS.fareNoteTxt, { color: theme.hint }]}>
-                    Final fare recalculated at trip end based on actual distance and time.
+                    {t('nearbyDrivers.fareRecalcNote')}
                   </Text>
                 </View>
               </View>
@@ -658,22 +690,22 @@ const ConfirmSheet = ({ driver, routeParams, onClose, onSuccess, theme }) => {
                 <View style={[csS.surgeNote, { backgroundColor: C.red + '10', borderColor: C.red + '30' }]}>
                   <Ionicons name="flash" size={13} color={C.red} />
                   <Text style={[csS.surgeNoteTxt, { color: C.red }]}>
-                    {driver.surgeLabel} — surge pricing is active
+                    {t('nearbyDrivers.surgePricingActive', { label: driver.surgeLabel })}
                   </Text>
                 </View>
               )}
 
               <View style={csS.chipsRow}>
                 <Chip icon={vehicleIcon}      label={driver.vehicleType}                              color={C.purple}   theme={theme} />
-                <Chip icon="navigate-outline" label={`${driver.distanceKm} km away`}                  color={theme.hint} theme={theme} />
-                <Chip icon="time-outline"     label={`~${driver.etaMinutes} min`}                     color={theme.hint} theme={theme} />
-                <Chip icon="star-outline"     label={`${driver.totalRides} rides`}                    color={theme.hint} theme={theme} />
+                <Chip icon="navigate-outline" label={t('nearbyDrivers.distanceAway', { km: driver.distanceKm })}                  color={theme.hint} theme={theme} />
+                <Chip icon="time-outline"     label={t('nearbyDrivers.etaMinutes', { min: driver.etaMinutes })}                     color={theme.hint} theme={theme} />
+                <Chip icon="star-outline"     label={t('nearbyDrivers.totalRides', { count: driver.totalRides })}                    color={theme.hint} theme={theme} />
               </View>
             </ScrollView>
 
             <View style={[csS.cta, { borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
               <TouchableOpacity style={[csS.back, { borderColor: theme.border }]} onPress={closeSheet} disabled={requesting}>
-                <Text style={[csS.backTxt, { color: theme.hint }]}>Back</Text>
+                <Text style={[csS.backTxt, { color: theme.hint }]}>{t('nearbyDrivers.back')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[csS.confirm, { backgroundColor: accent, opacity: requesting ? 0.72 : 1 }]}
@@ -685,7 +717,7 @@ const ConfirmSheet = ({ driver, routeParams, onClose, onSuccess, theme }) => {
                   ? <ActivityIndicator color="#000" size="small" />
                   : (<>
                       <Ionicons name="checkmark-circle" size={19} color="#000" />
-                      <Text style={csS.confirmTxt}>Request Driver</Text>
+                      <Text style={csS.confirmTxt}>{t('nearbyDrivers.requestDriver')}</Text>
                     </>)
                 }
               </TouchableOpacity>
@@ -759,6 +791,7 @@ const csS = StyleSheet.create({
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function NearbyDriversScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
+  const { t } = useTranslation();
   const insets          = useSafeAreaInsets();
   const params          = route.params ?? {};
 
@@ -818,7 +851,7 @@ export default function NearbyDriversScreen({ route, navigation }) {
       // computed by the backend from the actual pickup→dropoff distance.
       setDrivers(res?.data?.drivers ?? []);
     } catch (err) {
-      Alert.alert('Could not load drivers', err?.message ?? 'Please try again.');
+      Alert.alert(t('nearbyDrivers.couldNotLoadDriversTitle'), err?.message ?? t('nearbyDrivers.pleaseTryAgain'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -876,9 +909,9 @@ export default function NearbyDriversScreen({ route, navigation }) {
             activeOpacity={0.8}
           >
             <View style={{ flex: 1 }}>
-              <Text style={[lstrip.fieldLabel, { color: C.brand }]}>PICKUP</Text>
+              <Text style={[lstrip.fieldLabel, { color: C.brand }]}>{t('nearbyDrivers.pickup')}</Text>
               <Text style={[lstrip.fieldAddr, { color: pickupLat ? theme.foreground : theme.hint }]} numberOfLines={1}>
-                {pickupAddress || 'Set pickup location'}
+                {pickupAddress || t('nearbyDrivers.setPickupLocation')}
               </Text>
             </View>
             <Ionicons name="pencil-outline" size={13} color={C.brand} />
@@ -890,9 +923,9 @@ export default function NearbyDriversScreen({ route, navigation }) {
             activeOpacity={0.8}
           >
             <View style={{ flex: 1 }}>
-              <Text style={[lstrip.fieldLabel, { color: C.red }]}>DROP-OFF</Text>
+              <Text style={[lstrip.fieldLabel, { color: C.red }]}>{t('nearbyDrivers.dropoff')}</Text>
               <Text style={[lstrip.fieldAddr, { color: dropoffLat ? theme.foreground : theme.hint }]} numberOfLines={1}>
-                {dropoffAddress || 'Set drop-off location'}
+                {dropoffAddress || t('nearbyDrivers.setDropoffLocation')}
               </Text>
             </View>
             <Ionicons name="pencil-outline" size={13} color={C.red} />
@@ -915,8 +948,8 @@ export default function NearbyDriversScreen({ route, navigation }) {
             <Ionicons name="arrow-back" size={18} color={theme.foreground} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { color: theme.foreground }]}>Choose a Driver</Text>
-            <Text style={[s.headerSub, { color: theme.hint }]}>Prices shown include booking fee</Text>
+            <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('nearbyDrivers.chooseADriver')}</Text>
+            <Text style={[s.headerSub, { color: theme.hint }]}>{t('nearbyDrivers.pricesIncludeBookingFee')}</Text>
           </View>
           <TouchableOpacity
             style={[s.iconBtn, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}
@@ -965,12 +998,12 @@ export default function NearbyDriversScreen({ route, navigation }) {
                 <View style={[s.emptyIcon, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                   <Ionicons name="car-outline" size={36} color={theme.hint} />
                 </View>
-                <Text style={[s.emptyTitle, { color: theme.foreground }]}>No drivers nearby</Text>
+                <Text style={[s.emptyTitle, { color: theme.foreground }]}>{t('nearbyDrivers.noDriversNearby')}</Text>
                 <Text style={[s.emptySub, { color: theme.hint }]}>
                   {!dropoffLat ? 'Set a drop-off location to see accurate fares.' : 'Pull down to refresh or try a larger area.'}
                 </Text>
                 <TouchableOpacity style={[s.retryBtn, { backgroundColor: C.brand }]} onPress={onRefresh}>
-                  <Text style={s.retryTxt}>Refresh</Text>
+                  <Text style={s.retryTxt}>{t('nearbyDrivers.refresh')}</Text>
                 </TouchableOpacity>
               </View>
             }

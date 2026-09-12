@@ -10,6 +10,7 @@ const shieldService = require('../services/shield.service');
 const commissionService = require('../services/commission.service');
 const cashbackService = require('../services/cashback.service');
 const { logger } = require('../utils/logger');
+const { getCurrencyForUserId } = require('../services/country.service');
 
 exports.getFeeEstimate = async (req, res) => {
   const { pickupLat, pickupLng, dropoffLat, dropoffLng, packageWeight } = req.query;
@@ -23,7 +24,8 @@ exports.getFeeEstimate = async (req, res) => {
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
 
-  const feeResult         = await fareEngine.calculateDeliveryFee(distance, packageWeight ? parseFloat(packageWeight) : 0);
+  const deliveryCurrency  = await getCurrencyForUserId(req.user.id);
+  const feeResult         = await fareEngine.calculateDeliveryFee(distance, packageWeight ? parseFloat(packageWeight) : 0, deliveryCurrency);
   const estimatedDuration = Math.ceil(distance / 0.4);
 
   res.status(200).json({
@@ -35,7 +37,7 @@ exports.getFeeEstimate = async (req, res) => {
       distanceCharge:    feeResult.distanceCharge,
       weightCharge:      feeResult.weightCharge,
       estimatedDuration,
-      currency:          'NGN',
+      currency:          feeResult.currency,
     }
   });
 };
@@ -60,7 +62,8 @@ exports.requestDelivery = async (req, res) => {
 
   const distance = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
 
-  const feeResult    = await fareEngine.calculateDeliveryFee(distance, packageWeight || 0);
+  const deliveryCurrency = await getCurrencyForUserId(req.user.id);
+  const feeResult    = await fareEngine.calculateDeliveryFee(distance, packageWeight || 0, deliveryCurrency);
   let   estimatedFee = feeResult.estimatedFee;
 
   let partnerFloorResult = null;
@@ -106,6 +109,7 @@ exports.requestDelivery = async (req, res) => {
       dropoffAddress, dropoffLat, dropoffLng, dropoffContact,
       packageDescription, packageWeight, packageValue,
       distance, estimatedFee, notes,
+      currency: deliveryCurrency,
       promoCode: appliedPromo?.code || null,
       status: 'PENDING'
     },
@@ -315,7 +319,7 @@ exports.completeDelivery = async (req, res) => {
         userId:         delivery.customerId,
         deliveryId:     id,
         amount:         finalFee,
-        currency:       'NGN',
+        currency:       delivery.currency,
         method:         paymentMethod,
         status:         paymentMethod === 'WALLET' ? 'COMPLETED' : 'PENDING',
         transactionId:  `DEL-${id}-${Date.now()}`,
@@ -366,6 +370,7 @@ exports.completeDelivery = async (req, res) => {
     commissionAmount: platformFee,
     earnerAmount:     partnerEarnings,
     surgeMultiplier:  1.0,
+    currency:         delivery.currency,
   }).catch(err => {
     console.error('[commission] Failed to write ledger for delivery', id, err.message);
   });
@@ -563,8 +568,9 @@ exports.getNearbyPartners = async (req, res) => {
 
   // Compute fee per partner using real route distance (or fallback 3 km)
   const estimateKm = routeKm ?? 3;
+  const requesterCurrency = await getCurrencyForUserId(req.user.id); // ← looked up once, not per partner
   const formatted  = await Promise.all(nearby.map(async (p) => {
-    const feeResult       = await fareEngine.calculateDeliveryFee(estimateKm, 0);
+    const feeResult       = await fareEngine.calculateDeliveryFee(estimateKm, 0, requesterCurrency);
     const floorMultiplier = p.floorMultiplier;
     let   effectiveFee    = feeResult.estimatedFee;
 

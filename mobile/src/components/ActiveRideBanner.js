@@ -4,21 +4,23 @@ import {
   View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 const { width } = Dimensions.get('window');
 const DA = '#FFB800';
 
-const STATUS_LABEL = {
-  REQUESTED:   { label: 'Waiting for driver...',  icon: 'time-outline',     color: '#4E8DBD' },
-  ACCEPTED:    { label: 'Driver is on the way',   icon: 'car-outline',      color: DA        },
-  ARRIVED:     { label: 'Driver has arrived!',    icon: 'location-outline', color: '#A78BFA' },
-  IN_PROGRESS: { label: 'Ride in progress',       icon: 'navigate-outline', color: '#5DAA72' },
+const STATUS_LABEL_KEYS = {
+  REQUESTED:   { labelKey: 'activeRideBanner.statusWaitingForDriver', icon: 'time-outline',     color: '#4E8DBD' },
+  ACCEPTED:    { labelKey: 'activeRideBanner.statusDriverOnWay',      icon: 'car-outline',      color: DA        },
+  ARRIVED:     { labelKey: 'activeRideBanner.statusDriverArrived',   icon: 'location-outline', color: '#A78BFA' },
+  IN_PROGRESS: { labelKey: 'activeRideBanner.statusRideInProgress',       icon: 'navigate-outline', color: '#5DAA72' },
 };
 
 export default function ActiveRideBanner({ ride, role = 'CUSTOMER', onPress, onCancel, theme }) {
+  const { t } = useTranslation();
   if (!ride) return null;
 
-  const cfg    = STATUS_LABEL[ride.status] ?? STATUS_LABEL.ACCEPTED;
+  const cfg    = STATUS_LABEL_KEYS[ride.status] ?? STATUS_LABEL_KEYS.ACCEPTED;
   const pulseA = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -47,10 +49,10 @@ export default function ActiveRideBanner({ ride, role = 'CUSTOMER', onPress, onC
         {/* Text */}
         <View style={{ flex: 1 }}>
           <Text style={[s.title, { color: cfg.color }]}>
-            {role === 'DRIVER' ? 'Active Ride' : 'Your Ride'}
+            {role === 'DRIVER' ? t('activeRideBanner.activeRide') : t('activeRideBanner.yourRide')}
           </Text>
           <Text style={[s.sub, { color: theme?.foreground ?? '#fff' }]} numberOfLines={1}>
-            {cfg.label}
+            {t(cfg.labelKey)}
             {ride.pickupAddress ? ` • ${ride.pickupAddress.split('(')[0].trim()}` : ''}
           </Text>
         </View>
@@ -66,7 +68,7 @@ export default function ActiveRideBanner({ ride, role = 'CUSTOMER', onPress, onC
           onPress={onCancel}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Text style={s.cancelTxt}>Cancel</Text>
+          <Text style={s.cancelTxt}>{t('activeRideBanner.cancel')}</Text>
         </TouchableOpacity>
       )}
     </View>

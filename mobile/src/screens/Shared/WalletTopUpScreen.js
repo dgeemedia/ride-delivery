@@ -9,6 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+import { useCurrency } from '../../context/CurrencyContext';
+import { useTranslation } from 'react-i18next';
 import { walletAPI } from '../../services/api';
 
 const { height } = Dimensions.get('window');
@@ -77,14 +79,14 @@ const PROVIDERS = [
   {
     id:      'paystack',
     name:    'Paystack',
-    tagline: 'Most popular in Nigeria',
+    taglineKey: 'walletTopUp.taglinePaystack',
     color:   '#00C3B5',
     Mark:    PaystackMark,
   },
   {
     id:      'flutterwave',
     name:    'Flutterwave',
-    tagline: 'Pan-African payments',
+    taglineKey: 'walletTopUp.taglineFlutterwave',
     color:   '#F5A623',
     Mark:    FlutterwaveMark,
   },
@@ -92,6 +94,8 @@ const PROVIDERS = [
 
 export default function WalletTopUpScreen({ navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney, currencySymbol } = useCurrency();
+  const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const accent          = theme.accent;
 
@@ -129,26 +133,26 @@ export default function WalletTopUpScreen({ navigation }) {
     const res       = await walletAPI.initializeTopUp({ amount: num });
     const authUrl   = res?.data?.authorizationUrl ?? res?.data?.data?.authorization_url;
     const reference = res?.data?.reference;
-    if (!authUrl) throw new Error('No payment URL returned from Paystack');
+    if (!authUrl) throw new Error(t('walletTopUp.noPaystackUrl'));
 
     const verify = async (ref) => {
       try {
         await walletAPI.verifyPaystackTopup({ reference: ref });
-        Alert.alert('Success! 🎉', 'Your wallet has been credited.', [
-          { text: 'OK', onPress: () => navigation.goBack() },
+        Alert.alert(t('walletTopUp.successTitle'), t('walletTopUp.successMsg'), [
+          { text: t('deleteAccount.ok'), onPress: () => navigation.goBack() },
         ]);
       } catch (e) {
-        Alert.alert('Verification Failed', e?.message ?? 'Contact support if payment was deducted.');
+        Alert.alert(t('walletTopUp.verificationFailed'), e?.message ?? t('walletTopUp.contactSupport'));
       }
     };
 
     await Linking.openURL(authUrl);
     Alert.alert(
-      'Payment Initiated 🚀',
-      `Complete the ₦${formatNGN(num)} payment in your browser, then tap Verify.`,
+      t('walletTopUp.paymentInitiated'),
+      t('walletTopUp.completeInBrowser', { amount: formatMoney(num) }),
       [
-        { text: 'Verify Payment', onPress: () => verify(reference) },
-        { text: 'Later',          onPress: () => navigation.goBack() },
+        { text: t('walletTopUp.verifyPayment'), onPress: () => verify(reference) },
+        { text: t('walletTopUp.later'),          onPress: () => navigation.goBack() },
       ]
     );
   };
@@ -169,33 +173,33 @@ export default function WalletTopUpScreen({ navigation }) {
       res?.data?.tx_ref   ??
       res?.txRef;
 
-    if (!paymentLink) throw new Error('No payment link returned from Flutterwave');
+    if (!paymentLink) throw new Error(t('walletTopUp.noFlutterwaveLink'));
 
     await Linking.openURL(paymentLink);
 
     const verify = async (transactionId) => {
       if (!transactionId?.trim()) {
-        Alert.alert('Invalid ID', 'Please enter your Flutterwave transaction ID.');
+        Alert.alert(t('walletTopUp.invalidId'), t('walletTopUp.enterTransactionId'));
         return;
       }
       try {
         await walletAPI.verifyFlutterwaveTopup({ transactionId: transactionId.trim() });
-        Alert.alert('Success! 🎉', 'Your wallet has been credited.', [
-          { text: 'OK', onPress: () => navigation.goBack() },
+        Alert.alert(t('walletTopUp.successTitle'), t('walletTopUp.successMsg'), [
+          { text: t('deleteAccount.ok'), onPress: () => navigation.goBack() },
         ]);
       } catch (e) {
-        Alert.alert('Verification Failed', e?.message ?? 'Contact support if payment was deducted.');
+        Alert.alert(t('walletTopUp.verificationFailed'), e?.message ?? t('walletTopUp.contactSupport'));
       }
     };
 
     if (Platform.OS === 'ios') {
       // iOS supports Alert.prompt for inline text input
       Alert.prompt(
-        'Verify Flutterwave Payment',
-        `After completing your ₦${formatNGN(num)} payment, paste the transaction ID from your Flutterwave receipt:`,
+        t('walletTopUp.verifyFlutterwaveTitle'),
+        t('walletTopUp.pasteTransactionId', { amount: formatMoney(num) }),
         [
-          { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
-          { text: 'Verify', onPress: (id) => verify(id) },
+          { text: t('common.cancel'), style: 'cancel', onPress: () => navigation.goBack() },
+          { text: t('walletTopUp.verify'), onPress: (id) => verify(id) },
         ],
         'plain-text',
         txRef ?? ''
@@ -203,9 +207,9 @@ export default function WalletTopUpScreen({ navigation }) {
     } else {
       // Android: webhook handles crediting; inform the user
       Alert.alert(
-        'Payment Opened 🚀',
-        `Complete the ₦${formatNGN(num)} payment in your browser.\n\nYour wallet will be credited automatically. If not updated within 5 minutes, contact support with ref: ${txRef ?? 'N/A'}`,
-        [{ text: 'Done', onPress: () => navigation.goBack() }]
+        t('walletTopUp.paymentOpened'),
+        t('walletTopUp.androidCompleteMsg', { amount: formatMoney(num), ref: txRef ?? 'N/A' }),
+        [{ text: t('walletTopUp.done'), onPress: () => navigation.goBack() }]
       );
     }
   };
@@ -214,16 +218,16 @@ export default function WalletTopUpScreen({ navigation }) {
   const handleTopUp = async () => {
     Keyboard.dismiss();
     const num = parseFloat(amount);
-    if (!num || num < limits.min) { shake(); Alert.alert('Minimum amount', `Please enter at least ₦${formatNGN(limits.min)}.`); return; }
-    if (num > limits.max)         { shake(); Alert.alert('Maximum exceeded', `Maximum top-up is ₦${formatNGN(limits.max)}.`); return; }
+    if (!num || num < limits.min) { shake(); Alert.alert(t('walletTopUp.minimumAmount'), t('walletTopUp.enterAtLeast', { amount: formatMoney(limits.min) })); return; }
+    if (num > limits.max)         { shake(); Alert.alert(t('walletTopUp.maximumExceeded'), t('walletTopUp.maxTopUpIs', { amount: formatMoney(limits.max) })); return; }
 
     setLoading(true);
     try {
       provider === 'paystack' ? await handlePaystack(num) : await handleFlutterwave(num);
     } catch (err) {
       Alert.alert(
-        'Top Up Failed',
-        err?.response?.data?.message ?? err?.message ?? 'Could not initialize payment. Please try again.'
+        t('walletTopUp.topUpFailed'),
+        err?.response?.data?.message ?? err?.message ?? t('walletTopUp.initErrorMsg')
       );
     } finally {
       setLoading(false);
@@ -243,8 +247,8 @@ export default function WalletTopUpScreen({ navigation }) {
           <Ionicons name="arrow-back" size={18} color={theme.foreground} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={[s.headerTitle, { color: theme.foreground }]}>Top Up Wallet</Text>
-          <Text style={[s.headerSub, { color: theme.hint }]}>via {activeProvider.name}</Text>
+          <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('walletTopUp.headerTitle')}</Text>
+          <Text style={[s.headerSub, { color: theme.hint }]}>{t('walletTopUp.via', { provider: activeProvider.name })}</Text>
         </View>
         <activeProvider.Mark size={34} />
       </View>
@@ -253,7 +257,7 @@ export default function WalletTopUpScreen({ navigation }) {
         <ScrollView style={{ flex: 1 }} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" bounces>
 
           {/* ── Provider selector ── */}
-          <Text style={[s.sectionLabel, { color: theme.hint }]}>PAYMENT PROVIDER</Text>
+          <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('walletTopUp.paymentProvider')}</Text>
           <View style={s.providerRow}>
             {PROVIDERS.map(p => {
               const selected = provider === p.id;
@@ -266,7 +270,7 @@ export default function WalletTopUpScreen({ navigation }) {
                 >
                   <p.Mark size={42} />
                   <Text style={[s.providerName, { color: selected ? p.color : theme.foreground }]}>{p.name}</Text>
-                  <Text style={[s.providerTagline, { color: theme.hint }]} numberOfLines={1}>{p.tagline}</Text>
+                  <Text style={[s.providerTagline, { color: theme.hint }]} numberOfLines={1}>{t(p.taglineKey)}</Text>
                   {selected && (
                     <View style={[s.providerCheck, { backgroundColor: p.color }]}>
                       <Ionicons name="checkmark" size={10} color="#fff" />
@@ -281,22 +285,22 @@ export default function WalletTopUpScreen({ navigation }) {
           <View style={[s.infoCard, { backgroundColor: accent + '0D', borderColor: accent + '30' }]}>
             <Ionicons name="information-circle-outline" size={18} color={accent} />
             <View style={{ flex: 1 }}>
-              <Text style={[s.infoTitle, { color: accent }]}>Why top up?</Text>
-              <Text style={[s.infoBody, { color: theme.hint }]}>Use your wallet for faster, cashless payments on every ride and delivery.</Text>
+              <Text style={[s.infoTitle, { color: accent }]}>{t('walletTopUp.whyTopUp')}</Text>
+              <Text style={[s.infoBody, { color: theme.hint }]}>{t('walletTopUp.whyTopUpBody')}</Text>
             </View>
           </View>
 
           {/* ── Limit hint ── */}
           <View style={[s.limitHint, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
             <Ionicons name="information-circle-outline" size={14} color={theme.hint} />
-            <Text style={[s.limitHintTxt, { color: theme.hint }]}>Min: ₦{formatNGN(limits.min)} • Max: ₦{formatNGN(limits.max)} per transaction</Text>
+            <Text style={[s.limitHintTxt, { color: theme.hint }]}>{t('walletTopUp.limitHint', { min: formatMoney(limits.min), max: formatMoney(limits.max) })}</Text>
           </View>
 
           {/* ── Amount input ── */}
-          <Text style={[s.sectionLabel, { color: theme.hint }]}>ENTER AMOUNT</Text>
+          <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('walletTopUp.enterAmount')}</Text>
           <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
             <View style={[s.inputCard, { backgroundColor: theme.backgroundAlt, borderColor: amtNum > 0 ? accent + '80' : theme.border }]}>
-              <Text style={[s.currency, { color: accent }]}>₦</Text>
+              <Text style={[s.currency, { color: accent }]}>{currencySymbol}</Text>
               <TextInput
                 style={[s.input, { color: theme.foreground }]}
                 value={amount}
@@ -317,7 +321,7 @@ export default function WalletTopUpScreen({ navigation }) {
           </Animated.View>
 
           {/* ── Quick amounts ── */}
-          <Text style={[s.sectionLabel, { color: theme.hint }]}>QUICK SELECT</Text>
+          <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('walletTopUp.quickSelect')}</Text>
           <View style={s.quickGrid}>
             {QUICK_AMOUNTS.map(q => {
               const selected     = parseFloat(amount) === q;
@@ -329,7 +333,7 @@ export default function WalletTopUpScreen({ navigation }) {
                   onPress={() => withinLimits && setAmount(String(q))}
                   disabled={!withinLimits}
                 >
-                  <Text style={[s.quickTxt, { color: selected ? theme.accentFg : theme.foreground }]}>₦{formatNGN(q)}</Text>
+                  <Text style={[s.quickTxt, { color: selected ? theme.accentFg : theme.foreground }]}>{formatMoney(q)}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -339,17 +343,17 @@ export default function WalletTopUpScreen({ navigation }) {
           {amtNum >= limits.min && (
             <View style={[s.breakdownCard, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <View style={s.breakdownRow}>
-                <Text style={[s.breakdownLbl, { color: theme.hint }]}>Amount</Text>
-                <Text style={[s.breakdownVal, { color: theme.foreground }]}>₦{formatNGN(amtNum)}</Text>
+                <Text style={[s.breakdownLbl, { color: theme.hint }]}>{t('walletTopUp.amount')}</Text>
+                <Text style={[s.breakdownVal, { color: theme.foreground }]}>{formatMoney(amtNum)}</Text>
               </View>
               <View style={s.breakdownRow}>
-                <Text style={[s.breakdownLbl, { color: theme.hint }]}>Processing fee</Text>
-                <Text style={[s.breakdownVal, { color: theme.accent }]}>FREE</Text>
+                <Text style={[s.breakdownLbl, { color: theme.hint }]}>{t('walletTopUp.processingFee')}</Text>
+                <Text style={[s.breakdownVal, { color: theme.accent }]}>{t('walletTopUp.free')}</Text>
               </View>
               <View style={[s.breakdownDivider, { backgroundColor: theme.border }]} />
               <View style={s.breakdownRow}>
-                <Text style={[s.breakdownLbl, { color: accent, fontWeight: '800' }]}>Wallet credit</Text>
-                <Text style={[s.breakdownVal, { color: accent, fontWeight: '900', fontSize: 16 }]}>₦{formatNGN(amtNum)}</Text>
+                <Text style={[s.breakdownLbl, { color: accent, fontWeight: '800' }]}>{t('walletTopUp.walletCredit')}</Text>
+                <Text style={[s.breakdownVal, { color: accent, fontWeight: '900', fontSize: 16 }]}>{formatMoney(amtNum)}</Text>
               </View>
             </View>
           )}
@@ -357,7 +361,7 @@ export default function WalletTopUpScreen({ navigation }) {
           {/* ── Security ── */}
           <View style={[s.securityRow, { borderColor: theme.border }]}>
             <Ionicons name="shield-checkmark-outline" size={14} color={accent} />
-            <Text style={[s.securityTxt, { color: theme.hint }]}>256-bit SSL • {activeProvider.name} • PCI-DSS compliant</Text>
+            <Text style={[s.securityTxt, { color: theme.hint }]}>{t('walletTopUp.securityLine', { provider: activeProvider.name })}</Text>
           </View>
 
           {/* ── Pay button ── */}
@@ -372,7 +376,7 @@ export default function WalletTopUpScreen({ navigation }) {
               <>
                 <Ionicons name="lock-closed" size={18} color="#fff" />
                 <Text style={s.payBtnTxt}>
-                  {amtNum >= limits.min ? `Pay ₦${formatNGN(amtNum)} via ${activeProvider.name}` : `Min ₦${formatNGN(limits.min)}`}
+                  {amtNum >= limits.min ? t('walletTopUp.payVia', { amount: formatMoney(amtNum), provider: activeProvider.name }) : t('walletTopUp.minAmount', { amount: formatMoney(limits.min) })}
                 </Text>
               </>
             )}

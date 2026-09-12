@@ -11,6 +11,7 @@ import { useAuth }        from '../../context/AuthContext';
 import { useTheme }       from '../../context/ThemeContext';
 import { useBiometric }   from '../../hooks/useBiometric';
 import { authAPI }        from '../../services/api';
+import { useTranslation } from 'react-i18next';
 
 const { width } = Dimensions.get('window');
 const OTP_LENGTH = 6;
@@ -63,6 +64,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
   } = route.params ?? {};
 
   const { theme, mode }                    = useTheme();
+  const { t }                              = useTranslation();
   const { verifyOtp, resendOtp, isLoading } = useAuth();
   const { isAvailable, isEnabled, enable }  = useBiometric();
   const darkMode = mode === 'dark';
@@ -122,10 +124,10 @@ export default function OtpVerificationScreen({ navigation, route }) {
         });
         setLoading(false);
         Alert.alert(
-          '2FA Enabled',
-          `Two-factor authentication is now active on your account via ${method === 'EMAIL' ? 'Email' : 'SMS'}.`,
+          t('otp.twoFaEnabledTitle'),
+          t('otp.twoFaEnabledBody', { method: method === 'EMAIL' ? 'Email' : 'SMS' }),
           [{
-            text: 'OK',
+            text: t('otp.ok'),
             onPress: () => {
               onSuccess?.();          // update ProfileScreen state
               navigation.goBack();
@@ -140,7 +142,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
       setLoading(false);
 
       if (!res.success) {
-        Alert.alert('Incorrect Code', res.message ?? 'Please try again.');
+        Alert.alert(t('otp.incorrectCodeTitle'), res.message ?? t('otp.pleaseTryAgain'));
         setCode('');
         inputRef.current?.focus();
         return;
@@ -149,19 +151,19 @@ export default function OtpVerificationScreen({ navigation, route }) {
       // Offer biometric enrollment after first successful OTP login
       if (isAvailable && !isEnabled) {
         Alert.alert(
-          'Enable Biometric Login?',
-          'Sign in faster next time using Face ID or fingerprint.',
+          t('otp.enableBiometricTitle'),
+          t('otp.enableBiometricBody'),
           [
-            { text: 'Not now', style: 'cancel' },
-            { text: 'Enable', onPress: () => enable(res.token) },
+            { text: t('otp.notNow'), style: 'cancel' },
+            { text: t('otp.enable'), onPress: () => enable(res.token) },
           ]
         );
       }
 
     } catch (err) {
       setLoading(false);
-      const msg = err?.response?.data?.message ?? 'Something went wrong. Please try again.';
-      Alert.alert('Error', msg);
+      const msg = err?.response?.data?.message ?? t('otp.somethingWentWrong');
+      Alert.alert(t('otp.errorTitle'), msg);
       setCode('');
       inputRef.current?.focus();
     }
@@ -182,20 +184,20 @@ export default function OtpVerificationScreen({ navigation, route }) {
         setCooldown(RESEND_COOLDOWN);
         inputRef.current?.focus();
       } else {
-        Alert.alert('Could not resend', res.message ?? 'Please try again.');
+        Alert.alert(t('otp.couldNotResendTitle'), res.message ?? t('otp.pleaseTryAgain'));
       }
     } catch (err) {
       setResending(false);
-      Alert.alert('Could not resend', err?.response?.data?.message ?? 'Please try again.');
+      Alert.alert(t('otp.couldNotResendTitle'), err?.response?.data?.message ?? t('otp.pleaseTryAgain'));
     }
   };
 
   // ── Screen copy based on purpose ───────────────────────────────────────────
   const screenCopy = {
-    LOGIN:     { eyebrow: 'VERIFICATION',   title: 'Enter code',       icon: method === 'EMAIL' ? 'mail-outline' : 'phone-portrait-outline' },
-    SETUP_2FA: { eyebrow: 'ENABLE 2FA',     title: 'Confirm setup',    icon: 'shield-checkmark-outline' },
-    REGISTER:  { eyebrow: 'VERIFY ACCOUNT', title: 'Confirm your account', icon: method === 'EMAIL' ? 'mail-outline' : 'phone-portrait-outline' },
-  }[purpose] ?? { eyebrow: 'VERIFICATION', title: 'Enter code', icon: 'phone-portrait-outline' };
+    LOGIN:     { eyebrow: t('otp.eyebrowVerification'),   title: t('otp.titleEnterCode'),       icon: method === 'EMAIL' ? 'mail-outline' : 'phone-portrait-outline' },
+    SETUP_2FA: { eyebrow: t('otp.eyebrowEnable2fa'),     title: t('otp.titleConfirmSetup'),    icon: 'shield-checkmark-outline' },
+    REGISTER:  { eyebrow: t('otp.eyebrowVerifyAccount'), title: t('otp.titleConfirmAccount'), icon: method === 'EMAIL' ? 'mail-outline' : 'phone-portrait-outline' },
+  }[purpose] ?? { eyebrow: t('otp.eyebrowVerification'), title: t('otp.titleEnterCode'), icon: 'phone-portrait-outline' };
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
@@ -243,7 +245,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
 
         <Text style={[s.title, { color: theme.foreground }]}>{screenCopy.title}</Text>
         <Text style={[s.subtitle, { color: theme.hint }]}>
-          {`A 6-digit code was sent to\n`}
+          {`${t('otp.codeSentTo')}\n`}
           <Text style={{ color: theme.foreground, fontWeight: '600' }}>{maskedContact}</Text>
         </Text>
 
@@ -278,17 +280,17 @@ export default function OtpVerificationScreen({ navigation, route }) {
             style={StyleSheet.absoluteFill}
           />
           <Text style={[s.verifyTxt, { color: darkMode ? '#000' : '#fff' }]}>
-            {loading ? 'Verifying…' : 'Verify'}
+            {loading ? t('otp.verifyingEllipsis') : t('otp.verify')}
           </Text>
           {!loading && <Ionicons name="arrow-forward" size={18} color={darkMode ? '#000' : '#fff'} />}
         </TouchableOpacity>
 
         {/* Resend */}
         <View style={s.resendRow}>
-          <Text style={[s.resendLabel, { color: theme.hint }]}>Didn't receive it? </Text>
+          <Text style={[s.resendLabel, { color: theme.hint }]}>{t('otp.didntReceiveIt')}</Text>
           <TouchableOpacity onPress={handleResend} disabled={cooldown > 0 || resending}>
             <Text style={[s.resendBtn, { color: cooldown > 0 ? theme.hint : theme.foreground }]}>
-              {resending ? 'Sending…' : cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
+              {resending ? t('otp.sendingEllipsis') : cooldown > 0 ? t('otp.resendIn', { seconds: cooldown }) : t('otp.resendCode')}
             </Text>
           </TouchableOpacity>
         </View>

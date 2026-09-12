@@ -8,11 +8,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 import { userAPI } from '../../services/api';
 
 export default function DeleteAccountScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const { logout } = useAuth();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
   const [password, setPassword] = useState('');
@@ -25,22 +27,22 @@ export default function DeleteAccountScreen({ navigation }) {
     if (!canSubmit) return;
 
     Alert.alert(
-      'Delete Account',
-      'This is permanent. Your account and personal data will be removed and this cannot be undone. Continue?',
+      t('deleteAccount.confirmTitle'),
+      t('deleteAccount.confirmMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('deleteAccount.delete'),
           style: 'destructive',
           onPress: async () => {
             setLoading(true);
             try {
               await userAPI.deleteAccount({ password });
-              Alert.alert('Account Deleted', 'Your account has been deleted.', [
-                { text: 'OK', onPress: () => logout() },
+              Alert.alert(t('deleteAccount.deletedTitle'), t('deleteAccount.deletedMessage'), [
+                { text: t('deleteAccount.ok'), onPress: () => logout() },
               ]);
             } catch (err) {
-              Alert.alert('Error', err?.message ?? 'Could not delete account. Please try again.');
+              Alert.alert(t('common.error'), err?.message ?? t('deleteAccount.deleteError'));
             } finally {
               setLoading(false);
             }
@@ -58,7 +60,7 @@ export default function DeleteAccountScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={22} color={theme.foreground} />
         </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: theme.foreground }]}>Delete Account</Text>
+        <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('deleteAccount.headerTitle')}</Text>
         <View style={{ width: 22 }} />
       </View>
 
@@ -66,29 +68,27 @@ export default function DeleteAccountScreen({ navigation }) {
         <View style={[s.warnIcon, { backgroundColor: '#E0555518' }]}>
           <Ionicons name="warning-outline" size={28} color="#E05555" />
         </View>
-        <Text style={[s.title, { color: theme.foreground }]}>This can't be undone</Text>
+        <Text style={[s.title, { color: theme.foreground }]}>{t('deleteAccount.title')}</Text>
         <Text style={[s.body, { color: theme.hint }]}>
-          Deleting your account permanently removes your profile, ride/delivery history,
-          and personal information from Diakite. If you have a wallet balance, withdraw it
-          first — accounts with a positive balance can't be deleted.
+          {t('deleteAccount.body')}
         </Text>
 
-        <Text style={[s.label, { color: theme.hint }]}>PASSWORD</Text>
+        <Text style={[s.label, { color: theme.hint }]}>{t('deleteAccount.passwordLabel')}</Text>
         <TextInput
           style={[s.input, { color: theme.foreground, borderColor: theme.border, backgroundColor: theme.backgroundAlt }]}
           value={password}
           onChangeText={setPassword}
-          placeholder="Enter your password"
+          placeholder={t('deleteAccount.passwordPlaceholder')}
           placeholderTextColor={theme.hint}
           secureTextEntry
         />
 
-        <Text style={[s.label, { color: theme.hint, marginTop: 16 }]}>TYPE "DELETE" TO CONFIRM</Text>
+        <Text style={[s.label, { color: theme.hint, marginTop: 16 }]}>{t('deleteAccount.typeToConfirm')}</Text>
         <TextInput
           style={[s.input, { color: theme.foreground, borderColor: theme.border, backgroundColor: theme.backgroundAlt }]}
           value={confirmText}
           onChangeText={setConfirmText}
-          placeholder="DELETE"
+          placeholder={t('deleteAccount.deleteWord')}
           placeholderTextColor={theme.hint}
           autoCapitalize="characters"
         />
@@ -99,7 +99,7 @@ export default function DeleteAccountScreen({ navigation }) {
           disabled={!canSubmit || loading}
           activeOpacity={0.85}
         >
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.deleteBtnTxt}>Delete My Account</Text>}
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.deleteBtnTxt}>{t('deleteAccount.deleteMyAccount')}</Text>}
         </TouchableOpacity>
       </View>
     </View>

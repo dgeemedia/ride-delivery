@@ -10,6 +10,8 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
+import { useTranslation }    from 'react-i18next';
 import { rideAPI, walletAPI, driverAPI } from '../../services/api';
 import socketService          from '../../services/socket';
 
@@ -83,23 +85,25 @@ const rs = StyleSheet.create({
 
 // ── Fare breakdown strip (modal) ──────────────────────────────────────────────
 const FareBreakdown = ({ fare, theme, color }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const earnings = Math.round(fare * (1 - COMMISSION));
   const platform = fare - earnings;
   return (
     <View style={[fb.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
       <View style={fb.col}>
-        <Text style={[fb.label, { color: theme.hint }]}>CUSTOMER PAYS</Text>
-        <Text style={[fb.val, { color: color }]}>₦{fmt(fare)}</Text>
+        <Text style={[fb.label, { color: theme.hint }]}>{t('incomingRideQueue.customerPays')}</Text>
+        <Text style={[fb.val, { color: color }]}>{formatMoney(fare)}</Text>
       </View>
       <View style={[fb.div, { backgroundColor: theme.border }]} />
       <View style={fb.col}>
-        <Text style={[fb.label, { color: theme.hint }]}>YOUR EARNINGS</Text>
-        <Text style={[fb.val, { color: '#5DAA72' }]}>₦{fmt(earnings)}</Text>
+        <Text style={[fb.label, { color: theme.hint }]}>{t('incomingRideQueue.yourEarnings')}</Text>
+        <Text style={[fb.val, { color: '#5DAA72' }]}>{formatMoney(earnings)}</Text>
       </View>
       <View style={[fb.div, { backgroundColor: theme.border }]} />
       <View style={fb.col}>
-        <Text style={[fb.label, { color: theme.hint }]}>PLATFORM</Text>
-        <Text style={[fb.val, { color: '#A78BFA' }]}>₦{fmt(platform)}</Text>
+        <Text style={[fb.label, { color: theme.hint }]}>{t('incomingRideQueue.platform')}</Text>
+        <Text style={[fb.val, { color: '#A78BFA' }]}>{formatMoney(platform)}</Text>
       </View>
     </View>
   );
@@ -114,6 +118,8 @@ const fb = StyleSheet.create({
 
 // ── Wallet strip ──────────────────────────────────────────────────────────────
 const WalletStrip = ({ balance, required, theme, onTopUp }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const ok       = balance >= required;
   const col      = ok ? '#5DAA72' : '#E05555';
   const shortfall = required - balance;
@@ -122,11 +128,11 @@ const WalletStrip = ({ balance, required, theme, onTopUp }) => {
       <Ionicons name="wallet-outline" size={16} color={col} />
       <View style={{ flex: 1 }}>
         <Text style={[ws.title, { color: col }]}>
-          {ok ? `Wallet OK ✓  ₦${fmt(balance)}` : `Balance ₦${fmt(balance)}`}
+          {ok ? `Wallet OK ✓  ${formatMoney(balance)}` : `Balance ${formatMoney(balance)}`}
         </Text>
         {!ok && (
           <Text style={[ws.sub, { color: '#E05555' }]}>
-            Top up ₦{fmt(shortfall)} to accept
+            Top up {formatMoney(shortfall)} to accept
           </Text>
         )}
       </View>
@@ -136,7 +142,7 @@ const WalletStrip = ({ balance, required, theme, onTopUp }) => {
           onPress={onTopUp}
           activeOpacity={0.85}
         >
-          <Text style={ws.btnTxt}>Top Up</Text>
+          <Text style={ws.btnTxt}>{t('incomingRideQueue.topUp')}</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -152,6 +158,8 @@ const ws = StyleSheet.create({
 
 // ── Collapsed request card ────────────────────────────────────────────────────
 const RequestCard = React.memo(({ req, onTap, theme, walletBalance }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const color     = fareColor(req.estimatedFare);
   const canAfford = walletBalance === null || walletBalance >= req.estimatedFare;
   const scaleA    = useRef(new Animated.Value(0.96)).current;
@@ -184,9 +192,9 @@ const RequestCard = React.memo(({ req, onTap, theme, walletBalance }) => {
           <View style={rc.topRow}>
             <View>
               <Text style={[rc.fareLabel, { color: theme.hint }]}>FARE (YOU + PLATFORM)</Text>
-              <Text style={[rc.fare, { color: color }]}>₦{fmt(req.estimatedFare)}</Text>
+              <Text style={[rc.fare, { color: color }]}>{formatMoney(req.estimatedFare)}</Text>
               <Text style={[rc.earningHint, { color: theme.hint }]}>
-                Your cut: ₦{fmt(Math.round(req.estimatedFare * (1 - COMMISSION)))}
+                Your cut: {formatMoney(Math.round(req.estimatedFare * (1 - COMMISSION)))}
               </Text>
             </View>
             <TinyRing seconds={req.timeLeft} total={REQUEST_SECS} color={color} />
@@ -218,13 +226,13 @@ const RequestCard = React.memo(({ req, onTap, theme, walletBalance }) => {
             {req.targeted && (
               <View style={[rc.pill, { backgroundColor: '#5DAA72' + '18', borderColor: '#5DAA72' + '40' }]}>
                 <Ionicons name="person-circle-outline" size={11} color="#5DAA72" />
-                <Text style={[rc.pillTxt, { color: '#5DAA72' }]}>Chose you</Text>
+                <Text style={[rc.pillTxt, { color: '#5DAA72' }]}>{t('incomingRideQueue.choseYou')}</Text>
               </View>
             )}
             {!canAfford && (
               <View style={[rc.pill, { backgroundColor: '#E05555' + '18', borderColor: '#E05555' + '40' }]}>
                 <Ionicons name="wallet-outline" size={11} color="#E05555" />
-                <Text style={[rc.pillTxt, { color: '#E05555' }]}>Low balance</Text>
+                <Text style={[rc.pillTxt, { color: '#E05555' }]}>{t('incomingRideQueue.lowBalance')}</Text>
               </View>
             )}
           </View>
@@ -258,6 +266,8 @@ const DetailModal = ({
   req, theme, walletBalance, loadingWallet,
   accepting, onAccept, onDecline, onClose, onNavigateTopUp,
 }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   if (!req) return null;
   const color     = fareColor(req.estimatedFare);
   const canAfford = !loadingWallet && walletBalance >= req.estimatedFare;
@@ -299,7 +309,7 @@ const DetailModal = ({
                 <Text style={[dm.fareTopLabel, { color: theme.hint }]}>
                   TOTAL FARE (SAME PRICE CUSTOMER SEES)
                 </Text>
-                <Text style={[dm.fareAmt, { color: color }]}>₦{fmt(req.estimatedFare)}</Text>
+                <Text style={[dm.fareAmt, { color: color }]}>{formatMoney(req.estimatedFare)}</Text>
               </View>
               {req.surgeLabel && (
                 <View style={[dm.surgeBadge, { backgroundColor: '#FFB800' + '20', borderColor: '#FFB800' + '40' }]}>
@@ -332,7 +342,7 @@ const DetailModal = ({
               <View style={dm.routeRow}>
                 <View style={[dm.routeDot, { backgroundColor: '#FFB800' }]} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[dm.routeLabel, { color: theme.hint }]}>PICKUP</Text>
+                  <Text style={[dm.routeLabel, { color: theme.hint }]}>{t('incomingRideQueue.pickup')}</Text>
                   <Text style={[dm.routeAddr,  { color: theme.foreground }]}>{req.pickupAddress}</Text>
                 </View>
               </View>
@@ -340,7 +350,7 @@ const DetailModal = ({
               <View style={dm.routeRow}>
                 <View style={[dm.routeDot, { backgroundColor: '#E05555' }]} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[dm.routeLabel, { color: theme.hint }]}>DROP-OFF</Text>
+                  <Text style={[dm.routeLabel, { color: theme.hint }]}>{t('incomingRideQueue.dropoff')}</Text>
                   <Text style={[dm.routeAddr,  { color: theme.foreground }]}>{req.dropoffAddress}</Text>
                 </View>
               </View>
@@ -360,12 +370,12 @@ const DetailModal = ({
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
                     <Ionicons name="shield-checkmark" size={11} color="#5DAA72" />
-                    <Text style={[dm.cVerified, { color: '#5DAA72' }]}>Verified rider</Text>
+                    <Text style={[dm.cVerified, { color: '#5DAA72' }]}>{t('incomingRideQueue.verifiedRider')}</Text>
                   </View>
                 </View>
                 {req.targeted && (
                   <View style={[dm.choseBadge, { backgroundColor: '#5DAA72' + '18', borderColor: '#5DAA72' + '40' }]}>
-                    <Text style={[dm.choseTxt, { color: '#5DAA72' }]}>Chose you</Text>
+                    <Text style={[dm.choseTxt, { color: '#5DAA72' }]}>{t('incomingRideQueue.choseYou')}</Text>
                   </View>
                 )}
               </View>
@@ -407,7 +417,7 @@ const DetailModal = ({
                 activeOpacity={0.75}
               >
                 <Ionicons name="close-circle-outline" size={20} color={theme.hint} />
-                <Text style={[dm.declineTxt, { color: theme.hint }]}>Decline</Text>
+                <Text style={[dm.declineTxt, { color: theme.hint }]}>{t('incomingRideQueue.decline')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -425,13 +435,13 @@ const DetailModal = ({
                   <>
                     <Ionicons name="checkmark-circle" size={22} color="#080C18" />
                     <Text style={dm.acceptTxt}>
-                      {req.expired ? 'Try Accept' : 'Accept'} · ₦{fmt(req.estimatedFare)}
+                      {req.expired ? t('incomingRideQueue.tryAccept') : t('incomingRideQueue.accept')} · {formatMoney(req.estimatedFare)}
                     </Text>
                   </>
                 ) : (
                   <>
                     <Ionicons name="wallet-outline" size={20} color={theme.hint} />
-                    <Text style={[dm.acceptTxt, { color: theme.hint }]}>Top Up First</Text>
+                    <Text style={[dm.acceptTxt, { color: theme.hint }]}>{t('incomingRideQueue.topUpFirst')}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -491,6 +501,8 @@ const dm = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function IncomingRideQueueScreen({ route, navigation }) {
   const { theme, mode } = useTheme();
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
   const initReq         = route?.params?.initialRequest;
@@ -613,15 +625,15 @@ export default function IncomingRideQueueScreen({ route, navigation }) {
       actingRef.current.delete(req.id);
       setAccepting(false);
       const status  = err?.status ?? err?.statusCode;
-      const message = err?.message ?? 'This ride may no longer be available.';
+      const message = err?.message ?? t('incomingRideQueue.thisRideMayNoLongerBeAvailable');
 
       if (status === 402) {
-        Alert.alert('Top-Up Required 💰', message, [
-          { text: 'Dismiss', style: 'cancel' },
-          { text: 'Top Up', onPress: () => navigation.navigate('Earnings') },
+        Alert.alert(t('incomingRideQueue.topUpRequiredTitle'), message, [
+          { text: t('incomingRideQueue.dismiss'), style: 'cancel' },
+          { text: t('incomingRideQueue.topUp'), onPress: () => navigation.navigate('Earnings') },
         ]);
       } else {
-        Alert.alert('Could not accept', message);
+        Alert.alert(t('incomingRideQueue.couldNotAcceptTitle'), message);
         setRequests(prev => prev.filter(r => r.id !== req.id));
       }
     }
@@ -671,7 +683,7 @@ export default function IncomingRideQueueScreen({ route, navigation }) {
         </TouchableOpacity>
 
         <View style={{ flex: 1, marginLeft: 14 }}>
-          <Text style={[s.headerTitle, { color: theme.foreground }]}>Incoming Requests</Text>
+          <Text style={[s.headerTitle, { color: theme.foreground }]}>{t('incomingRideQueue.incomingRequests')}</Text>
           <Text style={[s.headerSub, { color: theme.hint }]}>
             {activeCount} active{expiredCount > 0 ? `  ·  ${expiredCount} expired` : ''}
             {totalCount > 1 ? '  ·  Scroll to compare' : ''}
@@ -693,7 +705,7 @@ export default function IncomingRideQueueScreen({ route, navigation }) {
             onPress={dismissExpired}
             activeOpacity={0.8}
           >
-            <Text style={[s.clearTxt, { color: '#E05555' }]}>Clear expired</Text>
+            <Text style={[s.clearTxt, { color: '#E05555' }]}>{t('incomingRideQueue.clearExpired')}</Text>
           </TouchableOpacity>
         )}
       </Animated.View>
@@ -707,7 +719,7 @@ export default function IncomingRideQueueScreen({ route, navigation }) {
         >
           <Ionicons name="wallet-outline" size={14} color="#E05555" />
           <Text style={[s.walletBannerTxt, { color: '#E05555' }]}>
-            Low wallet balance (₦{fmt(walletBal)}) — some rides locked
+            Low wallet balance ({formatMoney(walletBal)}) — some rides locked
           </Text>
           <Ionicons name="arrow-forward" size={14} color="#E05555" />
         </TouchableOpacity>
@@ -738,7 +750,7 @@ export default function IncomingRideQueueScreen({ route, navigation }) {
               <View style={[s.emptyIcon, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
                 <Ionicons name="car-outline" size={36} color={theme.hint} />
               </View>
-              <Text style={[s.emptyTitle, { color: theme.foreground }]}>No pending requests</Text>
+              <Text style={[s.emptyTitle, { color: theme.foreground }]}>{t('incomingRideQueue.noPendingRequests')}</Text>
               <Text style={[s.emptySub,   { color: theme.hint }]}>
                 New ride requests will appear here
               </Text>
@@ -766,7 +778,7 @@ export default function IncomingRideQueueScreen({ route, navigation }) {
           <View style={[s.acceptingCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
             <ActivityIndicator color="#FFB800" size="large" />
             <Text style={[s.acceptingTxt, { color: '#FFB800' }]}>Accepting ride…</Text>
-            <Text style={[s.acceptingSub, { color: theme.hint }]}>Connecting you to the customer</Text>
+            <Text style={[s.acceptingSub, { color: theme.hint }]}>{t('incomingRideQueue.connectingToCustomer')}</Text>
           </View>
         </View>
       )}

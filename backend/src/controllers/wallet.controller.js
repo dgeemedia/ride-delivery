@@ -7,20 +7,17 @@ const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
 const emailService = require('../services/email.service');
 const { logActivity } = require('../utils/auditLog'); // ← ADDED
+const { ensureWallet: ensureWalletShared } = require('../utils/walletHelpers');
 
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
 
-const ensureWallet = async (userId) => {
-  let wallet = await prisma.wallet.findUnique({ where: { userId } });
-  if (!wallet) {
-    wallet = await prisma.wallet.create({
-      data: { userId, balance: 0, currency: 'NGN' },
-    });
-  }
-  return wallet;
-};
+// Delegates to the single shared implementation in utils/walletHelpers.js
+// so wallet creation currency logic lives in exactly one place. Kept as a
+// local wrapper named `ensureWallet` so every existing call site below
+// (there are several) needs no other changes.
+const ensureWallet = async (userId) => ensureWalletShared(userId);
 
 // Failed email should never block or roll back an already-committed wallet
 // operation — the DB write is the source of truth.
@@ -1150,9 +1147,10 @@ exports.adminGetWalletStats = async (req, res) => {
 };
 
 exports.getDepositLimits = async (req, res) => {
-  const [minSetting, maxSetting] = await Promise.all([
+  const [minSetting, maxSetting, wallet] = await Promise.all([
     prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_min' } }),
     prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_max' } }),
+    prisma.wallet.findUnique({ where: { userId: req.user.id }, select: { currency: true } }),
   ]);
 
   res.status(200).json({
@@ -1160,7 +1158,7 @@ exports.getDepositLimits = async (req, res) => {
     data: {
       min: minSetting?.value ? parseFloat(minSetting.value) : 100,
       max: maxSetting?.value ? parseFloat(maxSetting.value) : 1_000_000,
-      currency: 'NGN',
+      currency: wallet?.currency ?? 'NGN', // ← was hardcoded; now reflects the requesting user's actual wallet currency
     },
   });
 };

@@ -26,12 +26,12 @@ const flutterwaveAPI = axios.create({
 // PAYSTACK
 // ─────────────────────────────────────────────
 
-exports.paystackInitialize = async ({ email, amount, metadata = {}, callbackUrl, reference }) => {
+exports.paystackInitialize = async ({ email, amount, metadata = {}, callbackUrl, reference, currency = 'NGN' }) => {
   try {
     const { data } = await paystackAPI.post('/transaction/initialize', {
       email,
-      amount: Math.round(amount * 100), // Paystack uses kobo (1 NGN = 100 kobo)
-      currency: 'NGN',
+      amount: Math.round(amount * 100), // Paystack uses subunits (kobo for NGN, pesewas for GHS, etc — all 100 per unit)
+      currency,
       callback_url: callbackUrl || process.env.PAYSTACK_CALLBACK_URL,
       metadata,
       ...(reference && { reference }),
@@ -220,7 +220,7 @@ exports.paystackVerifyTransaction = async (reference) => {
 // ─────────────────────────────────────────────
 
 exports.flutterwaveInitialize = async ({
-  email, phone, name, amount, txRef, metadata = {}, redirectUrl
+  email, phone, name, amount, txRef, metadata = {}, redirectUrl, currency = 'NGN'
 }) => {
   try {
     const redirect = redirectUrl
@@ -230,7 +230,7 @@ exports.flutterwaveInitialize = async ({
     const { data } = await flutterwaveAPI.post('/payments', {
       tx_ref:       txRef || `FLW-${Date.now()}`,
       amount,
-      currency:     'NGN',
+      currency,
       redirect_url: redirect,
       customer: {
         email,

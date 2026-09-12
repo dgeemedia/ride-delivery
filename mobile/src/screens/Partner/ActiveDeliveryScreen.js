@@ -9,6 +9,9 @@ import MapView, { Marker, Polyline } from '../../components/SmartMapView';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCurrency }       from '../../context/CurrencyContext';
+import { useTranslation }    from 'react-i18next';
+import i18n                  from '../../i18n';
 import { deliveryAPI }       from '../../services/api';
 import socketService         from '../../services/socket';
 import * as Location         from 'expo-location';
@@ -29,33 +32,37 @@ const callPhone = (phone) => {
   Linking.canOpenURL(url)
     .then(ok => {
       if (ok) return Linking.openURL(url);
-      Alert.alert('Cannot Call', 'Phone calls are not supported on this device.');
+      Alert.alert(i18n.t('activeDeliveryPartner.cannotCall'), i18n.t('activeDeliveryPartner.callsNotSupported'));
     })
-    .catch(() => Alert.alert('Error', 'Could not initiate the call.'));
+    .catch(() => Alert.alert(i18n.t('common.error'), i18n.t('activeDeliveryPartner.callInitiateError')));
 };
 
 const STATUS_CONFIG = {
-  ASSIGNED:   { label: 'Head to Pickup',    sublabel: 'Navigate to pick up the package', color: COURIER_ACCENT, icon: 'navigate-outline'        },
-  PICKED_UP:  { label: 'Package Picked Up', sublabel: 'Start transit to the destination', color: '#FFB800',     icon: 'cube-outline'             },
-  IN_TRANSIT: { label: 'In Transit',        sublabel: 'Deliver to the drop-off address',  color: '#A78BFA',     icon: 'car-sport-outline'        },
-  DELIVERED:  { label: 'Delivered!',        sublabel: 'Package delivered successfully',    color: COURIER_ACCENT, icon: 'checkmark-circle-outline' },
-  CANCELLED:  { label: 'Cancelled',         sublabel: '',                                  color: '#E05555',     icon: 'close-circle-outline'     },
+  ASSIGNED:   { labelKey: 'activeDeliveryPartner.statusAssignedLabel',   subKey: 'activeDeliveryPartner.statusAssignedSub',   color: COURIER_ACCENT, icon: 'navigate-outline'        },
+  PICKED_UP:  { labelKey: 'activeDeliveryPartner.statusPickedUpLabel',   subKey: 'activeDeliveryPartner.statusPickedUpSub',   color: '#FFB800',     icon: 'cube-outline'             },
+  IN_TRANSIT: { labelKey: 'activeDeliveryPartner.statusInTransitLabel',  subKey: 'activeDeliveryPartner.statusInTransitSub',  color: '#A78BFA',     icon: 'car-sport-outline'        },
+  DELIVERED:  { labelKey: 'activeDeliveryPartner.statusDeliveredLabel',  subKey: 'activeDeliveryPartner.statusDeliveredSub',  color: COURIER_ACCENT, icon: 'checkmark-circle-outline' },
+  CANCELLED:  { labelKey: 'activeDeliveryPartner.statusCancelledLabel', subKey: null,                                        color: '#E05555',     icon: 'close-circle-outline'     },
 };
 
 // ── EarningsBadge — prominent fare chip (InDrive-style) ──────────────────────
-const EarningsBadge = ({ fee, theme }) => (
+const EarningsBadge = ({ fee, theme }) => {
+  const { formatMoney } = useCurrency();
+  const { t } = useTranslation();
+  return (
   <View style={[eb.wrap, { backgroundColor: COURIER_ACCENT + '15', borderColor: COURIER_ACCENT + '40' }]}>
     <View style={[eb.iconWrap, { backgroundColor: COURIER_ACCENT + '25' }]}>
       <Ionicons name="wallet-outline" size={14} color={COURIER_ACCENT} />
     </View>
     <View>
-      <Text style={[eb.label, { color: theme.hint }]}>YOUR EARNING</Text>
+      <Text style={[eb.label, { color: theme.hint }]}>{t('activeDeliveryPartner.yourEarning')}</Text>
       <Text style={[eb.amount, { color: COURIER_ACCENT }]}>
-        ₦{Number(fee ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+        {formatMoney(fee ?? 0)}
       </Text>
     </View>
   </View>
-);
+  );
+};
 const eb = StyleSheet.create({
   wrap:    { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 14 },
   iconWrap:{ width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
@@ -65,6 +72,7 @@ const eb = StyleSheet.create({
 
 // ── CustomerCallCard ──────────────────────────────────────────────────────────
 const CustomerCallCard = ({ delivery, theme }) => {
+  const { t } = useTranslation();
   const c = delivery?.customer;
   if (!c) return null;
   return (
@@ -74,7 +82,7 @@ const CustomerCallCard = ({ delivery, theme }) => {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[ccc.name, { color: theme.foreground }]}>{c.firstName} {c.lastName}</Text>
-        <Text style={[ccc.label, { color: theme.hint }]}>Customer</Text>
+        <Text style={[ccc.label, { color: theme.hint }]}>{t('activeDeliveryPartner.customer')}</Text>
       </View>
       {c.phone && (
         <TouchableOpacity
@@ -99,6 +107,7 @@ const ccc = StyleSheet.create({
 
 // ── RouteCard with NEXT-stop highlight ───────────────────────────────────────
 const RouteCard = ({ delivery, status, theme }) => {
+  const { t } = useTranslation();
   const atPickup  = status === 'ASSIGNED';
   const atDropoff = ['PICKED_UP', 'IN_TRANSIT'].includes(status);
 
@@ -107,7 +116,7 @@ const RouteCard = ({ delivery, status, theme }) => {
       <View style={rc.row}>
         <View style={[rc.dot, { backgroundColor: atPickup ? COURIER_ACCENT : COURIER_ACCENT + '30' }]} />
         <View style={{ flex: 1 }}>
-          <Text style={[rc.lbl, { color: theme.hint }]}>PICKUP</Text>
+          <Text style={[rc.lbl, { color: theme.hint }]}>{t('activeDeliveryPartner.pickup')}</Text>
           <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={2}>{delivery?.pickupAddress}</Text>
           {delivery?.pickupContact && (
             <Text style={[rc.contact, { color: theme.hint }]}>{delivery.pickupContact}</Text>
@@ -115,7 +124,7 @@ const RouteCard = ({ delivery, status, theme }) => {
         </View>
         {atPickup && (
           <View style={[rc.badge, { backgroundColor: COURIER_ACCENT }]}>
-            <Text style={rc.badgeTxt}>NEXT</Text>
+            <Text style={rc.badgeTxt}>{t('activeDeliveryPartner.next')}</Text>
           </View>
         )}
       </View>
@@ -123,7 +132,7 @@ const RouteCard = ({ delivery, status, theme }) => {
       <View style={rc.row}>
         <View style={[rc.dot, { backgroundColor: atDropoff ? '#E05555' : '#E05555' + '30' }]} />
         <View style={{ flex: 1 }}>
-          <Text style={[rc.lbl, { color: theme.hint }]}>DROP-OFF</Text>
+          <Text style={[rc.lbl, { color: theme.hint }]}>{t('activeDeliveryPartner.dropoff')}</Text>
           <Text style={[rc.addr, { color: theme.foreground }]} numberOfLines={2}>{delivery?.dropoffAddress}</Text>
           {delivery?.dropoffContact && (
             <Text style={[rc.contact, { color: theme.hint }]}>{delivery.dropoffContact}</Text>
@@ -131,7 +140,7 @@ const RouteCard = ({ delivery, status, theme }) => {
         </View>
         {atDropoff && (
           <View style={[rc.badge, { backgroundColor: '#E05555' }]}>
-            <Text style={rc.badgeTxt}>NEXT</Text>
+            <Text style={rc.badgeTxt}>{t('activeDeliveryPartner.next')}</Text>
           </View>
         )}
       </View>
@@ -151,24 +160,27 @@ const rc = StyleSheet.create({
 });
 
 // ── Package card ─────────────────────────────────────────────────────────────
-const PackageCard = ({ delivery, theme }) => (
+const PackageCard = ({ delivery, theme }) => {
+  const { t } = useTranslation();
+  return (
   <View style={[pk.card, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '25' }]}>
     <View style={pk.row}>
       <View style={[pk.iconWrap, { backgroundColor: COURIER_ACCENT + '18' }]}>
         <Ionicons name="cube-outline" size={15} color={COURIER_ACCENT} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[pk.label, { color: theme.hint }]}>PACKAGE</Text>
+        <Text style={[pk.label, { color: theme.hint }]}>{t('activeDeliveryPartner.package')}</Text>
         <Text style={[pk.value, { color: theme.foreground }]}>{delivery?.packageDescription}</Text>
       </View>
       {delivery?.packageWeight && (
         <View style={[pk.weightBadge, { backgroundColor: theme.background, borderColor: theme.border }]}>
-          <Text style={[pk.weightTxt, { color: theme.hint }]}>{delivery.packageWeight} kg</Text>
+          <Text style={[pk.weightTxt, { color: theme.hint }]}>{t('activeDeliveryPartner.weightKg', { weight: delivery.packageWeight })}</Text>
         </View>
       )}
     </View>
   </View>
-);
+  );
+};
 const pk = StyleSheet.create({
   card:        { borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 12 },
   row:         { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -184,6 +196,7 @@ const pk = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ActiveDeliveryScreen({ route, navigation }) {
   const { theme } = useTheme();
+  const { t }      = useTranslation();
   const insets    = useSafeAreaInsets();
   const deliveryId = route?.params?.deliveryId;
 
@@ -286,8 +299,8 @@ const statusPillBottom = sheetHeightAnim.interpolate({
 
     const handleCancelled = (data) => {
       if (data.deliveryId === deliveryId) {
-        Alert.alert('Delivery Cancelled', 'The customer has cancelled this delivery.', [
-          { text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] }) },
+        Alert.alert(t('activeDeliveryPartner.deliveryCancelledTitle'), t('activeDeliveryPartner.deliveryCancelledMsg'), [
+          { text: t('deleteAccount.ok'), onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] }) },
         ]);
       }
     };
@@ -328,7 +341,7 @@ useEffect(() => {
       await deliveryAPI.pickupDelivery(delivery.id);
       setDelivery(prev => ({ ...prev, status: 'PICKED_UP' }));
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message ?? 'Could not update status.');
+      Alert.alert(t('common.error'), err?.response?.data?.message ?? t('activeDeliveryPartner.updateStatusError'));
     } finally { setActing(false); }
   };
 
@@ -347,13 +360,13 @@ useEffect(() => {
         ), 400);
       }
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message ?? 'Could not start transit.');
+      Alert.alert(t('common.error'), err?.response?.data?.message ?? t('activeDeliveryPartner.startTransitError'));
     } finally { setActing(false); }
   };
 
   const handleComplete = async () => {
     if (!recipientName.trim()) {
-      Alert.alert('Recipient Name Required', "Please enter the recipient's name to confirm delivery.");
+      Alert.alert(t('activeDeliveryPartner.recipientNameRequired'), t('activeDeliveryPartner.enterRecipientName'));
       return;
     }
     setActing(true);
@@ -364,7 +377,7 @@ useEffect(() => {
       });
       navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] });
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.message ?? 'Could not complete delivery.');
+      Alert.alert(t('common.error'), err?.response?.data?.message ?? t('activeDeliveryPartner.completeDeliveryError'));
     } finally { setActing(false); setShowComplete(false); }
   };
 
@@ -397,7 +410,7 @@ useEffect(() => {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
         <ActivityIndicator color={COURIER_ACCENT} size="large" />
-        <Text style={[s.centerTxt, { color: '#666' }]}>Loading delivery...</Text>
+        <Text style={[s.centerTxt, { color: '#666' }]}>{t('activeDeliveryPartner.loadingDelivery')}</Text>
       </View>
     );
   }
@@ -406,12 +419,12 @@ useEffect(() => {
     return (
       <View style={[s.center, { backgroundColor: '#080C18' }]}>
         <Ionicons name="alert-circle-outline" size={40} color="#555" />
-        <Text style={[s.centerTxt, { color: '#666' }]}>No active delivery found.</Text>
+        <Text style={[s.centerTxt, { color: '#666' }]}>{t('activeDeliveryPartner.noActiveDelivery')}</Text>
         <TouchableOpacity
           onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] })}
           style={[s.goBackBtn, { borderColor: '#333' }]}
         >
-          <Text style={[s.goBackTxt, { color: '#ccc' }]}>Go to Dashboard</Text>
+          <Text style={[s.goBackTxt, { color: '#ccc' }]}>{t('activeDeliveryPartner.goToDashboard')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -495,7 +508,7 @@ return (
         bottom:          statusPillBottom,
       }]}>
         <View style={[s.statusDot, { backgroundColor: statusCfg.color }]} />
-        <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+        <Text style={[s.statusPillTxt, { color: statusCfg.color }]}>{t(statusCfg.labelKey)}</Text>
       </Animated.View>
 
       {/* ── Bottom sheet — now draggable (replaced fixed SHEET_H) ── */}
@@ -526,8 +539,8 @@ return (
 
             {/* Status header */}
             <View style={s.sheetHeader}>
-              <Text style={[s.statusTitle, { color: theme.foreground }]}>{statusCfg.label}</Text>
-              <Text style={[s.statusSub, { color: theme.hint }]}>{statusCfg.sublabel}</Text>
+              <Text style={[s.statusTitle, { color: theme.foreground }]}>{t(statusCfg.labelKey)}</Text>
+              <Text style={[s.statusSub, { color: theme.hint }]}>{statusCfg.subKey ? t(statusCfg.subKey) : ''}</Text>
             </View>
 
             {/* Earnings badge */}
@@ -545,26 +558,26 @@ return (
             {/* Fare strip */}
             <View style={[s.fareStrip, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
               <View style={s.fareItem}>
-                <Text style={[s.fareLabel, { color: theme.hint }]}>DISTANCE</Text>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>{t('activeDeliveryPartner.distance')}</Text>
                 <Text style={[s.fareValue, { color: theme.foreground }]}>{delivery.distance?.toFixed(1) ?? '—'} km</Text>
               </View>
               <View style={[s.fareDivider, { backgroundColor: theme.border }]} />
               <View style={s.fareItem}>
-                <Text style={[s.fareLabel, { color: theme.hint }]}>PAYMENT</Text>
-                <Text style={[s.fareValue, { color: theme.foreground }]}>CASH</Text>
+                <Text style={[s.fareLabel, { color: theme.hint }]}>{t('activeDeliveryPartner.payment')}</Text>
+                <Text style={[s.fareValue, { color: theme.foreground }]}>{t('activeDeliveryPartner.cash')}</Text>
               </View>
             </View>
 
             {/* Delivery confirmation panel — inside scroll so it's never clipped by the tab bar */}
             {showComplete && status === 'IN_TRANSIT' && (
               <View style={[s.completeCard, { backgroundColor: theme.backgroundAlt, borderColor: COURIER_ACCENT + '40' }]}>
-                <Text style={[s.completeTitle, { color: theme.foreground }]}>Confirm Delivery</Text>
-                <Text style={[s.completeSub, { color: theme.hint }]}>Enter the recipient's name to finalise</Text>
+                <Text style={[s.completeTitle, { color: theme.foreground }]}>{t('activeDeliveryPartner.confirmDelivery')}</Text>
+                <Text style={[s.completeSub, { color: theme.hint }]}>{t('activeDeliveryPartner.enterRecipientToFinalise')}</Text>
                 <View style={[s.inputRow, { backgroundColor: theme.background, borderColor: theme.border }]}>
                   <Ionicons name="person-outline" size={15} color={theme.hint} />
                   <TextInput
   style={[s.nameInput, { color: theme.foreground }]}
-  placeholder="Recipient's full name"
+  placeholder={t('activeDeliveryPartner.recipientFullName')}
   placeholderTextColor={theme.hint}
   value={recipientName}
   onChangeText={setRecipientName}
@@ -578,7 +591,7 @@ onFocus={() => {
                 </View>
                 <View style={s.completeActions}>
                   <TouchableOpacity style={[s.cancelSmall, { borderColor: theme.border }]} onPress={() => setShowComplete(false)}>
-                    <Text style={[s.cancelSmallTxt, { color: theme.hint }]}>Cancel</Text>
+                    <Text style={[s.cancelSmallTxt, { color: theme.hint }]}>{t('common.cancel')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[s.confirmSmall, { backgroundColor: COURIER_ACCENT, opacity: acting ? 0.7 : 1 }]}
@@ -587,7 +600,7 @@ onFocus={() => {
                   >
                     {acting
                       ? <ActivityIndicator color="#080C18" size="small" />
-                      : <Text style={s.confirmSmallTxt}>Confirm Delivered</Text>
+                      : <Text style={s.confirmSmallTxt}>{t('activeDeliveryPartner.confirmDelivered')}</Text>
                     }
                   </TouchableOpacity>
                 </View>
@@ -602,21 +615,21 @@ onFocus={() => {
           {status === 'ASSIGNED' && (
             <TouchableOpacity style={[s.actionBtn, { backgroundColor: COURIER_ACCENT }]} onPress={handlePickup} disabled={acting} activeOpacity={0.88}>
               {acting ? <ActivityIndicator color="#080C18" /> : (
-                <><Ionicons name="cube-outline" size={17} color="#080C18" /><Text style={s.actionBtnTxt}>Package Picked Up</Text></>
+                <><Ionicons name="cube-outline" size={17} color="#080C18" /><Text style={s.actionBtnTxt}>{t('activeDeliveryPartner.statusPickedUpLabel')}</Text></>
               )}
             </TouchableOpacity>
           )}
           {status === 'PICKED_UP' && (
             <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#FFB800' }]} onPress={handleTransit} disabled={acting} activeOpacity={0.88}>
               {acting ? <ActivityIndicator color="#080C18" /> : (
-                <><Ionicons name="car-sport-outline" size={17} color="#080C18" /><Text style={s.actionBtnTxt}>Start Transit</Text></>
+                <><Ionicons name="car-sport-outline" size={17} color="#080C18" /><Text style={s.actionBtnTxt}>{t('activeDeliveryPartner.startTransit')}</Text></>
               )}
             </TouchableOpacity>
           )}
           {status === 'IN_TRANSIT' && !showComplete && (
             <TouchableOpacity style={[s.actionBtn, { backgroundColor: COURIER_ACCENT }]} onPress={() => setShowComplete(true)} activeOpacity={0.88}>
               <Ionicons name="checkmark-circle-outline" size={17} color="#080C18" />
-              <Text style={s.actionBtnTxt}>Mark as Delivered</Text>
+              <Text style={s.actionBtnTxt}>{t('activeDeliveryPartner.markAsDelivered')}</Text>
             </TouchableOpacity>
           )}
           {(status === 'DELIVERED' || status === 'CANCELLED') && (
@@ -626,7 +639,7 @@ onFocus={() => {
               activeOpacity={0.85}
             >
               <Ionicons name="home-outline" size={17} color={theme.foreground} />
-              <Text style={[s.actionBtnTxt, { color: theme.foreground }]}>Back to Dashboard</Text>
+              <Text style={[s.actionBtnTxt, { color: theme.foreground }]}>{t('activeDeliveryPartner.backToDashboard')}</Text>
             </TouchableOpacity>
           )}
         </View>
