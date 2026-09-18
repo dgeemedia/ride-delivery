@@ -115,9 +115,16 @@ router.post(
   '/payout/request',
   authorize('DRIVER'),
   [
-    body('amount').isFloat({ min: 1000 }).withMessage('Minimum payout is ₦1,000'),
-    body('accountNumber').notEmpty().isLength({ min: 10, max: 10 }).withMessage('Account number must be 10 digits'),
-    body('bankCode').notEmpty(),
+    // The real minimum is applied in the controller using the driver's own
+    // currency — a naira-shaped floor is meaningless in XOF or GNF.
+    body('amount').isFloat({ min: 1 }).withMessage('Amount is required'),
+    // Destination fields are validated per-rail in the controller, which
+    // knows the requester's country: bank markets need a 10-digit NUBAN,
+    // Orange markets need an Orange Money MSISDN. Enforcing "10 digits"
+    // here would reject every Orange payout before it reached that logic.
+    body('accountNumber').optional().isString(),
+    body('bankCode').optional().isString(),
+    body('mobileNumber').optional().isString(),
     body('accountName').optional().isString(),
   ],
   ctrl.requestPayout

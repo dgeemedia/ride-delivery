@@ -4,6 +4,7 @@ const { body, param } = require('express-validator');
 const adminController = require('../controllers/admin.controller');
 const validate = require('../middleware/validate');
 const { authenticate, authorize, requireScope } = require('../middleware/auth.middleware');
+const adminCountryRoutes = require('./adminCountry.routes');
 
 const router = express.Router();
 
@@ -18,6 +19,11 @@ router.use((req, res, next) => {
 // ─────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────
+// ── Country management ────────────────────────────────────────────────────
+// Mounted before the specific handlers below so /countries/* resolves to the
+// dedicated router rather than falling through to a :id-style route.
+router.use('/countries', adminCountryRoutes);
+
 router.get('/dashboard/stats', adminController.getDashboardStats);
 
 // ─────────────────────────────────────────────

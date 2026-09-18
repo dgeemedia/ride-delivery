@@ -85,6 +85,46 @@ router.post(
 router.post('/flutterwave/webhook', paymentController.flutterwaveWebhook);
 
 // ─────────────────────────────────────────────
+// ORANGE MONEY
+// ─────────────────────────────────────────────
+
+/**
+ * @route   POST /api/payments/orange/initialize
+ * @desc    Create an Orange Money Web Payment session for a ride/delivery
+ * @access  Private
+ */
+router.post(
+  '/orange/initialize',
+  authenticate,
+  [
+    body('amount').isFloat({ min: 1 }),
+    body('rideId').optional().isUUID(),
+    body('deliveryId').optional().isUUID()
+  ],
+  paymentController.orangeInitialize
+);
+
+/**
+ * @route   POST /api/payments/orange/verify
+ * @desc    Verify an Orange payment. Returns 202 while Orange still reports
+ *          the transaction as pending, so the client can poll.
+ * @access  Private
+ */
+router.post(
+  '/orange/verify',
+  authenticate,
+  [body('orderId').optional().notEmpty(), body('reference').optional().notEmpty()],
+  paymentController.orangeVerify
+);
+
+/**
+ * @route   POST /api/payments/orange/webhook
+ * @desc    Orange notif_url callback — authenticated by notif_token HMAC
+ * @access  Public
+ */
+router.post('/orange/webhook', paymentController.orangeWebhook);
+
+// ─────────────────────────────────────────────
 // CASH & WALLET
 // ─────────────────────────────────────────────
 

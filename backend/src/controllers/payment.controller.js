@@ -3,6 +3,7 @@ const prisma = require('../lib/prisma');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../middleware/errorHandler');
 const paymentService = require('../services/payment.service');
+const orangeService = require('../services/orange.service');
 const notificationService = require('../services/notification.service');
 const emailService = require('../services/email.service');
 const { logActivity } = require('../utils/auditLog');
@@ -339,6 +340,173 @@ exports.flutterwaveWebhook = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
+// ORANGE MONEY FLOWS
+// ─────────────────────────────────────────────
+//
+// Used for ride/delivery charges in Orange markets. Structurally identical
+// to the Paystack/Flutterwave flows above: initialize -> customer pays on
+// Orange's hosted page -> we verify against Orange (never against the
+// callback payload) -> a Payment row is written exactly once.
+
+exports.orangeInitialize = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, errors: errors.array() });
+  }
+
+  const { amount, rideId, deliveryId } = req.body;
+  const { id: userId } = req.user;
+
+  const country = await getCountryForUser(req.user);
+  assertProviderSupported(country, 'orange');
+
+  if (!orangeService.isOrangeConfigured()) {
+    throw new AppError('Orange Money is not activated yet. Please use another payment method.', 503);
+  }
+
+  const currency = country.currencyCode;
+  if (['XOF', 'XAF', 'GNF'].includes(currency) && !Number.isInteger(Number(amount))) {
+    throw new AppError(`${currency} amounts must be whole numbers.`, 400);
+  }
+
+  const orderId = `OM-${rideId ? 'RIDE' : deliveryId ? 'DLV' : 'PAY'}-${userId.slice(0, 8)}-${Date.now()}`;
+
+  const session = await orangeService.initializeWebPayment({
+    amount,
+    orderId,
+    currency,
+    countryCode: country.code,
+    config:      country.providerConfig?.orange ?? {},
+    notifUrl:    `${process.env.API_BASE_URL}/api/payments/orange/webhook`,
+    reference:   rideId ? 'Ride payment' : deliveryId ? 'Delivery payment' : 'Payment',
+  });
+
+  // Written PENDING so an abandoned checkout is visible to ops instead of
+  // vanishing, and so the pay_token survives for verification later.
+  await prisma.payment.create({
+    data: {
+      userId,
+      ...(rideId && { rideId }),
+      ...(deliveryId && { deliveryId }),
+      amount,
+      currency,
+      method:        'MOBILE_MONEY',
+      status:        'PENDING',
+      transactionId: orderId,
+      provider:      'orange',
+      providerRef:   session.payToken,
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      paymentUrl: session.paymentUrl,
+      orderId,
+      payToken:   session.payToken,
+    },
+  });
+};
+
+/**
+ * Settle an Orange payment. Shared by the client verify call and the
+ * webhook, and idempotent on the PENDING Payment row.
+ */
+const settleOrangePayment = async (orderId) => {
+  const payment = await prisma.payment.findFirst({ where: { transactionId: orderId } });
+  if (!payment) return { ok: false, reason: 'Unknown Orange order' };
+  if (payment.status === 'COMPLETED') return { ok: true, alreadyProcessed: true, payment };
+
+  const payer = await prisma.user.findUnique({
+    where:  { id: payment.userId },
+    select: { id: true, email: true, firstName: true, countryCode: true },
+  });
+  const country = await getCountryForUser(payer);
+
+  const status = await orangeService.getTransactionStatus({
+    orderId,
+    amount:      payment.amount,
+    payToken:    payment.providerRef,
+    countryCode: country.code,
+    config:      country.providerConfig?.orange ?? {},
+  });
+
+  if (status.isPending) return { ok: false, pending: true, reason: 'Payment still pending with Orange' };
+
+  if (!status.isSuccess) {
+    await prisma.payment.update({ where: { id: payment.id }, data: { status: 'FAILED' } });
+    return { ok: false, reason: `Orange reported status ${status.status}` };
+  }
+
+  const updated = await prisma.payment.update({
+    where: { id: payment.id },
+    data: {
+      status:         'COMPLETED',
+      platformFee:    payment.amount * 0.20,
+      driverEarnings: payment.amount * 0.80,
+      providerRef:    status.txnId ?? payment.providerRef,
+    },
+  });
+
+  await notificationService.notify({
+    userId:  payment.userId,
+    title:   'Payment Successful ✅',
+    message: `Your Orange Money payment of ${formatMoney(payment.amount, payment.currency)} was successful.`,
+    type:    notificationService.TYPES.PAYMENT_RECEIVED,
+    data:    { reference: orderId, amount: payment.amount, rideId: payment.rideId, deliveryId: payment.deliveryId },
+  });
+
+  if (payer?.email) {
+    await safeSendEmail(
+      () => emailService.sendPaymentReceiptEmail(payer.email, payer.firstName, {
+        amount:    payment.amount,
+        method:    'Orange Money',
+        reference: orderId,
+        service:   payment.rideId ? 'ride' : payment.deliveryId ? 'delivery' : null,
+      }),
+      'Payment receipt (Orange verify)'
+    );
+  }
+
+  return { ok: true, payment: updated };
+};
+
+exports.orangeVerify = async (req, res) => {
+  const orderId = req.body?.orderId || req.body?.reference;
+  if (!orderId) throw new AppError('Orange order ID is required', 400);
+
+  const result = await settleOrangePayment(orderId);
+
+  if (!result.ok) {
+    const code = result.pending ? 202 : 400;
+    return res.status(code).json({ success: false, pending: !!result.pending, message: result.reason });
+  }
+
+  res.status(result.alreadyProcessed ? 200 : 201).json({
+    success: true,
+    message: result.alreadyProcessed ? 'Payment already recorded' : 'Payment verified and recorded',
+    data:    { payment: result.payment },
+  });
+};
+
+exports.orangeWebhook = async (req, res) => {
+  const orderId    = req.body?.order_id    ?? req.body?.orderId;
+  const notifToken = req.body?.notif_token ?? req.body?.notifToken;
+
+  if (!orangeService.validateWebhook(orderId, notifToken)) {
+    return res.status(401).json({ success: false, message: 'Invalid Orange notification token' });
+  }
+
+  try {
+    await settleOrangePayment(orderId);
+  } catch (err) {
+    console.error('[payment.controller] Orange webhook failed:', err.message);
+  }
+
+  res.sendStatus(200);
+};
+
+// ─────────────────────────────────────────────
 // CASH PAYMENT
 // ─────────────────────────────────────────────
 
@@ -609,14 +777,14 @@ exports.requestRefund = async (req, res) => {
 
 exports.listBanks = async (req, res) => {
   const country = await getCountryForUser(req.user);
-  const banks = await paymentService.listBanksUnified(country.code);
+  const banks = await paymentService.listBanksUnified(country.code, country);
   res.status(200).json({ success: true, data: { banks } });
 };
 
 exports.verifyBankAccount = async (req, res) => {
   const { accountNumber, bankCode } = req.body;
   const country = await getCountryForUser(req.user);
-  const account = await paymentService.verifyBankAccountUnified(accountNumber, bankCode, country.code);
+  const account = await paymentService.verifyBankAccountUnified(accountNumber, bankCode, country.code, country);
   res.status(200).json({ success: true, data: { account } });
 };
 

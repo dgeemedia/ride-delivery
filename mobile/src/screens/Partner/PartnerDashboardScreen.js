@@ -19,6 +19,7 @@ import { partnerAPI, userAPI, walletAPI, deliveryAPI } from '../../services/api'
 import socketService                           from '../../services/socket';
 import ActiveDeliveryBanner                    from '../../components/ActiveDeliveryBanner';
 import MaintenanceBanner                       from '../../components/MaintenanceBanner';
+import LanguageToggle from '../../components/LanguageToggle';
 import { checkMaintenance }                    from '../../utils/maintenanceCheck';
 import AsyncStorage                            from '@react-native-async-storage/async-storage';
 import {
@@ -510,6 +511,10 @@ export default function PartnerDashboardScreen({ navigation }) {
             <Text style={[s.pillTxt, { color: pillTxt }]}>{isOnline ? t('partnerDashboard.online') : t('partnerDashboard.offline')}</Text>
           </View>
           <View style={s.mapTopRight}>
+            {/* Language switcher, right beside the avatar — see
+                components/LanguageToggle.js for why it lives here. */}
+            <LanguageToggle theme={theme} darkMode={darkMode} size={42} variant="icon" />
+
             <TouchableOpacity
               style={[s.mapBtn, { backgroundColor: darkMode ? 'rgba(20,20,20,0.92)' : 'rgba(255,255,255,0.95)', borderColor: darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)' }]}
               onPress={() => navigation.navigate('Notifications')}

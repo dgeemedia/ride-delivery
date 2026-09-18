@@ -24,7 +24,8 @@
   },
   "common": {
     "cancel": "Cancel",
-    "done": "Done"
+    "done": "Done",
+    "continue": "Continue"
   },
   "login": {
     "welcomeBack": "WELCOME BACK",
@@ -1201,7 +1202,13 @@
     "walletCredit": "Wallet credit",
     "securityLine": "256-bit SSL • {{provider}} • PCI-DSS compliant",
     "payVia": "Pay {{amount}} via {{provider}}",
-    "minAmount": "Min {{amount}}"
+    "minAmount": "Min {{amount}}",
+    "taglineOrange": "Pay from your Orange Money wallet",
+    "noOrangeUrl": "Orange Money did not return a payment link. Please try again.",
+    "completePayment": "Complete payment",
+    "orangeApprovePrompt": "Approve {{amount}} in Orange Money, then tap Continue. We will confirm it automatically.",
+    "stillPendingTitle": "Still processing",
+    "stillPendingMsg": "Orange hasn't confirmed this payment yet. If you have paid, it will credit shortly — check your wallet before trying again."
   },
   "transfer": {
     "invalidNumber": "Invalid number",
@@ -1281,7 +1288,14 @@
     "confirmProcessing": "Processing",
     "adminNoteTxt": "Your request will be reviewed by our admin team and processed within 1–2 business days.",
     "submitWithdrawal": "Submit Withdrawal",
-    "recentWithdrawals": "RECENT WITHDRAWALS"
+    "recentWithdrawals": "RECENT WITHDRAWALS",
+    "mobileMoneyNumber": "Orange Money number",
+    "mobileMoneyPlaceholder": "e.g. 07 12 34 56 78",
+    "mobileMoneyUnverified": "We can't confirm the account holder's name — please double-check this number.",
+    "invalidMobileTitle": "Invalid number",
+    "invalidMobileMsg": "Enter the Orange Money number that should receive this payout.",
+    "confirmMethod": "Method",
+    "confirmMobileNumber": "Mobile number"
   },
   "notifications": {
     "type_ride_requested": "Ride Requested",

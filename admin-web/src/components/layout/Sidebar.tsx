@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Car, Package, Navigation,
-  CreditCard, BarChart3, Settings, X, Truck,
+  CreditCard, BarChart3, Settings, X, Truck, Globe,
   MessageCircle, Shield, LogOut, Building2, Zap, Wallet, Star,
   ChevronDown,
 } from 'lucide-react';
@@ -296,6 +296,7 @@ const Sidebar: React.FC = () => {
     },
     { name: 'Payments',  href: '/payments',  icon: CreditCard, show: can.viewPayments  },
     { name: 'Analytics', href: '/analytics', icon: BarChart3,  show: can.viewAnalytics },
+    { name: 'Countries', href: '/countries', icon: Globe,     show: can.viewSettings  },
     { name: 'Settings',  href: '/settings',  icon: Settings,   show: can.viewSettings  },
   ];
 
@@ -304,7 +305,7 @@ const Sidebar: React.FC = () => {
   const opsItems      = navigation.filter(i => i.show && ['/drivers', '/rides', '/partners', '/deliveries'].includes(i.href));
   const financeItems  = navigation.filter(i => i.show && ['/wallets', '/payments'].includes(i.href));
   const featureItems  = navigation.filter(i => i.show && ['/shield', '/corporate', '/duopay'].includes(i.href));
-  const systemItems   = navigation.filter(i => i.show && ['/support/tickets', '/analytics', '/settings'].includes(i.href));
+  const systemItems   = navigation.filter(i => i.show && ['/support/tickets', '/analytics', '/countries', '/settings'].includes(i.href));
 
   const renderItem = (item: NavItem) => {
     const visibleChildren = item.children?.filter(c => c.show) ?? [];

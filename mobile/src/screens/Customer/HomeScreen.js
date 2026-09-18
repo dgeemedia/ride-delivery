@@ -22,6 +22,7 @@ import { rideAPI, deliveryAPI } from '../../services/api';
 import ActiveRideBanner      from '../../components/ActiveRideBanner';
 import ActiveDeliveryBanner  from '../../components/ActiveDeliveryBanner';
 import MaintenanceBanner     from '../../components/MaintenanceBanner';
+import LanguageToggle        from '../../components/LanguageToggle';
 import { checkMaintenance }  from '../../utils/maintenanceCheck';
 import { useInactivityLogout } from '../../hooks/useInactivityLogout';
 import { CommonActions }     from '@react-navigation/native';
@@ -552,7 +553,12 @@ export default function HomeScreen({ navigation }) {
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity
+          {/* Language + profile sit together on the right so the switcher is
+              reachable on the first screen, not buried in Settings. */}
+          <View style={s.topRight}>
+            <LanguageToggle theme={theme} darkMode={darkMode} size={44} />
+
+            <TouchableOpacity
             onPress={() => navigation.getParent()?.navigate('ProfileTab')}
             activeOpacity={0.85}
           >
@@ -571,7 +577,8 @@ export default function HomeScreen({ navigation }) {
                 </Text>
               </View>
             )}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
         </Animated.View>
 
         {sheetExpanded && (
@@ -746,6 +753,7 @@ const s = StyleSheet.create({
   hamburger: { gap: 4.5, alignItems: 'center', justifyContent: 'center' },
   hLine:     { width: 16, height: 1.8, borderRadius: 1 },
   hLineMid:  { width: 11 },
+  topRight:       { flexDirection: 'row', alignItems: 'center', gap: 8 },
   avatar:         { width: 44, height: 44, borderRadius: 22, borderWidth: 2 },
   avatarFallback: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
   avatarInitials: { fontSize: 14, fontWeight: '800' },

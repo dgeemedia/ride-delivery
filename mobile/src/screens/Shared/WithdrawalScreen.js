@@ -9,6 +9,7 @@ import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
 import { useCurrency }       from '../../context/CurrencyContext';
+import { useCountryConfig }  from '../../context/CountryConfigContext';
 import { useAuth }           from '../../context/AuthContext';
 import { useTranslation }    from 'react-i18next';
 import { walletAPI, driverAPI, partnerAPI, paymentAPI } from '../../services/api';
@@ -133,6 +134,12 @@ export default function WithdrawalScreen({ navigation }) {
   const [payoutHistory, setPayoutHistory] = useState([]);
   const [banks, setBanks] = useState(FALLBACK_BANKS);
 
+  // Orange markets pay out to a wallet number, not a bank account, so the
+  // whole of step 2 changes shape. The server decides which — the client
+  // must never guess a payout rail from the country code alone.
+  const { config, isMobileMoneyPayout } = useCountryConfig();
+  const [mobileNumber, setMobileNumber] = useState('');
+
   useEffect(() => {
     paymentAPI.listBanks()
       .then(res => {
@@ -166,9 +173,13 @@ export default function WithdrawalScreen({ navigation }) {
   ]).start();
 
   useEffect(() => {
+    // Name lookup is a bank-rail feature. Orange exposes no subscriber-name
+    // endpoint, so firing this for a wallet number would always fail and
+    // block the form.
+    if (isMobileMoneyPayout) return;
     if (accountNumber.length === 10 && bankCode) verifyAccount();
     else if (accountNumber.length < 10) setAccountName('');
-  }, [accountNumber, bankCode]);
+  }, [accountNumber, bankCode, isMobileMoneyPayout]);
 
   const verifyAccount = async () => {
     setVerifying(true);
@@ -204,16 +215,31 @@ export default function WithdrawalScreen({ navigation }) {
 
   const handleStep2 = () => {
     Keyboard.dismiss();
-    if (accountNumber.length !== 10) { shake(); Alert.alert(t('withdrawal.invalidAccount'), t('withdrawal.enter10Digit')); return; }
-    if (!bankCode)                   { shake(); Alert.alert(t('withdrawal.selectBankTitle'),     t('withdrawal.pleaseSelectBank'));        return; }
-    if (!accountName)                { shake(); Alert.alert(t('withdrawal.verifyAccount'),  t('withdrawal.verificationFailed'));   return; }
+    if (isMobileMoneyPayout) {
+      // Accept any reasonable national or international form; the server
+      // normalises to a full MSISDN and rejects anything it can't route.
+      const digits = mobileNumber.replace(/\D/g, '');
+      if (digits.length < 8) {
+        shake();
+        Alert.alert(t('withdrawal.invalidMobileTitle'), t('withdrawal.invalidMobileMsg'));
+        return;
+      }
+    } else {
+      if (accountNumber.length !== 10) { shake(); Alert.alert(t('withdrawal.invalidAccount'), t('withdrawal.enter10Digit')); return; }
+      if (!bankCode)                   { shake(); Alert.alert(t('withdrawal.selectBankTitle'),     t('withdrawal.pleaseSelectBank'));        return; }
+      if (!accountName)                { shake(); Alert.alert(t('withdrawal.verifyAccount'),  t('withdrawal.verificationFailed'));   return; }
+    }
     setStep(3);
   };
 
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      await walletAPI.withdraw({ amount: amtNum, accountNumber, bankCode, accountName });
+      await walletAPI.withdraw(
+        isMobileMoneyPayout
+          ? { amount: amtNum, mobileNumber, accountName: accountName || undefined }
+          : { amount: amtNum, accountNumber, bankCode, accountName }
+      );
       Alert.alert(
         t('withdrawal.requestedTitle'),
         t('withdrawal.requestedMsg', { amount: formatMoney(amtNum), name: accountName }),
@@ -236,7 +262,11 @@ export default function WithdrawalScreen({ navigation }) {
   const inactiveTxtColor = theme.foreground;
 
   const step1Ready = amtNum >= MIN_WITHDRAWAL && amtNum <= balance;
-  const step2Ready = !!accountName && !!bankCode;
+  // Mobile-money payouts have no name to verify, so readiness is just a
+  // plausible number — otherwise step 2 could never be completed.
+  const step2Ready = isMobileMoneyPayout
+    ? mobileNumber.replace(/\D/g, '').length >= 8
+    : (!!accountName && !!bankCode);
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
@@ -354,6 +384,46 @@ export default function WithdrawalScreen({ navigation }) {
           {/* ── STEP 2 ── */}
           {step === 2 && (
             <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
+              {isMobileMoneyPayout ? (
+                <>
+                  {/* ── Mobile-money rail (Orange Money) ──────────────────
+                      No bank picker and no name lookup: Orange settles to a
+                      wallet number and exposes no subscriber-name endpoint,
+                      so the number itself is the whole destination. */}
+                  <Text style={[s.sectionLabel, { color: theme.hint }]}>
+                    {t('withdrawal.mobileMoneyNumber')}
+                  </Text>
+                  <View style={[s.fieldCard, {
+                    backgroundColor: theme.backgroundAlt,
+                    borderColor: step2Ready ? '#FF790060' : theme.border,
+                  }]}>
+                    <Ionicons name="phone-portrait-outline" size={16} color={theme.hint} />
+                    <Text style={[s.field, { color: theme.hint, flex: 0, marginRight: 2 }]}>
+                      {config.countryCode ? '' : ''}
+                    </Text>
+                    <TextInput
+                      style={[s.field, { color: theme.foreground }]}
+                      value={mobileNumber}
+                      onChangeText={val => setMobileNumber(val.replace(/[^\d+ ]/g, '').slice(0, 20))}
+                      keyboardType="phone-pad"
+                      placeholder={t('withdrawal.mobileMoneyPlaceholder')}
+                      placeholderTextColor={theme.hint}
+                    />
+                    {step2Ready && <Ionicons name="checkmark-circle" size={18} color="#5DAA72" />}
+                  </View>
+
+                  {/* Standing in for the verified-name badge the bank rail
+                      shows. Since we genuinely cannot confirm the owner,
+                      say so rather than implying a check happened. */}
+                  <View style={[s.verifiedBadge, { backgroundColor: '#FF790012', borderColor: '#FF790040' }]}>
+                    <Ionicons name="information-circle-outline" size={16} color="#FF7900" />
+                    <Text style={[s.verifiedTxt, { color: '#FF7900' }]}>
+                      {t('withdrawal.mobileMoneyUnverified')}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <>
               <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('withdrawal.selectBank')}</Text>
               <BankPicker selected={bankCode} onSelect={setBankCode} theme={theme} banks={banks} />
 
@@ -387,6 +457,8 @@ export default function WithdrawalScreen({ navigation }) {
                   <Text style={[s.verifiedTxt, { color: '#5DAA72' }]}>{accountName}</Text>
                 </View>
               )}
+                </>
+              )}
 
               {/* FIX: Review button uses accentFg when active */}
               <TouchableOpacity
@@ -408,11 +480,21 @@ export default function WithdrawalScreen({ navigation }) {
               <View style={[s.confirmCard, { backgroundColor: theme.backgroundAlt, borderColor: accent + '30' }]}>
                 <Text style={[s.confirmTitle, { color: theme.foreground }]}>{t('withdrawal.reviewYourWithdrawal')}</Text>
                 {[
-                  { label: t('withdrawal.confirmAmount'),       value: formatMoney(amtNum),                               color: accent    },
-                  { label: t('withdrawal.confirmBank'),         value: banks.find(b => b.code === bankCode)?.name ?? bankCode, color: undefined },
-                  { label: t('withdrawal.confirmAccountNo'), value: accountNumber,                                           color: undefined },
-                  { label: t('withdrawal.confirmAccountName'),value: accountName,                                             color: undefined },
-                  { label: t('withdrawal.confirmProcessing'),  value: t('withdrawal.businessDays'),                                    color: undefined },
+                  { label: t('withdrawal.confirmAmount'), value: formatMoney(amtNum), color: accent },
+                  // The destination rows differ by rail: a mobile-money
+                  // payout has a wallet number and no verified account name,
+                  // so showing empty "Account name" rows would look broken.
+                  ...(isMobileMoneyPayout
+                    ? [
+                        { label: t('withdrawal.confirmMethod'),       value: 'Orange Money', color: '#FF7900' },
+                        { label: t('withdrawal.confirmMobileNumber'), value: mobileNumber,   color: undefined },
+                      ]
+                    : [
+                        { label: t('withdrawal.confirmBank'),        value: banks.find(b => b.code === bankCode)?.name ?? bankCode, color: undefined },
+                        { label: t('withdrawal.confirmAccountNo'),   value: accountNumber, color: undefined },
+                        { label: t('withdrawal.confirmAccountName'), value: accountName,   color: undefined },
+                      ]),
+                  { label: t('withdrawal.confirmProcessing'), value: t('withdrawal.businessDays'), color: undefined },
                 ].map(({ label, value, color }) => (
                   <View key={label} style={[s.confirmRow, { borderBottomColor: theme.border }]}>
                     <Text style={[s.confirmLbl, { color: theme.hint }]}>{label}</Text>

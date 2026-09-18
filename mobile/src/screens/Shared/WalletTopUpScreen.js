@@ -10,6 +10,7 @@ import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 import { useCurrency } from '../../context/CurrencyContext';
+import { useCountryConfig } from '../../context/CountryConfigContext';
 import { useTranslation } from 'react-i18next';
 import { walletAPI } from '../../services/api';
 
@@ -72,8 +73,22 @@ const FlutterwaveMark = ({ size = 36 }) => (
   </Svg>
 );
 
+// Orange Money logomark — the brand's orange square with its white wordmark bar
+const OrangeMark = ({ size = 36 }) => (
+  <Svg width={size} height={size} viewBox="0 0 100 100">
+    <Path d="M0 0h100v100H0z" fill="#FF7900" />
+    <Path d="M18 62h64v20H18z" fill="#fff" />
+    <Path d="M30 20h12v30H30zM58 20h12v30H58z" fill="#fff" />
+  </Svg>
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider config
+//
+// The catalogue of everything the screen CAN render. Which entries actually
+// appear is decided by the user's country (see CountryConfigContext) — an
+// Orange market never sees Paystack, and Orange stays hidden everywhere
+// until its merchant keys are live.
 // ─────────────────────────────────────────────────────────────────────────────
 const PROVIDERS = [
   {
@@ -90,11 +105,28 @@ const PROVIDERS = [
     color:   '#F5A623',
     Mark:    FlutterwaveMark,
   },
+  {
+    id:      'orange',
+    name:    'Orange Money',
+    taglineKey: 'walletTopUp.taglineOrange',
+    color:   '#FF7900',
+    Mark:    OrangeMark,
+  },
 ];
+
+// Maps a country's creditMethods (uppercase, method-shaped) onto the
+// provider ids this screen uses. CASH and WALLET aren't top-up routes, so
+// they have no entry here.
+const METHOD_TO_PROVIDER = {
+  PAYSTACK:     'paystack',
+  FLUTTERWAVE:  'flutterwave',
+  ORANGE_MONEY: 'orange',
+};
 
 export default function WalletTopUpScreen({ navigation }) {
   const { theme, mode } = useTheme();
   const { formatMoney, currencySymbol } = useCurrency();
+  const { creditMethods } = useCountryConfig();
   const { t }            = useTranslation();
   const insets          = useSafeAreaInsets();
   const accent          = theme.accent;
@@ -112,18 +144,27 @@ export default function WalletTopUpScreen({ navigation }) {
   const HEADER_H       = insets.top + HEADER_INNER_H;
   const SCROLL_H       = height - HEADER_H - insets.bottom;
 
-    useEffect(() => {
+  useEffect(() => {
     walletAPI.getDepositLimits?.()
       .then(res => {
-        const { min, max, paymentProviders } = res?.data ?? {};
+        const { min, max } = res?.data ?? {};
         if (min && max) setLimits({ min, max });
-        if (Array.isArray(paymentProviders) && paymentProviders.length > 0) {
-          setAvailableProviderIds(paymentProviders);
-          setProvider(prev => paymentProviders.includes(prev) ? prev : paymentProviders[0]);
-        }
       })
       .catch(() => {});
   }, []);
+
+  // The country config is authoritative for WHICH providers show. The old
+  // paymentProviders field on /deposit-limits didn't know about Orange and
+  // couldn't express "Orange is configured but not yet activated", so the
+  // list is derived here instead.
+  useEffect(() => {
+    const ids = creditMethods
+      .map(m => METHOD_TO_PROVIDER[m])
+      .filter(Boolean);
+    if (!ids.length) return;
+    setAvailableProviderIds(ids);
+    setProvider(prev => (ids.includes(prev) ? prev : ids[0]));
+  }, [creditMethods]);
 
   const shake = () => {
     Animated.sequence([
@@ -220,6 +261,74 @@ export default function WalletTopUpScreen({ navigation }) {
     }
   };
 
+  // ── Orange Money ────────────────────────────────────────────────────────────
+  //
+  // Orange settles asynchronously, so instead of asking the user to paste a
+  // transaction reference we poll our own verify endpoint, which answers 202
+  // while Orange still reports the payment as pending.
+  const handleOrange = async (num) => {
+    // XOF/XAF/GNF have no minor unit — the backend rejects decimals outright,
+    // so round here rather than surfacing a confusing validation error.
+    const res = await walletAPI.orangeTopup({ amount: Math.round(num) });
+    const paymentUrl = res?.data?.paymentUrl ?? res?.data?.data?.paymentUrl;
+    const orderId    = res?.data?.orderId    ?? res?.data?.data?.orderId;
+
+    if (!paymentUrl) throw new Error(t('walletTopUp.noOrangeUrl'));
+
+    await Linking.openURL(paymentUrl);
+
+    const poll = async () => {
+      for (let i = 0; i < 10; i++) {
+        try {
+          const vr = await walletAPI.verifyOrangeTopup({ orderId });
+          if (vr?.status === 202 || vr?.data?.pending) {
+            await new Promise(r => setTimeout(r, 3000));
+            continue;
+          }
+          return true;
+        } catch (e) {
+          const pending = e?.response?.status === 202 || e?.response?.data?.pending;
+          if (!pending) throw e;
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+      return false;
+    };
+
+    Alert.alert(
+      t('walletTopUp.completePayment'),
+      t('walletTopUp.orangeApprovePrompt', { amount: formatMoney(num) }),
+      [
+        {
+          text: t('common.continue'),
+          onPress: async () => {
+            setLoading(true);
+            try {
+              const done = await poll();
+              if (done) {
+                Alert.alert(t('walletTopUp.successTitle'), t('walletTopUp.successMsg', { amount: formatMoney(num) }));
+                navigation.goBack();
+              } else {
+                // Not an error — Orange may still credit. Saying "failed"
+                // here would push the user into paying a second time.
+                Alert.alert(t('walletTopUp.stillPendingTitle'), t('walletTopUp.stillPendingMsg'));
+              }
+            } catch (e) {
+              Alert.alert(
+                t('walletTopUp.topUpFailed'),
+                e?.response?.data?.message ?? e?.message ?? t('walletTopUp.initErrorMsg')
+              );
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+        { text: t('common.cancel'), style: 'cancel' },
+      ],
+      { cancelable: false }
+    );
+  };
+
   // ── Main ────────────────────────────────────────────────────────────────────
   const handleTopUp = async () => {
     Keyboard.dismiss();
@@ -229,7 +338,9 @@ export default function WalletTopUpScreen({ navigation }) {
 
     setLoading(true);
     try {
-      provider === 'paystack' ? await handlePaystack(num) : await handleFlutterwave(num);
+      if (provider === 'paystack')         await handlePaystack(num);
+      else if (provider === 'orange')      await handleOrange(num);
+      else                                 await handleFlutterwave(num);
     } catch (err) {
       Alert.alert(
         t('walletTopUp.topUpFailed'),

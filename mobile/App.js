@@ -1,12 +1,13 @@
 // mobile/App.js
 import React, { useEffect, useCallback, useState } from 'react';
-import { Platform, View, StyleSheet, AppState } from 'react-native';   // ✅ Platform now imported
+import { Platform, View, StyleSheet, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider }     from './src/context/AuthContext';
 import { CurrencyProvider } from './src/context/CurrencyContext';
+import { CountryConfigProvider } from './src/context/CountryConfigContext';
 import { LocationProvider } from './src/context/LocationContext';
 import { RideProvider }     from './src/context/RideContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -89,11 +90,16 @@ export default function App() {
         <ThemeProvider>
           <AuthProvider>
             <CurrencyProvider>
-              <RideProvider>
-                <LocationProvider>
-                  <AppShell onLayout={onLayoutRootView} />
-                </LocationProvider>
-              </RideProvider>
+              {/* Sits inside CurrencyProvider because both read the same
+                  auth token, and payment screens want currency + methods
+                  resolved together. */}
+              <CountryConfigProvider>
+                <RideProvider>
+                  <LocationProvider>
+                    <AppShell onLayout={onLayoutRootView} />
+                  </LocationProvider>
+                </RideProvider>
+              </CountryConfigProvider>
             </CurrencyProvider>
           </AuthProvider>
         </ThemeProvider>

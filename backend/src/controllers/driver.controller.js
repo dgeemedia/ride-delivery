@@ -8,6 +8,7 @@ const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog');
 const { formatMoney } = require('../utils/currency');
 const { getCountryForUser } = require('../services/country.service');
+const orangeService = require('../services/orange.service');
 
 console.log('[DRIVER-CTRL] Prisma driver controller loaded');
 
@@ -521,39 +522,69 @@ exports.requestPayout = async (req, res) => {
   if (!errors.isEmpty())
     return res.status(400).json({ success: false, errors: errors.array() });
 
-  const { amount, accountNumber, bankCode, accountName } = req.body;
-
-  if (amount < 1000) throw new AppError('Minimum payout amount is ₦1,000', 400);
+  const { amount, accountNumber, bankCode, accountName, mobileNumber } = req.body;
 
   const requester = await prisma.user.findUnique({ where: { id: req.user.id }, select: { countryCode: true } });
   const country = await getCountryForUser(requester);
 
-  // Guard: this endpoint only knows how to verify/pay out via Nigerian bank
-  // transfer (NUBAN + Paystack). If a driver's country is configured for a
-  // different payout method, fail clearly now rather than silently sending
-  // a Nigerian-format account number to Paystack's verify API, which would
-  // either error confusingly or — worse — resolve to the wrong account.
-  // Supporting another payout method is a real feature (a new verify/payout
-  // provider integration), not a currency-label fix, so it's intentionally
-  // out of scope here until that provider work is done.
-  if (country.payoutMethod !== 'NG_BANK_TRANSFER') {
+  // Minimum is expressed in the driver's own currency. The old hardcoded
+  // "₦1,000" string was wrong the moment a second market went live.
+  if (amount < 1000) {
+    throw new AppError(`Minimum payout amount is ${formatMoney(1000, country.currencyCode)}`, 400);
+  }
+
+  const payoutMethods = country.payoutMethods;
+
+  // A market is payout-capable once it has at least one real rail. Markets
+  // still on UNSUPPORTED fail clearly here rather than sending an
+  // unroutable account number into a provider's verify API, which would
+  // either error confusingly or resolve to the wrong account.
+  if (!payoutMethods.some(m => m !== 'UNSUPPORTED')) {
     throw new AppError(
       `Payouts for ${country.name} aren't supported yet. Contact support.`,
       400
     );
   }
 
+  const isOrangePayout = payoutMethods.includes('ORANGE_MONEY');
+
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   if (!wallet) throw new AppError('Wallet not found', 404);
   if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
 
-  const accountVerify = await paymentService
-    .paystackVerifyAccount(accountNumber, bankCode)
-    .catch(() => null);
-  if (!accountVerify)
-    throw new AppError('Unable to verify bank account. Please check details.', 400);
+  // ── Resolve the destination per rail ──────────────────────────────────────
+  // Orange markets pay out to an Orange Money wallet, so the destination is
+  // an MSISDN with no bank code and no name lookup (Orange exposes no
+  // subscriber-name endpoint). Bank markets keep the NUBAN verify untouched.
+  let destination, resolvedBankCode, resolvedAccountName, resolvedPayoutMethod, payoutDetails;
 
-  const resolvedAccountName = accountName || accountVerify.account_name;
+  if (isOrangePayout) {
+    const raw = mobileNumber || accountNumber;
+    if (!raw) throw new AppError('Your Orange Money number is required', 400);
+    if (!orangeService.isValidMsisdn(raw, country.code)) {
+      throw new AppError('That does not look like a valid Orange Money number for your country.', 400);
+    }
+    destination          = orangeService.normalizeMsisdn(raw, country.code);
+    resolvedBankCode     = 'ORANGE_MONEY';
+    resolvedAccountName  = accountName || `${req.user.firstName} ${req.user.lastName}`.trim();
+    resolvedPayoutMethod = 'ORANGE_MONEY';
+    payoutDetails        = { rail: 'ORANGE_MONEY', msisdn: destination, countryCode: country.code, autoSettle: orangeService.isB2CEnabled() };
+  } else {
+    if (!accountNumber || !bankCode) throw new AppError('Account number and bank code are required', 400);
+
+    const accountVerify = await paymentService
+      .verifyBankAccountUnified(accountNumber, bankCode, country.code, country)
+      .catch(() => null);
+    if (!accountVerify)
+      throw new AppError('Unable to verify bank account. Please check details.', 400);
+
+    destination          = accountNumber;
+    resolvedBankCode     = bankCode;
+    resolvedAccountName  = accountName || accountVerify.account_name;
+    resolvedPayoutMethod = payoutMethods.find(m => m !== 'UNSUPPORTED' && m !== 'MANUAL') || 'NG_BANK_TRANSFER';
+    payoutDetails        = { rail: resolvedPayoutMethod, accountNumber, bankCode, accountName: resolvedAccountName, countryCode: country.code };
+  }
+
   const reference = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
   // ← CHANGED — capture the transaction results (was previously discarded)
@@ -568,25 +599,26 @@ exports.requestPayout = async (req, res) => {
         walletId: wallet.id,
         type: 'WITHDRAWAL',
         amount,
-        description: `Withdrawal request to ${resolvedAccountName} — ${accountNumber} (${bankCode})`,
+        description: `Withdrawal request to ${resolvedAccountName} — ${destination} (${resolvedBankCode})`,
         status: 'PENDING',
         reference,
+        provider: isOrangePayout ? 'orange' : paymentService.getActivePayoutProvider(),
       },
     }),
     prisma.payout.create({
       data: {
         userId: req.user.id,
         amount,
-        accountNumber,
-        bankCode,
+        // Stored in the driver's own currency so admin screens don't have to
+        // guess which market a payout belongs to.
+        currency: wallet.currency,
+        accountNumber: destination,
+        bankCode: resolvedBankCode,
         accountName: resolvedAccountName,
         status: 'PENDING',
         reference,
-        // ← ADDED — dual-write into the new generic fields alongside the
-        // existing NG-specific ones, so future non-NG payout code can read
-        // from payoutDetails without a backfill once it exists.
-        payoutMethod: 'NG_BANK_TRANSFER',
-        payoutDetails: { accountNumber, bankCode, accountName: resolvedAccountName },
+        payoutMethod: resolvedPayoutMethod,
+        payoutDetails,
       },
     }),
   ]);

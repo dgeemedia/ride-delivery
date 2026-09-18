@@ -24,7 +24,7 @@
 //   handleCardPayment(method, fare) before submitting the ride/delivery request.
 //   A helper hook `useCardPayment` is exported below to make this easy.
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ActivityIndicator, Alert, Linking, Platform,
@@ -33,6 +33,7 @@ import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { walletAPI } from '../services/api';
 import { useCurrency } from '../context/CurrencyContext';
+import { useCountryConfig } from '../context/CountryConfigContext';
 
 // ── Paystack logomark ─────────────────────────────────────────────────────────
 const PaystackMark = ({ size = 18, style }) => (
@@ -65,7 +66,19 @@ const FlutterwaveMark = ({ size = 18, style }) => (
   </Svg>
 );
 
+// ── Orange Money logomark ─────────────────────────────────────────────────────
+const OrangeMark = ({ size = 18, style }) => (
+  <Svg width={size} height={size} viewBox="0 0 100 100" style={style}>
+    <Path d="M0 0h100v100H0z" fill="#FF7900" />
+    <Path d="M18 62h64v20H18z" fill="#fff" />
+    <Path d="M30 20h12v30H30zM58 20h12v30H58z" fill="#fff" />
+  </Svg>
+);
+
 // ── Method config ─────────────────────────────────────────────────────────────
+// This is the catalogue of everything the app CAN render. What a given user
+// actually sees is decided server-side by their country's creditMethods —
+// see useVisibleMethods() below.
 const METHODS = [
   {
     id:     'CASH',
@@ -101,7 +114,22 @@ const METHODS = [
     color:  '#F5A623',
     timing: 'Pay now',
   },
+  {
+    id:     'ORANGE_MONEY',
+    label:  'Orange Money',
+    sub:    'Pay from your Orange wallet',
+    icon:   null,
+    Mark:   OrangeMark,
+    color:  '#FF7900',
+    timing: 'Pay now',
+  },
 ];
+
+const BY_ID = Object.fromEntries(METHODS.map(m => [m.id, m]));
+
+// Methods that take the customer out to a hosted checkout and charge up
+// front, as opposed to CASH/WALLET which settle at trip completion.
+const UPFRONT = ['PAYSTACK', 'FLUTTERWAVE', 'ORANGE_MONEY'];
 
 // ── PaymentSelector component ─────────────────────────────────────────────────
 export const PaymentSelector = ({
@@ -114,98 +142,116 @@ export const PaymentSelector = ({
   accentColor,
 }) => {
   const { formatMoney } = useCurrency();
+  const { creditMethods, defaultMethod, loading: loadingConfig } = useCountryConfig();
+
+  // Only render what this user's country can actually settle. An Orange
+  // market never sees Paystack; Nigeria never sees Orange Money.
+  const visible = creditMethods
+    .map(id => BY_ID[id])
+    .filter(Boolean);
+
+  const payLater = visible.filter(m => !UPFRONT.includes(m.id));
+  const payNow   = visible.filter(m =>  UPFRONT.includes(m.id));
+
+  // If the current selection isn't offered here (e.g. a user who changed
+  // country, or a screen defaulting to 'PAYSTACK' in an Orange market),
+  // move them to the country's own default rather than leaving the form in
+  // a state that will fail at submit.
+  useEffect(() => {
+    if (loadingConfig || !visible.length) return;
+    if (!creditMethods.includes(value)) onChange(defaultMethod);
+  }, [loadingConfig, creditMethods, value, defaultMethod, onChange, visible.length]);
+
   const walletInsufficient = value === 'WALLET' && walletBalance !== null && walletBalance < fare;
+
+  if (loadingConfig) {
+    return (
+      <View style={[ps.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border, alignItems: 'center' }]}>
+        <ActivityIndicator size="small" color={theme.hint} />
+      </View>
+    );
+  }
+
+  const renderOption = (m) => {
+    const selected = value === m.id;
+    const isWallet = m.id === 'WALLET';
+    const disabled = isWallet && walletBalance === null;
+    const insuf    = isWallet && walletInsufficient;
+    const borderClr = selected ? m.color : theme.border;
+    const bgClr     = selected ? m.color + '14' : 'transparent';
+
+    return (
+      <TouchableOpacity
+        key={m.id}
+        style={[ps.option, { borderColor: borderClr, backgroundColor: bgClr, opacity: disabled ? 0.5 : 1 }]}
+        onPress={() => !disabled && onChange(m.id)}
+        activeOpacity={0.8}
+        accessibilityRole="radio"
+        accessibilityState={{ selected, disabled }}
+        accessibilityLabel={m.label}
+      >
+        {m.Mark
+          ? <m.Mark size={20} />
+          : <Ionicons name={m.icon} size={18} color={selected ? m.color : theme.hint} />}
+
+        <View style={{ flex: 1 }}>
+          <Text style={[ps.optionTxt, { color: selected ? m.color : theme.foreground }]}>{m.label}</Text>
+          {isWallet ? (
+            loadingWallet
+              ? <ActivityIndicator size="small" color={theme.hint} style={{ marginTop: 2, alignSelf: 'flex-start' }} />
+              : <Text style={[ps.optionSub, { color: insuf ? '#E05555' : (selected ? m.color : theme.hint) }]}>
+                  {insuf ? `Insufficient (${formatMoney(walletBalance)})` : formatMoney(walletBalance ?? 0)}
+                </Text>
+          ) : (
+            <Text style={[ps.optionSub, { color: theme.hint }]} numberOfLines={1}>{m.sub}</Text>
+          )}
+        </View>
+
+        {selected && !insuf && (
+          <View style={[ps.check, { backgroundColor: m.color }]}>
+            <Ionicons name="checkmark" size={10} color="#fff" />
+          </View>
+        )}
+        {insuf && <Ionicons name="alert-circle" size={16} color="#E05555" />}
+      </TouchableOpacity>
+    );
+  };
+
+  // Two per row; an odd count leaves the last option full-width rather than
+  // stranding a half-width card next to empty space.
+  const rows = (list) => {
+    const out = [];
+    for (let i = 0; i < list.length; i += 2) out.push(list.slice(i, i + 2));
+    return out;
+  };
 
   return (
     <View style={[ps.wrap, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
       <Text style={[ps.label, { color: theme.hint }]}>PAYMENT METHOD</Text>
 
-      {/* Row 1 — Cash + Wallet */}
-      <View style={ps.row}>
-        {METHODS.slice(0, 2).map(m => {
-          const selected = value === m.id;
-          const isWallet = m.id === 'WALLET';
-          const disabled = isWallet && walletBalance === null;
-          const insuf    = isWallet && walletInsufficient;
-          const borderClr = selected ? m.color : theme.border;
-          const bgClr     = selected ? m.color + '14' : 'transparent';
+      {rows(payLater).map((row, i) => (
+        <View style={ps.row} key={`later-${i}`}>{row.map(renderOption)}</View>
+      ))}
 
-          return (
-            <TouchableOpacity
-              key={m.id}
-              style={[ps.option, { borderColor: borderClr, backgroundColor: bgClr, opacity: disabled ? 0.5 : 1 }]}
-              onPress={() => !disabled && onChange(m.id)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name={m.icon} size={18} color={selected ? m.color : theme.hint} />
-              <View style={{ flex: 1 }}>
-                <Text style={[ps.optionTxt, { color: selected ? m.color : theme.foreground }]}>{m.label}</Text>
-                {isWallet ? (
-                  loadingWallet
-                    ? <ActivityIndicator size="small" color={theme.hint} style={{ marginTop: 2, alignSelf: 'flex-start' }} />
-                    : <Text style={[ps.optionSub, { color: insuf ? '#E05555' : (selected ? m.color : theme.hint) }]}>
-                        {insuf
-                          ? `Insufficient (${formatMoney(walletBalance)})`
-                          : formatMoney(walletBalance ?? 0)
-                        }
-                      </Text>
-                ) : (
-                  <Text style={[ps.optionSub, { color: theme.hint }]}>{m.sub}</Text>
-                )}
-              </View>
-              {selected && !insuf && (
-                <View style={[ps.check, { backgroundColor: m.color }]}>
-                  <Ionicons name="checkmark" size={10} color="#fff" />
-                </View>
-              )}
-              {insuf && <Ionicons name="alert-circle" size={16} color="#E05555" />}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      {payNow.length > 0 && (
+        <View style={ps.dividerRow}>
+          <View style={[ps.dividerLine, { backgroundColor: theme.border }]} />
+          <Text style={[ps.dividerTxt, { color: theme.hint }]}>PAY NOW</Text>
+          <View style={[ps.dividerLine, { backgroundColor: theme.border }]} />
+        </View>
+      )}
 
-      {/* Divider with label */}
-      <View style={ps.dividerRow}>
-        <View style={[ps.dividerLine, { backgroundColor: theme.border }]} />
-        <Text style={[ps.dividerTxt, { color: theme.hint }]}>PAY BY CARD / USSD</Text>
-        <View style={[ps.dividerLine, { backgroundColor: theme.border }]} />
-      </View>
+      {rows(payNow).map((row, i) => (
+        <View style={ps.row} key={`now-${i}`}>{row.map(renderOption)}</View>
+      ))}
 
-      {/* Row 2 — Paystack + Flutterwave */}
-      <View style={ps.row}>
-        {METHODS.slice(2).map(m => {
-          const selected  = value === m.id;
-          const borderClr = selected ? m.color : theme.border;
-          const bgClr     = selected ? m.color + '14' : 'transparent';
-
-          return (
-            <TouchableOpacity
-              key={m.id}
-              style={[ps.option, { borderColor: borderClr, backgroundColor: bgClr }]}
-              onPress={() => onChange(m.id)}
-              activeOpacity={0.8}
-            >
-              <m.Mark size={20} />
-              <View style={{ flex: 1 }}>
-                <Text style={[ps.optionTxt, { color: selected ? m.color : theme.foreground }]}>{m.label}</Text>
-                <Text style={[ps.optionSub, { color: theme.hint }]}>{m.sub}</Text>
-              </View>
-              {selected && (
-                <View style={[ps.check, { backgroundColor: m.color }]}>
-                  <Ionicons name="checkmark" size={10} color="#fff" />
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Timing note for card/USSD methods */}
-      {(value === 'PAYSTACK' || value === 'FLUTTERWAVE') && (
+      {UPFRONT.includes(value) && (
         <View style={[ps.timingNote, { backgroundColor: '#C9A96E' + '14', borderColor: '#C9A96E' + '40' }]}>
           <Ionicons name="information-circle-outline" size={13} color="#C9A96E" />
           <Text style={[ps.timingNoteTxt, { color: '#C9A96E' }]}>
-            You'll complete payment (card, bank transfer, or USSD) before the driver is confirmed.
+            {value === 'ORANGE_MONEY'
+              ? "You'll approve the payment in Orange Money before the driver is confirmed."
+              : "You'll complete payment (card, bank transfer, or USSD) before the driver is confirmed."}
           </Text>
         </View>
       )}
@@ -244,15 +290,93 @@ const ps = StyleSheet.create({
 
 export const useCardPayment = () => {
   const { formatMoney } = useCurrency();
+  const { config } = useCountryConfig();
+
   const handleCardPayment = async (method, fare) => {
     if (method === 'CASH' || method === 'WALLET') return null;
-    if (method === 'PAYSTACK')    return _handlePaystack(fare, formatMoney);
-    if (method === 'FLUTTERWAVE') return _handleFlutterwave(fare, formatMoney);
+    if (method === 'PAYSTACK')     return _handlePaystack(fare, formatMoney);
+    if (method === 'FLUTTERWAVE')  return _handleFlutterwave(fare, formatMoney);
+    if (method === 'ORANGE_MONEY') return _handleOrange(fare, formatMoney, config);
     return null;
   };
 
   return { handleCardPayment };
 };
+
+// ── Orange Money flow (hosted Orange Web Payment page) ────────────────────────
+//
+// Unlike the Paystack/Flutterwave flows above, this one POLLS rather than
+// asking the user to paste a transaction ID. Orange settles asynchronously
+// and our /verify endpoint answers 202 while the payment is still pending,
+// so we retry a bounded number of times and give the user an explicit
+// "check again" escape hatch instead of an indefinite spinner.
+const ORANGE_POLL_ATTEMPTS = 10;
+const ORANGE_POLL_DELAY_MS = 3000;
+
+const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+const _pollOrange = async (orderId) => {
+  for (let attempt = 0; attempt < ORANGE_POLL_ATTEMPTS; attempt++) {
+    try {
+      const res = await walletAPI.verifyOrangeTopup({ orderId });
+      // Axios resolves 202, so a pending result arrives here, not in catch.
+      if (res?.status === 202 || res?.data?.pending) {
+        await _sleep(ORANGE_POLL_DELAY_MS);
+        continue;
+      }
+      return true;
+    } catch (e) {
+      // A real failure (Orange said FAILED/EXPIRED) — stop retrying.
+      const pending = e?.response?.status === 202 || e?.response?.data?.pending;
+      if (!pending) throw new Error(e?.response?.data?.message ?? e?.message ?? 'Orange verification failed');
+      await _sleep(ORANGE_POLL_DELAY_MS);
+    }
+  }
+  return false;
+};
+
+const _handleOrange = (fare, formatMoney, config) =>
+  new Promise(async (resolve, reject) => {
+    try {
+      if (!config?.orangeReady) {
+        throw new Error('Orange Money is not available yet. Please choose another payment method.');
+      }
+
+      const res = await walletAPI.orangeTopup({ amount: Math.round(fare) });
+      const paymentUrl = res?.data?.paymentUrl ?? res?.data?.data?.paymentUrl;
+      const orderId    = res?.data?.orderId    ?? res?.data?.data?.orderId;
+
+      if (!paymentUrl) throw new Error('No payment URL returned from Orange Money');
+
+      await Linking.openURL(paymentUrl);
+
+      Alert.alert(
+        'Complete Payment',
+        `Approve ${formatMoney(fare)} in Orange Money, then tap Continue. We'll confirm it automatically.`,
+        [
+          {
+            text: 'Continue',
+            onPress: async () => {
+              try {
+                const settled = await _pollOrange(orderId);
+                if (settled) {
+                  resolve({ transactionId: orderId, method: 'ORANGE_MONEY' });
+                } else {
+                  reject(new Error("Orange hasn't confirmed this payment yet. If you've paid, it will credit shortly — check your wallet before retrying."));
+                }
+              } catch (e) {
+                reject(e);
+              }
+            },
+          },
+          { text: 'Cancel', style: 'cancel', onPress: () => reject(new Error('CANCELLED')) },
+        ],
+        { cancelable: false }
+      );
+    } catch (e) {
+      reject(e);
+    }
+  });
 
 // ── Paystack flow (card / bank / USSD via Paystack checkout) ─────────────────
 const _handlePaystack = (fare, formatMoney) =>

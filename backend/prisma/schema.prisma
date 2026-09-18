@@ -293,6 +293,8 @@ model Payment {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @default(now()) @updatedAt
   provider         String?
+  // Orange Money pay_token (see WalletTransaction.providerRef)
+  providerRef      String?
   commissionLedger CommissionLedger?
   delivery         Delivery?         @relation(fields: [deliveryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   ride             Ride?             @relation(fields: [rideId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -339,6 +341,10 @@ model WalletTransaction {
   status      String       @default("COMPLETED")
   reference   String?      @unique
   provider    String?      
+  // Provider-side handle needed to verify this transaction later.
+  // For Orange Money this is the pay_token returned at checkout creation —
+  // Orange's /transactionstatus call requires it alongside order_id + amount.
+  providerRef String?
   createdAt   DateTime     @default(now())
   wallet      Wallet       @relation(fields: [walletId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -469,8 +475,23 @@ model Country {
   defaultLocale     String   // e.g. "en-NG", "fr-CI"
   phoneDialCode     String   // e.g. "+234"
   isActive          Boolean  @default(true)
-  paymentProviders  Json     // e.g. ["paystack","flutterwave"] in priority order
-  payoutMethod      String   @default("NG_BANK_TRANSFER")
+  paymentProviders  Json     // e.g. ["paystack","flutterwave"] or ["orange"] in priority order
+  payoutMethod      String   @default("NG_BANK_TRANSFER") // legacy single-value column, kept for back-compat
+
+  // ── Multi-provider / Orange support ──────────────────────────────────────
+  // Which credit (top-up / charge) methods this market offers. Subset of
+  // CASH | WALLET | PAYSTACK | FLUTTERWAVE | ORANGE_MONEY. Null on rows
+  // created before this migration — country.service derives a sensible
+  // default from paymentProviders in that case.
+  creditMethods     Json?
+  // Subset of NG_BANK_TRANSFER | BANK_TRANSFER | ORANGE_MONEY | MANUAL | UNSUPPORTED
+  payoutMethods     Json?
+  // Per-provider secrets/overrides, e.g.
+  // { "orange": { "merchantKey": "...", "webpayCountry": "ci", "lang": "fr" } }
+  providerConfig    Json?
+  // App language this country defaults to, e.g. "fr". Independent of
+  // currency, and overridden by the user's own saved language choice.
+  languageCode      String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @default(now()) @updatedAt
 
@@ -810,6 +831,7 @@ enum PaymentMethod {
   CASH
   CARD
   WALLET
+  MOBILE_MONEY
 }
 
 enum VehicleType {

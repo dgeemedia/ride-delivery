@@ -20,6 +20,11 @@ router.get('/debug-env', (req, res) => {
 router.post('/topup/verify', walletController.verifyTopUp);
 router.post('/topup/flutterwave/webhook', walletController.verifyFlutterwaveWebhook);
 
+// Orange posts its payment notification here. Public by design — the request
+// is authenticated by the notif_token HMAC, not by a bearer token, since
+// Orange's servers have no session with us.
+router.post('/topup/orange/webhook', walletController.orangeWebhook);
+
 // ── PUBLIC — deposit limits (no auth required, used by mobile top-up screen) ──
 router.get('/deposit-limits', walletController.getDepositLimits);
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,6 +104,25 @@ router.post(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TOP-UP — Orange Money
+// ─────────────────────────────────────────────────────────────────────────────
+// No max here: the real ceiling is the admin-configured `wallet_topup_max`
+// setting, which the controller enforces in the country's own currency.
+// Hardcoding a naira-shaped bound would be wrong for XOF/GNF.
+
+router.post(
+  '/topup/orange',
+  [body('amount').isFloat({ min: 1 }).withMessage('Amount is required')],
+  walletController.orangeTopup
+);
+
+router.post(
+  '/topup/orange/verify',
+  [body('orderId').optional().notEmpty(), body('reference').optional().notEmpty()],
+  walletController.verifyOrangeTopup
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BANK ACCOUNT VERIFICATION
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -132,10 +156,17 @@ router.post(
 router.post(
   '/withdraw',
   [
-    body('amount').isFloat({ min: 500 }).withMessage('Minimum withdrawal is ₦500'),
-    body('accountNumber').notEmpty().isLength({ min: 10, max: 10 }),
-    body('bankCode').notEmpty(),
-    body('accountName').notEmpty(),
+    body('amount').isFloat({ min: 1 }).withMessage('Amount is required'),
+    // Destination fields are validated per-rail in the controller, which
+    // knows the requester's country: bank markets need a 10-digit NUBAN,
+    // Orange markets need an Orange Money MSISDN. Enforcing "10 digits"
+    // here would reject every Orange payout before it reached that logic.
+    body('accountNumber').optional().isString(),
+    body('bankCode').optional().isString(),
+    body('mobileNumber').optional().isString(),
+    // Orange gives us no subscriber name, so the controller falls back to
+    // the requester's own name rather than requiring one here.
+    body('accountName').optional().isString(),
   ],
   walletController.withdraw
 );

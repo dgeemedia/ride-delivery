@@ -216,6 +216,11 @@ export const walletAPI = {
   verifyPaystackTopup:    (data)   => api.post('/wallet/topup/paystack/verify', data),
   flutterwaveTopup:       (data)   => api.post('/wallet/topup/flutterwave', data),
   verifyFlutterwaveTopup: (data)   => api.post('/wallet/topup/flutterwave/verify', data),
+  // Orange Money. verifyOrangeTopup returns HTTP 202 (not an error) while
+  // Orange still reports the payment as pending — see WalletTopUpScreen for
+  // the polling loop that relies on this.
+  orangeTopup:            (data)   => api.post('/wallet/topup/orange', data),
+  verifyOrangeTopup:      (data)   => api.post('/wallet/topup/orange/verify', data),
   verifyBankAccount:      (params) => api.get('/wallet/verify-account', { params }),
   transfer:               (data)   => api.post('/wallet/transfer', data),
   withdraw:               (data)   => api.post('/wallet/withdraw', data),
@@ -231,6 +236,8 @@ export const paymentAPI = {
   verifyPaystack:        (data)     => api.post('/payments/paystack/verify', data),
   initializeFlutterwave: (data)     => api.post('/payments/flutterwave/initialize', data),
   verifyFlutterwave:     (data)     => api.post('/payments/flutterwave/verify', data),
+  initializeOrange:      (data)     => api.post('/payments/orange/initialize', data),
+  verifyOrange:          (data)     => api.post('/payments/orange/verify', data),
   payWithWallet:         (data)     => api.post('/payments/wallet', data),
   payWithCash:           (data)     => api.post('/payments/cash', data),
   getHistory:            (params)   => api.get('/payments/history', { params }),
@@ -267,6 +274,14 @@ export const countryAPI = {
   // countries where payoutMethod is still 'UNSUPPORTED'. Omit for customers.
   listForRegistration: (forRole) =>
     api.get('/countries', { params: forRole ? { forRole } : {} }),
+
+  // Which payment methods this country offers, which to preselect, and
+  // whether withdrawals use a bank form or a mobile-money form.
+  getMyConfig: () => api.get('/countries/me/config'),
+
+  // Same data for a country the user hasn't joined yet — used on the
+  // registration screen to preview methods before an account exists.
+  getConfig: (code) => api.get(`/countries/${code}/config`),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -25,7 +25,8 @@
   },
   "common": {
     "cancel": "Cancelar",
-    "done": "Concluído"
+    "done": "Concluído",
+    "continue": "Continuar"
   },
   "login": {
     "welcomeBack": "BEM-VINDO DE VOLTA",
@@ -1202,7 +1203,13 @@
     "walletCredit": "Crédito na carteira",
     "securityLine": "SSL de 256 bits • {{provider}} • Compatível com PCI-DSS",
     "payVia": "Pagar {{amount}} via {{provider}}",
-    "minAmount": "Mín {{amount}}"
+    "minAmount": "Mín {{amount}}",
+    "taglineOrange": "Pague a partir da sua carteira Orange Money",
+    "noOrangeUrl": "O Orange Money não devolveu um link de pagamento. Tente novamente.",
+    "completePayment": "Concluir pagamento",
+    "orangeApprovePrompt": "Aprove {{amount}} no Orange Money e toque em Continuar. Confirmaremos automaticamente.",
+    "stillPendingTitle": "Ainda a processar",
+    "stillPendingMsg": "O Orange ainda não confirmou este pagamento. Se já pagou, será creditado em breve — verifique a sua carteira antes de tentar de novo."
   },
   "transfer": {
     "invalidNumber": "Número inválido",
@@ -1282,7 +1289,14 @@
     "confirmProcessing": "Processamento",
     "adminNoteTxt": "Sua solicitação será analisada pela nossa equipe de administração e processada em 1 a 2 dias úteis.",
     "submitWithdrawal": "Enviar Saque",
-    "recentWithdrawals": "SAQUES RECENTES"
+    "recentWithdrawals": "SAQUES RECENTES",
+    "mobileMoneyNumber": "Número Orange Money",
+    "mobileMoneyPlaceholder": "ex. 07 12 34 56 78",
+    "mobileMoneyUnverified": "Não conseguimos confirmar o nome do titular — verifique bem este número.",
+    "invalidMobileTitle": "Número inválido",
+    "invalidMobileMsg": "Introduza o número Orange Money que deve receber este levantamento.",
+    "confirmMethod": "Método",
+    "confirmMobileNumber": "Número de telemóvel"
   },
   "notifications": {
     "type_ride_requested": "Corrida Solicitada",

@@ -9,6 +9,7 @@ const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog'); // ← ADDED
 const { formatMoney } = require('../utils/currency');
 const { getCountryForUser } = require('../services/country.service');
+const orangeService = require('../services/orange.service');
 
 console.log('[PARTNER-CTRL] Prisma partner controller loaded');
 
@@ -460,34 +461,63 @@ exports.requestPayout = async (req, res) => {
   if (!errors.isEmpty())
     return res.status(400).json({ success: false, errors: errors.array() });
 
-  const { amount, accountNumber, bankCode, accountName } = req.body;
-
-  if (amount < 1000) throw new AppError('Minimum payout amount is ₦1,000', 400);
+  const { amount, accountNumber, bankCode, accountName, mobileNumber } = req.body;
 
   const requester = await prisma.user.findUnique({ where: { id: req.user.id }, select: { countryCode: true } });
   const country = await getCountryForUser(requester);
 
-  // Same guard as driver.controller.js — see the comment there for why this
-  // isn't a currency-label fix.
-  if (country.payoutMethod !== 'NG_BANK_TRANSFER') {
+  // Minimum in the partner's own currency — the hardcoded naira string was
+  // wrong the moment a second market went live.
+  if (amount < 1000) {
+    throw new AppError(`Minimum payout amount is ${formatMoney(1000, country.currencyCode)}`, 400);
+  }
+
+  // Same rail resolution as driver.controller.js — kept in step deliberately
+  // so a driver and a courier in the same market never see different rules.
+  const payoutMethods = country.payoutMethods;
+  if (!payoutMethods.some(m => m !== 'UNSUPPORTED')) {
     throw new AppError(
       `Payouts for ${country.name} aren't supported yet. Contact support.`,
       400
     );
   }
 
+  const isOrangePayout = payoutMethods.includes('ORANGE_MONEY');
+
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   if (!wallet)               throw new AppError('Wallet not found', 404);
   if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
 
-  const accountVerify = await paymentService
-    .paystackVerifyAccount(accountNumber, bankCode)
-    .catch(() => null);
-  if (!accountVerify)
-    throw new AppError('Unable to verify bank account. Please check details.', 400);
+  let destination, resolvedBankCode, resolvedAccountName, resolvedPayoutMethod, payoutDetails;
 
-  const resolvedAccountName = accountName || accountVerify.account_name;
-  const reference           = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
+  if (isOrangePayout) {
+    const raw = mobileNumber || accountNumber;
+    if (!raw) throw new AppError('Your Orange Money number is required', 400);
+    if (!orangeService.isValidMsisdn(raw, country.code)) {
+      throw new AppError('That does not look like a valid Orange Money number for your country.', 400);
+    }
+    destination          = orangeService.normalizeMsisdn(raw, country.code);
+    resolvedBankCode     = 'ORANGE_MONEY';
+    resolvedAccountName  = accountName || `${req.user.firstName} ${req.user.lastName}`.trim();
+    resolvedPayoutMethod = 'ORANGE_MONEY';
+    payoutDetails        = { rail: 'ORANGE_MONEY', msisdn: destination, countryCode: country.code, autoSettle: orangeService.isB2CEnabled() };
+  } else {
+    if (!accountNumber || !bankCode) throw new AppError('Account number and bank code are required', 400);
+
+    const accountVerify = await paymentService
+      .verifyBankAccountUnified(accountNumber, bankCode, country.code, country)
+      .catch(() => null);
+    if (!accountVerify)
+      throw new AppError('Unable to verify bank account. Please check details.', 400);
+
+    destination          = accountNumber;
+    resolvedBankCode     = bankCode;
+    resolvedAccountName  = accountName || accountVerify.account_name;
+    resolvedPayoutMethod = payoutMethods.find(m => m !== 'UNSUPPORTED' && m !== 'MANUAL') || 'NG_BANK_TRANSFER';
+    payoutDetails        = { rail: resolvedPayoutMethod, accountNumber, bankCode, accountName: resolvedAccountName, countryCode: country.code };
+  }
+
+  const reference = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
   // ← CHANGED — capture the transaction results (was previously discarded)
   // so we can attach the created Payout's id to the audit log entry below.
@@ -501,22 +531,24 @@ exports.requestPayout = async (req, res) => {
         walletId:    wallet.id,
         type:        'WITHDRAWAL',
         amount,
-        description: `Withdrawal request to ${resolvedAccountName} — ${accountNumber} (${bankCode})`,
+        description: `Withdrawal request to ${resolvedAccountName} — ${destination} (${resolvedBankCode})`,
         status:      'PENDING',
         reference,
+        provider:    isOrangePayout ? 'orange' : paymentService.getActivePayoutProvider(),
       },
     }),
     prisma.payout.create({
       data: {
         userId:        req.user.id,
         amount,
-        accountNumber,
-        bankCode,
+        currency:      wallet.currency,
+        accountNumber: destination,
+        bankCode:      resolvedBankCode,
         accountName:   resolvedAccountName,
         status:        'PENDING',
         reference,
-        payoutMethod:  'NG_BANK_TRANSFER',
-        payoutDetails: { accountNumber, bankCode, accountName: resolvedAccountName },
+        payoutMethod:  resolvedPayoutMethod,
+        payoutDetails,
       },
     }),
   ]);

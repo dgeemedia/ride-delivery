@@ -2,6 +2,7 @@
 
 const axios = require('axios');
 const { AppError } = require('../middleware/errorHandler');
+const orangeService = require('./orange.service');
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const FLUTTERWAVE_SECRET = process.env.FLUTTERWAVE_SECRET_KEY;
@@ -335,6 +336,18 @@ const getActivePayoutProvider = () => {
 };
 exports.getActivePayoutProvider = getActivePayoutProvider;
 
+// Which rail settles a payout, decided per-country rather than globally.
+// A Country row whose payoutMethods include ORANGE_MONEY pays out through
+// Orange; everything else keeps the existing env-selected card provider.
+// `country` is a normalized row from country.service.
+const resolvePayoutProviderForCountry = (country) => {
+  const methods = Array.isArray(country?.payoutMethods) ? country.payoutMethods : [];
+  const legacy  = country?.payoutMethod;
+  if (methods.includes('ORANGE_MONEY') || legacy === 'ORANGE_MONEY') return 'orange';
+  return getActivePayoutProvider();
+};
+exports.resolvePayoutProviderForCountry = resolvePayoutProviderForCountry;
+
 // Paystack only operates in a handful of markets and expects the full
 // country name (not ISO code) plus its own currency code on /bank.
 const PAYSTACK_COUNTRY_NAME = { NG: 'nigeria', GH: 'ghana', CI: "cote d'ivoire" };
@@ -378,20 +391,61 @@ exports.resolveBankName = async (bankCode, countryCode = 'NG', provider = getAct
 // accounts today. Calling this for a non-NG account number will not give a
 // meaningful result until a mobile-money verification path is added —
 // tracked separately from this currency/country plumbing.
-exports.verifyBankAccountUnified = async (accountNumber, bankCode, countryCode = 'NG') => {
-  const provider = getActivePayoutProvider();
+exports.verifyBankAccountUnified = async (accountNumber, bankCode, countryCode = 'NG', country = null) => {
+  const provider = country ? resolvePayoutProviderForCountry(country) : getActivePayoutProvider();
+
+  if (provider === 'orange') {
+    // There is no name-lookup endpoint for an Orange Money wallet. We can
+    // still validate the MSISDN shape so the user gets immediate feedback
+    // instead of a failure hours later at payout time.
+    if (!orangeService.isValidMsisdn(accountNumber, countryCode)) {
+      throw new AppError('That does not look like a valid Orange Money number for your country.', 400);
+    }
+    return {
+      account_name:   null, // Orange does not expose the subscriber name
+      account_number: orangeService.normalizeMsisdn(accountNumber, countryCode),
+      unverifiedName: true,
+    };
+  }
+
   return provider === 'flutterwave'
     ? exports.flutterwaveVerifyAccount(accountNumber, bankCode)
     : exports.paystackVerifyAccount(accountNumber, bankCode);
 };
 
-exports.listBanksUnified = async (countryCode = 'NG') => {
-  const provider = getActivePayoutProvider();
+exports.listBanksUnified = async (countryCode = 'NG', country = null) => {
+  const provider = country ? resolvePayoutProviderForCountry(country) : getActivePayoutProvider();
+
+  // Orange markets pay out to a wallet number, not a bank — return the single
+  // synthetic entry so the client's existing picker still renders rather than
+  // showing an empty list.
+  if (provider === 'orange') {
+    return [{ code: 'ORANGE_MONEY', name: 'Orange Money', type: 'MOBILE_MONEY' }];
+  }
+
   return _getCachedBankList(provider, countryCode);
 };
 
-exports.initiatePayoutTransfer = async ({ amount, accountNumber, bankCode, accountName, reason, reference, currency = 'NGN' }) => {
-  const provider = getActivePayoutProvider();
+exports.initiatePayoutTransfer = async ({
+  amount, accountNumber, bankCode, accountName, reason, reference,
+  currency = 'NGN',
+  // Both optional, so every existing call site keeps working unchanged:
+  country = null,   // normalized Country row — decides the rail
+  msisdn = null,    // Orange Money wallet number for mobile-money payouts
+}) => {
+  const provider = country ? resolvePayoutProviderForCountry(country) : getActivePayoutProvider();
+
+  if (provider === 'orange') {
+    // For an Orange payout the "account number" IS the subscriber's MSISDN.
+    return orangeService.cashOut({
+      amount,
+      msisdn:      msisdn || accountNumber,
+      reference,
+      currency,
+      countryCode: country?.code ?? 'CI',
+      narration:   reason,
+    });
+  }
 
   if (provider === 'flutterwave') {
     const result = await exports.flutterwaveTransfer({
@@ -459,9 +513,33 @@ exports.flutterwaveRefund = async (transactionId, amount) => {
 };
 
 exports.refundUnified = async (provider, transactionId, amount) => {
+  if (provider === 'orange') {
+    // Orange Money has no automated merchant-initiated refund on the Web
+    // Payment product. Surface that clearly so the admin dashboard routes the
+    // refund to a manual Orange Money transfer, rather than failing silently
+    // or — worse — marking a refund COMPLETED that never happened.
+    throw new AppError(
+      'Orange Money refunds must be settled manually — leave this refund pending and send an Orange Money transfer to the customer.',
+      501
+    );
+  }
   return provider === 'flutterwave'
     ? exports.flutterwaveRefund(transactionId, amount)
     : exports.paystackRefund(transactionId, amount);
 };
+
+// ─────────────────────────────────────────────
+// ORANGE MONEY — thin re-exports
+// ─────────────────────────────────────────────
+// Controllers already treat payment.service as their single payment entry
+// point, so Orange is surfaced here too rather than making every controller
+// import a second service.
+exports.orange                = orangeService;
+exports.isOrangeConfigured    = orangeService.isOrangeConfigured;
+exports.orangeInitialize      = orangeService.initializeWebPayment;
+exports.orangeStatus          = orangeService.getTransactionStatus;
+exports.orangeCashOut         = orangeService.cashOut;
+exports.validateOrangeWebhook = orangeService.validateWebhook;
+exports.normalizeMsisdn       = orangeService.normalizeMsisdn;
 
 module.exports = exports;

@@ -8,7 +8,8 @@ const notificationService = require('../services/notification.service');
 const emailService = require('../services/email.service');
 const { logActivity } = require('../utils/auditLog');
 const { ensureWallet: ensureWalletShared } = require('../utils/walletHelpers');
-const { getCountryForUser, getCurrencyForUserId } = require('../services/country.service');
+const { getCountryForUser, getCurrencyForUserId, getPaymentConfigForUser } = require('../services/country.service');
+const orangeService = require('../services/orange.service');
 const { formatMoney } = require('../utils/currency');
 
 // ─────────────────────────────────────────────
@@ -369,6 +370,198 @@ exports.verifyTopUp = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
+// TOP-UP — Orange Money
+// ─────────────────────────────────────────────
+//
+// Orange markets credit their wallet through Orange's hosted Web Payment
+// page rather than a card checkout. The shape mirrors the Paystack /
+// Flutterwave flows above, so the mobile top-up screen only has to swap
+// which endpoint it calls, not how it behaves.
+
+// XOF, XAF and GNF have no minor unit, so a decimal amount is a client bug
+// rather than a rounding question. Reject it loudly instead of silently
+// truncating the customer's money.
+const assertWholeUnits = (amount, currency) => {
+  if (['XOF', 'XAF', 'GNF'].includes(currency) && !Number.isInteger(Number(amount))) {
+    throw new AppError(`${currency} amounts must be whole numbers.`, 400);
+  }
+};
+
+const assertOrangeAvailable = async (user) => {
+  const config = await getPaymentConfigForUser(user);
+  if (!config.creditMethods.includes('ORANGE_MONEY')) {
+    throw new AppError(`Orange Money is not available in ${config.countryName}.`, 400);
+  }
+  if (!orangeService.isOrangeConfigured()) {
+    throw new AppError('Orange Money is not activated yet. Please use another payment method.', 503);
+  }
+  return config;
+};
+
+exports.orangeTopup = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+
+  const { amount } = req.body;
+  const country = await getCountryForUser(req.user);
+  await assertOrangeAvailable(req.user);
+
+  const currency = country.currencyCode;
+  assertWholeUnits(amount, currency);
+
+  // Same admin-configured limits the Paystack flow respects, so a market
+  // switching rails doesn't quietly lose its deposit caps.
+  const [minSetting, maxSetting] = await Promise.all([
+    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_min' } }),
+    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_max' } }),
+  ]);
+  const minDeposit = minSetting?.value ? parseFloat(minSetting.value) : 100;
+  const maxDeposit = maxSetting?.value ? parseFloat(maxSetting.value) : 1_000_000;
+
+  if (amount < minDeposit) throw new AppError(`Minimum top-up is ${formatMoney(minDeposit, currency)}`, 400);
+  if (amount > maxDeposit) throw new AppError(`Maximum top-up is ${formatMoney(maxDeposit, currency)}`, 400);
+
+  const orderId = `OM-TOPUP-${req.user.id.slice(0, 8)}-${Date.now()}`;
+
+  const session = await orangeService.initializeWebPayment({
+    amount,
+    orderId,
+    currency,
+    countryCode: country.code,
+    config:      country.providerConfig?.orange ?? {},
+    notifUrl:    `${process.env.API_BASE_URL}/api/wallet/topup/orange/webhook`,
+    reference:   'Wallet top-up',
+  });
+
+  // Persist pay_token — Orange's status endpoint needs it later and there is
+  // no way to recover it from the order_id alone.
+  const wallet = await ensureWallet(req.user.id);
+  await prisma.walletTransaction.create({
+    data: {
+      walletId:    wallet.id,
+      type:        'CREDIT',
+      amount,
+      description: 'Wallet top-up via Orange Money',
+      status:      'PENDING',
+      reference:   orderId,
+      provider:    'orange',
+      providerRef: session.payToken,
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      paymentUrl: session.paymentUrl,
+      orderId,
+      payToken:   session.payToken,
+      limits:     { min: minDeposit, max: maxDeposit },
+    },
+  });
+};
+
+/**
+ * Shared credit path used by BOTH the client-driven verify and the Orange
+ * webhook. Idempotent on the PENDING WalletTransaction row, so a webhook and
+ * a user tapping "I've paid" at the same moment can't double-credit.
+ */
+const creditOrangeTopUp = async (orderId) => {
+  const pending = await prisma.walletTransaction.findUnique({ where: { reference: orderId } });
+  if (!pending) return { ok: false, reason: 'Unknown Orange order' };
+  if (pending.status === 'COMPLETED') return { ok: true, alreadyProcessed: true };
+
+  const wallet = await prisma.wallet.findUnique({ where: { id: pending.walletId } });
+  if (!wallet) return { ok: false, reason: 'Wallet not found' };
+
+  const user = await prisma.user.findUnique({
+    where:  { id: wallet.userId },
+    select: { id: true, countryCode: true },
+  });
+  const country = await getCountryForUser(user);
+
+  // Never trust the callback payload's status — always re-ask Orange.
+  const status = await orangeService.getTransactionStatus({
+    orderId,
+    amount:      pending.amount,
+    payToken:    pending.providerRef,
+    countryCode: country.code,
+    config:      country.providerConfig?.orange ?? {},
+  });
+
+  if (status.isPending) return { ok: false, pending: true, reason: 'Payment still pending with Orange' };
+
+  if (!status.isSuccess) {
+    await prisma.walletTransaction.update({ where: { id: pending.id }, data: { status: 'FAILED' } });
+    return { ok: false, reason: `Orange reported status ${status.status}` };
+  }
+
+  const [updatedWallet] = await prisma.$transaction([
+    prisma.wallet.update({ where: { id: wallet.id }, data: { balance: { increment: pending.amount } } }),
+    prisma.walletTransaction.update({
+      where: { id: pending.id },
+      data:  { status: 'COMPLETED', providerRef: status.txnId ?? pending.providerRef },
+    }),
+  ]);
+
+  await notificationService.notify({
+    userId:  wallet.userId,
+    title:   'Wallet Credited 💰',
+    message: `${formatMoney(pending.amount, updatedWallet.currency)} added to your wallet via Orange Money. Ref: ${orderId}`,
+    type:    notificationService.TYPES.WALLET_CREDITED,
+    data:    { amount: pending.amount, reference: orderId, provider: 'orange' },
+  });
+
+  return { ok: true, wallet: updatedWallet, amount: pending.amount };
+};
+
+exports.verifyOrangeTopup = async (req, res) => {
+  const orderId = req.body?.orderId || req.body?.reference;
+  if (!orderId) throw new AppError('Orange order ID is required', 400);
+
+  const result = await creditOrangeTopUp(orderId);
+
+  if (!result.ok) {
+    // A still-pending Orange payment isn't a user error — 202 lets the app
+    // poll again instead of showing a failure.
+    const code = result.pending ? 202 : 400;
+    return res.status(code).json({ success: false, pending: !!result.pending, message: result.reason });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: result.alreadyProcessed ? 'Already processed' : 'Wallet topped up successfully',
+    data:    { wallet: result.wallet },
+  });
+};
+
+/**
+ * Orange notif_url callback. Public route — authentication comes from the
+ * notif_token HMAC we derived from the order_id at checkout creation.
+ * Always 200s once the signature checks out so Orange stops retrying.
+ */
+exports.orangeWebhook = async (req, res) => {
+  const orderId    = req.body?.order_id    ?? req.body?.orderId;
+  const notifToken = req.body?.notif_token ?? req.body?.notifToken;
+
+  if (!orangeService.validateWebhook(orderId, notifToken)) {
+    return res.status(401).json({ success: false, message: 'Invalid Orange notification token' });
+  }
+
+  try {
+    const result = await creditOrangeTopUp(orderId);
+    if (!result.ok && !result.pending) {
+      console.warn('[wallet.controller] Orange webhook could not credit', orderId, result.reason);
+    }
+  } catch (err) {
+    console.error('[wallet.controller] Orange webhook failed:', err.message);
+  }
+
+  // Ack regardless — a retry storm helps nobody, and both the client-side
+  // verify and the admin reconciliation screen cover a missed credit.
+  res.sendStatus(200);
+};
+
+// ─────────────────────────────────────────────
 // TOP-UP — Flutterwave
 // ─────────────────────────────────────────────
 
@@ -657,7 +850,7 @@ exports.withdraw = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
-  const { amount, accountNumber, bankCode, accountName } = req.body;
+  const { amount, accountNumber, bankCode, accountName, mobileNumber } = req.body;
 
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   if (!wallet) throw new AppError('Wallet not found', 404);
@@ -665,21 +858,45 @@ exports.withdraw = async (req, res) => {
   if (amount < 500) throw new AppError(`Minimum withdrawal is ${formatMoney(500, wallet.currency)}`, 400);
   if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
 
-  // Guard: this endpoint only knows how to verify/pay out via Nigerian bank
-  // transfer today. Fail clearly now rather than silently sending a
-  // non-Nigerian-format account number into Paystack/Flutterwave's transfer
-  // APIs, which would either error confusingly or resolve to the wrong
-  // account. Mirrors the identical guard in driver.controller.js /
-  // partner.controller.js's requestPayout.
   const country = await getCountryForUser(req.user);
-  if (country.payoutMethod !== 'NG_BANK_TRANSFER') {
+  const payoutMethods = country.payoutMethods;
+
+  // A market is payout-capable once it has at least one real rail. Markets
+  // still on UNSUPPORTED fail clearly here rather than sending an
+  // unroutable account number into a transfer API downstream. Mirrors the
+  // guard in driver.controller.js / partner.controller.js's requestPayout.
+  if (!payoutMethods.some(m => m !== 'UNSUPPORTED')) {
     throw new AppError(`Payouts for ${country.name} aren't supported yet. Contact support.`, 400);
   }
 
-  const reference = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
+  const isOrangePayout = payoutMethods.includes('ORANGE_MONEY');
 
-  // Auto-resolved from whichever provider is currently active — no client change needed.
-  const bankName = await paymentService.resolveBankName(bankCode, country.code);
+  // ── Normalise the destination per rail ────────────────────────────────────
+  // Orange markets pay out to an Orange Money wallet, so the "account
+  // number" is an MSISDN and there is no bank code to resolve. Bank markets
+  // keep the existing NUBAN behaviour untouched.
+  let destination, resolvedBankCode, bankName, payoutMethod;
+
+  if (isOrangePayout) {
+    const raw = mobileNumber || accountNumber;
+    if (!raw) throw new AppError('Your Orange Money number is required', 400);
+    if (!orangeService.isValidMsisdn(raw, country.code)) {
+      throw new AppError('That does not look like a valid Orange Money number for your country.', 400);
+    }
+    destination      = orangeService.normalizeMsisdn(raw, country.code);
+    resolvedBankCode = 'ORANGE_MONEY';
+    bankName         = 'Orange Money';
+    payoutMethod     = 'ORANGE_MONEY';
+  } else {
+    if (!accountNumber || !bankCode) throw new AppError('Account number and bank code are required', 400);
+    destination      = accountNumber;
+    resolvedBankCode = bankCode;
+    // Auto-resolved from whichever provider is currently active.
+    bankName         = await paymentService.resolveBankName(bankCode, country.code);
+    payoutMethod     = payoutMethods.find(m => m !== 'UNSUPPORTED' && m !== 'MANUAL') || 'NG_BANK_TRANSFER';
+  }
+
+  const reference = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
 
   // ← CHANGED — capture the transaction results (was previously discarded)
   // so we can attach the created Payout's id to the audit log entry below.
@@ -690,9 +907,10 @@ exports.withdraw = async (req, res) => {
         walletId:    wallet.id,
         type:        'WITHDRAWAL',
         amount,
-        description: `Withdrawal request to ${accountName} — ${accountNumber} (${bankName || bankCode})`,
+        description: `Withdrawal request to ${accountName || destination} — ${destination} (${bankName || resolvedBankCode})`,
         status:      'PENDING',
         reference,
+        provider:    isOrangePayout ? 'orange' : paymentService.getActivePayoutProvider(),
       },
     }),
     prisma.payout.create({
@@ -700,12 +918,18 @@ exports.withdraw = async (req, res) => {
         userId:        req.user.id,
         amount,
         currency:      wallet.currency,
-        accountNumber,
-        bankCode,
+        accountNumber: destination,
+        bankCode:      resolvedBankCode,
         bankName,
-        accountName,
+        // Orange gives us no subscriber name, so fall back to the requester's
+        // own name rather than storing an empty string on the payout record.
+        accountName:   accountName || `${req.user.firstName} ${req.user.lastName}`.trim(),
         status:        'PENDING',
         reference,
+        payoutMethod,
+        payoutDetails: isOrangePayout
+          ? { rail: 'ORANGE_MONEY', msisdn: destination, countryCode: country.code, autoSettle: orangeService.isB2CEnabled() }
+          : { rail: payoutMethod, countryCode: country.code },
       },
     }),
   ]);
@@ -718,8 +942,10 @@ exports.withdraw = async (req, res) => {
     details: {
       role:          req.user.role,
       amount,
-      bankCode,
-      accountNumber: `****${accountNumber.slice(-4)}`,
+      bankCode:      resolvedBankCode,
+      payoutMethod,
+      countryCode:   country.code,
+      accountNumber: `****${destination.slice(-4)}`,
       reference,
     },
     req,
@@ -728,15 +954,17 @@ exports.withdraw = async (req, res) => {
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Withdrawal Requested 🏦',
-    message: `${formatMoney(amount, wallet.currency)} withdrawal to ${accountName} is pending admin review.`,
+    message: `${formatMoney(amount, wallet.currency)} withdrawal to ${bankName} is pending admin review.`,
     type:    notificationService.TYPES.PAYMENT_RECEIVED,
-    data:    { amount, accountNumber: `****${accountNumber.slice(-4)}`, bankCode, reference },
+    data:    { amount, accountNumber: `****${destination.slice(-4)}`, bankCode: resolvedBankCode, payoutMethod, reference },
   });
 
   if (req.user.email) {
     await safeSendEmail(
       () => emailService.sendWithdrawalUnderReviewEmail(req.user.email, req.user.firstName, {
-        amount, reference, accountName, accountNumber,
+        amount, reference,
+        accountName:   accountName || bankName,
+        accountNumber: destination,
       }),
       'Withdrawal under review'
     );
@@ -754,12 +982,18 @@ exports.verifyBankAccount = async (req, res) => {
   if (!accountNumber || !bankCode) throw new AppError('Account number and bank code required', 400);
 
   const country = await getCountryForUser(req.user);
-  const result = await paymentService.verifyBankAccountUnified(accountNumber, bankCode, country.code);
+  const result = await paymentService.verifyBankAccountUnified(accountNumber, bankCode, country.code, country);
   if (!result) throw new AppError('Account not found', 404);
 
   res.status(200).json({
     success: true,
-    data: { accountName: result.account_name, accountNumber: result.account_number },
+    data: {
+      accountName:    result.account_name,
+      accountNumber:  result.account_number,
+      // Orange can't confirm the wallet holder's name — the client shows a
+      // "double-check this number" hint instead of a green verified state.
+      unverifiedName: !!result.unverifiedName,
+    },
   });
 };
 
@@ -803,7 +1037,12 @@ exports.adminApprovePayout = async (req, res) => {
   let transferCode  = null;
   let transferError = null;
   let providerOk    = false;
-  let provider      = paymentService.getActivePayoutProvider();
+
+  // Route by the payout owner's country, not a single global provider —
+  // an Orange market settles through Orange Money cash-out while a
+  // Nigerian payout still goes out over Paystack/Flutterwave.
+  const payoutCountry = await getCountryForUser(payout.user);
+  let provider = paymentService.resolvePayoutProviderForCountry(payoutCountry);
 
   try {
     const result = await paymentService.initiatePayoutTransfer({
@@ -814,6 +1053,8 @@ exports.adminApprovePayout = async (req, res) => {
       reason:        `Wallet withdrawal — ${payout.user.firstName} ${payout.user.lastName}`,
       reference:     payout.reference,
       currency:      payout.currency,
+      country:       payoutCountry,
+      msisdn:        payout.payoutDetails?.msisdn ?? null,
     });
     transferCode = result.transferCode;
     provider     = result.provider;
@@ -823,19 +1064,26 @@ exports.adminApprovePayout = async (req, res) => {
     console.error(`[adminApprovePayout] ${provider} transfer error:`, transferError);
   }
 
+  // When the provider call failed the money has NOT left yet. Marking the
+  // payout COMPLETED regardless would tell the driver they've been paid and
+  // hide the row from the ops queue. Orange markets hit this path routinely
+  // until the B2C cash-out contract goes live, so the failure case has to
+  // stay visible and retryable rather than being swallowed.
+  const settledStatus = providerOk ? 'COMPLETED' : 'PROCESSING';
+
   await prisma.$transaction([
     prisma.payout.update({
       where: { id },
       data: {
-        status:       'COMPLETED',
-        processedAt:  new Date(),
+        status:       settledStatus,
+        ...(providerOk && { processedAt: new Date() }),
         ...(transferCode  && { transferCode }),
         ...(transferError && { transferError }),
       },
     }),
     prisma.walletTransaction.updateMany({
       where: { reference: payout.reference },
-      data:  { status: 'COMPLETED' },
+      data:  { status: providerOk ? 'COMPLETED' : 'PENDING' },
     }),
   ]);
 
@@ -861,8 +1109,8 @@ exports.adminApprovePayout = async (req, res) => {
   await notificationService.notify({
     userId:  payout.userId,
     title:   'Withdrawal Approved ✅',
-    message: `Your withdrawal of ${formatMoney(payout.amount, payout.currency)} to ${payout.accountName} has been approved${
-      providerOk ? ' and is on its way' : ' — bank transfer will be retried shortly'
+    message: `Your withdrawal of ${formatMoney(payout.amount, payout.currency)} to ${payout.bankName || payout.accountName} has been approved${
+      providerOk ? ' and is on its way' : ' — the transfer is being processed and will complete shortly'
     }.${note ? ` Note: ${note}` : ''}`,
     type:    notificationService.TYPES.WALLET_WITHDRAWAL,
     data:    { payoutId: id, amount: payout.amount, reference: payout.reference },
@@ -885,7 +1133,7 @@ exports.adminApprovePayout = async (req, res) => {
     success:  true,
     message:  providerOk
       ? `Payout approved and ${provider} transfer initiated`
-      : `Payout approved but ${provider} transfer failed — ops retry required`,
+      : `Payout approved but the ${provider} transfer did not go through — left as PROCESSING for manual settlement`,
     data: {
       provider,
       [provider]: providerOk ? 'ok' : 'failed',

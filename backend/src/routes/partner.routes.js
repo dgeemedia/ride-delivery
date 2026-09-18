@@ -88,9 +88,14 @@ router.post(
   '/payout/request',
   authorize('DELIVERY_PARTNER'),
   [
-    body('amount').isFloat({ min: 1000 }),
-    body('accountNumber').notEmpty().isLength({ min: 10, max: 10 }),
-    body('bankCode').notEmpty(),
+    body('amount').isFloat({ min: 1 }),
+    // Destination fields are validated per-rail in the controller, which
+    // knows the requester's country: bank markets need a 10-digit NUBAN,
+    // Orange markets need an Orange Money MSISDN. Enforcing "10 digits"
+    // here would reject every Orange payout before it reached that logic.
+    body('accountNumber').optional().isString(),
+    body('bankCode').optional().isString(),
+    body('mobileNumber').optional().isString(),
     body('accountName').optional().isString()
   ],
   partnerController.requestPayout

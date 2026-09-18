@@ -28,6 +28,7 @@ import TicketDetail       from '@/pages/Support/TicketDetail';
 import PaymentList        from '@/pages/Payments/PaymentList';
 import Analytics          from '@/pages/Analytics/Overview';
 import GeneralSettings    from '@/pages/Settings/GeneralSettings';
+import CountryList        from '@/pages/Countries/CountryList';
 import NotificationsPage  from '@/pages/Notifications/NotificationsPage';
 import PayoutManagement   from '@/pages/Wallets/PayoutManagement';
 import AppFeedbackList from '@/pages/Feedback/AppFeedbackList';
@@ -101,6 +102,11 @@ function App() {
           <Route path="/deliveries"      element={<ProtectedRoute><DeliveryList /></ProtectedRoute>} />
           <Route path="/deliveries/live" element={<ProtectedRoute><LiveDeliveries /></ProtectedRoute>} />
           <Route path="/deliveries/:id"  element={<ProtectedRoute><DeliveryDetails /></ProtectedRoute>} />
+
+          {/* Countries — config is SUPER_ADMIN-only server-side, but ADMINs
+              can view the per-market operations queues, so this is a normal
+              protected route rather than a SuperAdminRoute. */}
+          <Route path="/countries" element={<ProtectedRoute><CountryList /></ProtectedRoute>} />
 
           {/* Wallet management */}
           <Route path="/wallets" element={<ProtectedRoute><PayoutManagement /></ProtectedRoute>} />
