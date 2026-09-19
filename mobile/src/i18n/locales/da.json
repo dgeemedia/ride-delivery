@@ -1702,5 +1702,14 @@
     "emptySub": "Nye leveringsanmodninger vises her",
     "acceptingDelivery": "Accepterer levering…",
     "connectingToCustomer": "Forbinder dig til kunden"
+  },
+  "tabs": {
+    "home": "Hjem",
+    "history": "Historik",
+    "wallet": "Tegnebog",
+    "profile": "Profil",
+    "dashboard": "Oversigt",
+    "earnings": "Indtjening",
+    "deliveries": "Leverancer"
   }
 }

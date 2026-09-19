@@ -1702,5 +1702,14 @@
     "emptySub": "Yeni teslimat istekleri burada görünecek",
     "acceptingDelivery": "Teslimat kabul ediliyor…",
     "connectingToCustomer": "Müşteriyle bağlanıyor"
+  },
+  "tabs": {
+    "home": "Ana Sayfa",
+    "history": "Geçmiş",
+    "wallet": "Cüzdan",
+    "profile": "Profil",
+    "dashboard": "Panel",
+    "earnings": "Kazançlar",
+    "deliveries": "Teslimatlar"
   }
 }

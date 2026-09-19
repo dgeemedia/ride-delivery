@@ -1706,5 +1706,14 @@
     "emptySub": "Новые запросы на доставку появятся здесь",
     "acceptingDelivery": "Принятие доставки…",
     "connectingToCustomer": "Соединение с клиентом"
+  },
+  "tabs": {
+    "home": "Главная",
+    "history": "История",
+    "wallet": "Кошелёк",
+    "profile": "Профиль",
+    "dashboard": "Панель",
+    "earnings": "Доход",
+    "deliveries": "Доставки"
   }
 }

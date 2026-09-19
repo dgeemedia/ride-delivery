@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../context/ThemeContext';
 import { ScrollProvider } from '../context/ScrollContext';
 import AnimatedTabBar from '../components/AnimatedTabBar';
@@ -101,6 +102,7 @@ const ProfileStack = () => (
 
 const PartnerNavigator = () => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
   const TAB_CONTENT_H = 54;
@@ -135,9 +137,9 @@ const PartnerNavigator = () => {
           tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
         })}
       >
-        <Tab.Screen name="DashboardTab" component={DashboardStack} options={{ title: 'Deliveries' }} />
-        <Tab.Screen name="EarningsTab"  component={EarningsStack}  options={{ title: 'Earnings'   }} />
-        <Tab.Screen name="ProfileTab"   component={ProfileStack}   options={{ title: 'Profile'    }} />
+        <Tab.Screen name="DashboardTab" component={DashboardStack} options={{ title: t('tabs.deliveries') }} />
+        <Tab.Screen name="EarningsTab"  component={EarningsStack}  options={{ title: t('tabs.earnings')   }} />
+        <Tab.Screen name="ProfileTab"   component={ProfileStack}   options={{ title: t('tabs.profile')    }} />
       </Tab.Navigator>
     </ScrollProvider>
   );

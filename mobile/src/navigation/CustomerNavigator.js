@@ -7,6 +7,7 @@ import { createStackNavigator }     from '@react-navigation/stack';
 import { Ionicons }   from '@expo/vector-icons';
 import { BlurView }   from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme }   from '../context/ThemeContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { ScrollProvider } from '../context/ScrollContext';
@@ -164,6 +165,7 @@ const wb = StyleSheet.create({
 // ── CustomerNavigator ─────────────────────────────────────────────────────────
 const CustomerNavigator = () => {
   const { theme, mode } = useTheme();
+  const { t }    = useTranslation();
   const insets   = useSafeAreaInsets();
   const darkMode = mode === 'dark';
 
@@ -259,10 +261,10 @@ const CustomerNavigator = () => {
           },
         })}
       >
-        <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: 'Home'    }} />
-        <Tab.Screen name="HistoryTab" component={HistoryStack} options={{ title: 'History' }} />
-        <Tab.Screen name="WalletTab"  component={WalletStack}  options={{ title: 'Wallet'  }} />
-        <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
+        <Tab.Screen name="HomeTab"    component={HomeStack}    options={{ title: t('tabs.home')    }} />
+        <Tab.Screen name="HistoryTab" component={HistoryStack} options={{ title: t('tabs.history') }} />
+        <Tab.Screen name="WalletTab"  component={WalletStack}  options={{ title: t('tabs.wallet')  }} />
+        <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: t('tabs.profile') }} />
       </Tab.Navigator>
     </ScrollProvider>
   );

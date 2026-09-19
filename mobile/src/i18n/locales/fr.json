@@ -1702,5 +1702,14 @@
     "emptySub": "Les nouvelles demandes de livraison apparaîtront ici",
     "acceptingDelivery": "Acceptation de la livraison…",
     "connectingToCustomer": "Connexion avec le client"
+  },
+  "tabs": {
+    "home": "Accueil",
+    "history": "Historique",
+    "wallet": "Portefeuille",
+    "profile": "Profil",
+    "dashboard": "Tableau de bord",
+    "earnings": "Revenus",
+    "deliveries": "Livraisons"
   }
 }

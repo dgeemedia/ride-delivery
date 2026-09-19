@@ -1700,5 +1700,14 @@
     "emptySub": "新的配送请求将显示在这里",
     "acceptingDelivery": "正在接单…",
     "connectingToCustomer": "正在为您连接客户"
+  },
+  "tabs": {
+    "home": "首页",
+    "history": "历史记录",
+    "wallet": "钱包",
+    "profile": "个人资料",
+    "dashboard": "仪表盘",
+    "earnings": "收入",
+    "deliveries": "配送"
   }
 }

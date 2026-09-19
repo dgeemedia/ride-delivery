@@ -1702,5 +1702,14 @@
     "emptySub": "Neue Lieferanfragen werden hier angezeigt",
     "acceptingDelivery": "Lieferung wird angenommen…",
     "connectingToCustomer": "Du wirst mit dem Kunden verbunden"
+  },
+  "tabs": {
+    "home": "Startseite",
+    "history": "Verlauf",
+    "wallet": "Wallet",
+    "profile": "Profil",
+    "dashboard": "Übersicht",
+    "earnings": "Einnahmen",
+    "deliveries": "Lieferungen"
   }
 }

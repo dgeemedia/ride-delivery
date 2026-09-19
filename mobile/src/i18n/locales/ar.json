@@ -1710,5 +1710,14 @@
     "emptySub": "ستظهر طلبات التوصيل الجديدة هنا",
     "acceptingDelivery": "جارٍ قبول التوصيل…",
     "connectingToCustomer": "جارٍ ربطك بالعميل"
+  },
+  "tabs": {
+    "home": "الرئيسية",
+    "history": "السجل",
+    "wallet": "المحفظة",
+    "profile": "الملف الشخصي",
+    "dashboard": "لوحة التحكم",
+    "earnings": "الأرباح",
+    "deliveries": "التوصيلات"
   }
 }

@@ -1701,5 +1701,14 @@
     "emptySub": "New delivery requests will appear here",
     "acceptingDelivery": "Accepting delivery…",
     "connectingToCustomer": "Connecting you to the customer"
+  },
+  "tabs": {
+    "home": "Home",
+    "history": "History",
+    "wallet": "Wallet",
+    "profile": "Profile",
+    "dashboard": "Dashboard",
+    "earnings": "Earnings",
+    "deliveries": "Deliveries"
   }
 }

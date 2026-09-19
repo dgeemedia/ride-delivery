@@ -1702,5 +1702,14 @@
     "emptySub": "नए डिलीवरी अनुरोध यहां दिखाई देंगे",
     "acceptingDelivery": "डिलीवरी स्वीकार की जा रही है…",
     "connectingToCustomer": "ग्राहक से जुड़ रहे हैं"
+  },
+  "tabs": {
+    "home": "होम",
+    "history": "इतिहास",
+    "wallet": "वॉलेट",
+    "profile": "प्रोफ़ाइल",
+    "dashboard": "डैशबोर्ड",
+    "earnings": "कमाई",
+    "deliveries": "डिलीवरी"
   }
 }
