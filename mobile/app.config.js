@@ -13,10 +13,13 @@ module.exports = {
     name:        'Diakite',
     slug:        'diakite',
     scheme:      'diakite',
-    version:     '1.0.5',
+    version:     '1.0.6',
     orientation: 'portrait',
     icon:        './assets/icon.png',
     userInterfaceStyle: 'dark',
+
+    runtimeVersion: { policy: 'appVersion' },
+    updates: { url: 'https://u.expo.dev/da8a9bc7-41c1-44d2-8d1d-a52b0dc46fb7' },
 
     splash: {
       image:      './assets/splash.png',
