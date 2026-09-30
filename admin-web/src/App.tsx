@@ -29,6 +29,7 @@ import PaymentList        from '@/pages/Payments/PaymentList';
 import Analytics          from '@/pages/Analytics/Overview';
 import GeneralSettings    from '@/pages/Settings/GeneralSettings';
 import CountryList        from '@/pages/Countries/CountryList';
+import CountrySettings    from '@/pages/Countries/CountrySettings';
 import NotificationsPage  from '@/pages/Notifications/NotificationsPage';
 import PayoutManagement   from '@/pages/Wallets/PayoutManagement';
 import AppFeedbackList from '@/pages/Feedback/AppFeedbackList';
@@ -107,6 +108,11 @@ function App() {
               can view the per-market operations queues, so this is a normal
               protected route rather than a SuperAdminRoute. */}
           <Route path="/countries" element={<ProtectedRoute><CountryList /></ProtectedRoute>} />
+          {/* Per-country pricing, commission, wallet, payout & bonus rules.
+              Everyone with settings access can view; only SUPER_ADMIN can save
+              (enforced server-side). */}
+          <Route path="/country-settings"       element={<ProtectedRoute><CountrySettings /></ProtectedRoute>} />
+          <Route path="/country-settings/:code" element={<ProtectedRoute><CountrySettings /></ProtectedRoute>} />
 
           {/* Wallet management */}
           <Route path="/wallets" element={<ProtectedRoute><PayoutManagement /></ProtectedRoute>} />

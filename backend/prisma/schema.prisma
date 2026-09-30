@@ -498,6 +498,28 @@ model Country {
   @@index([isActive])
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// COUNTRY SETTING — per-market overrides for pricing, commission, wallet,
+// payout and bonus rules. Keys deliberately reuse the SystemSettings key
+// names (ride_base_fare_car, platform_commission_rides, wallet_topup_min…)
+// so the resolution order is simply:
+//     CountrySetting(country, key)  →  SystemSettings(key)  →  built-in default
+// A row here means "this country has its own value"; deleting the row makes
+// the country inherit again. See services/countrySettings.service.js.
+// ─────────────────────────────────────────────────────────────────────────
+model CountrySetting {
+  id          String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  countryCode String
+  key         String
+  value       Json
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@unique([countryCode, key])
+  @@index([countryCode])
+}
+
 model PromoCode {
   id                String   @id @default(dbgenerated("(gen_random_uuid())::text"))
   code              String   @unique

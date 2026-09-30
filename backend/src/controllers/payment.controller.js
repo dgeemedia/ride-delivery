@@ -9,6 +9,7 @@ const emailService = require('../services/email.service');
 const { logActivity } = require('../utils/auditLog');
 const { getCurrencyForUserId, getCountryForUser } = require('../services/country.service');
 const { formatMoney } = require('../utils/currency');
+const { paymentSplit } = require('../services/paymentSplit.service');
 
 const safeSendEmail = async (fn, label) => {
   try {
@@ -87,8 +88,7 @@ exports.paystackVerify = async (req, res) => {
       method: 'CARD',
       status: 'COMPLETED',
       transactionId: reference,
-      platformFee: amount * 0.20,
-      driverEarnings: amount * 0.80
+      ...(await paymentSplit(req.user.id, { rideId, deliveryId }, amount))
     }
   });
 
@@ -153,8 +153,7 @@ exports.paystackWebhook = async (req, res) => {
             method: 'CARD',
             status: 'COMPLETED',
             transactionId: reference,
-            platformFee: chargedAmount * 0.20,
-            driverEarnings: chargedAmount * 0.80
+            ...(await paymentSplit(userId, { rideId, deliveryId }, chargedAmount))
           }
         });
 
@@ -244,8 +243,7 @@ exports.flutterwaveVerify = async (req, res) => {
       method: 'CARD',
       status: 'COMPLETED',
       transactionId: String(transactionId),
-      platformFee: amount * 0.20,
-      driverEarnings: amount * 0.80
+      ...(await paymentSplit(req.user.id, { rideId, deliveryId }, amount))
     }
   });
 
@@ -307,8 +305,7 @@ exports.flutterwaveWebhook = async (req, res) => {
             method: 'CARD',
             status: 'COMPLETED',
             transactionId: String(data.id),
-            platformFee: amount * 0.20,
-            driverEarnings: amount * 0.80
+            ...(await paymentSplit(userId, { rideId, deliveryId }, amount))
           }
         });
 
@@ -365,7 +362,7 @@ exports.orangeInitialize = async (req, res) => {
   }
 
   const currency = country.currencyCode;
-  if (['XOF', 'XAF', 'GNF'].includes(currency) && !Number.isInteger(Number(amount))) {
+  if (require('../utils/currency').isWholeUnitCurrency(currency) && !Number.isInteger(Number(amount))) {
     throw new AppError(`${currency} amounts must be whole numbers.`, 400);
   }
 
@@ -442,8 +439,7 @@ const settleOrangePayment = async (orderId) => {
     where: { id: payment.id },
     data: {
       status:         'COMPLETED',
-      platformFee:    payment.amount * 0.20,
-      driverEarnings: payment.amount * 0.80,
+      ...(await paymentSplit(payment.userId, { rideId: payment.rideId, deliveryId: payment.deliveryId }, payment.amount)),
       providerRef:    status.txnId ?? payment.providerRef,
     },
   });
@@ -529,8 +525,7 @@ exports.processCash = async (req, res) => {
       method: 'CASH',
       status: 'PENDING',
       transactionId: `CASH-${Date.now()}`,
-      platformFee: amount * 0.20,
-      driverEarnings: amount * 0.80
+      ...(await paymentSplit(req.user.id, { rideId, deliveryId }, amount))
     }
   });
 
@@ -555,8 +550,7 @@ exports.processWalletPayment = async (req, res) => {
     throw new AppError('Insufficient wallet balance', 400);
   }
 
-  const platformFee = amount * 0.20;
-  const earnings = amount * 0.80;
+  const { platformFee, driverEarnings: earnings } = await paymentSplit(req.user.id, { rideId, deliveryId }, amount);
 
   let earningsUserId = null;
   if (rideId) {

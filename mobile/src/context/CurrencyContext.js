@@ -14,6 +14,8 @@ import { useAuth } from './AuthContext';
 
 const CURRENCY_SYMBOLS = {
   NGN: '₦', GHS: 'GH₵', KES: 'KSh', ZAR: 'R', USD: '$', EUR: '€', GBP: '£',
+  XOF: 'CFA', XAF: 'FCFA', GMD: 'D', GNF: 'FG', SLE: 'Le', LRD: 'L$', CVE: '$',
+  MGA: 'Ar', CDF: 'FC', BWP: 'P',
 };
 
 // Kept in sync with backend/src/services/country.service.js's currency→locale
@@ -21,7 +23,12 @@ const CURRENCY_SYMBOLS = {
 // here as new countries go live so number formatting looks native.
 const CURRENCY_LOCALES = {
   NGN: 'en-NG', GHS: 'en-GH', KES: 'en-KE', ZAR: 'en-ZA', USD: 'en-US', EUR: 'en-IE', GBP: 'en-GB',
+  XOF: 'fr-CI', XAF: 'fr-CM', GMD: 'en-GM', GNF: 'fr-GN', SLE: 'en-SL', LRD: 'en-LR', CVE: 'pt-CV',
+  MGA: 'fr-MG', CDF: 'fr-CD', BWP: 'en-BW',
 };
+
+// Currencies with no minor unit — never show ".00" on these.
+const WHOLE_UNIT = ['XOF', 'XAF', 'GNF', 'MGA', 'CDF'];
 
 const CurrencyContext = createContext();
 
@@ -55,6 +62,7 @@ export const CurrencyProvider = ({ children }) => {
         style: 'currency',
         currency,
         minimumFractionDigits: opts.decimals ?? 0,
+        ...(WHOLE_UNIT.includes(currency) && { maximumFractionDigits: 0 }),
       }).format(value);
     } catch {
       // Intl doesn't recognise the currency code (shouldn't happen with the

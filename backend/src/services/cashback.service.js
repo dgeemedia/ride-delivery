@@ -3,35 +3,30 @@
 
 const prisma = require('../lib/prisma');
 const notificationService = require('./notification.service');
+const countrySettingsService = require('./countrySettings.service');
 const { ensureWallet } = require('../utils/walletHelpers');
+const { formatMoney } = require('../utils/currency');
 
 const REFERENCE_PREFIX = 'CASHBACK-MILESTONE-'; // e.g. CASHBACK-MILESTONE-10-{userId}
-const DEFAULT_MILESTONE = 10;
 
 // ─────────────────────────────────────────────
 // SETTINGS
-// All values are admin-configurable via SystemSettings — no redeploy needed
-// to change the trip threshold, reward mode, amount, cap, or eligibility date.
+// Resolved PER COUNTRY through countrySettings.service (country override →
+// global SystemSettings → default). Nigeria keeps reading the same global keys
+// the admin has always edited, so its behaviour is unchanged. Other countries
+// must be switched on explicitly and get their own reward amounts, because a
+// Naira amount is meaningless in CFA.
 // ─────────────────────────────────────────────
-async function getCashbackSettings() {
-  const [enabledS, milestoneS, modeS, amountS, pctS, capS, cutoffS] = await Promise.all([
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_enabled' } }),
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_milestone_trips' } }),
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_mode' } }),          // 'fixed' | 'percentage'
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_amount' } }),        // used if mode = fixed
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_percentage' } }),    // used if mode = percentage
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_max_amount' } }),    // optional cap, percentage mode only
-    prisma.systemSettings.findUnique({ where: { key: 'cashback_new_user_after' } }),
-  ]);
-
+async function getCashbackSettings(countryCode = 'NG') {
+  const { values: v } = await countrySettingsService.getEffectiveSettings(countryCode);
   return {
-    enabled:      enabledS?.value === 'true',
-    milestone:    milestoneS?.value ? parseInt(milestoneS.value, 10) : DEFAULT_MILESTONE,
-    mode:         modeS?.value === 'percentage' ? 'percentage' : 'fixed',
-    amount:       amountS?.value ? parseFloat(amountS.value) : 0,
-    percentage:   pctS?.value ? parseFloat(pctS.value) : 0,
-    maxAmount:    capS?.value ? parseFloat(capS.value) : null,
-    newUserAfter: cutoffS?.value ? new Date(cutoffS.value) : null,
+    enabled:      v.cashback_enabled === true,
+    milestone:    v.cashback_milestone_trips,
+    mode:         v.cashback_mode === 'percentage' ? 'percentage' : 'fixed',
+    amount:       v.cashback_amount,
+    percentage:   v.cashback_percentage,
+    maxAmount:    v.cashback_max_amount > 0 ? v.cashback_max_amount : null,
+    newUserAfter: v.cashback_new_user_after ? new Date(v.cashback_new_user_after) : null,
   };
 }
 
@@ -69,14 +64,14 @@ async function getFirstNTripsSpend(userId, milestone) {
 // so it's safe to call unconditionally on every completion.
 // ─────────────────────────────────────────────
 async function checkAndIssueRideCashback(userId) {
-  const settings = await getCashbackSettings();
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.role !== 'CUSTOMER') return;
+
+  const settings = await getCashbackSettings(user.countryCode ?? 'NG');
   if (!settings.enabled) return;
   if (!settings.milestone || settings.milestone < 1) return;
   if (settings.mode === 'fixed' && settings.amount <= 0) return;
   if (settings.mode === 'percentage' && settings.percentage <= 0) return;
-
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user || user.role !== 'CUSTOMER') return;
 
   // "New users" = signed up on/after the promo's configured start date
   if (settings.newUserAfter && user.createdAt < settings.newUserAfter) return;
@@ -101,7 +96,8 @@ async function checkAndIssueRideCashback(userId) {
   cashbackAmount = Math.round(cashbackAmount);
   if (cashbackAmount <= 0) return;
 
-  const wallet = await ensureWallet(userId);
+  const wallet = await ensureWallet(userId, user);
+  const money  = (n) => formatMoney(n, wallet.currency, user.countryCode);
 
   try {
     await prisma.$transaction([
@@ -112,7 +108,7 @@ async function checkAndIssueRideCashback(userId) {
           type: 'CREDIT',
           amount: cashbackAmount,
           description: settings.mode === 'percentage'
-            ? `🎉 ${settings.percentage}% cashback on your first ${settings.milestone} trips (₦${totalSpend.toLocaleString('en-NG')} spent)`
+            ? `🎉 ${settings.percentage}% cashback on your first ${settings.milestone} trips (${money(totalSpend)} spent)`
             : `🎉 Cashback for completing your first ${settings.milestone} trips`,
           status: 'COMPLETED',
           reference,
@@ -128,7 +124,7 @@ async function checkAndIssueRideCashback(userId) {
   await notificationService.notify({
     userId,
     title: 'Cashback Unlocked! 🎉',
-    message: `You've completed ${settings.milestone} rides/deliveries — ₦${cashbackAmount.toLocaleString('en-NG')} cashback has been added to your wallet.`,
+    message: `You've completed ${settings.milestone} rides/deliveries — ${money(cashbackAmount)} cashback has been added to your wallet.`,
     type: 'cashback_awarded',
     data: { amount: cashbackAmount, mode: settings.mode, totalSpend, milestone: settings.milestone },
   }).catch(() => {});

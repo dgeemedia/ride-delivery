@@ -43,8 +43,8 @@ export const analyticsAPI = {
     return response.data;
   },
 
-  getRevenueAnalytics: async (period: string = 'month'): Promise<ApiResponse<RevenueAnalytics>> => {
-    const response = await api.get('/admin/analytics/revenue', { params: { period } });
+  getRevenueAnalytics: async (period: string = 'month', country?: string): Promise<ApiResponse<RevenueAnalytics>> => {
+    const response = await api.get('/admin/analytics/revenue', { params: { period, ...(country && { country }) } });
     return response.data;
   },
 

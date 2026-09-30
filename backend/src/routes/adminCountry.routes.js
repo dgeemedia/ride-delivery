@@ -16,7 +16,15 @@ const router = express.Router();
 // ── Read ──────────────────────────────────────────────────────────────────
 // Static paths first — 'overview' would otherwise be captured by ':code'.
 router.get('/overview', authorize('ADMIN', 'SUPER_ADMIN'), controller.getAllCountriesOverview);
+router.get('/settings/compare', authorize('ADMIN', 'SUPER_ADMIN'), controller.compareCountrySettings);
 router.get('/', authorize('ADMIN', 'SUPER_ADMIN'), controller.listCountries);
+
+router.get(
+  '/:code/settings',
+  param('code').isLength({ min: 2, max: 2 }),
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  controller.getCountrySettings
+);
 
 router.get(
   '/:code/overview',
@@ -60,6 +68,29 @@ router.patch(
   param('code').isLength({ min: 2, max: 2 }),
   [body('isActive').isBoolean()],
   controller.setCountryStatus
+);
+
+// ── Per-country pricing / commission / wallet / payout / bonus rules ──────
+// Money-moving rules: SUPER_ADMIN only, same as editing global settings.
+router.put(
+  '/:code/settings',
+  authorize('SUPER_ADMIN'),
+  param('code').isLength({ min: 2, max: 2 }),
+  controller.updateCountrySettings
+);
+
+router.post(
+  '/:code/settings/copy',
+  authorize('SUPER_ADMIN'),
+  param('code').isLength({ min: 2, max: 2 }),
+  controller.copyCountrySettings
+);
+
+router.post(
+  '/:code/settings/review',
+  authorize('SUPER_ADMIN'),
+  param('code').isLength({ min: 2, max: 2 }),
+  controller.markPricingReviewed
 );
 
 module.exports = router;

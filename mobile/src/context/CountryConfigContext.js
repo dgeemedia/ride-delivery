@@ -17,6 +17,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { countryAPI } from '../services/api';
 import { useAuth } from './AuthContext';
+import { applyCountryLanguage } from '../i18n';
 
 // Mirrors backend FALLBACK_COUNTRY in services/country.service.js.
 const FALLBACK_CONFIG = {
@@ -50,6 +51,9 @@ export const CountryConfigProvider = ({ children }) => {
       if (next?.creditMethods?.length) {
         setConfig(next);
         setError(null);
+        // The account's country is authoritative: open the app in that
+        // country's language unless the user has picked one themselves.
+        applyCountryLanguage(next.countryCode, next.languageCode).catch(() => {});
       }
     } catch (err) {
       // Deliberately non-fatal — see the file header.

@@ -124,7 +124,10 @@ interface ApprovalModalProps {
 
 const ApprovalModal: React.FC<ApprovalModalProps> = ({ driver, isSuperAdmin, onClose, onApproved }) => {
   const [grantBonus,   setGrantBonus]   = useState(false);
-  const [bonusAmount,  setBonusAmount]  = useState('5000');
+  // Blank = use this country's configured onboarding bonus (in its own
+  // currency). It used to default to a hard-coded 5000 with a ₦ sign, which
+  // would have credited 5,000 CFA to a Mali driver.
+  const [bonusAmount,  setBonusAmount]  = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [showReject,   setShowReject]   = useState(false);
   const [loading,      setLoading]      = useState(false);
@@ -151,9 +154,9 @@ const docDefs = getDriverDocDefs(driver.vehicleType);
     try {
       await driversAPI.approveDriver(driver.id, {
         grantBonus:  isSuperAdmin && grantBonus,
-        bonusAmount: isSuperAdmin && grantBonus ? parseFloat(bonusAmount) : undefined,
+        bonusAmount: isSuperAdmin && grantBonus && bonusAmount.trim() !== '' ? parseFloat(bonusAmount) : undefined,
       });
-      toast.success(`${driver.user.firstName} approved${grantBonus ? ` + ₦${parseInt(bonusAmount).toLocaleString('en-NG')} bonus sent` : ''}`);
+      toast.success(`${driver.user.firstName} approved${grantBonus ? ' + onboarding bonus sent' : ''}`);
       onApproved();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to approve driver');
@@ -266,15 +269,19 @@ const docDefs = getDriverDocDefs(driver.vehicleType);
               </div>
             </label>
             {grantBonus && (
-              <div className="relative ml-7">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">₦</span>
+              <div className="ml-7">
                 <input
                   type="number"
                   value={bonusAmount}
                   onChange={e => setBonusAmount(e.target.value)}
                   min="0"
-                  className="w-40 pl-8 pr-3 py-2 rounded-lg border border-amber-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  placeholder="Country default"
+                  className="w-44 px-3 py-2 rounded-lg border border-amber-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
                 />
+                <p className="text-[11px] text-amber-700 mt-1">
+                  Leave blank to use this country's onboarding bonus (set under Countries → Pricing &amp; rules).
+                  Any amount you type is in the person's own currency.
+                </p>
               </div>
             )}
           </div>

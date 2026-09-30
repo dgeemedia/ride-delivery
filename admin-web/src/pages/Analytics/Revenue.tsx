@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, Select, Spinner } from '@/components/common';
 import { LineChart, BarChart } from '@/components/charts';
 import { analyticsAPI } from '@/services/api/analytics';
+import { countriesAPI, Country } from '@/services/api/countries';
 import { RevenueAnalytics } from '@/types';
 import { TrendingUp, DollarSign, CreditCard, BarChart2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -13,8 +14,15 @@ const PERIOD_OPTIONS = [
   { value: 'year',  label: 'Last Year'    },
 ];
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
+// Formats in the SELECTED country's currency. Falls back to a plain number if
+// Intl doesn't know the code, so an exotic currency can never blank the page.
+const makeFmt = (currency: string) => (n: number) => {
+  try {
+    return new Intl.NumberFormat('en', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n);
+  } catch {
+    return `${Math.round(n).toLocaleString()} ${currency}`;
+  }
+};
 
 interface StatCardProps {
   label:   string;
@@ -43,15 +51,21 @@ const Revenue: React.FC = () => {
   const [period,  setPeriod]  = useState('month');
   const [data,    setData]    = useState<RevenueAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [country, setCountry] = useState('NG');
+  const [countries, setCountries] = useState<Country[]>([]);
+
+  useEffect(() => {
+    countriesAPI.list().then(r => setCountries(r.data.countries)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     load();
-  }, [period]);
+  }, [period, country]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await analyticsAPI.getRevenueAnalytics(period);
+      const res = await analyticsAPI.getRevenueAnalytics(period, country);
       setData(res.data);
     } catch {
       toast.error('Failed to load revenue data');
@@ -69,6 +83,8 @@ const Revenue: React.FC = () => {
     );
   }
 
+  const fmt = makeFmt(data.currency || 'NGN');
+
   // Convert byMethod object → array for chart
   const byMethodData = Object.entries(data.byMethod || {}).map(([method, amount]) => ({
     method,
@@ -81,13 +97,23 @@ const Revenue: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Revenue Analytics</h1>
-          <p className="text-gray-500 mt-1 text-sm">Financial performance across all payment types</p>
+          <p className="text-gray-500 mt-1 text-sm">
+            Financial performance across all payment types — {data.countryName ?? country} ({data.currency}).
+            Amounts are shown one country at a time because currencies can't be added together.
+          </p>
         </div>
-        <Select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
-          options={PERIOD_OPTIONS}
-        />
+        <div className="flex gap-3">
+          <Select
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            options={(countries.length ? countries : [{ code: 'NG', name: 'Nigeria' } as Country]).map(c => ({ value: c.code, label: c.name }))}
+          />
+          <Select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            options={PERIOD_OPTIONS}
+          />
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -150,7 +176,7 @@ const Revenue: React.FC = () => {
           <BarChart
             data={byMethodData}
             xKey="method"
-            bars={[{ key: 'amount', name: 'Revenue (NGN)', color: '#007AFF' }]}
+            bars={[{ key: 'amount', name: `Revenue (${data.currency})`, color: '#007AFF' }]}
             height={280}
           />
         ) : (

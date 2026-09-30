@@ -9,6 +9,7 @@ const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog'); // ← ADDED
 const { formatMoney } = require('../utils/currency');
 const { getCountryForUser } = require('../services/country.service');
+const countrySettingsService = require('../services/countrySettings.service');
 const orangeService = require('../services/orange.service');
 
 console.log('[PARTNER-CTRL] Prisma partner controller loaded');
@@ -466,11 +467,11 @@ exports.requestPayout = async (req, res) => {
   const requester = await prisma.user.findUnique({ where: { id: req.user.id }, select: { countryCode: true } });
   const country = await getCountryForUser(requester);
 
-  // Minimum in the partner's own currency — the hardcoded naira string was
-  // wrong the moment a second market went live.
-  if (amount < 1000) {
-    throw new AppError(`Minimum payout amount is ${formatMoney(1000, country.currencyCode)}`, 400);
-  }
+  // Min / max / fee / on-off are per-country settings (Admin → Countries).
+  // Wallet is debited plan.gross; the provider is sent plan.net.
+  const plan = await countrySettingsService.planWithdrawal({
+    countryCode: country.code, role: 'DELIVERY_PARTNER', amount, currency: country.currencyCode,
+  });
 
   // Same rail resolution as driver.controller.js — kept in step deliberately
   // so a driver and a courier in the same market never see different rules.
@@ -540,7 +541,7 @@ exports.requestPayout = async (req, res) => {
     prisma.payout.create({
       data: {
         userId:        req.user.id,
-        amount,
+        amount:        plan.net,
         currency:      wallet.currency,
         accountNumber: destination,
         bankCode:      resolvedBankCode,
@@ -548,7 +549,7 @@ exports.requestPayout = async (req, res) => {
         status:        'PENDING',
         reference,
         payoutMethod:  resolvedPayoutMethod,
-        payoutDetails,
+        payoutDetails: { ...payoutDetails, grossAmount: plan.gross, fee: plan.fee },
       },
     }),
   ]);
@@ -562,8 +563,8 @@ exports.requestPayout = async (req, res) => {
     details: {
       role:          'DELIVERY_PARTNER',
       amount,
-      bankCode,
-      accountNumber: `****${accountNumber.slice(-4)}`,
+      bankCode: resolvedBankCode,
+      accountNumber: `****${String(destination).slice(-4)}`,
       reference,
     },
     req,
@@ -574,7 +575,7 @@ exports.requestPayout = async (req, res) => {
     title:   'Withdrawal Requested 🏦',
     message: `${formatMoney(amount, wallet.currency)} withdrawal to ${resolvedAccountName} is pending admin review.`,
     type:    notificationService.TYPES.WALLET_WITHDRAWAL,
-    data:    { amount, accountNumber: `****${accountNumber.slice(-4)}`, bankCode, reference },
+    data:    { amount, accountNumber: `****${String(destination).slice(-4)}`, bankCode: resolvedBankCode, reference },
   });
 
   const admins = await prisma.user.findMany({

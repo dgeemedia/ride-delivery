@@ -15,6 +15,8 @@ import { useTheme }          from '../../context/ThemeContext';
 import { useTranslation }    from 'react-i18next';
 import { RegisterHeroIllustration } from '../../components/ServiceIcons';
 import { countryAPI } from '../../services/api';
+import * as Localization from 'expo-localization';
+import { applyCountryLanguage } from '../../i18n';
 
 const { width, height } = Dimensions.get('window');
 const LOGO = require('../../../assets/diakite_dark.png');
@@ -70,6 +72,7 @@ const ROLE_I18N_KEYS = {
 const COUNTRY_FLAGS = {
   NG: '🇳🇬', GH: '🇬🇭', CI: '🇨🇮', SN: '🇸🇳', ML: '🇲🇱', TG: '🇹🇬', BJ: '🇧🇯',
   BF: '🇧🇫', NE: '🇳🇪', GN: '🇬🇳', GW: '🇬🇼', GM: '🇬🇲', SL: '🇸🇱', LR: '🇱🇷', CV: '🇨🇻',
+  CM: '🇨🇲', MG: '🇲🇬', BW: '🇧🇼', CD: '🇨🇩', CF: '🇨🇫',
 };
 
 // Used only if the /countries fetch fails (e.g. offline at registration
@@ -82,6 +85,7 @@ const FALLBACK_COUNTRIES = [{ code: 'NG', flag: '🇳🇬', name: 'Nigeria', dia
 const COUNTRY_PHONE_DIGITS = {
   NG: 10, GH: 9, CI: 10, SN: 9, ML: 8, TG: 8, BJ: 8, BF: 8,
   NE: 8, GN: 9, GW: 7, GM: 7, SL: 8, LR: 8, CV: 7,
+  CM: 9, MG: 9, BW: 8, CD: 9, CF: 8,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -484,8 +488,15 @@ export default function RegisterScreen({ navigation }) {
         }));
         if (!cancelled && list.length > 0) {
           setCountries(list);
-          // Keep current selection if it's still valid, else default to first.
-          setCountryCode(prev => (list.some(c => c.code === prev) ? prev : list[0].code));
+          // Keep current selection if it's still valid; otherwise pre-select the
+          // country the phone is set to (someone installing in Mali lands on
+          // Mali, not Nigeria); otherwise the first in the list.
+          const deviceRegion = Localization.getLocales?.()?.[0]?.regionCode;
+          setCountryCode(prev => {
+            if (list.some(c => c.code === prev) && prev !== FALLBACK_COUNTRIES[0].code) return prev;
+            if (deviceRegion && list.some(c => c.code === deviceRegion)) return deviceRegion;
+            return list.some(c => c.code === prev) ? prev : list[0].code;
+          });
         }
       } catch (err) {
         console.error('[RegisterScreen] Failed to load countries, using fallback:', err?.message ?? err);
@@ -904,7 +915,12 @@ export default function RegisterScreen({ navigation }) {
                       {countries.map(c => (
                         <TouchableOpacity
                           key={c.code}
-                          onPress={() => { setCountryCode(c.code); setCountryPickerVisible(false); }}
+                          onPress={() => {
+                            setCountryCode(c.code);
+                            setCountryPickerVisible(false);
+                            // Show the rest of sign-up in this country's language (no-op if the user chose one).
+                            applyCountryLanguage(c.code, c.languageCode).catch(() => {});
+                          }}
                           style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 10 }}
                         >
                           <Text style={{ fontSize: 20, marginRight: 12 }}>{c.flag}</Text>

@@ -10,7 +10,9 @@ const shieldService = require('../services/shield.service');
 const commissionService = require('../services/commission.service');
 const cashbackService = require('../services/cashback.service');
 const { logger } = require('../utils/logger');
-const { getCurrencyForUserId } = require('../services/country.service');
+const { getCurrencyForUserId, getPricingContextForUserId } = require('../services/country.service');
+const { formatMoney } = require('../utils/currency');
+const countrySettingsService = require('../services/countrySettings.service');
 
 exports.getFeeEstimate = async (req, res) => {
   const { pickupLat, pickupLng, dropoffLat, dropoffLng, packageWeight } = req.query;
@@ -24,8 +26,9 @@ exports.getFeeEstimate = async (req, res) => {
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
 
-  const deliveryCurrency  = await getCurrencyForUserId(req.user.id);
-  const feeResult         = await fareEngine.calculateDeliveryFee(distance, packageWeight ? parseFloat(packageWeight) : 0, deliveryCurrency);
+  const pricingCtx        = await getPricingContextForUserId(req.user.id);
+  const deliveryCurrency  = pricingCtx.currencyCode;
+  const feeResult         = await fareEngine.calculateDeliveryFee(distance, packageWeight ? parseFloat(packageWeight) : 0, deliveryCurrency, pricingCtx.countryCode);
   const estimatedDuration = Math.ceil(distance / 0.4);
 
   res.status(200).json({
@@ -62,8 +65,9 @@ exports.requestDelivery = async (req, res) => {
 
   const distance = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
 
-  const deliveryCurrency = await getCurrencyForUserId(req.user.id);
-  const feeResult    = await fareEngine.calculateDeliveryFee(distance, packageWeight || 0, deliveryCurrency);
+  const pricingCtx       = await getPricingContextForUserId(req.user.id);
+  const deliveryCurrency = pricingCtx.currencyCode;
+  const feeResult    = await fareEngine.calculateDeliveryFee(distance, packageWeight || 0, deliveryCurrency, pricingCtx.countryCode);
   let   estimatedFee = feeResult.estimatedFee;
 
   let partnerFloorResult = null;
@@ -77,6 +81,7 @@ exports.requestDelivery = async (req, res) => {
       partnerFloorResult = fareEngine.applyDriverFloor(
         estimatedFee * floorMultiplier,
         estimatedFee,
+        feeResult.roundingStep,
       );
       estimatedFee = partnerFloorResult.adjustedFare;
     }
@@ -97,7 +102,7 @@ exports.requestDelivery = async (req, res) => {
       } else {
         estimatedFee = Math.max(0, estimatedFee - appliedPromo.discountValue);
       }
-      estimatedFee = Math.round(estimatedFee / 50) * 50;
+      estimatedFee = fareEngine.roundToStep(estimatedFee, feeResult.roundingStep);
       await prisma.promoCode.update({ where: { id: appliedPromo.id }, data: { currentUses: { increment: 1 } } });
     }
   }
@@ -212,12 +217,15 @@ exports.acceptDelivery = async (req, res) => {
 
   const wallet          = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   const walletBalance   = wallet?.balance ?? 0;
-  const requiredBalance = delivery.estimatedFee;
+  const partnerCtx      = await getPricingContextForUserId(req.user.id);
+  const requiredPct     = await countrySettingsService.getSetting(partnerCtx.countryCode, 'driver_min_balance_percent');
+  const requiredBalance = Math.ceil(delivery.estimatedFee * (requiredPct / 100));
+  const cur             = delivery.currency || partnerCtx.currencyCode;
 
   if (walletBalance < requiredBalance) {
     throw new AppError(
-      `Insufficient wallet balance. You need at least ₦${requiredBalance.toLocaleString('en-NG')} to accept this delivery. ` +
-      `Your current balance is ₦${walletBalance.toLocaleString('en-NG')}. Please top up your wallet.`,
+      `Insufficient wallet balance. You need at least ${formatMoney(requiredBalance, cur)} to accept this delivery. ` +
+      `Your current balance is ${formatMoney(walletBalance, cur)}. Please top up your wallet.`,
       402
     );
   }
@@ -303,7 +311,8 @@ exports.completeDelivery = async (req, res) => {
   if (delivery.partnerId !== req.user.id) throw new AppError('Unauthorized', 403);
   if (delivery.status !== 'IN_TRANSIT') throw new AppError('Delivery is not in transit', 400);
 
-  const settings        = await fareEngine.getSettings();
+  const { countryCode: deliveryCountry } = await getPricingContextForUserId(delivery.customerId);
+  const settings        = await fareEngine.getSettings(deliveryCountry);
   const commissionRate  = settings.delivery.platformCommission;
   const finalFee        = actualFee || delivery.estimatedFee;
   const platformFee     = Math.round(finalFee * commissionRate);
@@ -366,7 +375,7 @@ exports.completeDelivery = async (req, res) => {
     earnerUserId:     delivery.partnerId,
     grossAmount:      finalFee,
     bookingFee:       0,
-    commissionRate:   commissionRate ?? 0.15,
+    commissionRate,
     commissionAmount: platformFee,
     earnerAmount:     partnerEarnings,
     surgeMultiplier:  1.0,
@@ -378,14 +387,14 @@ exports.completeDelivery = async (req, res) => {
   await notificationService.notify({
     userId:  delivery.customerId,
     title:   'Package Delivered! ✅',
-    message: `Your package has been delivered to ${recipientName || 'the recipient'}. Total: ₦${finalFee.toFixed(2)}. Please rate your delivery partner!`,
+    message: `Your package has been delivered to ${recipientName || 'the recipient'}. Total: ${formatMoney(finalFee, delivery.currency, deliveryCountry)}. Please rate your delivery partner!`,
     type:    notificationService.TYPES.DELIVERY_COMPLETED,
     data:    { deliveryId: id, fee: finalFee, deliveryImageUrl }
   });
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Delivery Completed 💰',
-    message: `Package delivered. Earnings: ₦${partnerEarnings.toFixed(2)} (after ${Math.round(commissionRate * 100)}% platform fee).`,
+    message: `Package delivered. Earnings: ${formatMoney(partnerEarnings, delivery.currency, deliveryCountry)} (after ${Math.round(commissionRate * 100)}% platform fee).`,
     type:    notificationService.TYPES.PAYMENT_RECEIVED,
     data:    { deliveryId: id, earnings: partnerEarnings, platformFee }
   });
@@ -568,14 +577,15 @@ exports.getNearbyPartners = async (req, res) => {
 
   // Compute fee per partner using real route distance (or fallback 3 km)
   const estimateKm = routeKm ?? 3;
-  const requesterCurrency = await getCurrencyForUserId(req.user.id); // ← looked up once, not per partner
+  const requesterCtx      = await getPricingContextForUserId(req.user.id); // ← looked up once, not per partner
+  const requesterCurrency = requesterCtx.currencyCode;
   const formatted  = await Promise.all(nearby.map(async (p) => {
-    const feeResult       = await fareEngine.calculateDeliveryFee(estimateKm, 0, requesterCurrency);
+    const feeResult       = await fareEngine.calculateDeliveryFee(estimateKm, 0, requesterCurrency, requesterCtx.countryCode);
     const floorMultiplier = p.floorMultiplier;
     let   effectiveFee    = feeResult.estimatedFee;
 
     if (floorMultiplier > 1.0) {
-      const floored  = fareEngine.applyDriverFloor(effectiveFee * floorMultiplier, effectiveFee);
+      const floored  = fareEngine.applyDriverFloor(effectiveFee * floorMultiplier, effectiveFee, feeResult.roundingStep);
       effectiveFee   = floored.adjustedFare;
     }
 

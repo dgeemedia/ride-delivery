@@ -1501,8 +1501,9 @@ const OnboardingBonusSection: React.FC = () => {
   const [preview,      setPreview]      = useState<{
     drivers:  { eligible: number; total: number; alreadyBonused: number; totalWalletBalance: number };
     partners: { eligible: number; total: number; alreadyBonused: number; totalWalletBalance: number };
+    byCountry?: { countryCode: string; currency: string; drivers: number; partners: number; driverBonus: number; partnerBonus: number; total: number }[];
   } | null>(null);
-  const [result,      setResult]      = useState<{ drivers: number; partners: number } | null>(null);
+  const [result,      setResult]      = useState<{ drivers: number; partners: number; byCountry?: { countryCode: string; currency: string; drivers: number; partners: number; total: number }[] } | null>(null);
   const [logs,        setLogs]        = useState<any[]>([]);
   const [logsOpen,    setLogsOpen]    = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -1546,22 +1547,23 @@ const OnboardingBonusSection: React.FC = () => {
   };
 
   const totalEligible = preview ? preview.drivers.eligible + preview.partners.eligible : 0;
-  const totalPayout   = preview
-    ? (preview.drivers.eligible  * parseFloat(driverBonus  || '0')) +
-      (preview.partners.eligible * parseFloat(partnerBonus || '0'))
-    : 0;
+  // Amounts are in different currencies, so there is no single grand total —
+  // the server returns one row per country and we show them as such.
+  const perCountry = preview?.byCountry ?? [];
 
   return (
     <div className="space-y-4">
       <Alert variant="info">
         Only approved drivers/partners who have <strong>never previously received</strong> an onboarding bonus are eligible.
-        The bonus is <strong>non-withdrawable</strong>.
+        The bonus is <strong>non-withdrawable</strong>. Each person is paid in <strong>their own country's currency</strong>,
+        using the bonus set for that country under <em>Countries → Pricing &amp; rules</em>. The two amounts below apply to
+        <strong> Nigeria only</strong> (₦); every other country always uses its own configured amount.
       </Alert>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-sm">
         {([
-          { label: 'Driver bonus (₦)',  value: driverBonus,  setter: setDriverBonus  },
-          { label: 'Partner bonus (₦)', value: partnerBonus, setter: setPartnerBonus },
+          { label: 'Nigeria driver bonus (₦)',  value: driverBonus,  setter: setDriverBonus  },
+          { label: 'Nigeria partner bonus (₦)', value: partnerBonus, setter: setPartnerBonus },
         ] as const).map(({ label, value, setter }) => (
           <div key={label}>
             <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
@@ -1579,9 +1581,9 @@ const OnboardingBonusSection: React.FC = () => {
         <div className="border border-gray-200 rounded-lg overflow-hidden">
           <div className="grid grid-cols-2 divide-x divide-gray-200">
             {([
-              { label: 'Drivers',  data: preview.drivers,  amount: driverBonus  },
-              { label: 'Partners', data: preview.partners, amount: partnerBonus },
-            ] as const).map(({ label, data, amount }) => (
+              { label: 'Drivers',  data: preview.drivers  },
+              { label: 'Partners', data: preview.partners },
+            ] as const).map(({ label, data }) => (
               <div key={label} className="p-4">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{label}</p>
                 <p className="mt-1 text-2xl font-bold text-gray-900">{data.eligible}</p>
@@ -1589,16 +1591,36 @@ const OnboardingBonusSection: React.FC = () => {
                 {data.alreadyBonused > 0 && (
                   <p className="text-xs text-orange-500 mt-0.5">{data.alreadyBonused} already received bonus</p>
                 )}
-                <p className="text-xs font-medium text-green-600 mt-2">
-                  Payout: ₦{(data.eligible * parseFloat(amount || '0')).toLocaleString('en-NG')}
-                </p>
               </div>
             ))}
           </div>
+          {perCountry.length > 0 && (
+            <div className="border-t border-gray-200 px-4 py-3">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">By country</p>
+              <table className="w-full text-xs">
+                <thead className="text-gray-400"><tr>
+                  <th className="text-left font-medium pb-1">Country</th><th className="text-right font-medium pb-1">Drivers</th>
+                  <th className="text-right font-medium pb-1">Partners</th><th className="text-right font-medium pb-1">Each (D / P)</th>
+                  <th className="text-right font-medium pb-1">Total</th>
+                </tr></thead>
+                <tbody>{perCountry.map(c => (
+                  <tr key={c.countryCode} className="border-t border-gray-100 text-gray-700">
+                    <td className="py-1.5 font-medium">{c.countryCode}</td>
+                    <td className="py-1.5 text-right">{c.drivers}</td>
+                    <td className="py-1.5 text-right">{c.partners}</td>
+                    <td className="py-1.5 text-right">{c.driverBonus.toLocaleString()} / {c.partnerBonus.toLocaleString()} {c.currency}</td>
+                    <td className="py-1.5 text-right font-semibold text-green-700">{c.total.toLocaleString()} {c.currency}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              {perCountry.some(c => c.driverBonus === 0 && c.partnerBonus === 0) && (
+                <p className="text-xs text-amber-600 mt-2">A row with 0 has no onboarding bonus configured for that country — those people are skipped.</p>
+              )}
+            </div>
+          )}
           {totalEligible > 0 ? (
             <div className="px-4 py-3 bg-green-50 border-t border-gray-200 flex items-center justify-between">
               <p className="text-xs text-gray-600">{totalEligible} recipient{totalEligible !== 1 ? 's' : ''} will be credited</p>
-              <p className="text-sm font-bold text-green-700">Total: ₦{totalPayout.toLocaleString('en-NG')}</p>
             </div>
           ) : (
             <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
@@ -1610,7 +1632,10 @@ const OnboardingBonusSection: React.FC = () => {
 
       {result && (
         <Alert variant="success">
-          ✅ <strong>{result.drivers}</strong> driver(s) and <strong>{result.partners}</strong> partner(s) credited.
+          ✅ <strong>{result.drivers}</strong> driver(s) and <strong>{result.partners}</strong> partner(s) credited
+          {result.byCountry && result.byCountry.length > 0 && (
+            <> — {result.byCountry.filter(c => c.total > 0).map(c => `${c.countryCode}: ${c.total.toLocaleString()} ${c.currency}`).join(' · ')}</>
+          )}.
         </Alert>
       )}
 
@@ -1621,7 +1646,7 @@ const OnboardingBonusSection: React.FC = () => {
         <Button loading={loading} onClick={handleDisbursement} disabled={!preview || totalEligible === 0}>
           <Gift className="h-4 w-4" />
           {totalEligible > 0
-            ? `Disburse ₦${totalPayout.toLocaleString('en-NG')} to ${totalEligible} recipient${totalEligible !== 1 ? 's' : ''}`
+            ? `Disburse to ${totalEligible} recipient${totalEligible !== 1 ? 's' : ''}`
             : 'Disburse bonuses'}
         </Button>
       </div>
@@ -1657,7 +1682,11 @@ const OnboardingBonusSection: React.FC = () => {
                         <td className="py-2">{new Date(log.createdAt).toLocaleString('en-NG')}</td>
                         <td className="py-2">{log.details?.driverCount  ?? '—'}</td>
                         <td className="py-2">{log.details?.partnerCount ?? '—'}</td>
-                        <td className="py-2">₦{(log.details?.totalDisbursed ?? 0).toLocaleString('en-NG')}</td>
+                        <td className="py-2">
+                          {Array.isArray(log.details?.byCountry)
+                            ? log.details.byCountry.filter((c: any) => c.total > 0).map((c: any) => `${c.countryCode} ${Number(c.total).toLocaleString()} ${c.currency}`).join(' · ') || '—'
+                            : `₦${(log.details?.totalDisbursed ?? 0).toLocaleString('en-NG')}`}
+                        </td>
                         <td className="py-2">{log.user?.firstName} {log.user?.lastName}</td>
                       </tr>
                     ))}

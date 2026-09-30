@@ -10,7 +10,8 @@ const { logActivity } = require('../utils/auditLog');
 const { ensureWallet: ensureWalletShared } = require('../utils/walletHelpers');
 const { getCountryForUser, getCurrencyForUserId, getPaymentConfigForUser } = require('../services/country.service');
 const orangeService = require('../services/orange.service');
-const { formatMoney } = require('../utils/currency');
+const { formatMoney, isWholeUnitCurrency } = require('../utils/currency');
+const countrySettingsService = require('../services/countrySettings.service');
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -227,17 +228,12 @@ exports.verifyPaystackTopup = async (req, res) => {
 
 exports.initializeTopUp = async (req, res) => {
   const { amount } = req.body;
-  const chargeCurrency = await getCurrencyForUserId(req.user.id);
-  if (!amount || amount < 100) throw new AppError(`Minimum top-up is ${formatMoney(100, chargeCurrency)}`, 400);
+  const topUpCountry   = await getCountryForUser(req.user);
+  const chargeCurrency = topUpCountry.currencyCode;
+  if (!amount || amount <= 0) throw new AppError('Enter a valid top-up amount', 400);
 
-  // ── Fetch admin-configured limits from SystemSettings ──
-  const [minSetting, maxSetting] = await Promise.all([
-    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_min' } }),
-    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_max' } }),
-  ]);
-
-  const minDeposit = minSetting?.value ? parseFloat(minSetting.value) : 100;
-  const maxDeposit = maxSetting?.value ? parseFloat(maxSetting.value) : 1_000_000;
+  // ── Per-country limits (country override → global → default) ──
+  const { min: minDeposit, max: maxDeposit } = await countrySettingsService.getTopUpLimits(topUpCountry.code);
 
   if (amount < minDeposit)
     throw new AppError(`Minimum top-up is ${formatMoney(minDeposit, chargeCurrency)}`, 400);
@@ -382,7 +378,7 @@ exports.verifyTopUp = async (req, res) => {
 // rather than a rounding question. Reject it loudly instead of silently
 // truncating the customer's money.
 const assertWholeUnits = (amount, currency) => {
-  if (['XOF', 'XAF', 'GNF'].includes(currency) && !Number.isInteger(Number(amount))) {
+  if (isWholeUnitCurrency(currency) && !Number.isInteger(Number(amount))) {
     throw new AppError(`${currency} amounts must be whole numbers.`, 400);
   }
 };
@@ -411,12 +407,7 @@ exports.orangeTopup = async (req, res) => {
 
   // Same admin-configured limits the Paystack flow respects, so a market
   // switching rails doesn't quietly lose its deposit caps.
-  const [minSetting, maxSetting] = await Promise.all([
-    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_min' } }),
-    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_max' } }),
-  ]);
-  const minDeposit = minSetting?.value ? parseFloat(minSetting.value) : 100;
-  const maxDeposit = maxSetting?.value ? parseFloat(maxSetting.value) : 1_000_000;
+  const { min: minDeposit, max: maxDeposit } = await countrySettingsService.getTopUpLimits(country.code);
 
   if (amount < minDeposit) throw new AppError(`Minimum top-up is ${formatMoney(minDeposit, currency)}`, 400);
   if (amount > maxDeposit) throw new AppError(`Maximum top-up is ${formatMoney(maxDeposit, currency)}`, 400);
@@ -739,9 +730,7 @@ exports.transfer = async (req, res) => {
     const senderWallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   if (!senderWallet) throw new AppError('Wallet not found', 404);
 
-  // TODO: move to a per-country SystemSettings value (like wallet_topup_min/max)
-  // once transfer minimums need to vary by market instead of being a flat rule.
-  const MIN_TRANSFER = 50;
+  const MIN_TRANSFER = await countrySettingsService.getSetting(req.user.countryCode ?? 'NG', 'transfer_min');
   if (amount < MIN_TRANSFER) {
     throw new AppError(`Minimum transfer is ${formatMoney(MIN_TRANSFER, senderWallet.currency)}`, 400);
   }
@@ -855,10 +844,15 @@ exports.withdraw = async (req, res) => {
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   if (!wallet) throw new AppError('Wallet not found', 404);
 
-  if (amount < 500) throw new AppError(`Minimum withdrawal is ${formatMoney(500, wallet.currency)}`, 400);
+  const country = await getCountryForUser(req.user);
+
+  // Min / max / fee / on-off are per country. `plan.gross` leaves the wallet;
+  // `plan.net` (gross minus fee) is what the payout provider is asked to send.
+  const plan = await countrySettingsService.planWithdrawal({
+    countryCode: country.code, role: req.user.role, amount, currency: wallet.currency,
+  });
   if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
 
-  const country = await getCountryForUser(req.user);
   const payoutMethods = country.payoutMethods;
 
   // A market is payout-capable once it has at least one real rail. Markets
@@ -916,7 +910,7 @@ exports.withdraw = async (req, res) => {
     prisma.payout.create({
       data: {
         userId:        req.user.id,
-        amount,
+        amount:        plan.net,
         currency:      wallet.currency,
         accountNumber: destination,
         bankCode:      resolvedBankCode,
@@ -927,9 +921,15 @@ exports.withdraw = async (req, res) => {
         status:        'PENDING',
         reference,
         payoutMethod,
-        payoutDetails: isOrangePayout
-          ? { rail: 'ORANGE_MONEY', msisdn: destination, countryCode: country.code, autoSettle: orangeService.isB2CEnabled() }
-          : { rail: payoutMethod, countryCode: country.code },
+        payoutDetails: {
+          ...(isOrangePayout
+            ? { rail: 'ORANGE_MONEY', msisdn: destination, countryCode: country.code, autoSettle: orangeService.isB2CEnabled() }
+            : { rail: payoutMethod, countryCode: country.code }),
+          // amount above is the NET sent to the provider; these let a
+          // rejection refund the full gross the wallet was debited.
+          grossAmount: plan.gross,
+          fee:         plan.fee,
+        },
       },
     }),
   ]);
@@ -973,7 +973,7 @@ exports.withdraw = async (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Withdrawal request submitted. Our team will process it within 1–2 business days.',
-    data:    { reference, amount },
+    data:    { reference, amount, fee: plan.fee, net: plan.net },
   });
 };
 
@@ -1153,15 +1153,19 @@ exports.adminRejectPayout = async (req, res) => {
 
   const wallet = await prisma.wallet.findUnique({ where: { userId: payout.userId } });
 
+  // Payout.amount is the NET after the withdrawal fee. The wallet was debited
+  // the GROSS, so that's what a rejection must give back.
+  const refundAmount = payout.payoutDetails?.grossAmount ?? payout.amount;
+
   await prisma.$transaction([
-    prisma.wallet.update({ where: { userId: payout.userId }, data: { balance: { increment: payout.amount } } }),
+    prisma.wallet.update({ where: { userId: payout.userId }, data: { balance: { increment: refundAmount } } }),
     prisma.payout.update({ where: { id }, data: { status: 'FAILED', failureReason: reason, processedAt: new Date() } }),
     prisma.walletTransaction.updateMany({ where: { reference: payout.reference }, data: { status: 'FAILED' } }),
     prisma.walletTransaction.create({
       data: {
         walletId:    wallet.id,
         type:        'REFUND',
-        amount:      payout.amount,
+        amount:      refundAmount,
         description: `Withdrawal refund — ${reason ?? 'rejected by admin'}`,
         status:      'COMPLETED',
         reference:   `REFUND-${id}`,
@@ -1174,14 +1178,14 @@ exports.adminRejectPayout = async (req, res) => {
     action:     'admin_payout_rejected',
     entityType: 'Payout',
     entityId:   id,
-    details:    { targetUserId: payout.userId, amount: payout.amount, reason },
+    details:    { targetUserId: payout.userId, amount: refundAmount, reason },
     req,
   });
 
   await notificationService.notify({
     userId:  payout.userId,
     title:   'Withdrawal Rejected',
-    message: `Your withdrawal of ${formatMoney(payout.amount, payout.currency)} was rejected and refunded to your wallet.${reason ? ` Reason: ${reason}` : ''}`,
+    message: `Your withdrawal of ${formatMoney(refundAmount, payout.currency)} was rejected and refunded to your wallet.${reason ? ` Reason: ${reason}` : ''}`,
     type:    notificationService.TYPES.WALLET_CREDITED,
     data:    { payoutId: id, amount: payout.amount, reason },
   });
@@ -1453,19 +1457,20 @@ exports.adminGetWalletStats = async (req, res) => {
 };
 
 exports.getDepositLimits = async (req, res) => {
-  const [minSetting, maxSetting, wallet, country] = await Promise.all([
-    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_min' } }),
-    prisma.systemSettings.findUnique({ where: { key: 'wallet_topup_max' } }),
+  const [wallet, country] = await Promise.all([
     prisma.wallet.findUnique({ where: { userId: req.user.id }, select: { currency: true } }),
     getCountryForUser(req.user),
   ]);
+  const limits = await countrySettingsService.getTopUpLimits(country.code);
+  const wd     = await countrySettingsService.getWithdrawalRules(country.code, req.user.role);
 
   res.status(200).json({
     success: true,
     data: {
-      min: minSetting?.value ? parseFloat(minSetting.value) : 100,
-      max: maxSetting?.value ? parseFloat(maxSetting.value) : 1_000_000,
-      currency: wallet?.currency ?? 'NGN',
+      min: limits.min,
+      max: limits.max,
+      withdrawal: { enabled: wd.enabled, min: wd.min, max: wd.max, feeFlat: wd.feeFlat, feePercent: wd.feePct },
+      currency: wallet?.currency ?? country.currencyCode,
       paymentProviders: country.paymentProviders ?? ['paystack', 'flutterwave'],
     },
   });

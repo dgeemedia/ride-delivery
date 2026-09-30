@@ -21,6 +21,7 @@ const prisma = require('../../src/lib/prisma');
 const CARD   = ['CASH', 'WALLET', 'PAYSTACK', 'FLUTTERWAVE'];
 const FLW    = ['CASH', 'WALLET', 'FLUTTERWAVE'];
 const OM_FLW = ['CASH', 'WALLET', 'ORANGE_MONEY', 'FLUTTERWAVE'];
+const OM_ONLY = ['CASH', 'WALLET', 'ORANGE_MONEY'];   // markets Flutterwave doesn't serve
 
 const WEST_AFRICA_COUNTRIES = [
   // ── Card-first markets (no Orange presence) ────────────────────────────────
@@ -84,6 +85,36 @@ const WEST_AFRICA_COUNTRIES = [
     payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
     providerConfig: { orange: { webpayCountry: 'sl', lang: 'en' } } },
 
+  // ── Added for the Orange Money contract ───────────────────────────────────
+  // These start PAUSED (isActive: false). Their prices are auto-generated
+  // starter values until an admin reviews them under Admin → Countries →
+  // Pricing & rules, and the admin API refuses to activate them before then
+  // unless the admin explicitly overrides.
+  { code: 'CM', name: 'Cameroon', currencyCode: 'XAF', currencySymbol: 'FCFA', defaultLocale: 'fr-CM', languageCode: 'fr', phoneDialCode: '+237', isActive: false,
+    paymentProviders: ['orange', 'flutterwave'], creditMethods: OM_FLW,
+    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
+    providerConfig: { orange: { webpayCountry: 'cm', lang: 'fr' } } },
+
+  { code: 'MG', name: 'Madagascar', currencyCode: 'MGA', currencySymbol: 'Ar', defaultLocale: 'fr-MG', languageCode: 'fr', phoneDialCode: '+261', isActive: false,
+    paymentProviders: ['orange'], creditMethods: OM_ONLY,
+    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
+    providerConfig: { orange: { webpayCountry: 'mg', lang: 'fr' } } },
+
+  { code: 'BW', name: 'Botswana', currencyCode: 'BWP', currencySymbol: 'P', defaultLocale: 'en-BW', languageCode: 'en', phoneDialCode: '+267', isActive: false,
+    paymentProviders: ['orange'], creditMethods: OM_ONLY,
+    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
+    providerConfig: { orange: { webpayCountry: 'bw', lang: 'en' } } },
+
+  { code: 'CD', name: 'DR Congo', currencyCode: 'CDF', currencySymbol: 'FC', defaultLocale: 'fr-CD', languageCode: 'fr', phoneDialCode: '+243', isActive: false,
+    paymentProviders: ['orange', 'flutterwave'], creditMethods: OM_FLW,
+    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
+    providerConfig: { orange: { webpayCountry: 'cd', lang: 'fr' } } },
+
+  { code: 'CF', name: 'Central African Republic', currencyCode: 'XAF', currencySymbol: 'FCFA', defaultLocale: 'fr-CF', languageCode: 'fr', phoneDialCode: '+236', isActive: false,
+    paymentProviders: ['orange'], creditMethods: OM_ONLY,
+    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
+    providerConfig: { orange: { webpayCountry: 'cf', lang: 'fr' } } },
+
   { code: 'LR', name: 'Liberia',       currencyCode: 'LRD', currencySymbol: 'L$',  defaultLocale: 'en-LR', languageCode: 'en', phoneDialCode: '+231',
     paymentProviders: ['orange', 'flutterwave'], creditMethods: OM_FLW,
     payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
@@ -92,10 +123,22 @@ const WEST_AFRICA_COUNTRIES = [
 
 async function main() {
   for (const country of WEST_AFRICA_COUNTRIES) {
+    // Re-running the seed must never undo an admin's work:
+    //  - isActive     : an admin may have paused/activated the market
+    //  - providerConfig: may now hold a per-country Orange merchantKey the admin
+    //                    saved from the dashboard — merge, existing values win
+    const existing = await prisma.country.findUnique({ where: { code: country.code } });
+    const { isActive, providerConfig, ...rest } = country;
+
+    const mergedConfig = {};
+    for (const [provider, block] of Object.entries({ ...(providerConfig || {}), ...(existing?.providerConfig || {}) })) {
+      mergedConfig[provider] = { ...((providerConfig || {})[provider] || {}), ...(((existing?.providerConfig || {})[provider]) || {}) };
+    }
+
     const saved = await prisma.country.upsert({
       where:  { code: country.code },
-      update: country,
-      create: country,
+      update: { ...rest, providerConfig: mergedConfig },
+      create: { ...rest, isActive: isActive ?? true, providerConfig: mergedConfig },
     });
     const providers = Array.isArray(saved.paymentProviders) ? saved.paymentProviders.join('/') : '-';
     console.log(`\u2713 ${saved.code} - ${saved.name} (${providers}, payout: ${saved.payoutMethod}, lang: ${saved.languageCode})`);

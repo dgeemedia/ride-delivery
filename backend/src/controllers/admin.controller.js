@@ -14,6 +14,15 @@ const { validationResult } = require('express-validator');
 const { getWithdrawableBalance, ensureWallet } = require('../utils/walletHelpers');
 const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog');
+const countrySettingsService = require('../services/countrySettings.service');
+const { formatMoney } = require('../utils/currency');
+
+// Onboarding bonus for one earner: an explicit admin override wins, otherwise
+// the bonus configured for the earner's own country (in that country's currency).
+const bonusFor = async (kind, countryCode, override) => {
+  if (override !== undefined && override !== null && override !== '') return Number(override);
+  return countrySettingsService.getSetting(countryCode ?? 'NG', kind === 'driver' ? 'onboarding_bonus_driver' : 'onboarding_bonus_partner');
+};
 
 // Small helper so a failed email never blocks (or rolls back) an approval/
 // rejection that has already been committed to the DB. Approval status is
@@ -514,12 +523,12 @@ function deriveDocumentStatus(profile) {
 
 exports.approveDriver = async (req, res) => {
   const { id } = req.params;
-  const { grantBonus = false, bonusAmount = 5000, note = '' } = req.body;
+  const { grantBonus = false, bonusAmount: bonusOverride, note = '' } = req.body;
 
   const driver = await prisma.driverProfile.findUnique({
     where:   { id },
     // NOTE: email is now selected so we can notify the driver directly.
-    include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    include: { user: { select: { id: true, firstName: true, lastName: true, email: true, countryCode: true } } },
   });
   if (!driver)            throw new AppError('Driver profile not found.', 404);
   if (driver.isApproved)  throw new AppError('Driver is already approved.', 400);
@@ -540,6 +549,8 @@ exports.approveDriver = async (req, res) => {
 
   // Optional onboarding bonus (SUPER_ADMIN only)
   let bonusCredited = 0;
+  const bonusAmount = grantBonus ? await bonusFor('driver', driver.user.countryCode, bonusOverride) : 0;
+  const bonusWallet = grantBonus ? await prisma.wallet.findUnique({ where: { userId: driver.userId }, select: { currency: true } }) : null;
   const canGrantBonus = req.user.role === 'SUPER_ADMIN' && grantBonus && bonusAmount > 0;
   if (canGrantBonus) {
     const wallet = await prisma.wallet.findUnique({ where: { userId: driver.userId } });
@@ -572,7 +583,7 @@ exports.approveDriver = async (req, res) => {
     : '';
 
   const bonusNote = bonusCredited > 0
-    ? ` We've credited ₦${bonusCredited.toLocaleString('en-NG')} to your wallet to get you started.`
+    ? ` We've credited ${formatMoney(bonusCredited, bonusWallet?.currency, driver.user.countryCode)} to your wallet to get you started.`
     : '';
 
   // ── In-app notification ────────────────────────────────────────────────────
@@ -612,7 +623,7 @@ exports.approveDriver = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: `Driver approved.${bonusCredited ? ` ₦${bonusCredited.toLocaleString('en-NG')} onboarding bonus credited.` : ''}${docStatusNote}`,
+    message: `Driver approved.${bonusCredited ? ` ${formatMoney(bonusCredited, bonusWallet?.currency, driver.user.countryCode)} onboarding bonus credited.` : ''}${docStatusNote}`,
     data:    { driver: updatedDriver, bonusCredited, documentStatus: docStatus },
   });
 };
@@ -813,12 +824,12 @@ exports.getPendingPartners = async (req, res) => {
 
 exports.approvePartner = async (req, res) => {
   const { id } = req.params;
-  const { grantBonus = false, bonusAmount = 5000, note = '' } = req.body;
+  const { grantBonus = false, bonusAmount: bonusOverride, note = '' } = req.body;
 
   const partner = await prisma.deliveryPartnerProfile.findUnique({
     where:   { id },
     // NOTE: email is now selected so we can notify the partner directly.
-    include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    include: { user: { select: { id: true, firstName: true, lastName: true, email: true, countryCode: true } } },
   });
   if (!partner)           throw new AppError('Partner profile not found.', 404);
   if (partner.isApproved) throw new AppError('Partner is already approved.', 400);
@@ -839,6 +850,8 @@ exports.approvePartner = async (req, res) => {
 
   // Optional onboarding bonus (SUPER_ADMIN only)
   let bonusCredited = 0;
+  const bonusAmount = grantBonus ? await bonusFor('partner', partner.user.countryCode, bonusOverride) : 0;
+  const bonusWallet = grantBonus ? await prisma.wallet.findUnique({ where: { userId: partner.userId }, select: { currency: true } }) : null;
   const canGrantBonus = req.user.role === 'SUPER_ADMIN' && grantBonus && bonusAmount > 0;
   if (canGrantBonus) {
     const wallet = await prisma.wallet.findUnique({ where: { userId: partner.userId } });
@@ -871,7 +884,7 @@ exports.approvePartner = async (req, res) => {
     : '';
 
   const bonusNote = bonusCredited > 0
-    ? ` We've credited ₦${bonusCredited.toLocaleString('en-NG')} to your wallet to get you started.`
+    ? ` We've credited ${formatMoney(bonusCredited, bonusWallet?.currency, partner.user.countryCode)} to your wallet to get you started.`
     : '';
 
   await notificationService.notify({
@@ -909,7 +922,7 @@ exports.approvePartner = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: `Partner approved.${bonusCredited ? ` ₦${bonusCredited.toLocaleString('en-NG')} onboarding bonus credited.` : ''}${docStatusNote}`,
+    message: `Partner approved.${bonusCredited ? ` ${formatMoney(bonusCredited, bonusWallet?.currency, partner.user.countryCode)} onboarding bonus credited.` : ''}${docStatusNote}`,
     data:    { partner: updatedPartner, bonusCredited, documentStatus: docStatus },
   });
 };
@@ -1378,12 +1391,23 @@ exports.getCommissionAnalytics = async (req, res) => {
 
 exports.getRevenueAnalytics = async (req, res) => {
   const { period = 'month' } = req.query;
+  // Revenue is reported for ONE country at a time: amounts in different
+  // currencies can't be added. Omitted → Nigeria (what this screen showed
+  // before there were other markets).
+  const countryCode = String(req.query.country || 'NG').toUpperCase();
+  const country = await prisma.country.findUnique({ where: { code: countryCode }, select: { code: true, name: true, currencyCode: true } });
+  const currency = country?.currencyCode ?? 'NGN';
+
   let startDate = new Date();
   if (period === 'week')  startDate.setDate(startDate.getDate() - 7);
   else if (period === 'month') startDate.setMonth(startDate.getMonth() - 1);
   else if (period === 'year')  startDate.setFullYear(startDate.getFullYear() - 1);
 
-  const payments = await prisma.payment.findMany({ where: { status: 'COMPLETED', createdAt: { gte: startDate } }, select: { amount: true, createdAt: true, rideId: true, deliveryId: true, method: true }, orderBy: { createdAt: 'asc' } });
+  const payments = await prisma.payment.findMany({
+    where: { status: 'COMPLETED', createdAt: { gte: startDate }, user: { countryCode } },
+    select: { amount: true, platformFee: true, createdAt: true, rideId: true, deliveryId: true, method: true },
+    orderBy: { createdAt: 'asc' },
+  });
   const revenueByDate = {};
   payments.forEach(p => {
     const date = p.createdAt.toISOString().split('T')[0];
@@ -1394,22 +1418,24 @@ exports.getRevenueAnalytics = async (req, res) => {
     if (p.deliveryId) revenueByDate[date].deliveries += p.amount;
   });
   const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
+  // The fee actually recorded on each payment at the rate in force THEN — not
+  // today's rate applied retroactively, which is wrong the moment a rate changes.
+  const platformFee  = payments.reduce((sum, p) => sum + (p.platformFee ?? 0), 0);
   const byMethod = {};
   payments.forEach(p => { byMethod[p.method] = (byMethod[p.method] || 0) + p.amount; });
 
-  const { platform } = await getSettings();
-  const commissionRate = platform.ridesCommission;
-
-res.status(200).json({ success: true, data: {
-  totalRevenue,
-  platformFee:  Math.round(totalRevenue * commissionRate),
-  netRevenue:   Math.round(totalRevenue * (1 - commissionRate)),
-  transactionCount: payments.length,
-  dailyRevenue: Object.values(revenueByDate),
-  byMethod,
-  period,
-  currency: 'NGN',
-}});
+  res.status(200).json({ success: true, data: {
+    totalRevenue,
+    platformFee:  Math.round(platformFee),
+    netRevenue:   Math.round(totalRevenue - platformFee),
+    transactionCount: payments.length,
+    dailyRevenue: Object.values(revenueByDate),
+    byMethod,
+    period,
+    country:  countryCode,
+    countryName: country?.name ?? countryCode,
+    currency,
+  }});
 };
 
 exports.getPerformanceAnalytics = async (req, res) => {
@@ -1787,13 +1813,39 @@ exports.broadcastNotification = async (req, res) => {
 // ONBOARDING BONUS BULK DISBURSEMENT
 // SUPER_ADMIN only — credits all approved drivers/partners at ₦0 balance
 // ─────────────────────────────────────────────
+// Groups eligible earners by their country so each is paid in their own
+// currency. `overrides` is { NG: { driver, partner }, ML: {...} } from the admin;
+// anything not overridden uses that country's configured onboarding bonus.
+// Legacy `driverBonus` / `partnerBonus` (single numbers) are honoured ONLY for
+// base-currency (NGN) recipients — applying one number across currencies is the
+// bug this replaces.
+const planBonusesByCountry = async ({ driversEligible, partnersEligible, overrides = {}, legacyDriver, legacyPartner, allDrivers = [], allPartners = [] }) => {
+  const plan = {};
+  const ensure = (cc) => (plan[cc] ??= { countryCode: cc, drivers: [], partners: [], driverBonus: 0, partnerBonus: 0, currency: null });
+
+  for (const d of driversEligible)  ensure(d.user.countryCode ?? 'NG').drivers.push(d);
+  for (const p of partnersEligible) ensure(p.user.countryCode ?? 'NG').partners.push(p);
+
+  for (const cc of Object.keys(plan)) {
+    const eff = await countrySettingsService.getEffectiveSettings(cc);
+    const o = overrides[cc] ?? {};
+    const legacyOk = eff.currency === countrySettingsService.BASE_CURRENCY;
+    plan[cc].currency     = eff.currency;
+    plan[cc].driverBonus  = await bonusFor('driver',  cc, o.driver  ?? (legacyOk ? legacyDriver  : undefined));
+    plan[cc].partnerBonus = await bonusFor('partner', cc, o.partner ?? (legacyOk ? legacyPartner : undefined));
+  }
+  return plan;
+};
+
 exports.previewOnboardingBonuses = async (req, res) => {
   if (req.user.role !== 'SUPER_ADMIN')
     throw new AppError('Only Super Admins can preview onboarding bonuses', 403);
- 
+
   const { allDrivers, allPartners, driversEligible, partnersEligible } =
     await fetchBonusCandidates();
- 
+
+  const plan = await planBonusesByCountry({ driversEligible, partnersEligible });
+
   res.status(200).json({
     success: true,
     data: {
@@ -1813,6 +1865,16 @@ exports.previewOnboardingBonuses = async (req, res) => {
           (sum, p) => sum + (p.user.wallet?.balance ?? 0), 0
         ),
       },
+      // One row per country: who gets what, in which currency.
+      byCountry: Object.values(plan).map(c => ({
+        countryCode:  c.countryCode,
+        currency:     c.currency,
+        drivers:      c.drivers.length,
+        partners:     c.partners.length,
+        driverBonus:  c.driverBonus,
+        partnerBonus: c.partnerBonus,
+        total:        c.driverBonus * c.drivers.length + c.partnerBonus * c.partners.length,
+      })),
     },
   });
 };
@@ -1820,34 +1882,52 @@ exports.previewOnboardingBonuses = async (req, res) => {
 exports.disburseOnboardingBonuses = async (req, res) => {
   if (req.user.role !== 'SUPER_ADMIN')
     throw new AppError('Only Super Admins can disburse onboarding bonuses', 403);
- 
-  const { driverBonus = 5000, partnerBonus = 5000 } = req.body;
-  if (driverBonus < 0 || partnerBonus < 0)
-    throw new AppError('Bonus amounts must be positive', 400);
- 
-  const { driversEligible, partnersEligible } = await fetchBonusCandidates();
- 
+
+  const { driverBonus: legacyDriver, partnerBonus: legacyPartner, overrides = {}, countryCodes } = req.body;
+  for (const v of [legacyDriver, legacyPartner, ...Object.values(overrides).flatMap(o => [o?.driver, o?.partner])]) {
+    if (v !== undefined && v !== null && (!Number.isFinite(Number(v)) || Number(v) < 0))
+      throw new AppError('Bonus amounts must be positive', 400);
+  }
+
+  let { driversEligible, partnersEligible } = await fetchBonusCandidates();
+
+  // Optionally restrict the run to specific countries.
+  if (Array.isArray(countryCodes) && countryCodes.length) {
+    const only = new Set(countryCodes.map(c => String(c).toUpperCase()));
+    driversEligible  = driversEligible.filter(d => only.has(d.user.countryCode ?? 'NG'));
+    partnersEligible = partnersEligible.filter(p => only.has(p.user.countryCode ?? 'NG'));
+  }
+
   if (driversEligible.length === 0 && partnersEligible.length === 0) {
     return res.status(200).json({
       success: true,
       message: 'No eligible recipients — all approved drivers and partners have already received an onboarding bonus.',
-      data: { drivers: 0, partners: 0, driverBonus, partnerBonus, totalDisbursed: 0, currency: 'NGN' },
+      data: { drivers: 0, partners: 0, totalDisbursed: 0, byCountry: [] },
     });
   }
- 
+
+  const plan = await planBonusesByCountry({ driversEligible, partnersEligible, overrides, legacyDriver, legacyPartner });
+  const driverAmt  = (u) => plan[u.countryCode ?? 'NG'].driverBonus;
+  const partnerAmt = (u) => plan[u.countryCode ?? 'NG'].partnerBonus;
+
   const REF = `ONBOARDING-${Date.now()}`;
- 
+
+  // Zero-amount countries (no bonus configured) are skipped rather than
+  // creating empty ₀ credits.
+  driversEligible  = driversEligible.filter(d => driverAmt(d.user)  > 0);
+  partnersEligible = partnersEligible.filter(p => partnerAmt(p.user) > 0);
+
   await prisma.$transaction([
     ...driversEligible.flatMap(driver => [
       prisma.wallet.update({
         where: { id: driver.user.wallet.id },
-        data:  { balance: { increment: driverBonus } },
+        data:  { balance: { increment: driverAmt(driver.user) } },
       }),
       prisma.walletTransaction.create({
         data: {
           walletId:    driver.user.wallet.id,
           type:        'CREDIT',
-          amount:      driverBonus,
+          amount:      driverAmt(driver.user),
           description: 'Onboarding bonus — non-withdrawable, for accepting rides only',
           status:      'COMPLETED',
           reference:   `ONBOARDING-DRV-${driver.user.id}-${REF}`,
@@ -1857,13 +1937,13 @@ exports.disburseOnboardingBonuses = async (req, res) => {
     ...partnersEligible.flatMap(partner => [
       prisma.wallet.update({
         where: { id: partner.user.wallet.id },
-        data:  { balance: { increment: partnerBonus } },
+        data:  { balance: { increment: partnerAmt(partner.user) } },
       }),
       prisma.walletTransaction.create({
         data: {
           walletId:    partner.user.wallet.id,
           type:        'CREDIT',
-          amount:      partnerBonus,
+          amount:      partnerAmt(partner.user),
           description: 'Onboarding bonus — non-withdrawable, for accepting deliveries only',
           status:      'COMPLETED',
           reference:   `ONBOARDING-PTR-${partner.user.id}-${REF}`,
@@ -1871,24 +1951,26 @@ exports.disburseOnboardingBonuses = async (req, res) => {
       }),
     ]),
   ]);
- 
+
+  const money = (amt, u) => formatMoney(amt, u.wallet?.currency, u.countryCode);
+
   await Promise.all([
     ...driversEligible.map(driver =>
       notificationService.notify({
         userId:  driver.user.id,
         title:   '🎁 Onboarding Bonus Received!',
-        message: `₦${driverBonus.toLocaleString('en-NG')} has been credited to your wallet. You can now start accepting rides. Welcome to Diakite!`,
+        message: `${money(driverAmt(driver.user), driver.user)} has been credited to your wallet. You can now start accepting rides. Welcome to Diakite!`,
         type:    notificationService.TYPES?.PAYMENT_RECEIVED ?? 'payment_received',
-        data:    { amount: driverBonus, type: 'onboarding_bonus' },
+        data:    { amount: driverAmt(driver.user), type: 'onboarding_bonus' },
       })
     ),
     ...partnersEligible.map(partner =>
       notificationService.notify({
         userId:  partner.user.id,
         title:   '🎁 Onboarding Bonus Received!',
-        message: `₦${partnerBonus.toLocaleString('en-NG')} has been credited to your wallet. You can now start accepting deliveries. Welcome to Diakite!`,
+        message: `${money(partnerAmt(partner.user), partner.user)} has been credited to your wallet. You can now start accepting deliveries. Welcome to Diakite!`,
         type:    notificationService.TYPES?.PAYMENT_RECEIVED ?? 'payment_received',
-        data:    { amount: partnerBonus, type: 'onboarding_bonus' },
+        data:    { amount: partnerAmt(partner.user), type: 'onboarding_bonus' },
       })
     ),
   ]);
@@ -1900,7 +1982,8 @@ exports.disburseOnboardingBonuses = async (req, res) => {
       driver.user.email
         ? safeSendEmail(
             () => emailService.sendBonusEmail(driver.user.email, driver.user.firstName, {
-              amount: driverBonus,
+              amount: driverAmt(driver.user),
+              currency: driver.user.wallet?.currency,
               withdrawable: false,
               description: 'Onboarding bonus for accepting rides on Diakite.',
             }),
@@ -1912,7 +1995,8 @@ exports.disburseOnboardingBonuses = async (req, res) => {
       partner.user.email
         ? safeSendEmail(
             () => emailService.sendBonusEmail(partner.user.email, partner.user.firstName, {
-              amount: partnerBonus,
+              amount: partnerAmt(partner.user),
+              currency: partner.user.wallet?.currency,
               withdrawable: false,
               description: 'Onboarding bonus for accepting deliveries on Diakite.',
             }),
@@ -1921,24 +2005,32 @@ exports.disburseOnboardingBonuses = async (req, res) => {
         : Promise.resolve()
     ),
   ]);
- 
+
   const driverCount  = driversEligible.length;
   const partnerCount = partnersEligible.length;
-  const totalDisbursed = (driverBonus * driverCount) + (partnerBonus * partnerCount);
- 
+  const byCountry = Object.values(plan).map(c => {
+    const d = c.drivers.filter(x => c.driverBonus  > 0).length;
+    const p = c.partners.filter(x => c.partnerBonus > 0).length;
+    return { countryCode: c.countryCode, currency: c.currency, drivers: d, partners: p,
+             driverBonus: c.driverBonus, partnerBonus: c.partnerBonus,
+             total: c.driverBonus * d + c.partnerBonus * p };
+  });
+
   await logActivity({
     userId:     req.user.id,
     action:     'onboarding_bonus_disbursed',
     entityType: 'Wallet',
     entityId:   null,
-    details:    { driverBonus, partnerBonus, driverCount, partnerCount, totalDisbursed },
+    details:    { driverCount, partnerCount, byCountry },
     req,
   });
- 
+
   res.status(200).json({
     success: true,
     message: `Onboarding bonus disbursed to ${driverCount} driver(s) and ${partnerCount} delivery partner(s).`,
-    data:    { drivers: driverCount, partners: partnerCount, driverBonus, partnerBonus, totalDisbursed, currency: 'NGN' },
+    // Totals are per country because they're in different currencies — one
+    // summed number would be meaningless.
+    data:    { drivers: driverCount, partners: partnerCount, byCountry },
   });
 };
  

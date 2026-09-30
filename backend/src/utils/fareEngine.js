@@ -17,8 +17,13 @@
 
 'use strict';
 
-const prisma = require('../lib/prisma');
+const countrySettings = require('../services/countrySettings.service');
+const { DEFAULT_ROUNDING_STEP } = require('./currency');
 
+const BASE_COUNTRY = countrySettings.BASE_COUNTRY;
+
+// Last-resort values used only when the settings layer itself throws. They are
+// Naira-scale, so they are only ever returned for the base country.
 const FALLBACK_RATES = {
   CAR:        { baseFare: 500,  perKm: 130, perMinute: 15, minimumFare: 500,  bookingFee: 100, cancellationFee: 200 },
   BIKE:       { baseFare: 200,  perKm: 80,  perMinute: 8,  minimumFare: 250,  bookingFee: 50,  cancellationFee: 100 },
@@ -39,208 +44,122 @@ const FALLBACK_PLATFORM = {
   deliveryCommission:  0.15,
 };
 
+const SURGE_WINDOWS = countrySettings.DEFAULT_SURGE_WINDOWS;
+
 // ─────────────────────────────────────────────────────────────────────────────
-// IN-MEMORY CACHE
+// IN-MEMORY CACHE  (one entry per country)
+//
+// The heavy lifting — DB reads, inheritance, validation — lives in
+// countrySettings.service, which has its own 60s cache. This map only holds the
+// *shaped* result so the two synchronous helpers (getSurgeMultiplier,
+// calculateFare) can read it without awaiting.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_TTL_MS = 60 * 1000; // 60 seconds
-
-let _cache = null;       // { rates, delivery, platform, loadedAt }
-let _loading = false;    // prevent stampede
-let _waiters = [];       // promises waiting for first load
+const CACHE_TTL_MS = 60 * 1000;
+const _cache = new Map();   // countryCode → { rates, delivery, platform, surgeWindows, ..., loadedAt }
 
 /**
- * Bust the cache — called by admin.controller.js after any settings update.
- * Next call to getRates() will re-query the DB.
+ * Bust the cache — called after any settings update (global or per-country).
+ * Pass a country code to drop just that market, or nothing to drop all.
  */
-const invalidateFareCache = () => {
-  _cache = null;
-};
-
-const SURGE_WINDOWS = [
-  { label: 'Morning Rush',  days: [1,2,3,4,5], hourStart: 6,  hourEnd: 9,  multiplier: 1.4 },
-  { label: 'Evening Rush',  days: [1,2,3,4,5], hourStart: 16, hourEnd: 20, multiplier: 1.5 },
-  { label: 'Friday Night',  days: [5],         hourStart: 18, hourEnd: 23, multiplier: 1.6 },
-  { label: 'Late Night',    days: [0,1,2,3,4,5,6], hourStart: 23, hourEnd: 24, multiplier: 1.3 },
-  { label: 'Early Morning', days: [0,1,2,3,4,5,6], hourStart: 0,  hourEnd: 5,  multiplier: 1.3 },
-  { label: 'Weekend Day',   days: [0,6],        hourStart: 10, hourEnd: 20, multiplier: 1.2 },
-];
-
-/**
- * Load all pricing settings from SystemSettings and build the RATES map.
- * Falls back to hardcoded values for any missing key.
- */
-const _loadFromDB = async () => {
-  const rows = await prisma.systemSettings.findMany({
-    where: {
-      key: {
-        in: [
-          // Car
-          'ride_base_fare_car',         'ride_per_km_car',
-          'ride_per_minute_car',        'ride_minimum_fare_car',
-          'ride_cancellation_fee_car',
-          // Bike
-          'ride_base_fare_bike',        'ride_per_km_bike',
-          'ride_per_minute_bike',       'ride_minimum_fare_bike',
-          'ride_cancellation_fee_bike',
-          // Van
-          'ride_base_fare_van',         'ride_per_km_van',
-          'ride_per_minute_van',        'ride_minimum_fare_van',
-          'ride_cancellation_fee_van',
-          // Tricycle
-          'ride_base_fare_tricycle',    'ride_per_km_tricycle',
-          'ride_per_minute_tricycle',   'ride_minimum_fare_tricycle',
-          'ride_cancellation_fee_tricycle',
-          // Shared
-          'ride_booking_fee',
-          'platform_commission_rides',
-          // Deliveries
-          'delivery_base_fee',
-          'delivery_per_km',
-          'delivery_weight_fee_per_kg',
-          'platform_commission_deliveries',
-          // Surge
-          'surge_windows',
-        ],
-      },
-    },
-  });
-
-  const s = {};
-  rows.forEach(r => {
-    s[r.key] = r.key === 'surge_windows' ? r.value : parseFloat(r.value);
-  });
-
-  const n = (key, fallback) => (isNaN(s[key]) ? fallback : s[key]);
-
-  const bookingFee = n('ride_booking_fee', 100);
-
-  const rates = {
-    CAR: {
-      baseFare:        n('ride_base_fare_car',         500),
-      perKm:           n('ride_per_km_car',            130),
-      perMinute:       n('ride_per_minute_car',        15),
-      minimumFare:     n('ride_minimum_fare_car',      500),
-      bookingFee,
-      cancellationFee: n('ride_cancellation_fee_car',  200),
-    },
-    BIKE: {
-      baseFare:        n('ride_base_fare_bike',        200),
-      perKm:           n('ride_per_km_bike',           80),
-      perMinute:       n('ride_per_minute_bike',       8),
-      minimumFare:     n('ride_minimum_fare_bike',     250),
-      bookingFee:      Math.round(bookingFee * 0.5),
-      cancellationFee: n('ride_cancellation_fee_bike', 100),
-    },
-    VAN: {
-      baseFare:        n('ride_base_fare_van',         800),
-      perKm:           n('ride_per_km_van',            180),
-      perMinute:       n('ride_per_minute_van',        20),
-      minimumFare:     n('ride_minimum_fare_van',      1000),
-      bookingFee:      Math.round(bookingFee * 1.5),
-      cancellationFee: n('ride_cancellation_fee_van',  300),
-    },
-    MOTORCYCLE: {
-      baseFare:        n('ride_base_fare_bike',        200),
-      perKm:           n('ride_per_km_bike',           80),
-      perMinute:       n('ride_per_minute_bike',       8),
-      minimumFare:     n('ride_minimum_fare_bike',     250),
-      bookingFee:      Math.round(bookingFee * 0.5),
-      cancellationFee: n('ride_cancellation_fee_bike', 100),
-    },
-    TRICYCLE: {
-      baseFare:        n('ride_base_fare_tricycle',        300),
-      perKm:           n('ride_per_km_tricycle',           100),
-      perMinute:       n('ride_per_minute_tricycle',       10),
-      minimumFare:     n('ride_minimum_fare_tricycle',     300),
-      bookingFee:      Math.round(bookingFee * 0.75),
-      cancellationFee: n('ride_cancellation_fee_tricycle', 150),
-    },
-  };
-
-  const delivery = {
-    baseFee:            n('delivery_base_fee',           500),
-    perKm:              n('delivery_per_km',             80),
-    weightFeePerKg:     n('delivery_weight_fee_per_kg',  50),
-    platformCommission: n('platform_commission_deliveries', 15) / 100,
-  };
-
-  const platform = {
-    ridesCommission:    n('platform_commission_rides',       20) / 100,
-    deliveryCommission: n('platform_commission_deliveries',  15) / 100,
-  };
-
-  // Load surge windows from DB, fall back to hardcoded
-  let surgeWindows = SURGE_WINDOWS;
-  if (s['surge_windows']) {
-    try {
-      surgeWindows = typeof s['surge_windows'] === 'string'
-        ? JSON.parse(s['surge_windows'])
-        : s['surge_windows'];
-    } catch (e) {
-      console.error('[fareEngine] Failed to parse surge_windows from DB, using defaults:', e.message);
-    }
-  }
-
-  return { rates, delivery, platform, surgeWindows, loadedAt: Date.now() };
+const invalidateFareCache = (countryCode) => {
+  if (countryCode) _cache.delete(String(countryCode).toUpperCase());
+  else _cache.clear();
+  try { countrySettings.invalidateCountrySettingsCache(countryCode); } catch { /* not loaded */ }
 };
 
 /**
- * Get current rates — from cache if fresh, otherwise re-load from DB.
- * Handles concurrent calls safely (no thundering herd).
+ * Shape a country's effective settings into the structure the engine uses.
+ * Pure (no I/O) so it can be unit tested.
  */
-const getSettings = async () => {
-  // Cache hit
-  if (_cache && Date.now() - _cache.loadedAt < CACHE_TTL_MS) {
-    return _cache;
-  }
+const buildSettings = ({ values: v, currency, countryCode }) => {
+  const bookingFee = v.ride_booking_fee;
 
-  // Someone else is already loading — wait for them
-  if (_loading) {
-    return new Promise((resolve, reject) => {
-      _waiters.push({ resolve, reject });
-    });
-  }
+  const car = {
+    baseFare: v.ride_base_fare_car, perKm: v.ride_per_km_car, perMinute: v.ride_per_minute_car,
+    minimumFare: v.ride_minimum_fare_car, bookingFee, cancellationFee: v.ride_cancellation_fee_car,
+  };
+  const bike = {
+    baseFare: v.ride_base_fare_bike, perKm: v.ride_per_km_bike, perMinute: v.ride_per_minute_bike,
+    minimumFare: v.ride_minimum_fare_bike, bookingFee: Math.round(bookingFee * 0.5), cancellationFee: v.ride_cancellation_fee_bike,
+  };
+  const van = {
+    baseFare: v.ride_base_fare_van, perKm: v.ride_per_km_van, perMinute: v.ride_per_minute_van,
+    minimumFare: v.ride_minimum_fare_van, bookingFee: Math.round(bookingFee * 1.5), cancellationFee: v.ride_cancellation_fee_van,
+  };
+  const tricycle = {
+    baseFare: v.ride_base_fare_tricycle, perKm: v.ride_per_km_tricycle, perMinute: v.ride_per_minute_tricycle,
+    minimumFare: v.ride_minimum_fare_tricycle, bookingFee: Math.round(bookingFee * 0.75), cancellationFee: v.ride_cancellation_fee_tricycle,
+  };
 
-  _loading = true;
+  return {
+    countryCode,
+    currency,
+    rates: { CAR: car, BIKE: bike, VAN: van, MOTORCYCLE: { ...bike }, TRICYCLE: tricycle },
+    delivery: {
+      baseFee:            v.delivery_base_fee,
+      perKm:              v.delivery_per_km,
+      weightFeePerKg:     v.delivery_weight_fee_per_kg,
+      platformCommission: v.platform_commission_deliveries / 100,
+    },
+    platform: {
+      ridesCommission:    v.platform_commission_rides / 100,
+      deliveryCommission: v.platform_commission_deliveries / 100,
+    },
+    surgeWindows:     Array.isArray(v.surge_windows) ? v.surge_windows : SURGE_WINDOWS,
+    utcOffsetMinutes: v.utc_offset_minutes ?? 0,
+    roundingStep:     v.price_rounding_step > 0 ? v.price_rounding_step : (DEFAULT_ROUNDING_STEP[currency] ?? 1),
+    loadedAt:         Date.now(),
+  };
+};
+
+/**
+ * Get a country's current rates — from cache if fresh, otherwise re-resolve.
+ * Defaults to the base country so legacy callers `getSettings()` keep working.
+ */
+const getSettings = async (countryCode = BASE_COUNTRY) => {
+  const code = String(countryCode || BASE_COUNTRY).toUpperCase();
+  const hit = _cache.get(code);
+  if (hit && Date.now() - hit.loadedAt < CACHE_TTL_MS) return hit;
+
   try {
-    const data = await _loadFromDB();
-    _cache = data;
-
-    // Resolve all waiters
-    _waiters.forEach(w => w.resolve(data));
-    _waiters = [];
-
-    return data;
+    const eff  = await countrySettings.getEffectiveSettings(code);
+    const built = buildSettings(eff);
+    _cache.set(code, built);
+    return built;
   } catch (err) {
-    // On DB error fall back to hardcoded values, don't crash requests
-    console.error('[fareEngine] Failed to load settings from DB, using fallbacks:', err.message);
-
+    console.error(`[fareEngine] Failed to resolve settings for ${code}, using fallbacks:`, err.message);
     const fallback = {
-      rates:    FALLBACK_RATES,
-      delivery: FALLBACK_DELIVERY,
-      platform: FALLBACK_PLATFORM,
+      countryCode: code, currency: 'NGN',
+      rates: FALLBACK_RATES, delivery: FALLBACK_DELIVERY, platform: FALLBACK_PLATFORM,
+      surgeWindows: SURGE_WINDOWS, utcOffsetMinutes: 60, roundingStep: 50,
       loadedAt: 0,   // ← force immediate retry on next request
     };
-    _cache = fallback;
-
-    _waiters.forEach(w => w.resolve(fallback));
-    _waiters = [];
-
+    _cache.set(code, fallback);
     return fallback;
-  } finally {
-    _loading = false;
   }
 };
+
+const roundToStep = (value, step) => Math.round(value / step) * step;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SURGE WINDOWS (time-based, not in admin settings — change here)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const getSurgeMultiplier = (atTime = new Date()) => {
-  const windows = (_cache?.surgeWindows) ?? SURGE_WINDOWS;
-  const day  = atTime.getDay();
-  const hour = atTime.getHours();
+/**
+ * Surge multiplier for a moment in time, evaluated in the COUNTRY'S local time
+ * (utc_offset_minutes), not the server's. Reads the cached settings, so call
+ * getSettings(countryCode) first if you need a guaranteed-fresh value —
+ * estimateFare / calculateFinalFare always do.
+ */
+const getSurgeMultiplier = (atTime = new Date(), countryCode = BASE_COUNTRY) => {
+  const cached  = _cache.get(String(countryCode || BASE_COUNTRY).toUpperCase());
+  const windows = cached?.surgeWindows ?? SURGE_WINDOWS;
+  const offset  = cached?.utcOffsetMinutes ?? countrySettings.DEFAULT_UTC_OFFSET[countryCode] ?? 60;
+
+  const local = new Date(new Date(atTime).getTime() + offset * 60000);
+  const day   = local.getUTCDay();
+  const hour  = local.getUTCHours();
   for (const w of windows) {
     if (w.days.includes(day) && hour >= w.hourStart && hour < w.hourEnd) {
       return { multiplier: w.multiplier, label: w.label };
@@ -259,10 +178,10 @@ const AVERAGE_SPEED_KMPH = 18; // Lagos average
  * Estimate fare before ride starts.
  * async because it reads live settings from DB (with cache).
  */
-const estimateFare = async (distanceKm, vehicleType = 'CAR', atTime = new Date(), driverFloorMultiplier = 1.0, currency = 'NGN') => {
-  const { rates, platform } = await getSettings();   // ← single call
+const estimateFare = async (distanceKm, vehicleType = 'CAR', atTime = new Date(), driverFloorMultiplier = 1.0, currency = 'NGN', countryCode = BASE_COUNTRY) => {
+  const { rates, platform, roundingStep } = await getSettings(countryCode);
   const r     = rates[vehicleType] ?? rates.CAR;
-  const surge = getSurgeMultiplier(atTime);
+  const surge = getSurgeMultiplier(atTime, countryCode);
   const estMin = (distanceKm / AVERAGE_SPEED_KMPH) * 60;
 
   const distanceCharge = r.perKm     * distanceKm;
@@ -270,7 +189,7 @@ const estimateFare = async (distanceKm, vehicleType = 'CAR', atTime = new Date()
   const coreCharge     = (r.baseFare + distanceCharge + timeCharge) * surge.multiplier * driverFloorMultiplier;
 
   let total = Math.max(r.minimumFare, coreCharge) + r.bookingFee;
-  total     = Math.round(total / 50) * 50;
+  total     = roundToStep(total, roundingStep);
   const platformCommission = (total - r.bookingFee) * platform.ridesCommission;
   const surgeBonus         = surge.multiplier > 1 ? (total - r.bookingFee) * (surge.multiplier - 1) * 0.05 : 0;
   const driverEarnings     = total - r.bookingFee - platformCommission;
@@ -287,6 +206,12 @@ const estimateFare = async (distanceKm, vehicleType = 'CAR', atTime = new Date()
     distanceKm:       parseFloat(distanceKm.toFixed(2)),
     vehicleType,
     currency,
+    countryCode:      String(countryCode).toUpperCase(),
+    roundingStep,
+    // The rate actually applied for this market. Callers used to read this
+    // field and silently fall back to a hard-coded 0.20 because it was never
+    // returned — so an admin-set commission was ignored in several places.
+    commissionRate:   platform.ridesCommission,
     platformRevenue: {
       bookingFee:  r.bookingFee,
       commission:  Math.round(platformCommission),
@@ -309,10 +234,11 @@ const calculateFinalFare = async ({
   requestedAt,
   driverFloorMultiplier = 1.0,
   currency = 'NGN',
+  countryCode = BASE_COUNTRY,
 }) => {
-  const { rates, platform } = await getSettings();
+  const { rates, platform, roundingStep } = await getSettings(countryCode);
   const r      = rates[vehicleType] ?? rates.CAR;
-  const surge  = getSurgeMultiplier(requestedAt ?? startedAt ?? new Date());
+  const surge  = getSurgeMultiplier(requestedAt ?? startedAt ?? new Date(), countryCode);
   const actualMin = startedAt && completedAt
     ? (new Date(completedAt) - new Date(startedAt)) / 60000
     : (distanceKm / AVERAGE_SPEED_KMPH) * 60;
@@ -322,7 +248,7 @@ const calculateFinalFare = async ({
   const coreCharge     = (r.baseFare + distanceCharge + timeCharge) * surge.multiplier * driverFloorMultiplier;
 
   let total = Math.max(r.minimumFare, coreCharge) + r.bookingFee;
-  total     = Math.round(total / 50) * 50;
+  total     = roundToStep(total, roundingStep);
 
   const platformCommission = (total - r.bookingFee) * platform.ridesCommission;
   const driverEarnings     = total - r.bookingFee - platformCommission;
@@ -335,6 +261,7 @@ const calculateFinalFare = async ({
     actualMinutes:   Math.round(actualMin),
     surgeMultiplier: surge.multiplier,
     surgeLabel:      surge.label,
+    commissionRate:  platform.ridesCommission,
     platformRevenue: {
       bookingFee:  r.bookingFee,
       commission:  Math.round(platformCommission),
@@ -342,6 +269,7 @@ const calculateFinalFare = async ({
     },
     driverEarnings: Math.round(driverEarnings),
     currency,
+    countryCode: String(countryCode).toUpperCase(),
   };
 };
 
@@ -353,14 +281,14 @@ const calculateFinalFare = async ({
  * Calculate delivery fee from DB-backed settings.
  * Returns { estimatedFee, baseFee, distanceCharge, weightCharge, platformFee, partnerEarnings }
  */
-const calculateDeliveryFee = async (distanceKm, packageWeightKg = 0, currency = 'NGN') => {
-  const { delivery } = await getSettings();
+const calculateDeliveryFee = async (distanceKm, packageWeightKg = 0, currency = 'NGN', countryCode = BASE_COUNTRY) => {
+  const { delivery, roundingStep } = await getSettings(countryCode);
 
   const baseFee       = delivery.baseFee;
   const distCharge    = delivery.perKm * distanceKm;
   const weightCharge  = delivery.weightFeePerKg * packageWeightKg;
   let total           = baseFee + distCharge + weightCharge;
-  total               = Math.round(total / 50) * 50;
+  total               = roundToStep(total, roundingStep);
 
   const platformFee    = Math.round(total * delivery.platformCommission);
   const partnerEarnings = total - platformFee;
@@ -372,7 +300,10 @@ const calculateDeliveryFee = async (distanceKm, packageWeightKg = 0, currency = 
     weightCharge:    Math.round(weightCharge),
     platformFee,
     partnerEarnings,
+    commissionRate:  delivery.platformCommission,
+    roundingStep,
     currency,
+    countryCode: String(countryCode).toUpperCase(),
   };
 };
 
@@ -380,20 +311,20 @@ const calculateDeliveryFee = async (distanceKm, packageWeightKg = 0, currency = 
 // DRIVER FLOOR PRICE (unchanged logic, no DB dependency)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const applyDriverFloor = (driverFloorNgn, platformEstimateNgn) => {
+const applyDriverFloor = (driverFloor, platformEstimate, roundingStep = 50) => {
   const MAX_DRIVER_MARKUP = 1.30;
-  if (!driverFloorNgn || driverFloorNgn <= platformEstimateNgn) {
-    return { multiplier: 1.0, allowed: true, adjustedFare: platformEstimateNgn };
+  if (!driverFloor || driverFloor <= platformEstimate) {
+    return { multiplier: 1.0, allowed: true, adjustedFare: platformEstimate };
   }
-  const requestedMultiplier = driverFloorNgn / platformEstimateNgn;
+  const requestedMultiplier = driverFloor / platformEstimate;
   if (requestedMultiplier > MAX_DRIVER_MARKUP) {
-    const clampedFare = Math.round((platformEstimateNgn * MAX_DRIVER_MARKUP) / 50) * 50;
+    const clampedFare = roundToStep(platformEstimate * MAX_DRIVER_MARKUP, roundingStep);
     return { multiplier: MAX_DRIVER_MARKUP, allowed: true, adjustedFare: clampedFare, clamped: true };
   }
   return {
     multiplier:   requestedMultiplier,
     allowed:      true,
-    adjustedFare: Math.round(driverFloorNgn / 50) * 50,
+    adjustedFare: roundToStep(driverFloor, roundingStep),
   };
 };
 
@@ -436,24 +367,15 @@ const summarizePlatformRevenue = async (rides) => {
 // or falls back to hardcoded FALLBACK_RATES if cache is cold.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const calculateFare = (distanceKm, vehicleType = 'CAR') => {
-  // If cache is warm, use it synchronously
-  if (_cache) {
-    const r = _cache.rates[vehicleType] ?? _cache.rates.CAR;
-    const estMin = (distanceKm / AVERAGE_SPEED_KMPH) * 60;
-    const { multiplier } = getSurgeMultiplier();
-    const core  = (r.baseFare + r.perKm * distanceKm + r.perMinute * estMin) * multiplier;
-    let   total = Math.max(r.minimumFare, core) + r.bookingFee;
-    return Math.round(total / 50) * 50;
-  }
-
-  // Cold cache fallback (first request before DB load)
-  const r = FALLBACK_RATES[vehicleType] ?? FALLBACK_RATES.CAR;
+const calculateFare = (distanceKm, vehicleType = 'CAR', countryCode = BASE_COUNTRY) => {
+  const cached = _cache.get(String(countryCode || BASE_COUNTRY).toUpperCase());
+  const src    = cached ?? { rates: FALLBACK_RATES, roundingStep: 50 };   // cold cache: first request before DB load
+  const r      = src.rates[vehicleType] ?? src.rates.CAR;
   const estMin = (distanceKm / AVERAGE_SPEED_KMPH) * 60;
-  const { multiplier } = getSurgeMultiplier();
+  const { multiplier } = getSurgeMultiplier(new Date(), countryCode);
   const core  = (r.baseFare + r.perKm * distanceKm + r.perMinute * estMin) * multiplier;
-  let   total = Math.max(r.minimumFare, core) + r.bookingFee;
-  return Math.round(total / 50) * 50;
+  const total = Math.max(r.minimumFare, core) + r.bookingFee;
+  return roundToStep(total, src.roundingStep);
 };
 
 module.exports = {
@@ -465,7 +387,9 @@ module.exports = {
   getSurgeMultiplier,
   summarizePlatformRevenue,
   invalidateFareCache,   // call this from admin.controller after updateSetting
-  getSettings,           // expose for testing / admin analytics
+  getSettings,           // getSettings(countryCode) — per-market rates
+  buildSettings,         // pure shaper, exported for tests
+  roundToStep,
 
   // Legacy sync compat
   calculateFare,

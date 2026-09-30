@@ -38,7 +38,9 @@ import ar from './locales/ar.json';
 import hi from './locales/hi.json';
 import ru from './locales/ru.json';
 
-const LANGUAGE_STORAGE_KEY = 'appLanguage';
+import { resolveAutoLanguage, languageForCountry } from './countryLanguage';
+
+const LANGUAGE_STORAGE_KEY = 'appLanguage';   // ONLY ever written by a deliberate user choice
 
 // Add an entry here once a locale file exists in ./locales and has been
 // reviewed — see the "Adding a new language" note in fr.json's header.
@@ -95,19 +97,55 @@ const applyLayoutDirection = (code) => {
   return true;
 };
 
+/**
+ * Picks the language for someone who hasn't chosen one yet.
+ *
+ * Uses the phone's REGION first (so an English-language phone set up in Mali
+ * opens in French, the country's language), then the phone's language, then
+ * English. See ./countryLanguage.js for the rules and why we can't read the
+ * app-store country directly.
+ */
 const detectDeviceLanguage = () => {
   try {
     const locales = Localization.getLocales() ?? [];
-    for (const locale of locales) {
+    return resolveAutoLanguage({
+      regionCode: locales[0]?.regionCode ?? locales[0]?.languageTag?.split('-')[1],
       // languageCode is already the base subtag ('pt' for 'pt-BR'); fall back
       // to splitting the full tag in case a platform omits it.
-      const code = locale?.languageCode ?? locale?.languageTag?.split('-')[0];
-      if (code && supportedCodes.includes(code)) return code;
-    }
-    return 'en';
+      deviceLanguages: locales.map(l => l?.languageCode ?? l?.languageTag?.split('-')[0]).filter(Boolean),
+      supported: supportedCodes,
+    });
   } catch {
     return 'en';
   }
+};
+
+/**
+ * Switches the app to a country's language — for use once we know the user's
+ * country for certain (they picked it at sign-up, or their account has one).
+ *
+ * Deliberately:
+ *   - does nothing if the user ever chose a language themselves;
+ *   - does NOT persist, so it never masquerades as a manual choice and a later
+ *     change of country still updates the language.
+ *
+ * @param {string} countryCode  ISO country code (e.g. 'ML')
+ * @param {string} [fallbackLang] the backend's languageCode for that country
+ * @returns {Promise<boolean>} true if the layout direction changed
+ */
+export const applyCountryLanguage = async (countryCode, fallbackLang) => {
+  try {
+    if (await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY)) return false;   // manual choice wins
+  } catch { /* storage unreadable: carry on with the country language */ }
+
+  const deviceLang = Localization.getLocales?.()?.[0]?.languageCode;
+  const target =
+    languageForCountry(countryCode, deviceLang, supportedCodes) ??
+    (supportedCodes.includes(fallbackLang) ? fallbackLang : null);
+
+  if (!target || target === i18n.language) return false;
+  await i18n.changeLanguage(target);
+  return applyLayoutDirection(target);
 };
 
 /**

@@ -12,8 +12,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Globe, Plus, RefreshCw, AlertTriangle, CheckCircle2, XCircle,
-  Wallet, Users, Search,
+  Wallet, Users, Search, SlidersHorizontal,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
   Card, Button, Badge, Modal, Input, Alert, Spinner,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -56,6 +57,7 @@ const LANGUAGES = [
   { code: 'en', label: 'English' },
   { code: 'fr', label: 'Français' },
   { code: 'pt', label: 'Português' },
+  { code: 'es', label: 'Español' },
 ];
 
 /** ISO alpha-2 → flag emoji, so we don't ship 20 flag images. */
@@ -77,7 +79,7 @@ interface EditorProps {
 
 const blank: Partial<Country> = {
   code: '', name: '', currencyCode: '', currencySymbol: '',
-  phoneDialCode: '', languageCode: 'en', isActive: true,
+  phoneDialCode: '', languageCode: 'en', isActive: false,   // new markets start paused until pricing is reviewed
   paymentProviders: ['flutterwave'],
   creditMethods: ['CASH', 'WALLET'],
   payoutMethods: ['MANUAL'],
@@ -358,6 +360,7 @@ const OverviewPanel: React.FC<{ code: string; onClose: () => void }> = ({ code, 
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CountryList: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const canEdit = user?.role === 'SUPER_ADMIN';
 
@@ -395,6 +398,24 @@ const CountryList: React.FC = () => {
       toast.success(res.message ?? 'Updated');
       load();
     } catch (err: any) {
+      // The server refuses to launch a market still on auto-generated prices.
+      // Offer the two honest options: review them, or knowingly go live anyway.
+      if (err?.response?.status === 409 && err?.response?.data?.code === 'PRICING_NOT_REVIEWED') {
+        const goReview = window.confirm(
+          `${c.name} is still on auto-generated starter prices.\n\nOK = review its pricing first (recommended)\nCancel = choose whether to go live anyway`
+        );
+        if (goReview) { navigate(`/country-settings/${c.code}`); return; }
+        if (window.confirm(`Go live in ${c.name} with the starter prices? Riders will be charged these amounts.`)) {
+          try {
+            const res2 = await countriesAPI.setStatus(c.code, true, true);
+            toast.success(res2.message ?? 'Updated');
+            load();
+          } catch (e2: any) {
+            toast.error(e2?.response?.data?.message ?? 'Could not update country');
+          }
+        }
+        return;
+      }
       toast.error(err?.response?.data?.message ?? 'Could not update country');
     }
   };
@@ -489,6 +510,11 @@ const CountryList: React.FC = () => {
                       <span className="font-semibold text-slate-900">{c.name}</span>
                       <span className="text-xs text-slate-400">{c.code}</span>
                     </button>
+                    {c.pricingReviewed === false && (
+                      <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold">
+                        Starter prices — review
+                      </span>
+                    )}
                     <div className="flex gap-1 mt-1">
                       {c.paymentProviders.map(p => (
                         <span key={p} className={cn('px-1.5 py-0.5 rounded border text-[10px] font-semibold', PROVIDER_STYLE[p])}>
@@ -552,6 +578,9 @@ const CountryList: React.FC = () => {
                   <TableCell>
                     <div className="flex gap-2 justify-end">
                       <Button size="sm" variant="secondary" onClick={() => setViewing(c.code)}>View</Button>
+                      <Button size="sm" variant="secondary" onClick={() => navigate(`/country-settings/${c.code}`)}>
+                        <SlidersHorizontal className="w-3.5 h-3.5 mr-1" />Pricing &amp; rules
+                      </Button>
                       {canEdit && (
                         <>
                           <Button size="sm" variant="secondary" onClick={() => setEditing(c)}>Edit</Button>

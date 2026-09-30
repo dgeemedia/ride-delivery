@@ -143,3 +143,54 @@ automatically.
 - **Whole-unit currencies.** XOF, XAF and GNF have no minor unit. Decimal
   amounts are rejected with a clear error rather than being silently
   truncated, which would lose the customer's money.
+
+
+---
+
+## Update — authorisation header, payouts, new countries
+
+### `ORANGE_AUTHORISATION_HEADER`
+Now used. `orange.service.js → getAccessToken()` sends it as the `Authorization`
+header on `POST /oauth/v3/token`. Paste the value from the Orange portal with or
+without the leading `Basic ` — both work. If it's empty, the same header is built
+from `ORANGE_CLIENT_ID:ORANGE_CLIENT_SECRET`. Orange is "configured" once the
+header (or client id + secret) **and** `ORANGE_MERCHANT_KEY` are set.
+
+### `ORANGE_WEBHOOK_SECRET`
+Any long random string; generate one with Node:
+
+    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+Set it once and keep it — changing it invalidates callbacks for payments in flight.
+
+### Automatic payouts (B2C) — which account?
+Paying a driver is a **cash-in to their Orange Money wallet**, made from a
+**Channel User / distributor wallet that holds float**. A plain subscriber wallet
+is not what Orange's cash-in API is built for. Orange's published Cash-In spec
+(Senegal) addresses that wallet by **phone number + PIN**:
+
+    ORANGE_B2C_ENABLED=true
+    ORANGE_MERCHANT_MSISDN=<distributor number, with country code>
+    ORANGE_B2C_PIN=<its PIN>
+    ORANGE_B2C_PARTNER_ID_TYPE=MSISDN        # default
+    ORANGE_B2C_WALLET_TYPE=PRINCIPAL         # default
+    ORANGE_B2C_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+
+* If Orange's spec for your country says the wallet is addressed by an **agent
+  code**, use `ORANGE_B2C_PARTNER_ID_TYPE=CODE` and `ORANGE_B2C_AGENT_CODE=`.
+* The PIN must be **RSA-encrypted** with a public key Orange provides (their API
+  can return it). Put it in `ORANGE_B2C_PUBLIC_KEY` and the service encrypts for you.
+* **Confirm with Orange before enabling** — specs differ by market and the
+  endpoint path in `cashOut()` (`/orange-money-b2c/v1/cashout`) was written before
+  Orange gave you documentation for your contract. Test in `dev` first. Until
+  `ORANGE_B2C_ENABLED=true`, payouts simply queue for manual settlement.
+
+### New countries
+Cameroon (CM), Madagascar (MG), Botswana (BW), DR Congo (CD) and Central African
+Republic (CF) are added by `prisma/seeds/countries.js`. Côte d'Ivoire, Senegal,
+Mali, Guinea, Guinea-Bissau and Sierra Leone were already there. New ones start
+**paused** — see `COUNTRY_PRICING.md`.
+
+Set `providerConfig.orange.webpayCountry` per country (already seeded) — that's
+the market segment in Orange's URL (`cm`, `mg`, …). Keep `ORANGE_WEBPAY_COUNTRY=dev`
+only while testing in the sandbox.

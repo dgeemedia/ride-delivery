@@ -14,6 +14,10 @@
 // are completely unaffected.
 //
 // Required .env keys (add when Orange issues them):
+//   ORANGE_AUTHORISATION_HEADER=  # the ready-made value from the Orange portal, e.g.
+//                                 # "Basic dXNlcjpwYXNz". Sent as the Authorization
+//                                 # header on the OAuth token call. If empty we build
+//                                 # it from CLIENT_ID:CLIENT_SECRET instead.
 //   ORANGE_CLIENT_ID=
 //   ORANGE_CLIENT_SECRET=
 //   ORANGE_MERCHANT_KEY=          # per-merchant key from the Orange Money portal
@@ -40,6 +44,25 @@ const ORANGE_BASE = process.env.ORANGE_API_BASE || 'https://api.orange.com';
 const CLIENT_ID     = process.env.ORANGE_CLIENT_ID;
 const CLIENT_SECRET = process.env.ORANGE_CLIENT_SECRET;
 const MERCHANT_KEY  = process.env.ORANGE_MERCHANT_KEY;
+
+/**
+ * The Authorization header Orange expects on the OAuth token call.
+ *
+ * Orange's developer portal hands you this value pre-built
+ * ("Basic base64(client_id:client_secret)"). We accept it in either form —
+ * with or without the "Basic " prefix — and normalise it. If it isn't set
+ * we derive the identical value from CLIENT_ID + CLIENT_SECRET.
+ *
+ * Read lazily (not at import time) so tests and hot-reloaded env changes work.
+ */
+const getAuthorisationHeader = () => {
+  const raw = (process.env.ORANGE_AUTHORISATION_HEADER || '').trim();
+  if (raw) return /^basic\s+/i.test(raw) ? raw.replace(/^basic\s+/i, 'Basic ') : `Basic ${raw}`;
+  if (CLIENT_ID && CLIENT_SECRET) {
+    return `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')}`;
+  }
+  return null;
+};
 
 // Orange's Web Payment path segment per market. 'dev' is the sandbox.
 const WEBPAY_COUNTRY_PATH = {
@@ -72,7 +95,7 @@ const ORANGE_MARKETS = Object.keys(WEBPAY_COUNTRY_PATH);
  * BEFORE offering Orange as a payment option so we never show a customer a
  * method that will fail at checkout.
  */
-const isOrangeConfigured = () => Boolean(CLIENT_ID && CLIENT_SECRET && MERCHANT_KEY);
+const isOrangeConfigured = () => Boolean(getAuthorisationHeader() && MERCHANT_KEY);
 
 const assertConfigured = () => {
   if (!isOrangeConfigured()) {
@@ -81,6 +104,22 @@ const assertConfigured = () => {
       503
     );
   }
+};
+
+/**
+ * Secret used to derive the notif_token HMAC. Prefer a dedicated
+ * ORANGE_WEBHOOK_SECRET (generate with `openssl rand -hex 32`). The fallbacks
+ * only exist so a missing value never throws mid-checkout — they are weaker
+ * because they reuse an API credential, so we log once.
+ */
+let _warnedWebhookSecret = false;
+const getWebhookSecret = () => {
+  if (process.env.ORANGE_WEBHOOK_SECRET) return process.env.ORANGE_WEBHOOK_SECRET;
+  if (!_warnedWebhookSecret) {
+    _warnedWebhookSecret = true;
+    console.warn('[orange] ORANGE_WEBHOOK_SECRET is not set — deriving notif_token from an API credential. Set a dedicated secret.');
+  }
+  return CLIENT_SECRET || getAuthorisationHeader() || '';
 };
 
 // ─────────────────────────────────────────────
@@ -97,15 +136,14 @@ const getAccessToken = async () => {
     return _token.accessToken;
   }
 
-  const basic = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-
   try {
     const { data } = await axios.post(
       `${ORANGE_BASE}/oauth/v3/token`,
       'grant_type=client_credentials',
       {
         headers: {
-          Authorization: `Basic ${basic}`,
+          // ← THE Orange Authorization header (ORANGE_AUTHORISATION_HEADER)
+          Authorization: getAuthorisationHeader(),
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
         },
@@ -207,7 +245,7 @@ const initializeWebPayment = async ({
 
   const cfg = resolveOrangeConfig(countryCode, config);
   const notifToken = crypto
-    .createHmac('sha256', process.env.ORANGE_WEBHOOK_SECRET || CLIENT_SECRET)
+    .createHmac('sha256', getWebhookSecret())
     .update(String(orderId))
     .digest('hex');
 
@@ -288,6 +326,58 @@ const isB2CEnabled = () =>
  * stays PENDING for an admin to settle manually from the dashboard — exactly
  * the behaviour the existing NG payout flow already falls back to.
  */
+/**
+ * Who is sending the money.
+ *
+ * Paying a driver out is a CASH-IN to their Orange Money account, made from a
+ * CHANNEL USER (distributor) wallet that holds float — an ordinary subscriber
+ * wallet can't be used. Orange's published Cash-In spec (Senegal) identifies
+ * that wallet by its phone number + PIN:
+ *     partner: { idType: "MSISDN", id: "<distributor number>",
+ *                encryptedPinCode: "<RSA-encrypted PIN>", walletType: "PRINCIPAL" }
+ *
+ *  - ORANGE_B2C_PARTNER_ID_TYPE=MSISDN (default) → id = ORANGE_MERCHANT_MSISDN
+ *  - ORANGE_B2C_PARTNER_ID_TYPE=CODE             → id = ORANGE_B2C_AGENT_CODE
+ *      Only if Orange's spec for YOUR country says the wallet is addressed by
+ *      an agent code; specs differ by market, so confirm with Orange.
+ *  - ORANGE_B2C_WALLET_TYPE (default PRINCIPAL)
+ *
+ * The PIN is sent in `encryptedPinCode`. Orange's cash-in/cash-out APIs expect
+ * that field RSA-encrypted (Orange lets you fetch the public key through its API).
+ * Put that key (PEM, with \n for newlines) in ORANGE_B2C_PUBLIC_KEY and we encrypt
+ * for you. Without a key the PIN is sent as-is, which will be rejected by any
+ * market that requires encryption.
+ */
+const buildPartner = () => {
+  const idType = String(process.env.ORANGE_B2C_PARTNER_ID_TYPE || 'MSISDN').toUpperCase();
+  const id = idType === 'CODE'
+    ? process.env.ORANGE_B2C_AGENT_CODE
+    : process.env.ORANGE_MERCHANT_MSISDN;
+  if (!id) {
+    throw new AppError(
+      `Orange cash-out is not fully configured: ${idType === 'CODE' ? 'ORANGE_B2C_AGENT_CODE' : 'ORANGE_MERCHANT_MSISDN'} is missing.`,
+      503
+    );
+  }
+  if (!process.env.ORANGE_B2C_PIN) {
+    throw new AppError('Orange cash-out is not fully configured: ORANGE_B2C_PIN is missing.', 503);
+  }
+  return {
+    idType,
+    id: idType === 'MSISDN' ? String(id).replace(/[^\d]/g, '') : id,
+    encryptedPinCode: encryptPin(process.env.ORANGE_B2C_PIN),
+    walletType: process.env.ORANGE_B2C_WALLET_TYPE || 'PRINCIPAL',
+  };
+};
+
+const encryptPin = (pin) => {
+  const pem = (process.env.ORANGE_B2C_PUBLIC_KEY || '').replace(/\\n/g, '\n').trim();
+  if (!pem) return pin;
+  return crypto
+    .publicEncrypt({ key: pem, padding: crypto.constants.RSA_PKCS1_PADDING }, Buffer.from(String(pin)))
+    .toString('base64');
+};
+
 const cashOut = async ({ amount, msisdn, reference, currency = 'XOF', countryCode = 'CI', narration }) => {
   assertConfigured();
 
@@ -299,7 +389,7 @@ const cashOut = async ({ amount, msisdn, reference, currency = 'XOF', countryCod
   }
 
   const data = await orangeRequest('post', '/orange-money-b2c/v1/cashout', {
-    partner:  { idType: 'MSISDN', id: process.env.ORANGE_MERCHANT_MSISDN, encryptedPinCode: process.env.ORANGE_B2C_PIN },
+    partner:  buildPartner(),
     customer: { idType: 'MSISDN', id: normalizeMsisdn(msisdn, countryCode) },
     amount:   { value: Math.round(Number(amount)), unit: currency },
     reference,
@@ -358,7 +448,7 @@ const isValidMsisdn = (raw, countryCode = 'CI') => {
 const validateWebhook = (orderId, notifToken) => {
   if (!orderId || !notifToken) return false;
   const expected = crypto
-    .createHmac('sha256', process.env.ORANGE_WEBHOOK_SECRET || CLIENT_SECRET || '')
+    .createHmac('sha256', getWebhookSecret())
     .update(String(orderId))
     .digest('hex');
   try {
@@ -374,6 +464,7 @@ module.exports = {
   isOrangeConfigured,
   isB2CEnabled,
   getAccessToken,
+  getAuthorisationHeader,
   invalidateOrangeToken,
   resolveOrangeConfig,
   initializeWebPayment,

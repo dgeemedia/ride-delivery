@@ -114,6 +114,23 @@ const getCurrencyForUserId = async (userId) => {
 };
 
 /**
+ * Country + currency for a user in ONE query. Pricing needs both (the country
+ * picks the rate card, the currency labels the amounts) and used to fetch only
+ * the currency. Falls back to Nigeria on any failure so a lookup problem never
+ * blocks a ride request.
+ */
+const getPricingContextForUserId = async (userId) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { countryCode: true } });
+    const country = await getCountryByCode(user?.countryCode ?? 'NG');
+    return { countryCode: country.code, currencyCode: country.currencyCode, country };
+  } catch (err) {
+    console.error('[country.service] getPricingContextForUserId failed, using NG fallback:', err.message);
+    return { countryCode: 'NG', currencyCode: 'NGN', country: normalizeCountry(FALLBACK_COUNTRY) };
+  }
+};
+
+/**
  * Countries the mobile app should offer at registration, optionally
  * filtered by role. DRIVER and DELIVERY_PARTNER need real payouts, so
  * countries whose payoutMethod is still 'UNSUPPORTED' are excluded for
@@ -272,6 +289,7 @@ module.exports = {
   getCountryByCode,
   getCountryForUser,
   getCurrencyForUserId,
+  getPricingContextForUserId,
   getRegistrationCountries,
   invalidateCountryCache,
   FALLBACK_COUNTRY,

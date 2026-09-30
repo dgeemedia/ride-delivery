@@ -290,6 +290,8 @@ export interface RevenueAnalytics {
   byMethod: Record<string, number>;
   period: string;
   currency: string;
+  country?: string;
+  countryName?: string;
 }
 
 export interface UserGrowth {

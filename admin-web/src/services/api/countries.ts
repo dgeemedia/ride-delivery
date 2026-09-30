@@ -22,6 +22,8 @@ export interface Country {
   payoutMethod: string;
   /** Secrets arrive masked as '••••1234' — see redactProviderConfig on the server. */
   providerConfig: Record<string, Record<string, any>>;
+  /** false = still on auto-generated starter prices; the API blocks going live until reviewed. */
+  pricingReviewed?: boolean;
   userCount?: number;
   pendingPayouts?: number;
   grossVolume?: number;
@@ -56,6 +58,55 @@ export interface CountryOverview {
   };
 }
 
+// ── Per-country rules (pricing, commission, wallet, payouts, bonuses) ────────
+export type SettingType = 'money' | 'percent' | 'number' | 'boolean' | 'enum' | 'date' | 'json';
+/** Where the value currently in effect comes from. */
+export type SettingSource = 'country' | 'global' | 'starter' | 'default';
+
+export interface CountrySettingField {
+  key: string;
+  group: string;
+  label: string;
+  type: SettingType;
+  min?: number;
+  max?: number;
+  options?: string[];
+  help?: string;
+  strictWhole?: boolean;
+  value: any;
+  source: SettingSource;
+  /** true when this country has its own saved value (can be reset to inherit). */
+  overridden: boolean;
+}
+
+export interface SurgeWindow {
+  label: string;
+  days: number[];
+  hourStart: number;
+  hourEnd: number;
+  multiplier: number;
+}
+
+export interface CountrySettingsPayload {
+  countryCode: string;
+  countryName: string;
+  currency: string;
+  baseCurrency: string;
+  pricingReviewed: boolean;
+  groups: { id: string; label: string; pricing?: boolean }[];
+  settings: CountrySettingField[];
+  applied?: { key: string; from: any; to: any; source: SettingSource }[];
+}
+
+export interface CompareRow {
+  code: string;
+  name: string;
+  currency: string;
+  isActive: boolean;
+  values: Record<string, any>;
+  sources: Record<string, SettingSource>;
+}
+
 export const countriesAPI = {
   list: async (): Promise<ApiResponse<{ countries: Country[]; meta: CountryMeta }>> => {
     const response = await api.get('/admin/countries');
@@ -88,15 +139,50 @@ export const countriesAPI = {
     return response.data;
   },
 
+  getSettings: async (code: string): Promise<ApiResponse<CountrySettingsPayload>> => {
+    const response = await api.get(`/admin/countries/${code}/settings`);
+    return response.data;
+  },
+
+  /** `null` for a key removes the override so the country inherits again. */
+  saveSettings: async (
+    code: string,
+    changes: Record<string, any>
+  ): Promise<ApiResponse<CountrySettingsPayload>> => {
+    const response = await api.put(`/admin/countries/${code}/settings`, { changes });
+    return response.data;
+  },
+
+  copySettings: async (
+    code: string,
+    body: { fromCode: string; factor?: number; groups?: string[] }
+  ): Promise<ApiResponse<CountrySettingsPayload>> => {
+    const response = await api.post(`/admin/countries/${code}/settings/copy`, body);
+    return response.data;
+  },
+
+  markPricingReviewed: async (code: string): Promise<ApiResponse<unknown>> => {
+    const response = await api.post(`/admin/countries/${code}/settings/review`);
+    return response.data;
+  },
+
+  compareSettings: async (
+    keys: string[]
+  ): Promise<ApiResponse<{ keys: { key: string; label: string; type: SettingType }[]; countries: CompareRow[] }>> => {
+    const response = await api.get('/admin/countries/settings/compare', { params: { keys: keys.join(',') } });
+    return response.data;
+  },
+
   /**
    * Separate from update() so pausing a market is one click and can't
    * accidentally submit a stale payment configuration alongside it.
    */
   setStatus: async (
     code: string,
-    isActive: boolean
+    isActive: boolean,
+    acknowledgeStarterPricing = false
   ): Promise<ApiResponse<{ country: Country; userCount: number }>> => {
-    const response = await api.patch(`/admin/countries/${code}/status`, { isActive });
+    const response = await api.patch(`/admin/countries/${code}/status`, { isActive, acknowledgeStarterPricing });
     return response.data;
   },
 };

@@ -119,7 +119,30 @@ const pill = (text, bg, color) => `
     padding:6px 14px;border-radius:999px;letter-spacing:0.2px;margin-bottom:18px;">${text}</span>
 `;
 
-const ngn = (n) => `₦${Number(n || 0).toLocaleString('en-NG')}`;
+// Currency-aware money formatting for emails.
+//
+// Every email function below builds its whole body synchronously before its
+// first `await`, so a module-level "current currency" that each function sets on
+// entry is race-free (Node can't interleave another email's build in between).
+// It defaults to NGN, so any caller that doesn't pass `currency` behaves exactly
+// as before. Function name kept (`ngn`) to avoid touching ~45 call sites.
+const { formatMoney: _formatMoney } = require('../utils/currency');
+let _currency = 'NGN';
+const _cur = (c) => { _currency = c || 'NGN'; };
+// Explicit currency wins; otherwise use the recipient's own wallet currency so
+// every existing caller shows the right symbol without being edited. The lookup
+// is awaited BEFORE the body is built, and the build itself contains no await,
+// so no other email can change _currency in between.
+const _curFor = async (toEmail, explicit) => {
+  if (explicit) return _cur(explicit);
+  try {
+    const prisma = require('../lib/prisma');
+    const u = await prisma.user.findUnique({ where: { email: toEmail }, select: { wallet: { select: { currency: true } } } });
+    _cur(u?.wallet?.currency);
+  } catch { _cur('NGN'); }
+};
+const _sym = () => (require('../utils/currency').SYMBOLS[_currency] ?? `${_currency} `);
+const ngn = (n) => _formatMoney(Number(n || 0), _currency);
 
 // Shared "here are your login details" box — used whenever an admin creates
 // an account (and therefore knows the initial password) on someone's behalf.
@@ -299,7 +322,8 @@ exports.sendPasswordResetEmail = async (toEmail, firstName, resetToken) => {
  * @param {'approval'|'admin_created'} [opts.source]
  * @param {string} [opts.password] - only relevant when source is 'admin_created'
  */
-exports.sendDriverApprovedEmail = async (toEmail, firstName, { bonusAmount = 0, note = '', source = 'approval', password = null } = {}) => {
+exports.sendDriverApprovedEmail = async (toEmail, firstName, { bonusAmount = 0, note = '', source = 'approval', password = null, currency = null } = {}) => {
+  await _curFor(toEmail, currency);
   const appUrl = process.env.APP_URL ?? 'https://diakite.onrender.com';
   const isAdminCreated = source === 'admin_created';
 
@@ -408,7 +432,8 @@ exports.sendDriverRejectedEmail = async (toEmail, firstName, reason) => {
  * admin creates a partner account directly (source: 'admin_created').
  * Same shape as sendDriverApprovedEmail, with courier-facing copy.
  */
-exports.sendPartnerApprovedEmail = async (toEmail, firstName, { bonusAmount = 0, note = '', source = 'approval', password = null } = {}) => {
+exports.sendPartnerApprovedEmail = async (toEmail, firstName, { bonusAmount = 0, note = '', source = 'approval', password = null, currency = null } = {}) => {
+  await _curFor(toEmail, currency);
   const appUrl = process.env.APP_URL ?? 'https://diakite.onrender.com';
   const isAdminCreated = source === 'admin_created';
 
@@ -520,11 +545,12 @@ exports.sendPartnerRejectedEmail = async (toEmail, firstName, reason) => {
  * @param {string} toEmail
  * @param {string} firstName
  * @param {object} opts
- * @param {number} opts.amount           - amount credited, in NGN
+ * @param {number} opts.amount           - amount credited, in `opts.currency` (default NGN)
  * @param {boolean} opts.withdrawable    - true if the funds can be withdrawn to bank
  * @param {string}  [opts.description]   - optional human-readable reason
  */
-exports.sendBonusEmail = async (toEmail, firstName, { amount, withdrawable = false, description = '' } = {}) => {
+exports.sendBonusEmail = async (toEmail, firstName, { amount, withdrawable = false, description = '', currency = null } = {}) => {
+  await _curFor(toEmail, currency);
   const appUrl = process.env.APP_URL ?? 'https://diakite.onrender.com';
   const badge  = withdrawable
     ? pill('WITHDRAWABLE BONUS', '#e8f0fe', '#1a56db')
@@ -827,7 +853,8 @@ exports.sendTicketResolvedEmail = async (toEmail, firstName, { ticketNumber, res
 };
 
 /** Sent the moment a driver/partner submits a withdrawal request. */
-exports.sendWithdrawalUnderReviewEmail = async (toEmail, firstName, { amount, reference, accountName, accountNumber }) => {
+exports.sendWithdrawalUnderReviewEmail = async (toEmail, firstName, { amount, reference, accountName, accountNumber, currency = null }) => {
+  await _curFor(toEmail, currency);
   const body = `
     ${pill('WITHDRAWAL UNDER REVIEW', '#fff4e5', '#92400e')}
     <h2 style="font-size:22px;font-weight:900;margin:0 0 10px;color:#111;">
@@ -867,7 +894,8 @@ exports.sendWithdrawalUnderReviewEmail = async (toEmail, firstName, { amount, re
 };
 
 /** Sent when an admin approves a withdrawal and payment is being sent to the bank. */
-exports.sendWithdrawalApprovedEmail = async (toEmail, firstName, { amount, reference, accountName, accountNumber, bankName }) => {
+exports.sendWithdrawalApprovedEmail = async (toEmail, firstName, { amount, reference, accountName, accountNumber, bankName, currency = null }) => {
+  await _curFor(toEmail, currency);
   const body = `
     ${pill('WITHDRAWAL APPROVED', '#e8f8ee', '#0f7a3d')}
     <h2 style="font-size:22px;font-weight:900;margin:0 0 10px;color:#111;">
@@ -909,7 +937,8 @@ exports.sendWithdrawalApprovedEmail = async (toEmail, firstName, { amount, refer
 };
 
 /** Sent when an admin declines a withdrawal request. */
-exports.sendWithdrawalRejectedEmail = async (toEmail, firstName, { amount, reference, reason }) => {
+exports.sendWithdrawalRejectedEmail = async (toEmail, firstName, { amount, reference, reason, currency = null }) => {
+  await _curFor(toEmail, currency);
   const appUrl = process.env.APP_URL ?? 'https://diakite.onrender.com';
   const body = `
     ${pill('WITHDRAWAL DECLINED', '#fdecec', '#b3261e')}
@@ -950,7 +979,8 @@ exports.sendWithdrawalRejectedEmail = async (toEmail, firstName, { amount, refer
 };
 
 /** Sent when an admin manually credits or debits a user's wallet. */
-exports.sendWalletAdjustmentEmail = async (toEmail, firstName, { amount, type, reason = '' }) => {
+exports.sendWalletAdjustmentEmail = async (toEmail, firstName, { amount, type, reason = '', currency = null }) => {
+  await _curFor(toEmail, currency);
   const isCredit = type === 'credit';
   const body = `
     ${isCredit ? pill('WALLET CREDITED', '#e8f8ee', '#0f7a3d') : pill('WALLET DEBITED', '#fdecec', '#b3261e')}
@@ -990,7 +1020,8 @@ exports.sendWalletAdjustmentEmail = async (toEmail, firstName, { amount, type, r
 // all HTML/email templates live in one place)
 // ─────────────────────────────────────────────────────────────────────────────
 
-exports.sendTransactionHistoryStatement = async (toEmail, { transactions = [], fromDate, toDate, type = 'ALL' } = {}) => {
+exports.sendTransactionHistoryStatement = async (toEmail, { transactions = [], fromDate, toDate, type = 'ALL', currency = null } = {}) => {
+  await _curFor(toEmail, currency);
   const fmt     = (n) => Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtDate = (d) => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -1005,7 +1036,7 @@ exports.sendTransactionHistoryStatement = async (toEmail, { transactions = [], f
       <td>${fmtDate(t.createdAt)}</td>
       <td>${t.description || t.type}</td>
       <td style="color:${TX_COLORS[t.type] ?? '#333'};font-weight:700">
-        ${TX_SIGN[t.type] ?? ''}₦${fmt(t.amount)}
+        ${TX_SIGN[t.type] ?? ''}${_sym()}${fmt(t.amount)}
       </td>
       <td>${t.type}</td>
       <td style="color:${t.status === 'COMPLETED' ? '#5DAA72' : '#FFB800'}">${t.status}</td>
@@ -1039,15 +1070,15 @@ exports.sendTransactionHistoryStatement = async (toEmail, { transactions = [], f
 <div class="summary">
   <div class="sum-box">
     <div class="sum-lbl">TOTAL IN</div>
-    <div class="sum-val" style="color:#5DAA72">+₦${fmt(totalIn)}</div>
+    <div class="sum-val" style="color:#5DAA72">+${_sym()}${fmt(totalIn)}</div>
   </div>
   <div class="sum-box">
     <div class="sum-lbl">TOTAL OUT</div>
-    <div class="sum-val" style="color:#E05555">-₦${fmt(totalOut)}</div>
+    <div class="sum-val" style="color:#E05555">-${_sym()}${fmt(totalOut)}</div>
   </div>
   <div class="sum-box">
     <div class="sum-lbl">NET</div>
-    <div class="sum-val">₦${fmt(totalIn - totalOut)}</div>
+    <div class="sum-val">${_sym()}${fmt(totalIn - totalOut)}</div>
   </div>
 </div>
 <table>
@@ -1078,7 +1109,8 @@ exports.sendTransactionHistoryStatement = async (toEmail, { transactions = [], f
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Sent to the SENDER the moment they submit a transfer, before admin review. */
-exports.sendTransferPendingEmail = async (toEmail, firstName, { amount, recipientName, reference, note = '' }) => {
+exports.sendTransferPendingEmail = async (toEmail, firstName, { amount, recipientName, reference, note = '', currency = null }) => {
+  await _curFor(toEmail, currency);
   const body = `
     ${pill('TRANSFER PENDING', '#fff4e5', '#92400e')}
     <h2 style="font-size:22px;font-weight:900;margin:0 0 10px;color:#111;">
@@ -1117,7 +1149,8 @@ exports.sendTransferPendingEmail = async (toEmail, firstName, { amount, recipien
 };
 
 /** Sent to the SENDER once admin approves the transfer. */
-exports.sendTransferApprovedEmail = async (toEmail, firstName, { amount, recipientName, reference, note = '' }) => {
+exports.sendTransferApprovedEmail = async (toEmail, firstName, { amount, recipientName, reference, note = '', currency = null }) => {
+  await _curFor(toEmail, currency);
   const body = `
     ${pill('TRANSFER APPROVED', '#e8f8ee', '#0f7a3d')}
     <h2 style="font-size:22px;font-weight:900;margin:0 0 10px;color:#111;">
@@ -1146,7 +1179,8 @@ exports.sendTransferApprovedEmail = async (toEmail, firstName, { amount, recipie
 };
 
 /** Sent to the RECIPIENT once a transfer is approved and their wallet is credited. */
-exports.sendMoneyReceivedEmail = async (toEmail, firstName, { amount, senderName, reference, note = '' }) => {
+exports.sendMoneyReceivedEmail = async (toEmail, firstName, { amount, senderName, reference, note = '', currency = null }) => {
+  await _curFor(toEmail, currency);
   const appUrl = process.env.APP_URL ?? 'https://diakite.onrender.com';
   const body = `
     ${pill('MONEY RECEIVED', '#e8f8ee', '#0f7a3d')}
@@ -1186,7 +1220,8 @@ exports.sendMoneyReceivedEmail = async (toEmail, firstName, { amount, senderName
 };
 
 /** Sent to the SENDER when admin rejects the transfer and refunds their wallet. */
-exports.sendTransferRejectedEmail = async (toEmail, firstName, { amount, recipientName, reference, reason }) => {
+exports.sendTransferRejectedEmail = async (toEmail, firstName, { amount, recipientName, reference, reason, currency = null }) => {
+  await _curFor(toEmail, currency);
   const body = `
     ${pill('TRANSFER DECLINED', '#fdecec', '#b3261e')}
     <h2 style="font-size:22px;font-weight:900;margin:0 0 10px;color:#111;">
@@ -1226,7 +1261,8 @@ exports.sendTransferRejectedEmail = async (toEmail, firstName, { amount, recipie
 const METHOD_LABELS = { CARD: 'card', WALLET: 'wallet balance', CASH: 'cash' };
 
 /** Sent to the PAYER when a ride/delivery payment completes successfully. */
-exports.sendPaymentReceiptEmail = async (toEmail, firstName, { amount, method, reference, service }) => {
+exports.sendPaymentReceiptEmail = async (toEmail, firstName, { amount, method, reference, service, currency = null }) => {
+  await _curFor(toEmail, currency);
   const methodLabel = METHOD_LABELS[method] ?? method;
   const serviceLabel = service === 'ride' ? 'ride' : service === 'delivery' ? 'delivery' : 'trip';
   const body = `
@@ -1261,7 +1297,8 @@ exports.sendPaymentReceiptEmail = async (toEmail, firstName, { amount, method, r
 };
 
 /** Sent to the DRIVER/PARTNER when they're credited earnings from a completed ride/delivery. */
-exports.sendEarningsCreditedEmail = async (toEmail, firstName, { amount, platformFee, reference, service }) => {
+exports.sendEarningsCreditedEmail = async (toEmail, firstName, { amount, platformFee, reference, service, currency = null }) => {
+  await _curFor(toEmail, currency);
   const serviceLabel = service === 'ride' ? 'ride' : service === 'delivery' ? 'delivery' : 'trip';
   const body = `
     ${pill('EARNINGS CREDITED', '#e8f8ee', '#0f7a3d')}
@@ -1296,7 +1333,8 @@ exports.sendEarningsCreditedEmail = async (toEmail, firstName, { amount, platfor
 };
 
 /** Sent when a payment refund is processed (wallet credit or card refund). */
-exports.sendRefundProcessedEmail = async (toEmail, firstName, { amount, method, reference }) => {
+exports.sendRefundProcessedEmail = async (toEmail, firstName, { amount, method, reference, currency = null }) => {
+  await _curFor(toEmail, currency);
   const destination = method === 'WALLET' ? 'your Diakite wallet' : 'your original payment method';
   const body = `
     ${pill('REFUND PROCESSED', '#e8f0fe', '#1a56db')}

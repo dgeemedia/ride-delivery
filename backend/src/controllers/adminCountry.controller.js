@@ -23,6 +23,7 @@ const {
   invalidateCountryCache,
 } = require('../services/country.service');
 const orangeService = require('../services/orange.service');
+const countrySettings = require('../services/countrySettings.service');
 
 const KNOWN_PROVIDERS = ['paystack', 'flutterwave', 'orange'];
 
@@ -135,10 +136,19 @@ exports.listCountries = async (req, res) => {
   });
   const byCode = Object.fromEntries(counts.map(c => [c.countryCode, c._count._all]));
 
+  const reviewedRows = await prisma.countrySetting.findMany({ where: { key: 'pricing_reviewed' }, select: { countryCode: true, value: true } });
+  const reviewed = new Set(reviewedRows.filter(r => r.value === true).map(r => r.countryCode));
+
   res.status(200).json({
     success: true,
     data: {
-      countries: rows.map(r => ({ ...present(r), userCount: byCode[r.code] ?? 0 })),
+      countries: rows.map(r => ({
+        ...present(r),
+        userCount: byCode[r.code] ?? 0,
+        // Nigeria (base currency) has always been priced from the global
+        // settings; every other market must have been reviewed by an admin.
+        pricingReviewed: r.currencyCode === countrySettings.BASE_CURRENCY || reviewed.has(r.code),
+      })),
       meta: {
         creditMethods:  ALL_CREDIT_METHODS,
         payoutMethods:  ALL_PAYOUT_METHODS,
@@ -185,7 +195,9 @@ exports.createCountry = async (req, res) => {
       defaultLocale:    payload.defaultLocale || `${payload.languageCode || 'en'}-${payload.code}`,
       languageCode:     payload.languageCode || 'en',
       phoneDialCode:    payload.phoneDialCode,
-      isActive:         payload.isActive ?? true,
+      // New markets start paused: nobody should register into a country whose
+      // pricing nobody has looked at yet. Activate from the Countries page.
+      isActive:         payload.isActive ?? false,
       paymentProviders: payload.paymentProviders ?? ['flutterwave'],
       creditMethods:    payload.creditMethods ?? ['CASH', 'WALLET'],
       payoutMethods:    payload.payoutMethods ?? ['MANUAL'],
@@ -265,6 +277,19 @@ exports.setCountryStatus = async (req, res) => {
 
   const existing = await prisma.country.findUnique({ where: { code } });
   if (!existing) throw new AppError('Country not found', 404);
+
+  // Going live with un-reviewed pricing would charge riders the auto-generated
+  // starter values. Make that a deliberate choice, not an accident.
+  if (isActive && !existing.isActive) {
+    const reviewed = await countrySettings.isPricingReviewed(code);
+    if (!reviewed && !req.body.acknowledgeStarterPricing) {
+      return res.status(409).json({
+        success: false,
+        code: 'PRICING_NOT_REVIEWED',
+        message: `${existing.name} is still on auto-generated starter prices. Review its pricing under Countries → Pricing & rules first, or confirm you want to go live with the starter values.`,
+      });
+    }
+  }
 
   // Deactivating hides a country from registration but must never orphan the
   // people already in it — warn the admin with the real number instead of
@@ -411,6 +436,105 @@ exports.getAllCountriesOverview = async (req, res) => {
         platformFees:   byCurrency[c.currencyCode]?.fees ?? 0,
       })),
     },
+  });
+};
+
+// ─────────────────────────────────────────────
+// PER-COUNTRY PRICING / COMMISSION / WALLET / PAYOUT / BONUS RULES
+// ─────────────────────────────────────────────
+
+const requireCountry = async (codeParam) => {
+  const code = String(codeParam).toUpperCase();
+  const row = await prisma.country.findUnique({ where: { code } });
+  if (!row) throw new AppError('Country not found', 404);
+  return row;
+};
+
+// GET /api/admin/countries/:code/settings
+exports.getCountrySettings = async (req, res) => {
+  const row = await requireCountry(req.params.code);
+  const data = await countrySettings.describeCountrySettings(row.code);
+  res.status(200).json({ success: true, data: { ...data, countryName: row.name } });
+};
+
+// PUT /api/admin/countries/:code/settings   { changes: { key: value | null } }
+// null removes the override so the country inherits again.
+exports.updateCountrySettings = async (req, res) => {
+  const row = await requireCountry(req.params.code);
+  const { changes } = req.body;
+  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
+    throw new AppError('"changes" must be an object of { key: value }', 400);
+  }
+
+  const { applied } = await countrySettings.saveCountrySettings(row.code, changes, req.user.id);
+
+  logActivity({
+    userId: req.user.id,
+    action: 'admin_country_settings_updated',
+    entityType: 'Country',
+    entityId: row.id,
+    // Old → new for every key: pricing changes are exactly what someone asks
+    // about a month later ("who changed the Mali commission?").
+    details: { code: row.code, currency: row.currencyCode, changes: applied.map(a => ({ key: a.key, from: a.from, to: a.to })) },
+    req,
+  });
+
+  const data = await countrySettings.describeCountrySettings(row.code);
+  res.status(200).json({
+    success: true,
+    message: `${row.name}: ${applied.length} setting${applied.length === 1 ? '' : 's'} saved`,
+    data: { ...data, countryName: row.name, applied },
+  });
+};
+
+// POST /api/admin/countries/:code/settings/copy  { fromCode, factor?, groups? }
+exports.copyCountrySettings = async (req, res) => {
+  const row = await requireCountry(req.params.code);
+  const { fromCode, factor, groups } = req.body;
+  if (!fromCode) throw new AppError('fromCode is required', 400);
+  const { applied } = await countrySettings.copySettings(row.code, fromCode, { factor, groups, adminId: req.user.id });
+
+  logActivity({
+    userId: req.user.id,
+    action: 'admin_country_settings_copied',
+    entityType: 'Country',
+    entityId: row.id,
+    details: { code: row.code, fromCode: String(fromCode).toUpperCase(), factor: factor ?? null, groups: groups ?? 'all', keys: applied.length },
+    req,
+  });
+
+  const data = await countrySettings.describeCountrySettings(row.code);
+  res.status(200).json({ success: true, message: `Copied ${applied.length} settings from ${String(fromCode).toUpperCase()} into ${row.name}`, data: { ...data, countryName: row.name } });
+};
+
+// POST /api/admin/countries/:code/settings/review — "I've checked these numbers"
+exports.markPricingReviewed = async (req, res) => {
+  const row = await requireCountry(req.params.code);
+  await countrySettings.markPricingReviewed(row.code, req.user.id);
+  logActivity({ userId: req.user.id, action: 'admin_country_pricing_reviewed', entityType: 'Country', entityId: row.id, details: { code: row.code }, req });
+  res.status(200).json({ success: true, message: `${row.name} pricing marked as reviewed` });
+};
+
+// GET /api/admin/countries/settings/compare?keys=platform_commission_rides,wallet_topup_min
+// One row per country, one column per key — the "how do my markets differ" view.
+exports.compareCountrySettings = async (req, res) => {
+  const keys = String(req.query.keys || '').split(',').map(k => k.trim()).filter(Boolean);
+  if (!keys.length) throw new AppError('keys is required (comma-separated)', 400);
+  const unknown = keys.filter(k => !countrySettings.DEF_BY_KEY[k]);
+  if (unknown.length) throw new AppError(`Unknown setting(s): ${unknown.join(', ')}`, 400);
+
+  const countries = await prisma.country.findMany({ orderBy: { name: 'asc' } });
+  const rows = await Promise.all(countries.map(async c => {
+    const eff = await countrySettings.getEffectiveSettings(c.code);
+    return {
+      code: c.code, name: c.name, currency: c.currencyCode, isActive: c.isActive,
+      values:  Object.fromEntries(keys.map(k => [k, eff.values[k]])),
+      sources: Object.fromEntries(keys.map(k => [k, eff.sources[k]])),
+    };
+  }));
+  res.status(200).json({
+    success: true,
+    data: { keys: keys.map(k => ({ key: k, label: countrySettings.DEF_BY_KEY[k].label, type: countrySettings.DEF_BY_KEY[k].type })), countries: rows },
   });
 };
 

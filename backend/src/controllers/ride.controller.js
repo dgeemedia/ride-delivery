@@ -16,7 +16,10 @@ const { broadcastToDrivers } = require('../services/socket.service');
 const shieldService = require('../services/shield.service');
 const commissionService = require('../services/commission.service');
 const cashbackService = require('../services/cashback.service');
-const { getCurrencyForUserId } = require('../services/country.service');
+const { getCurrencyForUserId, getPricingContextForUserId } = require('../services/country.service');
+const { formatMoney } = require('../utils/currency');
+const countrySettingsService = require('../services/countrySettings.service');
+const { roundToStep } = require('../utils/fareEngine');
 
 const getIO = (req) => req.app.get('io');
 
@@ -54,7 +57,8 @@ exports.getFareEstimate = async (req, res) => {
     parseFloat(dropoffLat), parseFloat(dropoffLng)
   );
 
-  const estimate = await estimateFare(distance, vehicleType.toUpperCase(), new Date(), 1.0, await getCurrencyForUserId(req.user.id));
+  const ctx      = await getPricingContextForUserId(req.user.id);
+  const estimate = await estimateFare(distance, vehicleType.toUpperCase(), new Date(), 1.0, ctx.currencyCode, ctx.countryCode);
 
   res.status(200).json({ success: true, data: { ...estimate, distance: distance.toFixed(2) } });
 };
@@ -75,8 +79,9 @@ exports.requestRide = async (req, res) => {
   if (activeRide) throw new AppError('You already have an active ride', 400);
  
   const distance      = calculateDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
-  const rideCurrency  = await getCurrencyForUserId(req.user.id);
-  const fareBreakdown = await estimateFare(distance, vehicleType.toUpperCase(), new Date(), 1.0, rideCurrency);
+  const pricingCtx    = await getPricingContextForUserId(req.user.id);
+  const rideCurrency  = pricingCtx.currencyCode;
+  const fareBreakdown = await estimateFare(distance, vehicleType.toUpperCase(), new Date(), 1.0, rideCurrency, pricingCtx.countryCode);
   let   finalFare     = fareBreakdown.estimatedFare;
  
   // Promo code handling (unchanged)
@@ -97,9 +102,9 @@ exports.requestRide = async (req, res) => {
         : appliedPromo.discountValue;
       finalFare = Math.max(
         fareBreakdown.bookingFee + (fareBreakdown.estimatedFare - fareBreakdown.bookingFee - discount),
-        fareBreakdown.bookingFee + 100
+        fareBreakdown.bookingFee + fareBreakdown.roundingStep * 2   // was a hard-coded ₦100
       );
-      finalFare = Math.round(finalFare / 50) * 50;
+      finalFare = roundToStep(finalFare, fareBreakdown.roundingStep);
       await prisma.promoCode.update({
         where: { id: appliedPromo.id },
         data:  { currentUses: { increment: 1 } },
@@ -107,7 +112,7 @@ exports.requestRide = async (req, res) => {
     }
   }
  
-  const commissionRate  = fareBreakdown.commissionRate ?? 0.20;
+  const commissionRate  = fareBreakdown.commissionRate;
   const driverEarnings  = Math.round(finalFare * (1 - commissionRate));
   const platformFee     = finalFare - driverEarnings;
  
@@ -225,7 +230,12 @@ exports.getActiveRide = async (req, res) => {
     }
   });
 
-  const surgeContext = ride ? getSurgeMultiplier() : null;
+  let surgeContext = null;
+  if (ride) {
+    const { countryCode: surgeCountry } = await getPricingContextForUserId(req.user.id);
+    await getSettings(surgeCountry);              // make sure this market's surge windows are cached
+    surgeContext = getSurgeMultiplier(new Date(), surgeCountry);
+  }
 
   res.status(200).json({
     success: true,
@@ -257,12 +267,18 @@ exports.acceptRide = async (req, res) => {
 
   const wallet          = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   const walletBalance   = wallet?.balance ?? 0;
-  const requiredBalance = ride.estimatedFare;
+
+  // How much of the fare a driver must hold in their wallet to accept is a
+  // per-country setting (100% = the whole fare, the original behaviour).
+  const driverCtx       = await getPricingContextForUserId(req.user.id);
+  const requiredPct     = await countrySettingsService.getSetting(driverCtx.countryCode, 'driver_min_balance_percent');
+  const requiredBalance = Math.ceil(ride.estimatedFare * (requiredPct / 100));
+  const cur             = ride.currency || driverCtx.currencyCode;
 
   if (walletBalance < requiredBalance) {
     throw new AppError(
-      `Insufficient wallet balance. You need at least ₦${requiredBalance.toLocaleString('en-NG')} to accept this ride. ` +
-      `Your current balance is ₦${walletBalance.toLocaleString('en-NG')}. Please top up your wallet.`,
+      `Insufficient wallet balance. You need at least ${formatMoney(requiredBalance, cur)} to accept this ride. ` +
+      `Your current balance is ${formatMoney(walletBalance, cur)}. Please top up your wallet.`,
       402
     );
   }
@@ -358,7 +374,9 @@ exports.completeRide = async (req, res) => {
   const completedAt           = new Date();
   const driverFloorMultiplier = decodeFloorMultiplier(ride.notes);
 
+  const { countryCode: rideCountry } = await getPricingContextForUserId(ride.customerId);
   const finalFareBreakdown = await calculateFinalFare({
+    countryCode:          rideCountry,
     distanceKm:           ride.distance,
     startedAt:            ride.startedAt,
     completedAt,
@@ -430,7 +448,7 @@ exports.completeRide = async (req, res) => {
     earnerUserId:     ride.driverId,
     grossAmount:      finalFare,
     bookingFee:       finalFareBreakdown.bookingFee    ?? 0,
-    commissionRate:   finalFareBreakdown.commissionRate ?? 0.20,
+    commissionRate:   finalFareBreakdown.commissionRate,
     commissionAmount: platformFee,
     earnerAmount:     driverEarnings,
     surgeMultiplier:  finalFareBreakdown.surgeMultiplier ?? 1.0,
@@ -446,14 +464,14 @@ exports.completeRide = async (req, res) => {
   await notificationService.notify({
     userId:  ride.customerId,
     title:   'Ride Completed ✅',
-    message: `Your ride is done. Total: ₦${finalFare.toLocaleString('en-NG')}${surgeNote}.${trafficNote} Please rate your driver!`,
+    message: `Your ride is done. Total: ${formatMoney(finalFare, ride.currency, rideCountry)}${surgeNote}.${trafficNote} Please rate your driver!`,
     type:    'ride_completed',
     data:    { rideId: id, fare: finalFare, paymentMethod, fareBreakdown: finalFareBreakdown }
   });
   await notificationService.notify({
     userId:  req.user.id,
     title:   'Payment Received 💰',
-    message: `Ride done. Your earnings: ₦${driverEarnings.toLocaleString('en-NG')} (after platform fees).`,
+    message: `Ride done. Your earnings: ${formatMoney(driverEarnings, ride.currency, rideCountry)} (after platform fees).`,
     type:    'payment_received',
     data:    { rideId: id, earnings: driverEarnings, platformFee }
   });
@@ -480,7 +498,15 @@ exports.cancelRide = async (req, res) => {
   let cancellationFee = 0;
 
   if (ride.status !== 'REQUESTED' && !cancelledByDriver) {
-    cancellationFee = 200;
+    // Was a hard-coded 200 that ignored the admin's cancellation-fee settings
+    // (and was Naira in every market). Now: the rate card of the customer's
+    // country, for the vehicle that was actually assigned.
+    const { countryCode: cancelCountry } = await getPricingContextForUserId(ride.customerId);
+    const assigned = ride.driverId
+      ? await prisma.driverProfile.findUnique({ where: { userId: ride.driverId }, select: { vehicleType: true } })
+      : null;
+    const { rates } = await getSettings(cancelCountry);
+    cancellationFee = (rates[assigned?.vehicleType] ?? rates.CAR).cancellationFee;
     await prisma.payment.create({
       data: {
         userId: ride.customerId, rideId: id, amount: cancellationFee,
@@ -511,7 +537,7 @@ exports.cancelRide = async (req, res) => {
       title:   'Ride Cancelled',
       message: cancelledByDriver
         ? "Your driver cancelled. We're finding another driver for you."
-        : `Your ride was cancelled. ${reason ? `Reason: ${reason}` : ''} ${cancellationFee ? `₦${cancellationFee} cancellation fee applies.` : ''}`,
+        : `Your ride was cancelled. ${reason ? `Reason: ${reason}` : ''} ${cancellationFee ? `${formatMoney(cancellationFee, ride.currency)} cancellation fee applies.` : ''}`,
       type:    'ride_cancelled',
       data:    { rideId: id, reason, cancelledBy: req.user.id, cancellationFee }
     });
@@ -619,7 +645,8 @@ exports.getNearbyDrivers = async (req, res) => {
   const routeKm = (dropoffLat && dropoffLng)
     ? calculateDistance(lat, lng, parseFloat(dropoffLat), parseFloat(dropoffLng))
     : null;
-  const requesterCurrency = await getCurrencyForUserId(req.user.id); // ← looked up once, not per driver
+  const requesterCtx      = await getPricingContextForUserId(req.user.id); // ← looked up once, not per driver
+  const requesterCurrency = requesterCtx.currencyCode;
  
   const drivers = await prisma.driverProfile.findMany({
     where: {
@@ -665,7 +692,7 @@ exports.getNearbyDrivers = async (req, res) => {
   const formatted = await Promise.all(nearby.map(async (d) => {
     const driverVehicle    = d.vehicleType ?? 'CAR';
     const estimateKm       = routeKm ?? 3;         // use actual route or fallback
-    const baseFareEstimate = await estimateFare(estimateKm, driverVehicle, new Date(), 1.0, requesterCurrency);
+    const baseFareEstimate = await estimateFare(estimateKm, driverVehicle, new Date(), 1.0, requesterCurrency, requesterCtx.countryCode);
  
     // Driver floor price — stored as floorMultiplier on driverProfile (>= 1.0)
     // If not yet migrated, defaults to 1.0 (no floor applied)
@@ -676,12 +703,13 @@ exports.getNearbyDrivers = async (req, res) => {
       const floored = applyDriverFloor(
         effectiveFare * floorMultiplier,  // driver's minimum price
         effectiveFare,
+        baseFareEstimate.roundingStep,
       );
       effectiveFare = floored.adjustedFare;
     }
  
     // Earnings breakdown (same math as completeRide)
-    const commissionRate  = baseFareEstimate.commissionRate ?? 0.20;
+    const commissionRate  = baseFareEstimate.commissionRate;
     const driverEarnings  = Math.round(effectiveFare * (1 - commissionRate));
     const platformFee     = effectiveFare - driverEarnings;
  
@@ -768,13 +796,14 @@ exports.requestSpecificDriver = async (req, res) => {
   );
   const usedVehicleType = vehicleType?.toUpperCase() ?? driverProfile.vehicleType ?? 'CAR';
 
-  const requestCurrency = await getCurrencyForUserId(req.user.id);
-  const fareBreakdown   = await estimateFare(distance, usedVehicleType, new Date(), 1.0, requestCurrency);
+  const requestCtx      = await getPricingContextForUserId(req.user.id);
+  const requestCurrency = requestCtx.currencyCode;
+  const fareBreakdown   = await estimateFare(distance, usedVehicleType, new Date(), 1.0, requestCurrency, requestCtx.countryCode);
   let   finalFare       = fareBreakdown.estimatedFare;
 
   let driverFloorResult = null;
   if (driverFloorPrice && parseFloat(driverFloorPrice) > 0) {
-    driverFloorResult = applyDriverFloor(parseFloat(driverFloorPrice), finalFare);
+    driverFloorResult = applyDriverFloor(parseFloat(driverFloorPrice), finalFare, fareBreakdown.roundingStep);
     finalFare         = driverFloorResult.adjustedFare;
   }
 
@@ -790,8 +819,8 @@ exports.requestSpecificDriver = async (req, res) => {
       const discount = promo.discountType === 'percentage'
         ? finalFare * (promo.discountValue / 100)
         : promo.discountValue;
-      finalFare = Math.max(fareBreakdown.bookingFee + 100, finalFare - discount);
-      finalFare = Math.round(finalFare / 50) * 50;
+      finalFare = Math.max(fareBreakdown.bookingFee + fareBreakdown.roundingStep * 2, finalFare - discount);
+      finalFare = roundToStep(finalFare, fareBreakdown.roundingStep);
       await prisma.promoCode.update({ where: { id: promo.id }, data: { currentUses: { increment: 1 } } });
     }
   }
@@ -860,8 +889,11 @@ if (io) {
 };
 
 exports.getPlatformRates = async (req, res) => {
-  const { rates, delivery } = await getSettings();
-  res.status(200).json({ success: true, data: { rates, delivery } });
+  // Optional auth on this route: signed-in users see their own country's rate
+  // card, anonymous callers get the base market's.
+  const ctx = req.user ? await getPricingContextForUserId(req.user.id) : { countryCode: 'NG', currencyCode: 'NGN' };
+  const { rates, delivery, roundingStep } = await getSettings(ctx.countryCode);
+  res.status(200).json({ success: true, data: { rates, delivery, roundingStep, currency: ctx.currencyCode, countryCode: ctx.countryCode } });
 };
 
 module.exports = exports;

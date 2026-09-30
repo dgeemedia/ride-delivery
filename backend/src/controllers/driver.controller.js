@@ -8,6 +8,7 @@ const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog');
 const { formatMoney } = require('../utils/currency');
 const { getCountryForUser } = require('../services/country.service');
+const countrySettingsService = require('../services/countrySettings.service');
 const orangeService = require('../services/orange.service');
 
 console.log('[DRIVER-CTRL] Prisma driver controller loaded');
@@ -527,11 +528,11 @@ exports.requestPayout = async (req, res) => {
   const requester = await prisma.user.findUnique({ where: { id: req.user.id }, select: { countryCode: true } });
   const country = await getCountryForUser(requester);
 
-  // Minimum is expressed in the driver's own currency. The old hardcoded
-  // "₦1,000" string was wrong the moment a second market went live.
-  if (amount < 1000) {
-    throw new AppError(`Minimum payout amount is ${formatMoney(1000, country.currencyCode)}`, 400);
-  }
+  // Min / max / fee / on-off are per-country settings (Admin → Countries).
+  // Wallet is debited plan.gross; the provider is sent plan.net.
+  const plan = await countrySettingsService.planWithdrawal({
+    countryCode: country.code, role: 'DRIVER', amount, currency: country.currencyCode,
+  });
 
   const payoutMethods = country.payoutMethods;
 
@@ -608,7 +609,7 @@ exports.requestPayout = async (req, res) => {
     prisma.payout.create({
       data: {
         userId: req.user.id,
-        amount,
+        amount: plan.net,
         // Stored in the driver's own currency so admin screens don't have to
         // guess which market a payout belongs to.
         currency: wallet.currency,
@@ -618,7 +619,7 @@ exports.requestPayout = async (req, res) => {
         status: 'PENDING',
         reference,
         payoutMethod: resolvedPayoutMethod,
-        payoutDetails,
+        payoutDetails: { ...payoutDetails, grossAmount: plan.gross, fee: plan.fee },
       },
     }),
   ]);
@@ -634,8 +635,8 @@ exports.requestPayout = async (req, res) => {
     details: {
       role:          'DRIVER',
       amount,
-      bankCode,
-      accountNumber: `****${accountNumber.slice(-4)}`,
+      bankCode: resolvedBankCode,
+      accountNumber: `****${String(destination).slice(-4)}`,
       reference,
     },
     req,
@@ -648,8 +649,8 @@ exports.requestPayout = async (req, res) => {
     type: notificationService.TYPES.WALLET_WITHDRAWAL,
     data: {
       amount,
-      accountNumber: `****${accountNumber.slice(-4)}`,
-      bankCode,
+      accountNumber: `****${String(destination).slice(-4)}`,
+      bankCode: resolvedBankCode,
       reference,
     },
   });
