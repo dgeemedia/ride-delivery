@@ -552,6 +552,10 @@ exports.requestPayout = async (req, res) => {
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   if (!wallet) throw new AppError('Wallet not found', 404);
   if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
+  const withdrawable = await require('../utils/walletHelpers').getWithdrawableBalance(wallet);
+  if (withdrawable < amount) {
+    throw new AppError(`You can withdraw up to ${formatMoney(withdrawable, wallet.currency)}. The rest is an onboarding bonus usable only for accepting jobs.`, 400);
+  }
 
   // ── Resolve the destination per rail ──────────────────────────────────────
   // Orange markets pay out to an Orange Money wallet, so the destination is

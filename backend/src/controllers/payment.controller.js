@@ -10,6 +10,7 @@ const { logActivity } = require('../utils/auditLog');
 const { getCurrencyForUserId, getCountryForUser } = require('../services/country.service');
 const { formatMoney } = require('../utils/currency');
 const { paymentSplit } = require('../services/paymentSplit.service');
+const { applyTransferResult } = require('../services/payoutSettlement.service');
 
 const safeSendEmail = async (fn, label) => {
   try {
@@ -123,6 +124,17 @@ exports.paystackWebhook = async (req, res) => {
   if (!isValid) return res.status(401).json({ success: false, message: 'Invalid signature' });
 
   const { event, data } = req.body;
+
+  // Payout (withdrawal) results — these are transfers WE sent, not payments in.
+  if (event === 'transfer.success' || event === 'transfer.failed' || event === 'transfer.reversed') {
+    await applyTransferResult({
+      reference:    data?.reference,
+      outcome:      event === 'transfer.success' ? 'SUCCESS' : 'FAILED',
+      message:      data?.reason || data?.message,
+      transferCode: data?.transfer_code,
+    });
+    return res.sendStatus(200);
+  }
 
   if (event === 'charge.success') {
     const { reference } = data;
@@ -277,6 +289,20 @@ exports.flutterwaveWebhook = async (req, res) => {
   }
 
   const { event, data } = req.body;
+
+  // Flutterwave reports the final outcome of a payout transfer here.
+  if (event === 'transfer.completed') {
+    const status = String(data?.status || '').toUpperCase();
+    if (status === 'SUCCESSFUL' || status === 'FAILED') {
+      await applyTransferResult({
+        reference:    data?.reference,
+        outcome:      status === 'SUCCESSFUL' ? 'SUCCESS' : 'FAILED',
+        message:      data?.complete_message,
+        transferCode: data?.id != null ? String(data.id) : undefined,
+      });
+    }
+    return res.sendStatus(200);
+  }
 
   if (event === 'charge.completed' && data.status === 'successful') {
     const existing = await prisma.payment.findFirst({ where: { transactionId: String(data.id) } });
@@ -771,14 +797,20 @@ exports.requestRefund = async (req, res) => {
 
 exports.listBanks = async (req, res) => {
   const country = await getCountryForUser(req.user);
-  const banks = await paymentService.listBanksUnified(country.code, country);
+  // ?rail=BANK|MOMO|ORANGE|MANUAL — which payout option the person is looking at.
+  // Only options this country really offers are honoured.
+  const rail = req.query.rail ? String(req.query.rail).toUpperCase() : null;
+  if (rail && !require('../services/country.service').payoutRails(country).includes(rail)) {
+    throw new AppError('That payout option is not available in your country.', 400);
+  }
+  const banks = await paymentService.listBanksUnified(country.code, country, rail);
   res.status(200).json({ success: true, data: { banks } });
 };
 
 exports.verifyBankAccount = async (req, res) => {
-  const { accountNumber, bankCode } = req.body;
+  const { accountNumber, bankCode, rail } = req.body;
   const country = await getCountryForUser(req.user);
-  const account = await paymentService.verifyBankAccountUnified(accountNumber, bankCode, country.code, country);
+  const account = await paymentService.verifyBankAccountUnified(accountNumber, bankCode, country.code, country, rail ? String(rail).toUpperCase() : null);
   res.status(200).json({ success: true, data: { account } });
 };
 

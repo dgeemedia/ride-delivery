@@ -39,6 +39,7 @@ const ALL_PAYOUT_METHODS = [
   'NG_BANK_TRANSFER',   // Paystack/Flutterwave NUBAN transfer
   'BANK_TRANSFER',      // generic Flutterwave bank transfer
   'ORANGE_MONEY',       // Orange Money cash-out to an MSISDN
+  'MOBILE_MONEY',       // MTN / Vodafone / AirtelTigo wallet via Flutterwave (Ghana)
   'MANUAL',             // admin settles out-of-band; the Payout row stays auditable
   'UNSUPPORTED',
 ];
@@ -224,6 +225,26 @@ const getProviderForMethod = (method) => METHOD_PROVIDER[method] ?? null;
  * that's Orange Money; elsewhere it's whichever of Paystack / Flutterwave is
  * listed first in paymentProviders.
  */
+/**
+ * Every payout option a country offers to the PERSON, in the order the admin put
+ * them (first = default).
+ *   ORANGE  → Orange Money wallet number        (method ORANGE_MONEY)
+ *   MOMO    → pick MTN/Vodafone/… + number       (method MOBILE_MONEY)
+ *   BANK    → pick a bank + account number       (NG_BANK_TRANSFER / BANK_TRANSFER)
+ *   MANUAL  → type the details, admin pays by hand — only shown when it is the
+ *             ONLY option; otherwise MANUAL is just the admin's fallback.
+ */
+const METHOD_RAIL = { ORANGE_MONEY: 'ORANGE', MOBILE_MONEY: 'MOMO', NG_BANK_TRANSFER: 'BANK', BANK_TRANSFER: 'BANK' };
+const payoutRails = (country) => {
+  const rails = [];
+  for (const m of country?.payoutMethods ?? []) {
+    const r = METHOD_RAIL[m];
+    if (r && !rails.includes(r)) rails.push(r);
+  }
+  return rails.length ? rails : ['MANUAL'];
+};
+const RAIL_STYLE = { ORANGE: 'MOBILE_MONEY', MOMO: 'MOMO', BANK: 'BANK', MANUAL: 'MANUAL' };
+
 const getPaymentConfigForCountry = async (code = 'NG') => {
   const country = await getCountryByCode(code);
   // Required lazily: orange.service requires the error middleware, which in
@@ -259,9 +280,15 @@ const getPaymentConfigForCountry = async (code = 'NG') => {
     defaultMethod:  methods[0] ?? 'CASH',
     payoutMethods:  country.payoutMethods,
     payoutMethod:   country.payoutMethod,
+    // Options the person can choose between, and the default one (old clients
+    // only read payoutStyle).
+    payoutRails:    payoutRails(country),
     // Drives which withdrawal form the app shows: a bank form (account
     // number + bank code) or a mobile-money form (phone number).
-    payoutStyle:    country.payoutMethods.includes('ORANGE_MONEY') ? 'MOBILE_MONEY' : 'BANK',
+    // MOBILE_MONEY = Orange number · MOMO = pick a network (MTN…) + number ·
+    // BANK = verified bank account (Paystack/Flutterwave) ·
+    // MANUAL = free-text destination that an admin pays by hand.
+    payoutStyle:    RAIL_STYLE[payoutRails(country)[0]],
     orangeReady:    orange.isOrangeConfigured(),
   };
 };
@@ -290,6 +317,7 @@ module.exports = {
   getCountryForUser,
   getCurrencyForUserId,
   getPricingContextForUserId,
+  payoutRails,
   getRegistrationCountries,
   invalidateCountryCache,
   FALLBACK_COUNTRY,

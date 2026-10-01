@@ -164,6 +164,7 @@ router.post(
     body('accountNumber').optional().isString(),
     body('bankCode').optional().isString(),
     body('mobileNumber').optional().isString(),
+    body('bankName').optional().isString().isLength({ max: 80 }),   // free-text, manual-settlement countries
     // Orange gives us no subscriber name, so the controller falls back to
     // the requester's own name rather than requiring one here.
     body('accountName').optional().isString(),
@@ -189,7 +190,7 @@ router.get(
   '/admin/payouts',
   authorize('ADMIN', 'SUPER_ADMIN'),
   [
-    query('status').optional().isIn(['PENDING', 'COMPLETED', 'FAILED', 'ALL']),
+    query('status').optional().isIn(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'ALL']),
     query('page').optional().isInt({ min: 1 }),
     query('limit').optional().isInt({ min: 1, max: 100 }),
   ],
@@ -204,6 +205,20 @@ router.put(
     body('note').optional().isString().isLength({ max: 500 }),
   ],
   walletController.adminApprovePayout
+);
+
+// Finish a payout an admin settled by hand (manual countries, or an automatic
+// transfer that failed and was paid another way). Without this a PROCESSING
+// payout could never be completed.
+router.put(
+  '/admin/payouts/:id/complete',
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  [
+    param('id').isUUID(),
+    body('reference').optional().isString().isLength({ max: 120 }),
+    body('note').optional().isString().isLength({ max: 500 }),
+  ],
+  walletController.adminCompletePayout
 );
 
 router.put(

@@ -1,6 +1,3 @@
-// When to use it Run it after editing the country table, for instance when you add a country or a translation such as Malagasy
-// cd mobile
-// node scripts/check-country-language.mjs
 import { resolveAutoLanguage, languageForCountry, COUNTRY_LANGUAGE } from '../src/i18n/countryLanguage.js';
 const supported = ['en','fr','pt','es','tr','da','de','zh','ar','hi','ru'];
 let fail = 0;

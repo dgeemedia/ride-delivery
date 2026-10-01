@@ -9,7 +9,7 @@ import toast from 'react-hot-toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PayoutStatus    = 'PENDING' | 'COMPLETED' | 'FAILED' | 'ALL';
+type PayoutStatus    = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'ALL';
 type TransferStatus  = 'PENDING' | 'COMPLETED' | 'FAILED' | 'ALL';
 
 interface PayoutUser {
@@ -18,7 +18,9 @@ interface PayoutUser {
 
 interface Payout {
   id: string; userId: string; user: PayoutUser;
-  amount: number; accountNumber: string; bankCode: string; bankName?: string | null; accountName: string;
+  amount: number; currency?: string; accountNumber: string; bankCode: string; bankName?: string | null; accountName: string;
+  payoutMethod?: string | null; transferCode?: string | null; transferError?: string | null;
+  payoutDetails?: { fee?: number; grossAmount?: number; rail?: string; manual?: boolean; nameVerified?: boolean } | null;
   status: string; reference: string; failureReason?: string;
   processedAt?: string; createdAt: string;
 }
@@ -147,11 +149,95 @@ const CardActions: React.FC<{
 
 // ─── Payout: desktop row + mobile card ────────────────────────────────────────
 
+// Each payout is in its OWN country's currency — never assume naira.
+const money = (n: number, currency?: string) => {
+  try {
+    return new Intl.NumberFormat('en', { style: 'currency', currency: currency || 'NGN', maximumFractionDigits: 0 }).format(n);
+  } catch {
+    return `${Math.round(n).toLocaleString()} ${currency ?? ''}`.trim();
+  }
+};
+const isManualRail = (p: Payout) => p.payoutMethod === 'MANUAL' || p.payoutDetails?.manual === true;
+
+/** What the admin can do with a payout in its current state. */
+const PayoutActions: React.FC<{
+  payout: Payout;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+  onComplete: (id: string) => void;
+}> = ({ payout, onApprove, onReject, onComplete }) => {
+  const btn = 'flex items-center gap-1 px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition-colors';
+  // Once a provider accepted a transfer the money may have left: only
+  // "Mark as paid" is safe. Retry/reject are offered only when none started.
+  const canRetryOrReject = !payout.transferCode;
+
+  if (payout.status === 'PENDING') {
+    return (
+      <div className="flex flex-wrap gap-2">
+        {isManualRail(payout) ? (
+          <button onClick={() => onComplete(payout.id)} className={`${btn} bg-green-600 hover:bg-green-700`} title="Send the money yourself, then confirm here">
+            <CheckCircle className="w-3.5 h-3.5" /> Mark as paid
+          </button>
+        ) : (
+          <button onClick={() => onApprove(payout.id)} className={`${btn} bg-green-600 hover:bg-green-700`}>
+            <CheckCircle className="w-3.5 h-3.5" /> Approve
+          </button>
+        )}
+        <button onClick={() => onReject(payout.id)} className={`${btn} bg-red-500 hover:bg-red-600`}>
+          <XCircle className="w-3.5 h-3.5" /> Reject
+        </button>
+      </div>
+    );
+  }
+  if (payout.status === 'PROCESSING') {
+    return (
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => onComplete(payout.id)} className={`${btn} bg-green-600 hover:bg-green-700`}>
+          <CheckCircle className="w-3.5 h-3.5" /> Mark as paid
+        </button>
+        {canRetryOrReject && !isManualRail(payout) && (
+          <button onClick={() => onApprove(payout.id)} className={`${btn} bg-blue-600 hover:bg-blue-700`}>Retry transfer</button>
+        )}
+        {canRetryOrReject && (
+          <button onClick={() => onReject(payout.id)} className={`${btn} bg-red-500 hover:bg-red-600`}>
+            <XCircle className="w-3.5 h-3.5" /> Reject
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <span className="text-xs text-gray-400">
+      {payout.processedAt ? new Date(payout.processedAt).toLocaleDateString('en-NG') : '—'}
+    </span>
+  );
+};
+
+const PayoutNotes: React.FC<{ payout: Payout }> = ({ payout }) => (
+  <>
+    {payout.payoutDetails?.fee ? (
+      <div className="text-[11px] text-gray-500 mt-0.5">
+        Fee {money(payout.payoutDetails.fee, payout.currency)} · debited {money(payout.payoutDetails.grossAmount ?? payout.amount, payout.currency)}
+      </div>
+    ) : null}
+    {isManualRail(payout) && (
+      <div className="text-[11px] text-amber-700 mt-0.5">Manual settlement — name not verified</div>
+    )}
+    {!isManualRail(payout) && payout.payoutDetails?.nameVerified === false && (
+      <div className="text-[11px] text-amber-700 mt-0.5" title="No service can look up this account holder. Compare the name with the person before approving.">Name typed by the user — not verified</div>
+    )}
+    {payout.status === 'PROCESSING' && payout.transferError && (
+      <div className="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1 max-w-[260px]" title={payout.transferError}>{payout.transferError}</div>
+    )}
+  </>
+);
+
 const PayoutRow: React.FC<{
   payout: Payout;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
-}> = ({ payout, onApprove, onReject }) => (
+  onComplete: (id: string) => void;
+}> = ({ payout, onApprove, onReject, onComplete }) => (
   <tr className="hover:bg-gray-50 transition-colors">
     <td className="px-4 py-4">
       <div className="font-semibold text-gray-900 text-sm">
@@ -161,8 +247,9 @@ const PayoutRow: React.FC<{
       <div className="text-xs text-gray-400 font-mono">{payout.user.phone}</div>
     </td>
     <td className="px-4 py-4">
-      <div className="font-bold text-gray-900">₦{payout.amount.toLocaleString('en-NG')}</div>
+      <div className="font-bold text-gray-900">{money(payout.amount, payout.currency)}</div>
       <div className="text-xs text-gray-500 font-mono mt-0.5">{payout.reference}</div>
+      <PayoutNotes payout={payout} />
     </td>
     <td className="px-4 py-4">
       <div className="text-sm font-semibold text-gray-800">{payout.accountName}</div>
@@ -181,26 +268,7 @@ const PayoutRow: React.FC<{
       {new Date(payout.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
     </td>
     <td className="px-4 py-4">
-      {payout.status === 'PENDING' ? (
-        <div className="flex gap-2">
-          <button
-            onClick={() => onApprove(payout.id)}
-            className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors"
-          >
-            <CheckCircle className="w-3.5 h-3.5" /> Approve
-          </button>
-          <button
-            onClick={() => onReject(payout.id)}
-            className="flex items-center gap-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg transition-colors"
-          >
-            <XCircle className="w-3.5 h-3.5" /> Reject
-          </button>
-        </div>
-      ) : (
-        <span className="text-xs text-gray-400">
-          {payout.processedAt ? new Date(payout.processedAt).toLocaleDateString('en-NG') : '—'}
-        </span>
-      )}
+      <PayoutActions payout={payout} onApprove={onApprove} onReject={onReject} onComplete={onComplete} />
     </td>
   </tr>
 );
@@ -209,7 +277,8 @@ const PayoutCard: React.FC<{
   payout: Payout;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
-}> = ({ payout, onApprove, onReject }) => (
+  onComplete: (id: string) => void;
+}> = ({ payout, onApprove, onReject, onComplete }) => (
   <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
@@ -222,9 +291,10 @@ const PayoutCard: React.FC<{
     </div>
 
     <div className="mt-3 flex items-baseline justify-between">
-      <div className="font-bold text-gray-900 text-lg">₦{payout.amount.toLocaleString('en-NG')}</div>
+      <div className="font-bold text-gray-900 text-lg">{money(payout.amount, payout.currency)}</div>
       <div className="text-[11px] text-gray-400 font-mono">{payout.reference}</div>
     </div>
+    <PayoutNotes payout={payout} />
 
     <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-50 pt-3">
       <CardField label="Account">
@@ -241,12 +311,7 @@ const PayoutCard: React.FC<{
       <div className="mt-2 text-xs text-red-600 bg-red-50 rounded-lg px-2.5 py-1.5">{payout.failureReason}</div>
     )}
 
-    <CardActions
-      status={payout.status}
-      onApprove={() => onApprove(payout.id)}
-      onReject={() => onReject(payout.id)}
-      processedNote={payout.processedAt ? `Processed ${new Date(payout.processedAt).toLocaleDateString('en-NG')}` : 'Processed'}
-    />
+    <div className="mt-3"><PayoutActions payout={payout} onApprove={onApprove} onReject={onReject} onComplete={onComplete} /></div>
   </div>
 );
 
@@ -467,7 +532,7 @@ const PayoutManagement: React.FC = () => {
   // Confirm modal state
   const [modal, setModal] = useState<{
     open:    boolean;
-    type:    'approve_payout' | 'reject_payout' | 'approve_transfer' | 'reject_transfer' | 'reconcile_topup';
+    type:    'approve_payout' | 'reject_payout' | 'complete_payout' | 'approve_transfer' | 'reject_transfer' | 'reconcile_topup';
     id:      string;
     loading: boolean;
   }>({ open: false, type: 'approve_payout', id: '', loading: false });
@@ -542,6 +607,10 @@ const PayoutManagement: React.FC = () => {
           toast.success(`Payout approved and ${provider} transfer initiated`);
         }
         loadPayouts();
+      } else if (type === 'complete_payout') {
+        await api.put(`/wallet/admin/payouts/${id}/complete`, { reference: noteOrReason || undefined });
+        toast.success('Payout marked as paid');
+        loadPayouts();
       } else if (type === 'reject_payout') {
         await api.put(`/wallet/admin/payouts/${id}/reject`, { reason: noteOrReason });
         toast.success('Payout rejected and wallet refunded');
@@ -569,7 +638,7 @@ const PayoutManagement: React.FC = () => {
 
   // ── Status filter tabs ──────────────────────────────────────────────────────
 
-  const PAYOUT_STATUSES: PayoutStatus[]   = ['PENDING', 'COMPLETED', 'FAILED', 'ALL'];
+  const PAYOUT_STATUSES: PayoutStatus[]   = ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'ALL'];
   const XFER_STATUSES:   TransferStatus[] = ['PENDING', 'COMPLETED', 'FAILED', 'ALL'];
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -697,6 +766,7 @@ const PayoutManagement: React.FC = () => {
                     payout={p}
                     onApprove={id => openModal('approve_payout', id)}
                     onReject={id  => openModal('reject_payout',  id)}
+                    onComplete={id => openModal('complete_payout', id)}
                   />
                 ))}
               </div>
@@ -719,6 +789,7 @@ const PayoutManagement: React.FC = () => {
                         payout={p}
                         onApprove={id => openModal('approve_payout', id)}
                         onReject={id  => openModal('reject_payout',  id)}
+                        onComplete={id => openModal('complete_payout', id)}
                       />
                     ))}
                   </tbody>
@@ -934,9 +1005,20 @@ const PayoutManagement: React.FC = () => {
       <ConfirmModal
         open={modal.open && modal.type === 'approve_payout'}
         title="Approve Payout"
-        body="This will initiate a Paystack bank transfer to the user's account. Are you sure?"
+        body="This sends the money automatically through the payout provider for this user's country (Paystack/Flutterwave for bank accounts, Orange Money for Orange countries). Countries settled manually are marked paid instead."
         placeholder="Optional note for the user…"
         confirmLabel="Approve & Send"
+        confirmClass="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg"
+        onCancel={closeModal}
+        onConfirm={confirmAction}
+        loading={modal.loading}
+      />
+      <ConfirmModal
+        open={modal.open && modal.type === 'complete_payout'}
+        title="Mark as paid"
+        body="Only confirm after you have sent the money to the destination shown. The user will be told their withdrawal has been sent."
+        placeholder="Bank / mobile-money transaction reference (optional)…"
+        confirmLabel="Yes, it's paid"
         confirmClass="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg"
         onCancel={closeModal}
         onConfirm={confirmAction}

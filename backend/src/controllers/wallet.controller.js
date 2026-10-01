@@ -7,8 +7,8 @@ const paymentService = require('../services/payment.service');
 const notificationService = require('../services/notification.service');
 const emailService = require('../services/email.service');
 const { logActivity } = require('../utils/auditLog');
-const { ensureWallet: ensureWalletShared } = require('../utils/walletHelpers');
-const { getCountryForUser, getCurrencyForUserId, getPaymentConfigForUser } = require('../services/country.service');
+const { ensureWallet: ensureWalletShared, getWithdrawableBalance } = require('../utils/walletHelpers');
+const { getCountryForUser, getCurrencyForUserId, getPaymentConfigForUser, payoutRails } = require('../services/country.service');
 const orangeService = require('../services/orange.service');
 const { formatMoney, isWholeUnitCurrency } = require('../utils/currency');
 const countrySettingsService = require('../services/countrySettings.service');
@@ -658,6 +658,23 @@ exports.verifyFlutterwaveWebhook = async (req, res) => {
   }
 
   const { event, data } = req.body;
+
+  // Flutterwave only lets an account have ONE webhook URL, so the result of a
+  // withdrawal transfer can arrive here instead of /payments/flutterwave/webhook.
+  // Handle it in both places (idempotent) so a failed payout is always refunded.
+  if (event === 'transfer.completed') {
+    const status = String(data?.status || '').toUpperCase();
+    if (status === 'SUCCESSFUL' || status === 'FAILED') {
+      await require('../services/payoutSettlement.service').applyTransferResult({
+        reference:    data?.reference,
+        outcome:      status === 'SUCCESSFUL' ? 'SUCCESS' : 'FAILED',
+        message:      data?.complete_message,
+        transferCode: data?.id != null ? String(data.id) : undefined,
+      });
+    }
+    return res.sendStatus(200);
+  }
+
   if (event !== 'charge.completed' || data?.status !== 'successful') {
     return res.sendStatus(200); // ack, nothing to do
   }
@@ -839,7 +856,7 @@ exports.withdraw = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
-  const { amount, accountNumber, bankCode, accountName, mobileNumber } = req.body;
+  const { amount, accountNumber, bankCode, accountName, mobileNumber, bankName: typedBankName, rail: requestedRail } = req.body;
 
   const wallet = await prisma.wallet.findUnique({ where: { userId: req.user.id } });
   if (!wallet) throw new AppError('Wallet not found', 404);
@@ -853,6 +870,17 @@ exports.withdraw = async (req, res) => {
   });
   if (wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
 
+  // Onboarding bonuses are credited as "non-withdrawable" (they exist so a new
+  // driver can accept jobs). The bonus screen promises that, but this endpoint
+  // only ever looked at the raw balance, so the bonus could be cashed out.
+  const withdrawable = await getWithdrawableBalance(wallet);
+  if (withdrawable < amount) {
+    throw new AppError(
+      `You can withdraw up to ${formatMoney(withdrawable, wallet.currency)}. The rest of your balance is an onboarding bonus that can only be used to accept jobs.`,
+      400
+    );
+  }
+
   const payoutMethods = country.payoutMethods;
 
   // A market is payout-capable once it has at least one real rail. Markets
@@ -863,7 +891,18 @@ exports.withdraw = async (req, res) => {
     throw new AppError(`Payouts for ${country.name} aren't supported yet. Contact support.`, 400);
   }
 
-  const isOrangePayout = payoutMethods.includes('ORANGE_MONEY');
+  // A country can offer several payout options (e.g. Orange Money OR a bank
+  // account). The person picks one; the server only accepts options the country
+  // actually has, and routes the payout by what was chosen — never by the country
+  // alone. No `rail` sent (older app) = the country's default option.
+  const rails = payoutRails(country);
+  const rail  = requestedRail ? String(requestedRail).toUpperCase() : rails[0];
+  if (!rails.includes(rail)) {
+    throw new AppError('That payout option is not available in your country.', 400);
+  }
+  const isOrangePayout = rail === 'ORANGE';
+  const isMomoPayout   = rail === 'MOMO';      // Flutterwave wallet (Ghana: MTN / Vodafone / AirtelTigo)
+  const isManualPayout = rail === 'MANUAL';    // typed details, admin pays by hand
 
   // ── Normalise the destination per rail ────────────────────────────────────
   // Orange markets pay out to an Orange Money wallet, so the "account
@@ -881,13 +920,53 @@ exports.withdraw = async (req, res) => {
     resolvedBankCode = 'ORANGE_MONEY';
     bankName         = 'Orange Money';
     payoutMethod     = 'ORANGE_MONEY';
+  } else if (isMomoPayout) {
+    const { isValidMsisdn, normalizeMsisdn } = require('../utils/msisdn');
+    const raw = mobileNumber || accountNumber;
+    if (!raw) throw new AppError('Your mobile-money number is required', 400);
+    if (!isValidMsisdn(raw, country.code)) {
+      throw new AppError('That does not look like a valid mobile-money number for your country.', 400);
+    }
+    // The network must be one we can actually pay — never trust the client's code.
+    const network = paymentService.momoNetworksFor(country.code).find(n => n.key === bankCode);
+    if (!network) throw new AppError('Choose your mobile-money network (for example MTN).', 400);
+    destination      = normalizeMsisdn(raw, country.code);
+    resolvedBankCode = network.key;
+    bankName         = network.name;
+    payoutMethod     = 'MOBILE_MONEY';
+  } else if (isManualPayout) {
+    const num  = String(accountNumber || mobileNumber || '').trim();
+    const bank = String(typedBankName || '').trim();
+    const name = String(accountName || '').trim();
+    if (num.length < 6 || num.length > 34) throw new AppError('Enter a valid account or mobile-money number', 400);
+    if (!bank) throw new AppError('Enter the name of your bank or mobile-money provider', 400);
+    if (name.length < 3) throw new AppError('Enter the name on the account', 400);
+    destination      = num;
+    resolvedBankCode = 'MANUAL';
+    bankName         = bank.slice(0, 80);
+    payoutMethod     = 'MANUAL';
   } else {
+    // ── BANK ──
     if (!accountNumber || !bankCode) throw new AppError('Account number and bank code are required', 400);
-    destination      = accountNumber;
+    const isNg = country.code === 'NG';
+
+    if (isNg) {
+      destination  = accountNumber;
+      bankName     = await paymentService.resolveBankName(bankCode, country.code);
+      payoutMethod = payoutMethods.find(m => ['NG_BANK_TRANSFER', 'BANK_TRANSFER'].includes(m)) || 'NG_BANK_TRANSFER';
+    } else {
+      // Outside Nigeria nothing can look up the account holder, so the person's
+      // own typed name is required; the admin sees it flagged as unverified.
+      const num = String(accountNumber).replace(/\s+/g, '');
+      if (!/^[A-Za-z0-9-]{6,34}$/.test(num)) throw new AppError('Enter a valid bank account number', 400);
+      if (String(accountName || '').trim().length < 3) throw new AppError('Enter the name on the account', 400);
+      // Never trust a client-supplied bank code: it must be in the provider's list.
+      bankName = await paymentService.resolveBankName(bankCode, country.code, 'flutterwave');
+      if (!bankName) throw new AppError('Choose your bank from the list.', 400);
+      destination  = num;
+      payoutMethod = 'BANK_TRANSFER';
+    }
     resolvedBankCode = bankCode;
-    // Auto-resolved from whichever provider is currently active.
-    bankName         = await paymentService.resolveBankName(bankCode, country.code);
-    payoutMethod     = payoutMethods.find(m => m !== 'UNSUPPORTED' && m !== 'MANUAL') || 'NG_BANK_TRANSFER';
   }
 
   const reference = `WD-${Date.now()}-${req.user.id.slice(0, 6)}`;
@@ -904,7 +983,7 @@ exports.withdraw = async (req, res) => {
         description: `Withdrawal request to ${accountName || destination} — ${destination} (${bankName || resolvedBankCode})`,
         status:      'PENDING',
         reference,
-        provider:    isOrangePayout ? 'orange' : paymentService.getActivePayoutProvider(),
+        provider:    paymentService.providerForMethod(payoutMethod, country),
       },
     }),
     prisma.payout.create({
@@ -924,7 +1003,7 @@ exports.withdraw = async (req, res) => {
         payoutDetails: {
           ...(isOrangePayout
             ? { rail: 'ORANGE_MONEY', msisdn: destination, countryCode: country.code, autoSettle: orangeService.isB2CEnabled() }
-            : { rail: payoutMethod, countryCode: country.code }),
+            : { rail: payoutMethod, countryCode: country.code, ...(isManualPayout && { manual: true }), ...(isMomoPayout && { msisdn: destination }), ...(payoutMethod === 'BANK_TRANSFER' && { nameVerified: false }) }),
           // amount above is the NET sent to the provider; these let a
           // rejection refund the full gross the wallet was debited.
           grossAmount: plan.gross,
@@ -978,11 +1057,11 @@ exports.withdraw = async (req, res) => {
 };
 
 exports.verifyBankAccount = async (req, res) => {
-  const { accountNumber, bankCode } = req.query;
+  const { accountNumber, bankCode, rail } = req.query;
   if (!accountNumber || !bankCode) throw new AppError('Account number and bank code required', 400);
 
   const country = await getCountryForUser(req.user);
-  const result = await paymentService.verifyBankAccountUnified(accountNumber, bankCode, country.code, country);
+  const result = await paymentService.verifyBankAccountUnified(accountNumber, bankCode, country.code, country, rail ? String(rail).toUpperCase() : null);
   if (!result) throw new AppError('Account not found', 404);
 
   res.status(200).json({
@@ -1032,7 +1111,12 @@ exports.adminApprovePayout = async (req, res) => {
 
   const payout = await prisma.payout.findUnique({ where: { id }, include: { user: true } });
   if (!payout)                     throw new AppError('Payout not found', 404);
-  if (payout.status !== 'PENDING') throw new AppError('Payout is not in PENDING status', 400);
+  // PROCESSING = approved earlier but the transfer didn't go through. Allow the
+  // admin to retry it; before, that state was a dead end.
+  if (!['PENDING', 'PROCESSING'].includes(payout.status)) throw new AppError('Payout is not awaiting approval', 400);
+  if (payout.status === 'PROCESSING' && payout.transferCode) {
+    throw new AppError('A transfer was already started for this payout. Check the provider dashboard, then use "Mark as paid" instead of retrying (retrying could pay twice).', 409);
+  }
 
   let transferCode  = null;
   let transferError = null;
@@ -1042,9 +1126,14 @@ exports.adminApprovePayout = async (req, res) => {
   // an Orange market settles through Orange Money cash-out while a
   // Nigerian payout still goes out over Paystack/Flutterwave.
   const payoutCountry = await getCountryForUser(payout.user);
-  let provider = paymentService.resolvePayoutProviderForCountry(payoutCountry);
+  // By the method the user chose (stored on the payout); old rows without one fall
+  // back to the country-level rule.
+  let provider = paymentService.resolvePayoutProviderForCountry(payoutCountry, payout.payoutMethod);
 
   try {
+    if (provider === 'manual') {
+      throw new AppError(`${payoutCountry.name} payouts are settled manually: send ${payout.amount} ${payout.currency} to ${payout.bankName} · ${payout.accountNumber} (${payout.accountName}), then press "Mark as paid".`, 409);
+    }
     const result = await paymentService.initiatePayoutTransfer({
       amount:        payout.amount,
       accountNumber: payout.accountNumber,
@@ -1054,6 +1143,7 @@ exports.adminApprovePayout = async (req, res) => {
       reference:     payout.reference,
       currency:      payout.currency,
       country:       payoutCountry,
+      method:        payout.payoutMethod,
       msisdn:        payout.payoutDetails?.msisdn ?? null,
     });
     transferCode = result.transferCode;
@@ -1143,13 +1233,60 @@ exports.adminApprovePayout = async (req, res) => {
   });
 };
 
+// Mark a payout as paid after settling it by hand.
+exports.adminCompletePayout = async (req, res) => {
+  const { id } = req.params;
+  const { reference, note } = req.body;
+
+  const payout = await prisma.payout.findUnique({ where: { id }, include: { user: true } });
+  if (!payout) throw new AppError('Payout not found', 404);
+  if (!['PENDING', 'PROCESSING'].includes(payout.status)) {
+    throw new AppError('Only a pending or processing payout can be marked as paid', 400);
+  }
+
+  await prisma.$transaction([
+    prisma.payout.update({
+      where: { id },
+      data: {
+        status:      'COMPLETED',
+        processedAt: new Date(),
+        ...(reference && { transferCode: reference }),
+        transferError: null,
+        payoutDetails: { ...(payout.payoutDetails || {}), settledManually: true, settledBy: req.user.id, ...(note && { settleNote: note }) },
+      },
+    }),
+    prisma.walletTransaction.updateMany({ where: { reference: payout.reference }, data: { status: 'COMPLETED' } }),
+  ]);
+
+  logActivity({
+    userId: req.user.id, action: 'admin_payout_marked_paid', entityType: 'Payout', entityId: id,
+    details: { targetUserId: payout.userId, amount: payout.amount, currency: payout.currency, reference: reference ?? null, note: note ?? null },
+    req,
+  });
+
+  await notificationService.notify({
+    userId:  payout.userId,
+    title:   'Withdrawal Paid ✅',
+    message: `Your withdrawal of ${formatMoney(payout.amount, payout.currency)} to ${payout.bankName || payout.accountName} has been sent.`,
+    type:    notificationService.TYPES.WALLET_WITHDRAWAL,
+    data:    { payoutId: id, amount: payout.amount, reference: payout.reference },
+  });
+
+  res.status(200).json({ success: true, message: 'Payout marked as paid' });
+};
+
 exports.adminRejectPayout = async (req, res) => {
   const { id }     = req.params;
   const { reason } = req.body;
 
   const payout = await prisma.payout.findUnique({ where: { id }, include: { user: true } });
   if (!payout)                      throw new AppError('Payout not found', 404);
-  if (payout.status !== 'PENDING')  throw new AppError('Payout is not in PENDING status', 400);
+  if (!['PENDING', 'PROCESSING'].includes(payout.status)) throw new AppError('Payout can no longer be rejected', 400);
+  // Once a provider accepted the transfer the money may already have left —
+  // refunding the wallet then would pay the person twice.
+  if (payout.status === 'PROCESSING' && payout.transferCode) {
+    throw new AppError('A transfer was already started for this payout, so it cannot be refunded. Verify it with the provider and mark it as paid.', 409);
+  }
 
   const wallet = await prisma.wallet.findUnique({ where: { userId: payout.userId } });
 

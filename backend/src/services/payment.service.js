@@ -289,10 +289,12 @@ exports.flutterwaveTransfer = async ({
   narration,
   reference,
   currency = 'NGN',
-  metadata = {}
+  metadata = {},
+  branchCode = null,
 }) => {
   try {
     const { data } = await flutterwaveAPI.post('/transfers', {
+      ...(branchCode && { destination_branch_code: branchCode }),
       account_bank: bankCode,
       account_number: accountNumber,
       amount,
@@ -340,11 +342,65 @@ exports.getActivePayoutProvider = getActivePayoutProvider;
 // A Country row whose payoutMethods include ORANGE_MONEY pays out through
 // Orange; everything else keeps the existing env-selected card provider.
 // `country` is a normalized row from country.service.
-const resolvePayoutProviderForCountry = (country) => {
+// Rails a provider can actually settle by itself. A country whose only method is
+// MANUAL (Ghana, Gambia, Cape Verde, Togo, Benin today) has none — an admin pays
+// the destination out-of-band and marks the payout as paid.
+const AUTOMATED_PAYOUT_METHODS = ['NG_BANK_TRANSFER', 'BANK_TRANSFER', 'ORANGE_MONEY', 'MOBILE_MONEY'];
+exports.AUTOMATED_PAYOUT_METHODS = AUTOMATED_PAYOUT_METHODS;
+
+// ── Mobile-money networks paid through Flutterwave (non-Orange) ────────────────
+// `key` is what the app sends as bankCode and what we store on the payout.
+// `match` finds the operator in Flutterwave's own bank list for the country, so
+// the real `account_bank` code comes from Flutterwave rather than from a guess
+// here; `fallback` (the names used in Flutterwave's docs) is used only if the
+// list is unreachable or the operator isn't in it.
+const MOMO_NETWORKS = {
+  GH: [
+    { key: 'MTN',        name: 'MTN Mobile Money',          match: /mtn/i,                      fallback: 'MTN' },
+    { key: 'VODAFONE',   name: 'Telecel Cash (Vodafone)',   match: /vodafone|telecel|vdf/i,     fallback: 'VODAFONE' },
+    { key: 'AIRTELTIGO', name: 'AirtelTigo Money',          match: /airtel|tigo|atl/i,          fallback: 'AIRTELTIGO' },
+  ],
+};
+exports.MOMO_NETWORKS = MOMO_NETWORKS;
+const momoNetworksFor = (countryCode) => MOMO_NETWORKS[String(countryCode || '').toUpperCase()] || [];
+exports.momoNetworksFor = momoNetworksFor;
+
+const countryUsesMomo = (country) =>
+  (Array.isArray(country?.payoutMethods) ? country.payoutMethods : []).includes('MOBILE_MONEY');
+
+/**
+ * Which provider settles a payout, decided by the METHOD THE USER CHOSE (stored on
+ * the payout), not by the country alone. A country can now offer several options
+ * (Orange Money OR a bank account), so "this country has Orange" no longer means
+ * "send everything through Orange".
+ */
+const providerForMethod = (method, country = null) => {
+  switch (method) {
+    case 'ORANGE_MONEY':     return 'orange';
+    case 'MOBILE_MONEY':     return 'flutterwave';
+    case 'MANUAL':           return 'manual';
+    case 'NG_BANK_TRANSFER': return getActivePayoutProvider();
+    // Nigeria keeps its configured bank provider; every other country's bank
+    // payouts go through Flutterwave (the only provider wired for them).
+    case 'BANK_TRANSFER':    return country?.code === 'NG' ? getActivePayoutProvider() : 'flutterwave';
+    default:                 return null;
+  }
+};
+exports.providerForMethod = providerForMethod;
+
+const resolvePayoutProviderForCountry = (country, method = null) => {
+  const byMethod = method ? providerForMethod(method, country) : null;
+  if (byMethod) return byMethod;
   const methods = Array.isArray(country?.payoutMethods) ? country.payoutMethods : [];
   const legacy  = country?.payoutMethod;
   if (methods.includes('ORANGE_MONEY') || legacy === 'ORANGE_MONEY') return 'orange';
-  return getActivePayoutProvider();
+  // Mobile money is always sent through Flutterwave, whatever PAYOUT_PROVIDER says
+  // for bank transfers — Paystack's transfer API isn't used for it here.
+  if (countryUsesMomo(country)) return 'flutterwave';
+  const automated = methods.some(m => AUTOMATED_PAYOUT_METHODS.includes(m)) || AUTOMATED_PAYOUT_METHODS.includes(legacy);
+  // Before this, a MANUAL-only country fell through to Paystack, which would
+  // try to send a Ghanaian/Togolese account through a Nigerian-shaped transfer.
+  return automated ? getActivePayoutProvider() : 'manual';
 };
 exports.resolvePayoutProviderForCountry = resolvePayoutProviderForCountry;
 
@@ -391,8 +447,35 @@ exports.resolveBankName = async (bankCode, countryCode = 'NG', provider = getAct
 // accounts today. Calling this for a non-NG account number will not give a
 // meaningful result until a mobile-money verification path is added —
 // tracked separately from this currency/country plumbing.
-exports.verifyBankAccountUnified = async (accountNumber, bankCode, countryCode = 'NG', country = null) => {
+exports.verifyBankAccountUnified = async (accountNumber, bankCode, countryCode = 'NG', country = null, rail = null) => {
   const provider = country ? resolvePayoutProviderForCountry(country) : getActivePayoutProvider();
+
+  // Bank accounts outside Nigeria: Flutterwave's name lookup only exists for
+  // Ghana. Everywhere else there is nothing to check against, so the person's
+  // typed name is used and the admin sees it flagged as unverified.
+  if (rail === 'BANK' && country && country.code !== 'NG') {
+    if (country.code === 'GH') {
+      try { return await exports.flutterwaveVerifyAccount(accountNumber, bankCode); } catch { /* fall through */ }
+    }
+    return { account_name: null, account_number: String(accountNumber), unverifiedName: true };
+  }
+
+  if (!rail && country && countryUsesMomo(country) && provider === 'flutterwave') {
+    // (legacy callers without a rail: a MoMo-only country)
+    // Flutterwave has no name lookup for a mobile-money wallet; validate the
+    // number's shape so a typo is caught now, not hours later at payout time.
+    const { isValidMsisdn, normalizeMsisdn } = require('../utils/msisdn');
+    if (!isValidMsisdn(accountNumber, countryCode)) {
+      throw new AppError('That does not look like a valid mobile-money number for your country.', 400);
+    }
+    return { account_name: null, account_number: normalizeMsisdn(accountNumber, countryCode), unverifiedName: true };
+  }
+
+  if (provider === 'manual') {
+    // Nothing can verify this account automatically; the person types the holder
+    // name and the admin checks it by eye before paying.
+    return { account_name: null, account_number: String(accountNumber), unverifiedName: true };
+  }
 
   if (provider === 'orange') {
     // There is no name-lookup endpoint for an Orange Money wallet. We can
@@ -413,14 +496,64 @@ exports.verifyBankAccountUnified = async (accountNumber, bankCode, countryCode =
     : exports.paystackVerifyAccount(accountNumber, bankCode);
 };
 
-exports.listBanksUnified = async (countryCode = 'NG', country = null) => {
-  const provider = country ? resolvePayoutProviderForCountry(country) : getActivePayoutProvider();
+// ── Branch codes (Flutterwave bank transfers) ────────────────────────────────
+// Flutterwave requires `destination_branch_code` for bank transfers to these
+// countries. The person only picks a bank, so we look the branch up from
+// Flutterwave's own list: a bank's single branch, else its head office, else the
+// first one. If nothing can be determined we STOP — the payout stays PROCESSING
+// and an admin settles it by hand — rather than sending a transfer that is
+// likely to bounce.
+const FLW_BRANCH_REQUIRED = ['BJ', 'CM', 'CI', 'CD', 'GH', 'SN', 'SL'];
+const _branchCache = {};
+const resolveFlutterwaveBranchCode = async (countryCode, bankCode) => {
+  const cc = String(countryCode).toUpperCase();
+  if (!FLW_BRANCH_REQUIRED.includes(cc)) return null;
+
+  const banks = await _getCachedBankList('flutterwave', cc);
+  const bank  = banks.find(b => String(b.code) === String(bankCode));
+  if (!bank?.id) throw new AppError(`Could not find that bank in Flutterwave's ${cc} list — settle this payout manually.`, 400);
+
+  const hit = _branchCache[bank.id];
+  let branches;
+  if (hit && Date.now() - hit.at < BANK_CACHE_TTL_MS) branches = hit.list;
+  else {
+    try {
+      const { data } = await flutterwaveAPI.get(`/banks/${bank.id}/branches`);
+      branches = Array.isArray(data?.data) ? data.data : [];
+    } catch (err) {
+      throw new AppError(`Could not fetch branches for ${bank.name} (${err.message}) — settle this payout manually.`, 502);
+    }
+    _branchCache[bank.id] = { list: branches, at: Date.now() };
+  }
+
+  if (!branches.length) {
+    throw new AppError(`Flutterwave lists no branch for ${bank.name} — settle this payout manually.`, 400);
+  }
+  const head = branches.find(b => /head|main|siege|siège|principal|central|hq/i.test(String(b.branch_name || '')));
+  const pick = branches.length === 1 ? branches[0] : (head ?? branches[0]);
+  return String(pick.branch_code ?? pick.code ?? '') || null;
+};
+exports.resolveFlutterwaveBranchCode = resolveFlutterwaveBranchCode;
+
+// rail: 'ORANGE' | 'MOMO' | 'BANK' | 'MANUAL' — which option the user is looking at.
+const RAIL_METHOD = { ORANGE: 'ORANGE_MONEY', MOMO: 'MOBILE_MONEY', MANUAL: 'MANUAL' };
+const railToMethod = (rail, country) =>
+  rail === 'BANK' ? (country?.code === 'NG' ? 'NG_BANK_TRANSFER' : 'BANK_TRANSFER') : (RAIL_METHOD[rail] ?? null);
+
+exports.listBanksUnified = async (countryCode = 'NG', country = null, rail = null) => {
+  const provider = country ? resolvePayoutProviderForCountry(country, railToMethod(rail, country)) : getActivePayoutProvider();
+  if (rail === 'MOMO') return momoNetworksFor(countryCode).map(n => ({ code: n.key, name: n.name, type: 'MOBILE_MONEY' }));
 
   // Orange markets pay out to a wallet number, not a bank — return the single
   // synthetic entry so the client's existing picker still renders rather than
   // showing an empty list.
   if (provider === 'orange') {
     return [{ code: 'ORANGE_MONEY', name: 'Orange Money', type: 'MOBILE_MONEY' }];
+  }
+  if (provider === 'manual') return [];
+  // Mobile-money countries: a fixed list of networks, not bank accounts.
+  if (!rail && countryUsesMomo(country)) {
+    return momoNetworksFor(countryCode).map(n => ({ code: n.key, name: n.name, type: 'MOBILE_MONEY' }));
   }
 
   return _getCachedBankList(provider, countryCode);
@@ -430,10 +563,15 @@ exports.initiatePayoutTransfer = async ({
   amount, accountNumber, bankCode, accountName, reason, reference,
   currency = 'NGN',
   // Both optional, so every existing call site keeps working unchanged:
-  country = null,   // normalized Country row — decides the rail
-  msisdn = null,    // Orange Money wallet number for mobile-money payouts
+  country = null,   // normalized Country row
+  msisdn = null,    // wallet number for mobile-money payouts
+  method = null,    // the payout's own method (ORANGE_MONEY / MOBILE_MONEY / BANK_TRANSFER …) — decides the rail
 }) => {
-  const provider = country ? resolvePayoutProviderForCountry(country) : getActivePayoutProvider();
+  const provider = country ? resolvePayoutProviderForCountry(country, method) : getActivePayoutProvider();
+
+  if (provider === 'manual') {
+    throw new AppError('This country is settled manually — pay the destination, then mark the payout as paid.', 409);
+  }
 
   if (provider === 'orange') {
     // For an Orange payout the "account number" IS the subscriber's MSISDN.
@@ -447,7 +585,42 @@ exports.initiatePayoutTransfer = async ({
     });
   }
 
+  if (provider === 'flutterwave' && (method === 'MOBILE_MONEY' || (!method && countryUsesMomo(country)))) {
+    const { normalizeMsisdn, isValidMsisdn } = require('../utils/msisdn');
+    const cc = country.code;
+    if (!isValidMsisdn(msisdn || accountNumber, cc)) {
+      throw new AppError('The mobile-money number on this payout is not valid — reject it so the user is refunded.', 400);
+    }
+    const network = momoNetworksFor(cc).find(n => n.key === bankCode);
+    if (!network) throw new AppError(`Unknown mobile-money network "${bankCode}" for ${country.name}`, 400);
+
+    // Ask Flutterwave which code it uses for this operator; fall back to the
+    // documented name if the list can't be fetched or doesn't contain it.
+    let accountBank = network.fallback;
+    try {
+      const list  = await _getCachedBankList('flutterwave', cc);
+      const found = list.find(b => network.match.test(String(b.name)) || network.match.test(String(b.code)));
+      if (found?.code) accountBank = String(found.code);
+    } catch (err) {
+      console.error(`[payment.service] Flutterwave bank list (${cc}) unavailable, using "${accountBank}":`, err.message);
+    }
+
+    const result = await exports.flutterwaveTransfer({
+      amount,
+      accountNumber: normalizeMsisdn(msisdn || accountNumber, cc),   // with country code, e.g. 233241234567
+      bankCode:      accountBank,
+      accountName,
+      narration:     reason,
+      reference,
+      currency,
+    });
+    return { provider: 'flutterwave', transferCode: result?.id ? String(result.id) : (result?.reference ?? null), raw: result };
+  }
+
   if (provider === 'flutterwave') {
+    // Bank transfers in these countries need a branch code (Flutterwave's
+    // create-transfer reference). Nigeria does not.
+    const branchCode = country ? await resolveFlutterwaveBranchCode(country.code, bankCode) : null;
     const result = await exports.flutterwaveTransfer({
       amount,
       accountNumber,
@@ -456,6 +629,7 @@ exports.initiatePayoutTransfer = async ({
       narration: reason,
       reference,
       currency,
+      ...(branchCode && { branchCode }),
     });
     return {
       provider,

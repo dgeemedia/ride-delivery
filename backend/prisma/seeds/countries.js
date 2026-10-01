@@ -29,7 +29,10 @@ const WEST_AFRICA_COUNTRIES = [
     paymentProviders: ['paystack', 'flutterwave'], creditMethods: CARD, payoutMethod: 'NG_BANK_TRANSFER', payoutMethods: ['NG_BANK_TRANSFER'] },
 
   { code: 'GH', name: 'Ghana',         currencyCode: 'GHS', currencySymbol: '\u20B5', defaultLocale: 'en-GH', languageCode: 'en', phoneDialCode: '+233',
-    paymentProviders: ['paystack', 'flutterwave'], creditMethods: CARD, payoutMethod: 'UNSUPPORTED', payoutMethods: ['MANUAL'] },
+    paymentProviders: ['paystack', 'flutterwave'], creditMethods: CARD,
+    // MTN / Vodafone(Telecel) / AirtelTigo wallets, paid by Flutterwave. MANUAL stays
+    // as the fallback so an admin can still settle by hand if a transfer fails.
+    payoutMethod: 'MOBILE_MONEY', payoutMethods: ['MOBILE_MONEY', 'BANK_TRANSFER', 'MANUAL'] },
 
   { code: 'GM', name: 'Gambia',        currencyCode: 'GMD', currencySymbol: 'D',   defaultLocale: 'en-GM', languageCode: 'en', phoneDialCode: '+220',
     paymentProviders: ['flutterwave'], creditMethods: FLW, payoutMethod: 'UNSUPPORTED', payoutMethods: ['MANUAL'] },
@@ -47,12 +50,12 @@ const WEST_AFRICA_COUNTRIES = [
   { code: 'CI', name: "C\u00F4te d'Ivoire", currencyCode: 'XOF', currencySymbol: 'CFA', defaultLocale: 'fr-CI', languageCode: 'fr', phoneDialCode: '+225',
     paymentProviders: ['orange', 'paystack', 'flutterwave'],
     creditMethods: ['CASH', 'WALLET', 'ORANGE_MONEY', 'PAYSTACK', 'FLUTTERWAVE'],
-    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
+    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'BANK_TRANSFER', 'MANUAL'],
     providerConfig: { orange: { webpayCountry: 'ci', lang: 'fr' } } },
 
   { code: 'SN', name: 'Senegal',       currencyCode: 'XOF', currencySymbol: 'CFA', defaultLocale: 'fr-SN', languageCode: 'fr', phoneDialCode: '+221',
     paymentProviders: ['orange', 'flutterwave'], creditMethods: OM_FLW,
-    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
+    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'BANK_TRANSFER', 'MANUAL'],
     providerConfig: { orange: { webpayCountry: 'sn', lang: 'fr' } } },
 
   { code: 'ML', name: 'Mali',          currencyCode: 'XOF', currencySymbol: 'CFA', defaultLocale: 'fr-ML', languageCode: 'fr', phoneDialCode: '+223',
@@ -82,7 +85,7 @@ const WEST_AFRICA_COUNTRIES = [
 
   { code: 'SL', name: 'Sierra Leone',  currencyCode: 'SLE', currencySymbol: 'Le',  defaultLocale: 'en-SL', languageCode: 'en', phoneDialCode: '+232',
     paymentProviders: ['orange', 'flutterwave'], creditMethods: OM_FLW,
-    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
+    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'BANK_TRANSFER', 'MANUAL'],
     providerConfig: { orange: { webpayCountry: 'sl', lang: 'en' } } },
 
   // ── Added for the Orange Money contract ───────────────────────────────────
@@ -92,7 +95,7 @@ const WEST_AFRICA_COUNTRIES = [
   // unless the admin explicitly overrides.
   { code: 'CM', name: 'Cameroon', currencyCode: 'XAF', currencySymbol: 'FCFA', defaultLocale: 'fr-CM', languageCode: 'fr', phoneDialCode: '+237', isActive: false,
     paymentProviders: ['orange', 'flutterwave'], creditMethods: OM_FLW,
-    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'MANUAL'],
+    payoutMethod: 'ORANGE_MONEY', payoutMethods: ['ORANGE_MONEY', 'BANK_TRANSFER', 'MANUAL'],
     providerConfig: { orange: { webpayCountry: 'cm', lang: 'fr' } } },
 
   { code: 'MG', name: 'Madagascar', currencyCode: 'MGA', currencySymbol: 'Ar', defaultLocale: 'fr-MG', languageCode: 'fr', phoneDialCode: '+261', isActive: false,

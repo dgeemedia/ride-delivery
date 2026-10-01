@@ -133,24 +133,73 @@ export default function WithdrawalScreen({ navigation }) {
   const [step,          setStep]          = useState(1);
   const [payoutHistory, setPayoutHistory] = useState([]);
   const [banks, setBanks] = useState(FALLBACK_BANKS);
+  // The built-in fallback list is Nigerian. It must never be offered as the list
+  // of networks a Ghanaian can be paid on, so mobile-money screens only ever use
+  // what the server returned.
+  const [banksFromServer, setBanksFromServer] = useState(false);
 
   // Orange markets pay out to a wallet number, not a bank account, so the
   // whole of step 2 changes shape. The server decides which — the client
   // must never guess a payout rail from the country code alone.
-  const { config, isMobileMoneyPayout } = useCountryConfig();
+  const { config } = useCountryConfig();
   const [mobileNumber, setMobileNumber] = useState('');
 
+  // A country can offer several ways to receive money (e.g. Orange Money OR a
+  // bank account). The server lists them; the first is the default. Whatever the
+  // person picks is sent back as `rail` and re-validated server-side.
+  const STYLE_TO_RAIL = { MOBILE_MONEY: 'ORANGE', MOMO: 'MOMO', MANUAL: 'MANUAL', BANK: 'BANK' };
+  const rails = config.payoutRails?.length ? config.payoutRails : [STYLE_TO_RAIL[config.payoutStyle] ?? 'BANK'];
+  const [chosenRail, setChosenRail] = useState(null);
+  const activeRail = chosenRail && rails.includes(chosenRail) ? chosenRail : rails[0];
+  const isMobileMoneyPayout = activeRail === 'ORANGE';   // Orange Money wallet number
+  const RAIL_LABEL = {
+    ORANGE: t('withdrawal.railOrange', { defaultValue: 'Orange Money' }),
+    MOMO:   t('withdrawal.railMomo',   { defaultValue: 'Mobile money' }),
+    BANK:   t('withdrawal.railBank',   { defaultValue: 'Bank account' }),
+    MANUAL: t('withdrawal.railManual', { defaultValue: 'Other' }),
+  };
+  const switchRail = (r) => {
+    if (r === activeRail) return;
+    setChosenRail(r);
+    // Details typed for one option mean nothing for another.
+    setBankCode(''); setAccountNumber(''); setAccountName(''); setMobileNumber(''); setManualBank('');
+    setBanksFromServer(false);
+  };
+
+  // The server decides the rail. MANUAL = no automatic transfer is available
+  // for this country, so the person types where they want the money and an
+  // admin pays it by hand (Ghana, Gambia, Togo… today).
+  const isManualPayout = activeRail === 'MANUAL';
+  // MOMO = pick a network (MTN, Vodafone…) and type the wallet number. Paid
+  // automatically by Flutterwave; the server validates both again.
+  const isMomoPayout   = activeRail === 'MOMO';
+  const isNigeria      = (config.countryCode ?? 'NG') === 'NG';
+  const [manualBank, setManualBank] = useState('');
+
+  // Per-country withdrawal rules from Admin → Pricing by country. Defaults only
+  // apply until the request returns (or if it fails) — the server re-checks.
+  const [rules, setRules] = useState({ enabled: true, min: 500, max: 0, feeFlat: 0, feePercent: 0 });
   useEffect(() => {
-    paymentAPI.listBanks()
+    walletAPI.getDepositLimits?.()
+      .then(res => { if (res?.data?.withdrawal) setRules(r => ({ ...r, ...res.data.withdrawal })); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (activeRail === 'ORANGE' || activeRail === 'MANUAL') return;      // no list for these
+    paymentAPI.listBanks(activeRail)
       .then(res => {
         const list = res?.data?.banks ?? [];
         const normalized = list
           .map(b => ({ name: b.name, code: String(b.code ?? b.id) }))
           .filter(b => b.name && b.code);
-        if (normalized.length > 0) setBanks(normalized);
+        if (normalized.length > 0) { setBanks(normalized); setBanksFromServer(true); }
       })
-      .catch(() => {}); // keeps FALLBACK_BANKS on failure
-  }, []);
+      .catch(() => {}); // keeps FALLBACK_BANKS on failure (Nigeria only — see pickerBanks)
+  }, [activeRail]);
+
+  // The built-in fallback is a Nigerian bank list: never offer it anywhere else.
+  const pickerBanks = banksFromServer || (isNigeria && activeRail === 'BANK') ? banks : [];
 
   const shakeA = useRef(new Animated.Value(0)).current;
 
@@ -176,10 +225,12 @@ export default function WithdrawalScreen({ navigation }) {
     // Name lookup is a bank-rail feature. Orange exposes no subscriber-name
     // endpoint, so firing this for a wallet number would always fail and
     // block the form.
-    if (isMobileMoneyPayout) return;
+    // Only Nigerian bank accounts can be looked up. Elsewhere the person types
+    // the name themselves (and the admin sees it flagged as unverified).
+    if (isMobileMoneyPayout || isManualPayout || isMomoPayout || !isNigeria) return;
     if (accountNumber.length === 10 && bankCode) verifyAccount();
     else if (accountNumber.length < 10) setAccountName('');
-  }, [accountNumber, bankCode, isMobileMoneyPayout]);
+  }, [accountNumber, bankCode, isMobileMoneyPayout, isNigeria, activeRail]);
 
   const verifyAccount = async () => {
     setVerifying(true);
@@ -196,10 +247,32 @@ export default function WithdrawalScreen({ navigation }) {
 
   const amtNum  = parseFloat(amount) || 0;
   const balance = walletBalance ?? 0;
-  const MIN_WITHDRAWAL = 500;
+  const MIN_WITHDRAWAL = rules.min;
+  const MAX_WITHDRAWAL = rules.max > 0 ? rules.max : Infinity;
+
+  // Fee is taken from the amount: the wallet is debited `amtNum`, the person
+  // receives `amtNum - fee`. Mirrors planWithdrawal on the server.
+  const fee = amtNum > 0 ? Math.round(rules.feeFlat + amtNum * (rules.feePercent / 100)) : 0;
+  const netAmount = Math.max(0, amtNum - fee);
+
+  // Quick-amount chips scale with the country's minimum (1,000 would be
+  // meaningless in Ghana cedis and trivial in Guinean francs).
+  const niceRound = (n) => { const p = 10 ** Math.max(0, Math.floor(Math.log10(Math.max(n, 1)))); return Math.round(n / p) * p; };
+  const quickAmounts = [...new Set([2, 5, 10, 20].map(k => niceRound(MIN_WITHDRAWAL * k)))]
+    .filter(v => v <= MAX_WITHDRAWAL);
 
   const handleStep1 = () => {
     Keyboard.dismiss();
+    if (!rules.enabled) {
+      shake();
+      Alert.alert(t('withdrawal.pausedTitle', { defaultValue: 'Withdrawals paused' }), t('withdrawal.pausedMsg', { defaultValue: 'Withdrawals are temporarily unavailable in your country. Please try again later.' }));
+      return;
+    }
+    if (amtNum > MAX_WITHDRAWAL) {
+      shake();
+      Alert.alert(t('withdrawal.maximumWithdrawal', { defaultValue: 'Maximum withdrawal' }), t('withdrawal.maximumIs', { defaultValue: 'The most you can withdraw at once is {{amount}}', amount: formatMoney(MAX_WITHDRAWAL) }));
+      return;
+    }
     if (amtNum < MIN_WITHDRAWAL) {
       shake();
       Alert.alert(t('withdrawal.minimumWithdrawal'), t('withdrawal.minimumIs', { amount: formatMoney(MIN_WITHDRAWAL) })); // NOTE: 500 is a fixed NG minimum-withdrawal business rule
@@ -224,8 +297,26 @@ export default function WithdrawalScreen({ navigation }) {
         Alert.alert(t('withdrawal.invalidMobileTitle'), t('withdrawal.invalidMobileMsg'));
         return;
       }
+    } else if (isMomoPayout) {
+      if (!bankCode) { shake(); Alert.alert(t('withdrawal.selectNetwork', { defaultValue: 'Choose your network' }), t('withdrawal.selectNetworkMsg', { defaultValue: 'Select the mobile-money network your number belongs to.' })); return; }
+      if (mobileNumber.replace(/\D/g, '').length < 9) { shake(); Alert.alert(t('withdrawal.invalidMobileTitle'), t('withdrawal.invalidMobileMsg')); return; }
+    } else if (isManualPayout) {
+      if (manualBank.trim().length < 2 || accountNumber.length < 6 || accountName.trim().length < 3) {
+        shake();
+        Alert.alert(
+          t('withdrawal.detailsIncomplete', { defaultValue: 'Details incomplete' }),
+          t('withdrawal.detailsIncompleteMsg', { defaultValue: 'Enter your bank or mobile-money provider, the account or wallet number, and the name on the account.' })
+        );
+        return;
+      }
     } else {
-      if (accountNumber.length !== 10) { shake(); Alert.alert(t('withdrawal.invalidAccount'), t('withdrawal.enter10Digit')); return; }
+      if (!isNigeria) {
+        if (!bankCode || accountNumber.length < 6 || accountName.trim().length < 3) {
+          shake();
+          Alert.alert(t('withdrawal.detailsIncomplete', { defaultValue: 'Details incomplete' }), t('withdrawal.bankDetailsIncompleteMsg', { defaultValue: 'Choose your bank, then enter your account number and the name on the account.' }));
+          return;
+        }
+      } else if (accountNumber.length !== 10) { shake(); Alert.alert(t('withdrawal.invalidAccount'), t('withdrawal.enter10Digit')); return; }
       if (!bankCode)                   { shake(); Alert.alert(t('withdrawal.selectBankTitle'),     t('withdrawal.pleaseSelectBank'));        return; }
       if (!accountName)                { shake(); Alert.alert(t('withdrawal.verifyAccount'),  t('withdrawal.verificationFailed'));   return; }
     }
@@ -236,13 +327,17 @@ export default function WithdrawalScreen({ navigation }) {
     setSubmitting(true);
     try {
       await walletAPI.withdraw(
-        isMobileMoneyPayout
+        { rail: activeRail, ...(isMobileMoneyPayout
           ? { amount: amtNum, mobileNumber, accountName: accountName || undefined }
-          : { amount: amtNum, accountNumber, bankCode, accountName }
+          : isMomoPayout
+            ? { amount: amtNum, mobileNumber, bankCode }
+            : isManualPayout
+            ? { amount: amtNum, accountNumber, bankName: manualBank.trim(), accountName: accountName.trim() }
+            : { amount: amtNum, accountNumber, bankCode, accountName: accountName.trim() }) }
       );
       Alert.alert(
         t('withdrawal.requestedTitle'),
-        t('withdrawal.requestedMsg', { amount: formatMoney(amtNum), name: accountName }),
+        t('withdrawal.requestedMsg', { amount: formatMoney(amtNum), name: accountName || manualBank || (banks.find(b => b.code === bankCode)?.name) || 'Orange Money' }),
         [{ text: t('walletTopUp.done'), onPress: () => navigation.goBack() }]
       );
     } catch (err) {
@@ -261,12 +356,18 @@ export default function WithdrawalScreen({ navigation }) {
   const activeTxtColor   = accentFg;
   const inactiveTxtColor = theme.foreground;
 
-  const step1Ready = amtNum >= MIN_WITHDRAWAL && amtNum <= balance;
+  const step1Ready = amtNum >= MIN_WITHDRAWAL && amtNum <= balance && amtNum <= MAX_WITHDRAWAL;
   // Mobile-money payouts have no name to verify, so readiness is just a
   // plausible number — otherwise step 2 could never be completed.
   const step2Ready = isMobileMoneyPayout
     ? mobileNumber.replace(/\D/g, '').length >= 8
-    : (!!accountName && !!bankCode);
+    : isMomoPayout
+      ? (!!bankCode && mobileNumber.replace(/\D/g, '').length >= 9)
+    : isManualPayout
+      ? (manualBank.trim().length >= 2 && accountNumber.length >= 6 && accountName.trim().length >= 3)
+      : isNigeria
+        ? (!!accountName && !!bankCode)
+        : (!!bankCode && accountNumber.length >= 6 && accountName.trim().length >= 3);
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
@@ -335,7 +436,7 @@ export default function WithdrawalScreen({ navigation }) {
                   keyboardType="numeric"
                   placeholder="0"
                   placeholderTextColor={theme.hint}
-                  maxLength={7}
+                  maxLength={12}
                   autoFocus
                 />
               </View>
@@ -344,7 +445,7 @@ export default function WithdrawalScreen({ navigation }) {
                    so black-accent (light onyx) → white text, and
                    white-accent (dark onyx) → black text.                    */}
               <View style={s.quickRow}>
-                {[1000, 2000, 5000, 10000].map(q => {
+                {quickAmounts.map(q => {
                   const isActive = amtNum === q;
                   return (
                     <TouchableOpacity
@@ -384,6 +485,32 @@ export default function WithdrawalScreen({ navigation }) {
           {/* ── STEP 2 ── */}
           {step === 2 && (
             <Animated.View style={{ transform: [{ translateX: shakeA }] }}>
+              {rails.length > 1 && (
+                <>
+                  <Text style={[s.sectionLabel, { color: theme.hint }]}>
+                    {t('withdrawal.payoutRailLabel', { defaultValue: 'Receive your money via' })}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                    {rails.map(r => {
+                      const on = r === activeRail;
+                      return (
+                        <TouchableOpacity
+                          key={r}
+                          onPress={() => switchRail(r)}
+                          activeOpacity={0.85}
+                          style={{
+                            flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1.5,
+                            backgroundColor: on ? accent : theme.backgroundAlt,
+                            borderColor: on ? accent : theme.border,
+                          }}
+                        >
+                          <Text style={{ fontWeight: '700', fontSize: 13, color: on ? accentFg : theme.foreground }}>{RAIL_LABEL[r]}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
               {isMobileMoneyPayout ? (
                 <>
                   {/* ── Mobile-money rail (Orange Money) ──────────────────
@@ -422,10 +549,75 @@ export default function WithdrawalScreen({ navigation }) {
                     </Text>
                   </View>
                 </>
+              ) : isMomoPayout ? (
+                <>
+                  {/* ── Mobile-money rail (Ghana: MTN / Vodafone / AirtelTigo) ──
+                      The networks come from the server, so the list can never
+                      offer one we cannot pay. There is no account-name lookup
+                      for a wallet, so the number is the whole destination. */}
+                  <Text style={[s.sectionLabel, { color: theme.hint }]}>
+                    {t('withdrawal.momoNetwork', { defaultValue: 'Mobile-money network' })}
+                  </Text>
+                  <BankPicker selected={bankCode} onSelect={setBankCode} theme={theme} banks={pickerBanks} />
+
+                  <Text style={[s.sectionLabel, { color: theme.hint }]}>
+                    {t('withdrawal.momoNumber', { defaultValue: 'Mobile-money number' })}
+                  </Text>
+                  <View style={[s.fieldCard, { backgroundColor: theme.backgroundAlt, borderColor: step2Ready ? accent + '60' : theme.border }]}>
+                    <Ionicons name="phone-portrait-outline" size={16} color={theme.hint} />
+                    <TextInput
+                      style={[s.field, { color: theme.foreground }]}
+                      value={mobileNumber}
+                      onChangeText={val => setMobileNumber(val.replace(/[^\d+ ]/g, '').slice(0, 20))}
+                      keyboardType="phone-pad"
+                      placeholder={t('withdrawal.momoPlaceholder', { defaultValue: 'e.g. 024 123 4567' })}
+                      placeholderTextColor={theme.hint}
+                    />
+                    {step2Ready && <Ionicons name="checkmark-circle" size={18} color="#5DAA72" />}
+                  </View>
+                  <View style={[s.verifiedBadge, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                    <Ionicons name="information-circle-outline" size={16} color={theme.hint} />
+                    <Text style={[s.verifiedTxt, { color: theme.hint }]}>
+                      {t('withdrawal.momoNotice', { defaultValue: 'We cannot check who owns this number. Make sure it is correct and registered for mobile money on the network you chose.' })}
+                    </Text>
+                  </View>
+                </>
+              ) : isManualPayout ? (
+                <>
+                  {/* ── Manual rail: nothing can verify this account automatically,
+                      so we collect it as text and an admin pays it by hand. ── */}
+                  {[
+                    { label: t('withdrawal.manualBank', { defaultValue: 'Bank or mobile-money provider' }), value: manualBank, set: setManualBank, placeholder: t('withdrawal.manualBankPlaceholder', { defaultValue: 'e.g. GCB Bank, MTN MoMo' }), kb: 'default', icon: 'business-outline', clean: v => v.slice(0, 80) },
+                    { label: t('withdrawal.manualAccountNumber', { defaultValue: 'Account or wallet number' }), value: accountNumber, set: setAccountNumber, placeholder: '', kb: 'phone-pad', icon: 'card-outline', clean: v => v.replace(/[^\d]/g, '').slice(0, 34) },
+                    { label: t('withdrawal.manualAccountName', { defaultValue: 'Name on the account' }), value: accountName, set: setAccountName, placeholder: '', kb: 'default', icon: 'person-outline', clean: v => v.slice(0, 80) },
+                  ].map(f => (
+                    <View key={f.label}>
+                      <Text style={[s.sectionLabel, { color: theme.hint }]}>{f.label}</Text>
+                      <View style={[s.fieldCard, { backgroundColor: theme.backgroundAlt, borderColor: f.value ? accent + '60' : theme.border }]}>
+                        <Ionicons name={f.icon} size={16} color={theme.hint} />
+                        <TextInput
+                          style={[s.field, { color: theme.foreground }]}
+                          value={f.value}
+                          onChangeText={v => f.set(f.clean(v))}
+                          keyboardType={f.kb}
+                          placeholder={f.placeholder}
+                          placeholderTextColor={theme.hint}
+                          autoCapitalize="words"
+                        />
+                      </View>
+                    </View>
+                  ))}
+                  <View style={[s.verifiedBadge, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                    <Ionicons name="information-circle-outline" size={16} color={theme.hint} />
+                    <Text style={[s.verifiedTxt, { color: theme.hint }]}>
+                      {t('withdrawal.manualNotice', { defaultValue: 'This account cannot be verified automatically. Check the details carefully — payments sent to a wrong number cannot be recovered.' })}
+                    </Text>
+                  </View>
+                </>
               ) : (
                 <>
               <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('withdrawal.selectBank')}</Text>
-              <BankPicker selected={bankCode} onSelect={setBankCode} theme={theme} banks={banks} />
+              <BankPicker selected={bankCode} onSelect={setBankCode} theme={theme} banks={pickerBanks} />
 
               <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('withdrawal.accountNumber')}</Text>
               <View style={[s.fieldCard, {
@@ -440,18 +632,42 @@ export default function WithdrawalScreen({ navigation }) {
                 <TextInput
                   style={[s.field, { color: theme.foreground }]}
                   value={accountNumber}
-                  onChangeText={val => setAccountNumber(val.replace(/\D/g, '').slice(0, 10))}
-                  keyboardType="numeric"
-                  placeholder={t('withdrawal.accountNumberPlaceholder')}
+                  onChangeText={val => setAccountNumber(isNigeria ? val.replace(/\D/g, '').slice(0, 10) : val.replace(/[^A-Za-z0-9-]/g, '').slice(0, 34))}
+                  keyboardType={isNigeria ? 'numeric' : 'default'}
+                  autoCapitalize={isNigeria ? 'none' : 'characters'}
+                  placeholder={isNigeria ? t('withdrawal.accountNumberPlaceholder') : ''}
                   placeholderTextColor={theme.hint}
-                  maxLength={10}
+                  maxLength={isNigeria ? 10 : 34}
                 />
                 {verifying && <ActivityIndicator size="small" color={accent} />}
-                {!verifying && accountName                               && <Ionicons name="checkmark-circle" size={18} color="#5DAA72" />}
-                {!verifying && !accountName && accountNumber.length === 10 && <Ionicons name="close-circle"    size={18} color="#E05555" />}
+                {isNigeria && !verifying && accountName                               && <Ionicons name="checkmark-circle" size={18} color="#5DAA72" />}
+                {isNigeria && !verifying && !accountName && accountNumber.length === 10 && <Ionicons name="close-circle"    size={18} color="#E05555" />}
               </View>
 
-              {accountName && (
+              {/* Outside Nigeria the account holder cannot be looked up, so the person types the name. */}
+              {!isNigeria && (
+                <>
+                  <Text style={[s.sectionLabel, { color: theme.hint }]}>{t('withdrawal.manualAccountName', { defaultValue: 'Name on the account' })}</Text>
+                  <View style={[s.fieldCard, { backgroundColor: theme.backgroundAlt, borderColor: accountName.trim().length >= 3 ? accent + '60' : theme.border }]}>
+                    <Ionicons name="person-outline" size={16} color={theme.hint} />
+                    <TextInput
+                      style={[s.field, { color: theme.foreground }]}
+                      value={accountName}
+                      onChangeText={v => setAccountName(v.slice(0, 80))}
+                      autoCapitalize="words"
+                      placeholderTextColor={theme.hint}
+                    />
+                  </View>
+                  <View style={[s.verifiedBadge, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }]}>
+                    <Ionicons name="information-circle-outline" size={16} color={theme.hint} />
+                    <Text style={[s.verifiedTxt, { color: theme.hint }]}>
+                      {t('withdrawal.manualNotice', { defaultValue: 'This account cannot be verified automatically. Check the details carefully — payments sent to a wrong number cannot be recovered.' })}
+                    </Text>
+                  </View>
+                </>
+              )}
+
+              {isNigeria && accountName && (
                 <View style={[s.verifiedBadge, { backgroundColor: '#5DAA7212', borderColor: '#5DAA7240' }]}>
                   <Ionicons name="person-circle-outline" size={16} color="#5DAA72" />
                   <Text style={[s.verifiedTxt, { color: '#5DAA72' }]}>{accountName}</Text>
@@ -484,10 +700,25 @@ export default function WithdrawalScreen({ navigation }) {
                   // The destination rows differ by rail: a mobile-money
                   // payout has a wallet number and no verified account name,
                   // so showing empty "Account name" rows would look broken.
-                  ...(isMobileMoneyPayout
+                  ...(fee > 0 ? [
+                    { label: t('withdrawal.confirmFee', { defaultValue: 'Withdrawal fee' }), value: `- ${formatMoney(fee)}`, color: undefined },
+                    { label: t('withdrawal.confirmYouReceive', { defaultValue: 'You receive' }), value: formatMoney(netAmount), color: accent },
+                  ] : []),
+                  ...(isMomoPayout
+                    ? [
+                        { label: t('withdrawal.momoNetwork', { defaultValue: 'Mobile-money network' }), value: banks.find(b => b.code === bankCode)?.name ?? bankCode, color: undefined },
+                        { label: t('withdrawal.confirmMobileNumber'), value: mobileNumber, color: undefined },
+                      ]
+                    : isMobileMoneyPayout
                     ? [
                         { label: t('withdrawal.confirmMethod'),       value: 'Orange Money', color: '#FF7900' },
                         { label: t('withdrawal.confirmMobileNumber'), value: mobileNumber,   color: undefined },
+                      ]
+                    : isManualPayout
+                    ? [
+                        { label: t('withdrawal.confirmBank'),        value: manualBank,    color: undefined },
+                        { label: t('withdrawal.confirmAccountNo'),   value: accountNumber, color: undefined },
+                        { label: t('withdrawal.confirmAccountName'), value: accountName,   color: undefined },
                       ]
                     : [
                         { label: t('withdrawal.confirmBank'),        value: banks.find(b => b.code === bankCode)?.name ?? bankCode, color: undefined },

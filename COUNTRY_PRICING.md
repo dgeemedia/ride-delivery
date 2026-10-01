@@ -85,3 +85,70 @@ Then set the Orange env vars (see `backend/ORANGE_SETUP.md`).
   always wins.
 * Burkina Faso, Niger and Liberia are seeded but weren't on Orange's list for
   your contract — check whether Orange Money should stay enabled there.
+
+## Withdrawals: how a driver/partner/customer enters where the money goes
+One screen for everyone (Wallet → Withdraw), three steps: amount → destination → confirm.
+The **server** decides which destination form the person sees (`payoutStyle`):
+
+| Country rail | What they enter | Name check | Who sends the money |
+|---|---|---|---|
+| Orange countries (`MOBILE_MONEY`) | Orange Money number | none (Orange has no lookup) | Orange cash-out once B2C is on, else admin pays by hand |
+| Nigeria (`BANK`) | pick bank + 10-digit account | automatic (Paystack) | Paystack/Flutterwave on admin **Approve** |
+| Ghana (`MOMO`) | pick MTN / Vodafone(Telecel) / AirtelTigo + wallet number | format only (no name lookup exists) | **Flutterwave, automatically** on admin Approve |
+| Gambia, Cape Verde, Togo, Benin (`MANUAL`) | bank/MoMo provider name, account or wallet number, name on account (typed) | none — admin checks by eye | admin pays outside the app, then **Mark as paid** |
+
+The request is saved as a PENDING payout with that destination. The wallet is debited
+immediately (full amount); a fee, if configured, is deducted from what is sent.
+Admin → Wallets → Payouts shows destination, fee, currency and rail. Buttons:
+**Approve** (automatic rails) · **Mark as paid** (manual rails, or after paying a failed
+transfer by hand) · **Retry transfer** · **Reject** (refunds the full amount).
+Once a provider has accepted a transfer, Retry and Reject are blocked (double-pay guard).
+
+Fixed on the way: MANUAL countries were sent to Paystack on approval; a PROCESSING payout
+could never be completed or refunded (and was hidden from the PENDING list); the app
+enforced a fixed 500 minimum, 10-digit accounts and ₦ amounts everywhere; the
+"non-withdrawable" onboarding bonus could actually be withdrawn (now blocked).
+
+
+### Ghana mobile money (Flutterwave)
+* Ghana's payout method is now `MOBILE_MONEY` (+ `MANUAL` as fallback). Re-run `npm run seed`
+  to apply it to your existing Ghana row. (The seed overwrites a country's payout methods
+  — if you customised Ghana's in the admin, set it back afterwards.)
+* Sent as a Flutterwave transfer: `account_bank` = the operator's code, `account_number` =
+  the number with country code (`233…`), `beneficiary_name` = the user's name. The operator
+  code is read from Flutterwave's own bank list for Ghana at payout time (documented names
+  `MTN` / `VODAFONE` / `AIRTELTIGO` are the fallback).
+* **Enable Ghana mobile-money transfers on your Flutterwave account and fund the GHS balance.**
+* **Failed transfers are now refunded automatically.** Approving marks a payout completed
+  when the provider *accepts* it; a later failure used to leave the user without the money
+  or a refund. Both Flutterwave (`transfer.completed`) and Paystack (`transfer.failed` /
+  `transfer.reversed`) webhooks now refund the full amount once (idempotent). Make sure
+  your Flutterwave dashboard webhook URL points at your existing Flutterwave webhook route
+  (either `/api/payments/flutterwave/webhook` or the wallet one — both handle it) and the dashboard secret hash matches `FLUTTERWAVE_WEBHOOK_HASH`.
+
+
+## Several payout options per country + bank rails country by country
+A country's `payoutMethods` can now list several options; the person chooses between them
+in the app (a switch at the top of the destination step) and the server routes **by the
+option they chose**, not by the country (so a Senegalese *bank* payout never goes to Orange).
+
+| Country | Options offered | Bank payouts via |
+|---|---|---|
+| Nigeria | Bank | Paystack/Flutterwave (unchanged, name auto-verified) |
+| Ghana | Mobile money · Bank | Flutterwave (name lookup attempted) |
+| Senegal, Côte d'Ivoire, Cameroon, Sierra Leone | Orange Money · Bank | Flutterwave (name typed, flagged *unverified* for the admin) |
+| Mali, Guinea, Guinea-Bissau, DR Congo, Madagascar, Botswana, CAR, Burkina, Niger, Liberia | Orange Money only | — |
+| Gambia, Cape Verde, Togo, Benin | typed details, paid by hand | — |
+
+These are the countries where Flutterwave's documentation lists bank transfers. To add a
+country later: Admin → Countries → add `BANK_TRANSFER` to its payout methods (the bank list
+comes from Flutterwave's own list for that country). Branch codes (required by Flutterwave
+for BJ, CM, CI, CD, GH, SN, SL) are looked up automatically — head-office branch, else the
+first. **If a branch can't be determined nothing is sent**; the payout stays PROCESSING for
+manual settlement. Test one real payout per country before relying on it.
+
+## Which top-up methods a customer sees
+Per country, from its `creditMethods` (Admin → Countries). The server only offers
+what the country has and refuses other providers (Paystack is rejected outside NG/GH/CI).
+Orange Money is hidden until the Orange keys are configured. Flutterwave coverage should be
+confirmed with Flutterwave for each country listed with it.

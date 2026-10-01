@@ -32,6 +32,7 @@ const FALLBACK_CONFIG = {
   payoutMethods:  ['NG_BANK_TRANSFER'],
   payoutMethod:   'NG_BANK_TRANSFER',
   payoutStyle:    'BANK',
+  payoutRails:    ['BANK'],
   orangeReady:    false,
 };
 

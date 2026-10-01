@@ -113,14 +113,15 @@ const NotificationBell: React.FC = () => {
         )}
       </button>
 
-            {open && (
-              <div className="
-                fixed left-3 right-3 top-16
-                sm:absolute sm:left-auto sm:right-0 sm:top-11
-                w-auto sm:w-96
-                max-w-full
-                bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden
-              ">
+      {open && (
+        <div
+          className="
+            fixed left-3 right-3 top-16
+            sm:absolute sm:left-auto sm:right-0 sm:top-11
+            sm:w-96 sm:max-w-none
+            bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden
+          "
+        >
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <div>
               <p className="text-sm font-bold text-gray-900">Notifications</p>

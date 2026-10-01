@@ -244,7 +244,7 @@ export const paymentAPI = {
   getStats:              (params)   => api.get('/payments/stats', { params }),
   getById:               (id)       => api.get(`/payments/${id}`),
   requestRefund:         (id, data) => api.post(`/payments/${id}/refund`, data),
-  listBanks:             ()         => api.get('/payments/banks'),
+  listBanks:             (rail)     => api.get('/payments/banks', { params: rail ? { rail } : {} }),
   verifyBankAccount:     (data)     => api.post('/payments/verify-account', data),
 };
 

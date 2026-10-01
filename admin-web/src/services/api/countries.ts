@@ -3,7 +3,7 @@ import api from './index';
 import { ApiResponse } from '@/types';
 
 export type CreditMethod = 'CASH' | 'WALLET' | 'PAYSTACK' | 'FLUTTERWAVE' | 'ORANGE_MONEY';
-export type PayoutMethod = 'NG_BANK_TRANSFER' | 'BANK_TRANSFER' | 'ORANGE_MONEY' | 'MANUAL' | 'UNSUPPORTED';
+export type PayoutMethod = 'NG_BANK_TRANSFER' | 'BANK_TRANSFER' | 'ORANGE_MONEY' | 'MOBILE_MONEY' | 'MANUAL' | 'UNSUPPORTED';
 export type PaymentProvider = 'paystack' | 'flutterwave' | 'orange';
 
 export interface Country {

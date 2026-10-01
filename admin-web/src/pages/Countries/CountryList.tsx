@@ -49,6 +49,7 @@ const PAYOUT_LABEL: Record<PayoutMethod, string> = {
   NG_BANK_TRANSFER: 'Bank transfer (NG)',
   BANK_TRANSFER:    'Bank transfer',
   ORANGE_MONEY:     'Orange Money cash-out',
+  MOBILE_MONEY:     'Mobile money (MTN / Vodafone / AirtelTigo via Flutterwave)',
   MANUAL:           'Manual settlement',
   UNSUPPORTED:      'Not supported',
 };
