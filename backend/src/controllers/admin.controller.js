@@ -15,7 +15,7 @@ const { getWithdrawableBalance, ensureWallet } = require('../utils/walletHelpers
 const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog');
 const countrySettingsService = require('../services/countrySettings.service');
-const { formatMoney } = require('../utils/currency');
+const { formatMoney, isWholeUnitCurrency } = require('../utils/currency');
 
 // Onboarding bonus for one earner: an explicit admin override wins, otherwise
 // the bonus configured for the earner's own country (in that country's currency).
@@ -239,7 +239,7 @@ exports.getUsers = async (req, res) => {
       select: {
         id: true, email: true, phone: true, firstName: true, lastName: true,
         role: true, isActive: true, isSuspended: true, isVerified: true, createdAt: true,
-        wallet: { select: { balance: true } },
+        wallet: { select: { balance: true, currency: true } },
       },
       skip: parseInt(skip), take: parseInt(limit), orderBy: { createdAt: 'desc' },
     }),
@@ -712,6 +712,7 @@ exports.getDrivers = async (req, res) => {
             id: true, firstName: true, lastName: true,
             email: true, phone: true, createdAt: true,
             isActive: true, isSuspended: true, isVerified: true,
+            wallet: { select: { currency: true } },
           },
         },
       },
@@ -1012,6 +1013,7 @@ exports.getPartners = async (req, res) => {
             id: true, firstName: true, lastName: true,
             email: true, phone: true, createdAt: true,
             isActive: true, isSuspended: true, isVerified: true,
+            wallet: { select: { currency: true } },
           },
         },
       },
@@ -1117,6 +1119,8 @@ exports.getPayments = async (req, res) => {
     limit  = 25,
     status,
     method,
+    provider,
+    currency,
     search,
     hasRide,
     hasDelivery,
@@ -1127,6 +1131,8 @@ exports.getPayments = async (req, res) => {
   const where = {};
   if (status)            where.status  = status;
   if (method)            where.method  = method;
+  if (provider)          where.provider = String(provider).toLowerCase();
+  if (currency)          where.currency = String(currency).toUpperCase();
   if (hasRide === 'true')     where.rideId     = { not: null };
   if (hasDelivery === 'true') where.deliveryId = { not: null };
   if (search) {
@@ -1189,11 +1195,12 @@ exports.getPaymentById = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.getRefunds = async (req, res) => {
-  const { page = 1, limit = 25, method, search } = req.query;
+  const { page = 1, limit = 25, method, search, currency } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
   const where = { status: 'REFUNDED' };
   if (method) where.method = method;
+  if (currency) where.currency = String(currency).toUpperCase();
   if (search) {
     where.OR = [
       { transactionId: { contains: search, mode: 'insensitive' } },
@@ -1203,7 +1210,7 @@ exports.getRefunds = async (req, res) => {
     ];
   }
 
-  const [refunds, total, totalRefundedAgg] = await Promise.all([
+  const [refunds, total, totalsByCurrency] = await Promise.all([
     prisma.payment.findMany({
       where,
       include: {
@@ -1214,14 +1221,15 @@ exports.getRefunds = async (req, res) => {
       take: parseInt(limit),
     }),
     prisma.payment.count({ where }),
-    prisma.payment.aggregate({ where, _sum: { refundAmount: true } }),
+    // Refund totals are per currency — a single sum across NGN/XOF/GHS is meaningless.
+    prisma.payment.groupBy({ by: ['currency'], where, _sum: { refundAmount: true } }),
   ]);
 
   res.status(200).json({
     success: true,
     data: {
       refunds,
-      totalRefunded: totalRefundedAgg._sum.refundAmount ?? 0,
+      totalsByCurrency: totalsByCurrency.map(t => ({ currency: t.currency, total: t._sum.refundAmount ?? 0 })),
       pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) },
     },
   });
@@ -1234,11 +1242,11 @@ exports.getRefunds = async (req, res) => {
  */
 exports.adminIssueRefund = async (req, res) => {
   const { id } = req.params;
-  const { amount, reason = '' } = req.body;
+  const { amount, reason = '', manuallySettled = false } = req.body;
 
   const payment = await prisma.payment.findUnique({
     where: { id },
-    include: { user: { select: { id: true, firstName: true, email: true } } },
+    include: { user: { select: { id: true, firstName: true, email: true, countryCode: true } } },
   });
   if (!payment) throw new AppError('Payment not found', 404);
   if (payment.status !== 'COMPLETED') throw new AppError('Only completed payments can be refunded', 400);
@@ -1246,6 +1254,15 @@ exports.adminIssueRefund = async (req, res) => {
 
   const refundAmount = amount || payment.amount;
   if (refundAmount > payment.amount) throw new AppError('Refund amount cannot exceed the original payment amount', 400);
+  if (isWholeUnitCurrency(payment.currency) && !Number.isInteger(refundAmount)) {
+    throw new AppError(`${payment.currency} has no decimals — enter a whole amount.`, 400);
+  }
+
+  // The provider that actually took the money. Rows created before the
+  // `provider` column existed were all Paystack card payments.
+  const refundProvider = payment.method === 'WALLET'
+    ? null
+    : (payment.provider ?? (payment.method === 'MOBILE_MONEY' ? 'orange' : 'paystack'));
 
   if (payment.method === 'WALLET') {
     const wallet = await prisma.wallet.findUnique({ where: { userId: payment.userId } });
@@ -1266,8 +1283,16 @@ exports.adminIssueRefund = async (req, res) => {
       }),
     ]);
   } else {
-    // Card payment — route through Paystack
-    await paymentService.paystackRefund(payment.transactionId, refundAmount);
+    if (manuallySettled) {
+      // Admin already sent the money outside the platform (e.g. an Orange Money
+      // transfer). Nothing to call — we only record it, and the audit log below
+      // keeps who confirmed it.
+    } else {
+      // Paystack / Flutterwave refund via the provider that took the payment.
+      // Orange Money has no automated refund: refundUnified throws a 501 telling
+      // the admin to settle manually and re-submit with manuallySettled.
+      await paymentService.refundUnified(refundProvider, payment.transactionId, refundAmount);
+    }
     await prisma.payment.update({
       where: { id },
       data: { status: 'REFUNDED', refundAmount, refundedAt: new Date() },
@@ -1277,7 +1302,7 @@ exports.adminIssueRefund = async (req, res) => {
   await notificationService.notify({
     userId:  payment.userId,
     title:   'Refund Issued ✅',
-    message: `An admin has issued a refund of ₦${refundAmount.toLocaleString('en-NG')} for your payment.${reason ? ` Reason: ${reason}` : ''}`,
+    message: `An admin has issued a refund of ${formatMoney(refundAmount, payment.currency, payment.user.countryCode)} for your payment.${reason ? ` Reason: ${reason}` : ''}`,
     type:    notificationService.TYPES.PAYMENT_REFUNDED,
     data:    { paymentId: id, refundAmount, reason },
   });
@@ -1288,6 +1313,7 @@ exports.adminIssueRefund = async (req, res) => {
         amount: refundAmount,
         method: payment.method,
         reference: payment.transactionId,
+        currency: payment.currency,
       }),
       'Refund processed (admin-issued)'
     );
@@ -1298,69 +1324,54 @@ exports.adminIssueRefund = async (req, res) => {
     action:     'admin_refund_issued',
     entityType: 'Payment',
     entityId:   id,
-    details:    { refundAmount, reason, method: payment.method, targetUserId: payment.userId },
+    details:    { refundAmount, currency: payment.currency, reason, method: payment.method, provider: refundProvider, manuallySettled: !!manuallySettled, targetUserId: payment.userId },
     req,
   });
 
   res.status(200).json({
     success: true,
-    message: `₦${refundAmount.toLocaleString('en-NG')} refunded successfully.`,
+    message: `${formatMoney(refundAmount, payment.currency, payment.user.countryCode)} refunded successfully.`,
     data:    { paymentId: id, refundAmount },
   });
 };
  
 exports.getPaymentStats = async (req, res) => {
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
- 
+  const caught = { _sum: { commissionAmount: 0 } };
+
+  // Everything is grouped by currency: NGN, GHS and XOF amounts can't be added
+  // together, so the admin UI shows one set of figures per currency.
   const [
-    totalRevenue, todayRevenue,
-    totalCommission, todayCommission,
-    pendingCount, refundedTotal,
-    byMethod,
+    revenue, todayRevenue, commission, todayCommission,
+    pending, refunded, byMethod, byProvider,
   ] = await Promise.all([
-    prisma.payment.aggregate({
-      where: { status: 'COMPLETED' },
-      _sum: { amount: true },
-    }),
-    prisma.payment.aggregate({
-      where: { status: 'COMPLETED', createdAt: { gte: todayStart } },
-      _sum: { amount: true },
-    }),
-    // Commission from CommissionLedger if available, else from platformFee column
-    prisma.commissionLedger.aggregate({ _sum: { commissionAmount: true } }).catch(() => ({ _sum: { commissionAmount: 0 } })),
-    prisma.commissionLedger.aggregate({
-      where: { createdAt: { gte: todayStart } },
-      _sum: { commissionAmount: true },
-    }).catch(() => ({ _sum: { commissionAmount: 0 } })),
-    prisma.payment.count({ where: { status: 'PENDING' } }),
-    prisma.payment.aggregate({
-      where: { status: 'REFUNDED' },
-      _sum: { amount: true },
-    }),
-    prisma.payment.groupBy({
-      by: ['method'],
-      where: { status: 'COMPLETED' },
-      _sum:   { amount: true },
-      _count: { id: true },
-    }),
+    prisma.payment.groupBy({ by: ['currency'], where: { status: 'COMPLETED' }, _sum: { amount: true } }),
+    prisma.payment.groupBy({ by: ['currency'], where: { status: 'COMPLETED', createdAt: { gte: todayStart } }, _sum: { amount: true } }),
+    prisma.commissionLedger.groupBy({ by: ['currency'], _sum: { commissionAmount: true } }).catch(() => []),
+    prisma.commissionLedger.groupBy({ by: ['currency'], where: { createdAt: { gte: todayStart } }, _sum: { commissionAmount: true } }).catch(() => []),
+    prisma.payment.groupBy({ by: ['currency'], where: { status: 'PENDING' }, _count: { id: true } }),
+    prisma.payment.groupBy({ by: ['currency'], where: { status: 'REFUNDED' }, _sum: { amount: true } }),
+    prisma.payment.groupBy({ by: ['currency', 'method'], where: { status: 'COMPLETED' }, _sum: { amount: true }, _count: { id: true } }),
+    prisma.payment.groupBy({ by: ['currency', 'provider'], where: { status: 'COMPLETED' }, _sum: { amount: true }, _count: { id: true } }),
   ]);
- 
-  res.status(200).json({
-    success: true,
-    data: {
-      totalRevenue:     totalRevenue._sum.amount        ?? 0,
-      todayRevenue:     todayRevenue._sum.amount        ?? 0,
-      totalCommission:  totalCommission._sum.commissionAmount ?? 0,
-      todayCommission:  todayCommission._sum.commissionAmount ?? 0,
-      pendingCount,
-      refundedTotal:    refundedTotal._sum.amount       ?? 0,
-      byMethod: byMethod.map(m => ({
-        method: m.method,
-        count:  m._count.id,
-        total:  m._sum.amount ?? 0,
-      })),
-    },
+
+  const rows = {};
+  const row = (cur) => (rows[cur] ??= {
+    currency: cur, totalRevenue: 0, todayRevenue: 0, totalCommission: 0, todayCommission: 0,
+    pendingCount: 0, refundedTotal: 0, byMethod: [], byProvider: [],
   });
+  revenue.forEach(r         => { row(r.currency).totalRevenue    = r._sum.amount ?? 0; });
+  todayRevenue.forEach(r    => { row(r.currency).todayRevenue    = r._sum.amount ?? 0; });
+  commission.forEach(r      => { row(r.currency).totalCommission = r._sum.commissionAmount ?? 0; });
+  todayCommission.forEach(r => { row(r.currency).todayCommission = r._sum.commissionAmount ?? 0; });
+  pending.forEach(r         => { row(r.currency).pendingCount    = r._count.id; });
+  refunded.forEach(r        => { row(r.currency).refundedTotal   = r._sum.amount ?? 0; });
+  byMethod.forEach(r        => row(r.currency).byMethod.push({ method: r.method, count: r._count.id, total: r._sum.amount ?? 0 }));
+  byProvider.forEach(r      => row(r.currency).byProvider.push({ provider: r.provider ?? 'none', count: r._count.id, total: r._sum.amount ?? 0 }));
+
+  const byCurrency = Object.values(rows).sort((a, b) => a.currency.localeCompare(b.currency));
+
+  res.status(200).json({ success: true, data: { byCurrency } });
 };
 
 // ─────────────────────────────────────────────
@@ -1726,16 +1737,18 @@ exports.getActivityLogs = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.getWallets = async (req, res) => {
-  const { page = 1, limit = 20, minBalance } = req.query;
+  const { page = 1, limit = 20, minBalance, currency } = req.query;
   const skip = (page - 1) * limit;
   const where = {};
   if (minBalance) where.balance = { gte: parseFloat(minBalance) };
-  const [wallets, total, totalBalance] = await Promise.all([
+  if (currency)   where.currency = String(currency).toUpperCase();
+  const [wallets, total, totalsByCurrency] = await Promise.all([
     prisma.wallet.findMany({ where, include: { user: { select: { firstName: true, lastName: true, email: true, role: true } } }, skip: parseInt(skip), take: parseInt(limit), orderBy: { balance: 'desc' } }),
     prisma.wallet.count({ where }),
-    prisma.wallet.aggregate({ _sum: { balance: true } }),
+    // One total per currency — a single sum across currencies is meaningless.
+    prisma.wallet.groupBy({ by: ['currency'], where, _sum: { balance: true } }),
   ]);
-  res.status(200).json({ success: true, data: { wallets, totalBalance: totalBalance._sum.balance || 0, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } } });
+  res.status(200).json({ success: true, data: { wallets, totalsByCurrency: totalsByCurrency.map(t => ({ currency: t.currency, total: t._sum.balance || 0 })), pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } } });
 };
 
 exports.adjustWallet = async (req, res) => {
@@ -1746,9 +1759,12 @@ exports.adjustWallet = async (req, res) => {
 
   const wallet = await prisma.wallet.findUnique({
     where: { userId },
-    include: { user: { select: { firstName: true, email: true } } },
+    include: { user: { select: { firstName: true, email: true, countryCode: true } } },
   });
   if (!wallet) throw new AppError('Wallet not found', 404);
+  if (isWholeUnitCurrency(wallet.currency) && !Number.isInteger(amount)) {
+    throw new AppError(`${wallet.currency} has no decimals — enter a whole amount.`, 400);
+  }
   if (type === 'debit' && wallet.balance < amount) throw new AppError('Insufficient wallet balance', 400);
 
   const newBalance = type === 'credit' ? wallet.balance + amount : wallet.balance - amount;
@@ -1757,16 +1773,16 @@ exports.adjustWallet = async (req, res) => {
     prisma.walletTransaction.create({ data: { walletId: wallet.id, type: type === 'credit' ? 'CREDIT' : 'DEBIT', amount, description: reason || `Admin ${type}`, status: 'COMPLETED', reference: `ADMIN-${Date.now()}` } }),
   ]);
 
-  await notificationService.notify({ userId, title: type === 'credit' ? 'Wallet Credited 💰' : 'Wallet Debited', message: `Your wallet has been ${type}ed with ₦${amount.toFixed(2)}.${reason ? ` Reason: ${reason}` : ''}`, type: notificationService.TYPES.PAYMENT_RECEIVED, data: { amount, type, reason } });
+  await notificationService.notify({ userId, title: type === 'credit' ? 'Wallet Credited 💰' : 'Wallet Debited', message: `Your wallet has been ${type}ed with ${formatMoney(amount, wallet.currency, wallet.user?.countryCode)}.${reason ? ` Reason: ${reason}` : ''}`, type: notificationService.TYPES.PAYMENT_RECEIVED, data: { amount, currency: wallet.currency, type, reason } });
 
   if (wallet.user?.email) {
     await safeSendEmail(
-      () => emailService.sendWalletAdjustmentEmail(wallet.user.email, wallet.user.firstName, { amount, type, reason }),
+      () => emailService.sendWalletAdjustmentEmail(wallet.user.email, wallet.user.firstName, { amount, type, reason, currency: wallet.currency }),
       'Wallet adjustment'
     );
   }
 
-  await logActivity({ userId: req.user.id, action: `wallet_${type}`, entityType: 'Wallet', entityId: wallet.id, details: { amount, reason, targetUserId: userId }, req });
+  await logActivity({ userId: req.user.id, action: `wallet_${type}`, entityType: 'Wallet', entityId: wallet.id, details: { amount, currency: wallet.currency, reason, targetUserId: userId }, req });
   res.status(200).json({ success: true, message: `Wallet ${type}ed successfully`, data: { wallet: updatedWallet, transaction } });
 };
 
@@ -2047,8 +2063,23 @@ exports.disburseCustomBonuses = async (req, res) => {
       userId: { in: userIds },
       user:   { role: { in: ['DRIVER', 'DELIVERY_PARTNER'] } },  // restrict to earners
     },
-    include: { user: { select: { id: true, firstName: true, lastName: true, role: true, email: true } } },
+    include: { user: { select: { id: true, firstName: true, lastName: true, role: true, email: true, countryCode: true } } },
   });
+
+  // One flat amount can only be paid in ONE currency. Mixed recipients would get
+  // e.g. 5,000 NGN and 5,000 XOF for the same "5,000" — refuse and ask for a
+  // separate disbursement per currency.
+  const bonusCurrencies = [...new Set(wallets.map(w => w.currency))];
+  if (bonusCurrencies.length > 1) {
+    return res.status(400).json({
+      success: false,
+      message: `Selected recipients hold wallets in different currencies (${bonusCurrencies.join(', ')}). Send one bonus per currency.`,
+    });
+  }
+  const bonusCurrency = bonusCurrencies[0] ?? 'NGN';
+  if (isWholeUnitCurrency(bonusCurrency) && !Number.isInteger(amount)) {
+    return res.status(400).json({ success: false, message: `${bonusCurrency} has no decimals — enter a whole amount.` });
+  }
 
   const foundIds    = wallets.map(w => w.userId);
   const missing     = userIds.filter(id => !foundIds.includes(id));
@@ -2089,7 +2120,7 @@ exports.disburseCustomBonuses = async (req, res) => {
     notificationService.notify({
       userId:  wallet.user.id,
       title:   '🎁 Bonus Received!',
-      message: `₦${amount.toLocaleString('en-NG')} has been credited to your wallet.${nonWithdrawable ? ' This is non‑withdrawable and can only be used for rides/deliveries.' : ''}`,
+      message: `${formatMoney(amount, bonusCurrency, wallet.user.countryCode)} has been credited to your wallet.${nonWithdrawable ? ' This is non‑withdrawable and can only be used for rides/deliveries.' : ''}`,
       type:    notificationService.TYPES?.PAYMENT_RECEIVED ?? 'payment_received',
       data:    { amount, nonWithdrawable, creditedBy: req.user.id },
     })
@@ -2103,6 +2134,7 @@ exports.disburseCustomBonuses = async (req, res) => {
             amount,
             withdrawable: !nonWithdrawable,
             description: description || undefined,
+            currency: bonusCurrency,
           }),
           `Custom bonus (${wallet.user.id})`
         )
@@ -2118,6 +2150,7 @@ exports.disburseCustomBonuses = async (req, res) => {
     details:    {
       userIds: foundIds,
       amount,
+      currency: bonusCurrency,
       description,
       nonWithdrawable,
       totalDisbursed: amount * wallets.length,
@@ -2128,12 +2161,12 @@ exports.disburseCustomBonuses = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: `Bonus of ₦${amount.toLocaleString('en-NG')} credited to ${wallets.length} user(s).`,
+    message: `Bonus of ${formatMoney(amount, bonusCurrency)} credited to ${wallets.length} user(s).`,
     data:    {
       credited: wallets.length,
       amount,
       totalDisbursed: amount * wallets.length,
-      currency: 'NGN',
+      currency: bonusCurrency,
     },
   });
 };
@@ -2812,7 +2845,7 @@ exports.getCompanies = async (req, res) => {
       where,
       include: {
         admin:  { select: { id: true, firstName: true, lastName: true, email: true } },
-        wallet: { select: { balance: true, lowBalanceThreshold: true } },
+        wallet: { select: { balance: true, currency: true, lowBalanceThreshold: true } },
         _count: { select: { employees: true, trips: true } },
       },
       orderBy: { createdAt: 'desc' },

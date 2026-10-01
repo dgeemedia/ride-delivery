@@ -31,6 +31,7 @@ export interface Delivery {
   deliveredAt?: string;
   cancelledAt?: string;
   notes?: string;
+  currency?: string;
   payment?: Payment;
 }
 

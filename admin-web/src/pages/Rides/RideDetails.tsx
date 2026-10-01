@@ -13,6 +13,7 @@ import { ridesAPI }       from '@/services/api/rides';
 import { Ride }           from '@/types';
 import { Card, Button, Badge, Modal, Alert, Spinner } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
+import { formatMoney } from '@/utils/money';
 import { useSocket }      from '@/hooks/useSocket';
 import toast              from 'react-hot-toast';
 
@@ -261,12 +262,12 @@ const RideDetails: React.FC = () => {
       `  Notes:    ${ride.notes ?? '—'}`,
       ``,
       `FINANCIALS`,
-      `  Estimated Fare: ₦${ride.estimatedFare.toLocaleString('en-NG')}`,
-      `  Actual Fare:    ₦${ride.actualFare?.toLocaleString('en-NG') ?? 'Pending'}`,
+      `  Estimated Fare: ${formatMoney(ride.estimatedFare, ride.currency)}`,
+      `  Actual Fare:    ${ride.actualFare != null ? formatMoney(ride.actualFare, ride.currency) : 'Pending'}`,
       `  Payment Method: ${ride.payment?.method ?? '—'}`,
       `  Payment Status: ${ride.payment?.status ?? '—'}`,
-      `  Platform Fee:   ₦${(ride.payment as any)?.platformFee?.toLocaleString('en-NG') ?? '—'}`,
-      `  Driver Earned:  ₦${(ride.payment as any)?.driverEarnings?.toLocaleString('en-NG') ?? '—'}`,
+      `  Platform Fee:   ${(ride.payment as any)?.platformFee != null ? formatMoney((ride.payment as any).platformFee, ride.currency) : '—'}`,
+      `  Driver Earned:  ${(ride.payment as any)?.driverEarnings != null ? formatMoney((ride.payment as any).driverEarnings, ride.currency) : '—'}`,
       `  Transaction ID: ${ride.payment?.transactionId ?? '—'}`,
       ``,
       `TIMELINE`,
@@ -435,11 +436,11 @@ const RideDetails: React.FC = () => {
               <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-green-500" />Payment
               </h3>
-              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Amount"         value={`₦${ride.payment.amount.toLocaleString('en-NG')}`} />
+              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Amount"         value={formatMoney(ride.payment.amount, ride.payment.currency ?? ride.currency)} />
               <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Method"         value={ride.payment.method} />
               <InfoRow icon={<CheckCircle className="h-4 w-4" />} label="Status"         value={<Badge variant={ride.payment.status === 'COMPLETED' ? 'success' : 'warning'}>{ride.payment.status}</Badge>} />
-              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Platform fee"   value={`₦${(ride.payment as any).platformFee?.toLocaleString('en-NG') ?? '—'}`} />
-              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Driver earned"  value={`₦${(ride.payment as any).driverEarnings?.toLocaleString('en-NG') ?? '—'}`} />
+              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Platform fee"   value={(ride.payment as any).platformFee != null ? formatMoney((ride.payment as any).platformFee, ride.payment.currency ?? ride.currency) : '—'} />
+              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Driver earned"  value={(ride.payment as any).driverEarnings != null ? formatMoney((ride.payment as any).driverEarnings, ride.payment.currency ?? ride.currency) : '—'} />
               <InfoRow icon={<FileText className="h-4 w-4" />}    label="Transaction ID" value={<span className="font-mono text-xs">{ride.payment.transactionId ?? '—'}</span>} />
             </Card>
           )}
@@ -449,8 +450,8 @@ const RideDetails: React.FC = () => {
           {/* Summary */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Summary</h3>
-            <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Estimated fare" value={`₦${ride.estimatedFare.toLocaleString('en-NG')}`} />
-            <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Final fare"     value={ride.actualFare ? `₦${ride.actualFare.toLocaleString('en-NG')}` : 'Pending'} />
+            <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Estimated fare" value={formatMoney(ride.estimatedFare, ride.currency)} />
+            <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Final fare"     value={ride.actualFare ? formatMoney(ride.actualFare, ride.currency) : 'Pending'} />
             <InfoRow icon={<MapPin className="h-4 w-4" />}     label="Distance"       value={ride.distance ? `${ride.distance.toFixed(2)} km` : '—'} />
             {ride.rating && (
               <InfoRow

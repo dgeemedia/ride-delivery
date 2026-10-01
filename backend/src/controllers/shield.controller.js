@@ -286,7 +286,8 @@ exports.getActiveSession = async (req, res) => {
   const viewUrl     = shieldService.buildViewUrl(session.token);
   const whatsappLink = shieldService.buildWhatsAppLink(
     session.beneficiaryPhone,
-    `🛡️ Track my ride live: ${viewUrl}`
+    `🛡️ Track my ride live: ${viewUrl}`,
+    require('../utils/msisdn').DIAL_CODES[req.user.countryCode ?? 'NG'] ?? '234'
   );
 
   res.status(200).json({ success: true, data: { session, viewUrl, whatsappLink } });

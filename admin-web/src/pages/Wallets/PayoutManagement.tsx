@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { formatMoney, sortCurrencies } from '@/utils/money';
+import CurrencyTabs from '@/components/common/CurrencyTabs';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +37,7 @@ interface Transfer {
   senderId: string;
   recipientId: string;
   amount: number;
+  currency?: string;
   note: string | null;
   status: string;
   createdAt: string;
@@ -43,10 +46,15 @@ interface Transfer {
   recipient: TransferUser;
 }
 
-interface WalletStats {
-  totalBalance: number; totalWallets: number;
-  pendingPayouts: number; pendingTransfers: number;
+// Balances and daily credits/debits are reported per currency — never summed across them.
+interface CurrencyWalletStats {
+  currency: string; totalBalance: number; walletCount: number;
   todayCredits: number; todayDebits: number;
+}
+interface WalletStats {
+  byCurrency: CurrencyWalletStats[];
+  totalWallets: number;
+  pendingPayouts: number; pendingTransfers: number;
 }
 
 interface Pagination { total: number; page: number; pages: number; }
@@ -150,12 +158,15 @@ const CardActions: React.FC<{
 // ─── Payout: desktop row + mobile card ────────────────────────────────────────
 
 // Each payout is in its OWN country's currency — never assume naira.
-const money = (n: number, currency?: string) => {
-  try {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: currency || 'NGN', maximumFractionDigits: 0 }).format(n);
-  } catch {
-    return `${Math.round(n).toLocaleString()} ${currency ?? ''}`.trim();
-  }
+const money = (n: number, currency?: string | null) => formatMoney(n, currency);
+
+const PROVIDER_LABEL: Record<string, string> = {
+  paystack: 'Paystack', flutterwave: 'Flutterwave', orange: 'Orange Money',
+};
+const PROVIDER_STYLE: Record<string, string> = {
+  paystack:    'bg-sky-50 text-sky-700',
+  flutterwave: 'bg-amber-50 text-amber-700',
+  orange:      'bg-orange-50 text-orange-700',
 };
 const isManualRail = (p: Payout) => p.payoutMethod === 'MANUAL' || p.payoutDetails?.manual === true;
 
@@ -208,7 +219,7 @@ const PayoutActions: React.FC<{
   }
   return (
     <span className="text-xs text-gray-400">
-      {payout.processedAt ? new Date(payout.processedAt).toLocaleDateString('en-NG') : '—'}
+      {payout.processedAt ? new Date(payout.processedAt).toLocaleDateString() : '—'}
     </span>
   );
 };
@@ -265,7 +276,7 @@ const PayoutRow: React.FC<{
       )}
     </td>
     <td className="px-4 py-4 text-xs text-gray-500">
-      {new Date(payout.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+      {new Date(payout.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
     </td>
     <td className="px-4 py-4">
       <PayoutActions payout={payout} onApprove={onApprove} onReject={onReject} onComplete={onComplete} />
@@ -303,7 +314,7 @@ const PayoutCard: React.FC<{
       <CardField label="Bank">{payout.bankName || `Code: ${payout.bankCode}`}</CardField>
       <CardField label="Account Name" className="col-span-2">{payout.accountName}</CardField>
       <CardField label="Requested" className="col-span-2">
-        {new Date(payout.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+        {new Date(payout.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
       </CardField>
     </div>
 
@@ -342,14 +353,14 @@ const TransferRow: React.FC<{
       )}
     </td>
     <td className="px-4 py-4">
-      <div className="font-bold text-gray-900">₦{transfer.amount.toLocaleString('en-NG')}</div>
+      <div className="font-bold text-gray-900">{money(transfer.amount, transfer.currency)}</div>
       <div className="text-xs text-gray-500 font-mono mt-0.5">{transfer.reference}</div>
     </td>
     <td className="px-4 py-4">
       <StatusBadge status={transfer.status} />
     </td>
     <td className="px-4 py-4 text-xs text-gray-500">
-      {new Date(transfer.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+      {new Date(transfer.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
     </td>
     <td className="px-4 py-4">
       {transfer.status === 'PENDING' ? (
@@ -394,7 +405,7 @@ const TransferCard: React.FC<{
     </div>
 
     <div className="mt-3 flex items-baseline justify-between">
-      <div className="font-bold text-gray-900 text-lg">₦{transfer.amount.toLocaleString('en-NG')}</div>
+      <div className="font-bold text-gray-900 text-lg">{money(transfer.amount, transfer.currency)}</div>
       <div className="text-[11px] text-gray-400 font-mono">{transfer.reference}</div>
     </div>
 
@@ -402,7 +413,7 @@ const TransferCard: React.FC<{
       <CardField label="Sender phone"><span className="font-mono">{transfer.sender.phone}</span></CardField>
       <CardField label="Recipient phone"><span className="font-mono">{transfer.recipient.phone}</span></CardField>
       <CardField label="Initiated" className="col-span-2">
-        {new Date(transfer.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+        {new Date(transfer.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
       </CardField>
       {transfer.note && <CardField label="Note" className="col-span-2">{transfer.note}</CardField>}
     </div>
@@ -430,17 +441,17 @@ const TopUpRow: React.FC<{
       <div className="text-xs text-gray-400 font-mono">{topup.wallet.user.phone}</div>
     </td>
     <td className="px-4 py-4">
-      <div className="font-bold text-gray-900">₦{topup.amount.toLocaleString('en-NG')}</div>
+      <div className="font-bold text-gray-900">{money(topup.amount, topup.wallet.currency)}</div>
       <div className="text-xs text-gray-500 font-mono mt-0.5">{topup.reference}</div>
     </td>
     <td className="px-4 py-4">
-      <span className="text-xs font-semibold capitalize px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-        {topup.provider ?? 'unknown'}
+      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${PROVIDER_STYLE[topup.provider] ?? 'bg-gray-100 text-gray-700'}`}>
+        {PROVIDER_LABEL[topup.provider] ?? topup.provider ?? 'Unknown'}
       </span>
     </td>
     <td className="px-4 py-4"><StatusBadge status={topup.status} /></td>
     <td className="px-4 py-4 text-xs text-gray-500">
-      {new Date(topup.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+      {new Date(topup.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
     </td>
     <td className="px-4 py-4">
       {topup.status === 'PENDING' ? (
@@ -473,14 +484,14 @@ const TopUpCard: React.FC<{
     </div>
 
     <div className="mt-3 flex items-baseline justify-between">
-      <div className="font-bold text-gray-900 text-lg">₦{topup.amount.toLocaleString('en-NG')}</div>
+      <div className="font-bold text-gray-900 text-lg">{money(topup.amount, topup.wallet.currency)}</div>
       <div className="text-[11px] text-gray-400 font-mono">{topup.reference}</div>
     </div>
 
     <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-50 pt-3">
-      <CardField label="Provider"><span className="capitalize">{topup.provider}</span></CardField>
+      <CardField label="Provider">{PROVIDER_LABEL[topup.provider] ?? topup.provider}</CardField>
       <CardField label="Initiated">
-        {new Date(topup.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+        {new Date(topup.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
       </CardField>
     </div>
 
@@ -509,10 +520,10 @@ interface TopUp {
   amount: number;
   status: string;
   reference: string;
-  provider: 'paystack' | 'flutterwave' | 'unknown';
+  provider: 'paystack' | 'flutterwave' | 'orange' | 'unknown';
   description: string;
   createdAt: string;
-  wallet: { userId: string; user: TopUpUser };
+  wallet: { userId: string; currency?: string; user: TopUpUser };
 }
 
 const PayoutManagement: React.FC = () => {
@@ -528,6 +539,7 @@ const PayoutManagement: React.FC = () => {
   const [topupPagination,   setTopupPagination]  = useState<Pagination>({ total: 0, page: 1, pages: 1 });
   const [topupStatus,       setTopupStatus]      = useState<PayoutStatus>('PENDING');
   const [loading,           setLoading]          = useState(false);
+  const [statsCurrency,     setStatsCurrency]    = useState<string>('');
 
   // Confirm modal state
   const [modal, setModal] = useState<{
@@ -542,7 +554,12 @@ const PayoutManagement: React.FC = () => {
   const loadStats = useCallback(async () => {
     try {
       const res = await api.get('/wallet/admin/stats');
-      setStats(res.data.data);
+      const data: WalletStats = res.data.data;
+      setStats(data);
+      setStatsCurrency(prev => {
+        const codes = (data.byCurrency ?? []).map(c => c.currency);
+        return prev && codes.includes(prev) ? prev : (sortCurrencies(codes)[0] ?? '');
+      });
     } catch { /* non-critical */ }
   }, []);
 
@@ -667,16 +684,30 @@ const PayoutManagement: React.FC = () => {
         </button>
       </div>
 
-      {/* Stats cards — 2-up on phones, scales up from there */}
+      {/* Balances/credits/debits are per currency — pick one; counts below are global */}
       {stats && (
+        <CurrencyTabs
+          currencies={sortCurrencies((stats.byCurrency ?? []).map(c => c.currency))}
+          value={statsCurrency}
+          onChange={setStatsCurrency}
+          label="Show balances in"
+        />
+      )}
+
+      {/* Stats cards — 2-up on phones, scales up from there */}
+      {stats && (() => {
+        const cs = (stats.byCurrency ?? []).find(c => c.currency === statsCurrency) ?? (stats.byCurrency ?? [])[0];
+        const cur = cs?.currency;
+        const suffix = (stats.byCurrency ?? []).length > 1 && cur ? ` (${cur})` : '';
+        return (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
           {[
-            { label: 'Total Wallet Balance', value: `₦${stats.totalBalance.toLocaleString('en-NG')}`, icon: DollarSign,      color: 'bg-blue-500'   },
+            { label: `Total Wallet Balance${suffix}`, value: money(cs?.totalBalance ?? 0, cur),                 icon: DollarSign,      color: 'bg-blue-500'   },
             { label: 'Total Wallets',        value: stats.totalWallets.toLocaleString(),               icon: Building2,       color: 'bg-indigo-500' },
             { label: 'Pending Payouts',      value: stats.pendingPayouts.toString(),                   icon: Clock,           color: 'bg-yellow-500' },
             { label: 'Pending Transfers',    value: stats.pendingTransfers.toString(),                 icon: ArrowLeftRight,  color: 'bg-orange-500' },
-            { label: 'Today Credits',        value: `₦${stats.todayCredits.toLocaleString('en-NG')}`, icon: CheckCircle,     color: 'bg-green-500'  },
-            { label: 'Today Debits',         value: `₦${stats.todayDebits.toLocaleString('en-NG')}`,  icon: XCircle,         color: 'bg-red-500'    },
+            { label: `Today Credits${suffix}`, value: money(cs?.todayCredits ?? 0, cur),                 icon: CheckCircle,     color: 'bg-green-500'  },
+            { label: `Today Debits${suffix}`,  value: money(cs?.todayDebits ?? 0, cur),                  icon: XCircle,         color: 'bg-red-500'    },
           ].map(card => (
             <div key={card.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 sm:p-4">
               <div className={`w-8 h-8 sm:w-9 sm:h-9 ${card.color} rounded-xl flex items-center justify-center mb-2 sm:mb-3`}>
@@ -687,7 +718,8 @@ const PayoutManagement: React.FC = () => {
             </div>
           ))}
         </div>
-      )}
+        );
+      })()}
 
       {/* Tab switcher — scrolls horizontally instead of wrapping on narrow screens */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-full overflow-x-auto no-scrollbar sm:w-fit">
@@ -1060,7 +1092,7 @@ const PayoutManagement: React.FC = () => {
       <ConfirmModal
         open={modal.open && modal.type === 'reconcile_topup'}
         title="Verify & Credit Top-Up"
-        body="We'll re-check this payment directly with the provider (Paystack/Flutterwave) before crediting. Only proceed if you can see this exact amount as a successful charge on the provider dashboard."
+        body="We'll re-check this payment directly with the provider (Paystack, Flutterwave or Orange Money) before crediting. Only proceed if you can see this exact amount as a successful charge on the provider dashboard."
         confirmLabel="Verify & Credit"
         confirmClass="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg"
         onCancel={closeModal}

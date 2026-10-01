@@ -5,6 +5,7 @@ import { Building2, Search, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/common';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { formatMoney } from '@/utils/money';
 
 type CompanyStatus = 'PENDING' | 'ACTIVE' | 'SUSPENDED';
 
@@ -26,6 +27,7 @@ interface Company {
   };
   wallet: {
     balance: number;
+    currency?: string;
   } | null;
   _count: {
     employees: number;
@@ -190,7 +192,7 @@ const CompanyList: React.FC = () => {
                         <span className="text-xs font-semibold text-gray-600">{c.billingType}</span>
                       </td>
                       <td className="py-3 pr-4 font-semibold text-gray-900">
-                        ₦{(c.wallet?.balance ?? 0).toLocaleString('en-NG')}
+                        {formatMoney(c.wallet?.balance ?? 0, c.wallet?.currency)}
                       </td>
                       <td className="py-3 pr-4 text-gray-600">{c._count.employees}</td>
                       <td className="py-3 pr-4 text-gray-600">{c._count.trips}</td>

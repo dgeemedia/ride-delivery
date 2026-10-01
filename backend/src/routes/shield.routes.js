@@ -8,6 +8,7 @@
 'use strict';
 
 const express       = require('express');
+const { isPhoneAcceptable } = require('../utils/phone');
 const { body, param } = require('express-validator');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
 const ctrl          = require('../controllers/shield.controller');
@@ -70,7 +71,7 @@ router.post(
   authorize('CUSTOMER'),
   [
     body('name').trim().notEmpty().isLength({ max: 100 }),
-    body('phone').isMobilePhone(),
+    body('phone').custom(isPhoneAcceptable),
     body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail(),
     body('isDefault').optional().isBoolean(),
   ],
@@ -85,7 +86,7 @@ router.put(
   authorize('CUSTOMER'),
   [
     body('name').optional().trim().notEmpty().isLength({ max: 100 }),
-    body('phone').optional().isMobilePhone(),
+    body('phone').optional().custom(isPhoneAcceptable),
     body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail(),
     body('isDefault').optional().isBoolean(),
   ],
@@ -111,7 +112,7 @@ router.post(
     body('deliveryId').optional().isString(),
     body('beneficiaryId').optional().isString(),
     body('beneficiaryName').optional().trim().notEmpty(),
-    body('beneficiaryPhone').optional().isMobilePhone(),
+    body('beneficiaryPhone').optional().custom(isPhoneAcceptable),
     body('beneficiaryEmail').optional({ checkFalsy: true }).isEmail(),
   ],
   ctrl.activateShield

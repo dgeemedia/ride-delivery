@@ -1,18 +1,16 @@
 // admin-web/src/utils/helpers.ts
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { formatMoney } from './money';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('en-NG', {
-    style:                 'currency',
-    currency:              'NGN',
-    maximumFractionDigits: 0,
-  }).format(amount);
-};
+// Pass the record's currency. Omitting it falls back to NGN (the base market),
+// so existing callers keep working until they are given a currency.
+export const formatCurrency = (amount: number, currency?: string | null): string =>
+  formatMoney(amount, currency);
 
 export const formatDate = (date: string | Date): string => {
   return new Date(date).toLocaleDateString('en-NG', {

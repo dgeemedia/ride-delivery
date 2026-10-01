@@ -10,6 +10,7 @@ import {
   Badge, Pagination, Spinner,
 } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
+import { formatMoney } from '@/utils/money';
 import { RIDE_STATUSES } from '@/utils/constants';
 import toast from 'react-hot-toast';
 
@@ -196,7 +197,7 @@ const RideList: React.FC = () => {
                       </Badge>
                     </TableCell>
                     <TableCell className="font-medium text-sm">
-                      ₦{(ride.actualFare ?? ride.estimatedFare).toLocaleString('en-NG')}
+                      {formatMoney(ride.actualFare ?? ride.estimatedFare, ride.currency)}
                     </TableCell>
                     <TableCell className="text-sm text-gray-500 whitespace-nowrap">
                       {formatDateTime(ride.requestedAt)}

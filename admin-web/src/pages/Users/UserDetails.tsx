@@ -10,6 +10,7 @@ import { usersAPI } from '@/services/api/users';
 import { User as UserType } from '@/types';
 import { Card, Button, Badge, Modal, Alert, Spinner } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
+import { formatMoney } from '@/utils/money';
 import { USER_ROLES } from '@/utils/constants';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
@@ -190,7 +191,7 @@ const UserDetails: React.FC = () => {
             <Card>
               <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2"><DollarSign className="h-4 w-4 text-green-500" />Wallet</h3>
               <div className="text-center py-3">
-                <p className="text-3xl font-bold text-gray-900">₦{wallet.balance?.toLocaleString('en-NG') ?? '0'}</p>
+                <p className="text-3xl font-bold text-gray-900">{formatMoney(wallet.balance ?? 0, wallet.currency)}</p>
                 <p className="text-xs text-gray-500 mt-1">{wallet.currency ?? 'NGN'}</p>
               </div>
             </Card>

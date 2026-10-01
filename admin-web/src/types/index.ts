@@ -144,6 +144,7 @@ export interface Ride {
   notes?: string;
   cancellationReason?: string;
   promoCode?: string;
+  currency?: string;
   payment?: Payment;
   rating?: Rating;
 }
@@ -179,6 +180,7 @@ export interface Delivery {
   cancelledAt?: string;
   cancellationReason?: string;
   notes?: string;
+  currency?: string;
   payment?: Payment;
   rating?: Rating;
 }

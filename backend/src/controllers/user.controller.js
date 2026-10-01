@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const notificationService = require('../services/notification.service');
 const otpService = require('../services/otp.service');
 const { logActivity } = require('../utils/auditLog'); // ← ADDED
+const { normalizePhoneForStorage } = require('../utils/phone');
 
 /**
  * @desc    Get user profile
@@ -40,7 +41,11 @@ exports.updateProfile = async (req, res) => {
     return res.status(400).json({ success: false, errors: errors.array() });
   }
 
-  const { firstName, lastName, phone, profileImage } = req.body;
+  const { firstName, lastName, phone: rawPhone, profileImage } = req.body;
+
+  // Store in the same canonical form registration uses (E.164 for the user's own
+  // country; foreign or already-clean numbers pass through unchanged).
+  const phone = rawPhone ? normalizePhoneForStorage(rawPhone, req.user.countryCode ?? 'NG') : rawPhone;
 
   if (phone && phone !== req.user.phone) {
     const existingUser = await prisma.user.findUnique({ where: { phone } });

@@ -11,6 +11,7 @@ const { ensureWallet: ensureWalletShared, getWithdrawableBalance } = require('..
 const { getCountryForUser, getCurrencyForUserId, getPaymentConfigForUser, payoutRails } = require('../services/country.service');
 const orangeService = require('../services/orange.service');
 const { formatMoney, isWholeUnitCurrency } = require('../utils/currency');
+const { phoneCandidates } = require('../utils/phone');
 const countrySettingsService = require('../services/countrySettings.service');
 
 // ─────────────────────────────────────────────
@@ -81,15 +82,12 @@ exports.lookupUser = async (req, res) => {
   // candidate using the requester's own country dial code, since transfers
   // are effectively domestic today (cross-currency transfers are blocked
   // further down this file anyway).
-  const digits = rawPhone.replace(/\D/g, '');
   const country = await getCountryForUser(req.user);
   const dialDigits = country.phoneDialCode.replace('+', '');
 
-  const candidates = [...new Set([
-    `+${digits}`,
-    `+${dialDigits}${digits.replace(/^0+/, '')}`,
-    digits.startsWith('0') ? `+${dialDigits}${digits.slice(1)}` : null,
-  ].filter(Boolean))];
+  // phoneCandidates also covers Côte d'Ivoire / Benin, whose stored numbers keep
+  // the leading 0 (+2250712345678) — the old "strip the 0" rule never matched them.
+  const candidates = phoneCandidates(rawPhone, dialDigits, req.user.countryCode ?? 'NG');
 
   if (candidates.includes(req.user.phone)) throw new AppError('Cannot look up yourself', 400);
 
@@ -1359,7 +1357,7 @@ exports.adminGetTransfers = async (req, res) => {
     prisma.transfer.findMany({
       where,
       include: {
-        sender:    { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+        sender:    { select: { id: true, firstName: true, lastName: true, email: true, phone: true, wallet: { select: { currency: true } } } },
         recipient: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -1369,9 +1367,17 @@ exports.adminGetTransfers = async (req, res) => {
     prisma.transfer.count({ where }),
   ]);
 
+  // Transfer has no currency column; money moves out of the sender's wallet, so
+  // that wallet's currency is the transfer's currency.
+  const transfersWithCurrency = transfers.map(t => ({
+    ...t,
+    currency: t.sender?.wallet?.currency ?? 'NGN',
+    sender:   t.sender ? { ...t.sender, wallet: undefined } : t.sender,
+  }));
+
   res.status(200).json({
     success: true,
-    data: { transfers, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } },
+    data: { transfers: transfersWithCurrency, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } },
   });
 };
 
@@ -1556,7 +1562,6 @@ exports.adminGetWalletStats = async (req, res) => {
   const [
     balancesByCurrency, totalUsers,
     pendingPayouts, pendingTransfers,
-    todayCredits, todayDebits,
   ] = await Promise.all([
     // Grouped by currency instead of a single sum — a raw sum across NGN,
     // GHS, and XOF wallets would be a meaningless number once non-NG
@@ -1566,29 +1571,40 @@ exports.adminGetWalletStats = async (req, res) => {
     prisma.payout.count({ where: { status: 'PENDING' } }),
     // FIX: count from Transfer table instead of WalletTransaction description heuristic
     prisma.transfer.count({ where: { status: 'PENDING' } }),
-    prisma.walletTransaction.aggregate({
-      where: { type: 'CREDIT', status: 'COMPLETED', createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
-      _sum:  { amount: true },
-    }),
-    prisma.walletTransaction.aggregate({
-      where: { type: 'DEBIT', status: 'COMPLETED', createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
-      _sum:  { amount: true },
-    }),
   ]);
+
+  // WalletTransaction has no currency column, so credits/debits are summed per
+  // wallet currency by filtering on the owning wallet.
+  const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
+  const todayByCurrency = await Promise.all(balancesByCurrency.map(async (b) => {
+    const base = { status: 'COMPLETED', createdAt: { gte: todayStart }, wallet: { currency: b.currency } };
+    const [credits, debits] = await Promise.all([
+      prisma.walletTransaction.aggregate({ where: { ...base, type: 'CREDIT' }, _sum: { amount: true } }),
+      prisma.walletTransaction.aggregate({ where: { ...base, type: 'DEBIT'  }, _sum: { amount: true } }),
+    ]);
+    return { currency: b.currency, todayCredits: credits._sum.amount ?? 0, todayDebits: debits._sum.amount ?? 0 };
+  }));
+
+  const byCurrency = balancesByCurrency
+    .map(b => {
+      const t = todayByCurrency.find(x => x.currency === b.currency);
+      return {
+        currency:     b.currency,
+        totalBalance: b._sum.balance ?? 0,
+        walletCount:  b._count,
+        todayCredits: t?.todayCredits ?? 0,
+        todayDebits:  t?.todayDebits  ?? 0,
+      };
+    })
+    .sort((a, b) => a.currency.localeCompare(b.currency));
 
   res.status(200).json({
     success: true,
     data: {
-      balancesByCurrency: balancesByCurrency.map(b => ({
-        currency:    b.currency,
-        total:       b._sum.balance ?? 0,
-        walletCount: b._count,
-      })),
-      totalWallets:     totalUsers,
+      byCurrency,
+      totalWallets: totalUsers,
       pendingPayouts,
       pendingTransfers,
-      todayCredits:     todayCredits._sum.amount  ?? 0,
-      todayDebits:      todayDebits._sum.amount   ?? 0,
     },
   });
 };
@@ -1664,16 +1680,20 @@ exports.emailTransactionHistory = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.adminGetTopUps = async (req, res) => {
-  const { status = 'PENDING', page = 1, limit = 20 } = req.query;
+  const { status = 'PENDING', page = 1, limit = 20, provider } = req.query;
   const skip = (page - 1) * limit;
 
   // Any CREDIT wallet transaction with a provider set is a top-up — no more
   // guessing from the reference string, so we catch every provider/reference
   // format regardless of which flow (initialize/webhook/verify) created it.
+  const TOPUP_PROVIDERS = ['paystack', 'flutterwave', 'orange'];
   const where = {
     type:     'CREDIT',
-    provider: { in: ['paystack', 'flutterwave'] },
+    provider: { in: TOPUP_PROVIDERS },
   };
+  if (provider && TOPUP_PROVIDERS.includes(String(provider).toLowerCase())) {
+    where.provider = String(provider).toLowerCase();
+  }
   if (status !== 'ALL') where.status = status;
 
   const [topups, total] = await Promise.all([
@@ -1683,6 +1703,7 @@ exports.adminGetTopUps = async (req, res) => {
         wallet: {
           select: {
             userId: true,
+            currency: true,
             user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, role: true } },
           },
         },
@@ -1710,6 +1731,30 @@ exports.adminReconcileTopUp = async (req, res) => {
   if (!tx) throw new AppError('Top-up record not found', 404);
   if (tx.status === 'COMPLETED') {
     return res.status(200).json({ success: true, message: 'Already credited', data: { transaction: tx } });
+  }
+
+  // Orange Money: reuse the same idempotent credit path as the webhook / user
+  // verify. It re-asks Orange for the status, so the admin can't force a credit.
+  if (tx.provider === 'orange') {
+    const result = await creditOrangeTopUp(tx.reference);
+    if (!result.ok) {
+      throw new AppError(result.pending
+        ? 'Orange Money still shows this payment as pending — try again shortly.'
+        : (result.reason || 'Orange Money did not confirm this payment'), result.pending ? 409 : 400);
+    }
+    await logActivity({
+      userId:     req.user.id,
+      action:     'admin_topup_reconciled',
+      entityType: 'WalletTransaction',
+      entityId:   tx.id,
+      details:    { targetUserId: tx.wallet.userId, amount: tx.amount, provider: 'orange', reference: tx.reference },
+      req,
+    });
+    return res.status(200).json({
+      success: true,
+      message: `${formatMoney(tx.amount, result.wallet?.currency)} verified with orange and credited.`,
+      data:    { wallet: result.wallet },
+    });
   }
 
   // Always re-verify with the provider before crediting — never trust the

@@ -9,6 +9,7 @@ import { deliveriesAPI }  from '@/services/api/deliveries';
 import { Delivery }       from '@/types';
 import { Card, Button, Badge, Spinner } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
+import { formatMoney } from '@/utils/money';
 import { useSocket }      from '@/hooks/useSocket';
 import toast              from 'react-hot-toast';
 
@@ -70,7 +71,7 @@ const DeliveryCard: React.FC<{ delivery: Delivery; onClick: () => void }> = ({ d
       )}
 
       <div className="text-xs font-medium text-gray-700">
-        ₦{Number((delivery as any).estimatedFee ?? (delivery as any).actualFee ?? 0).toLocaleString('en-NG')}
+        {formatMoney(Number((delivery as any).estimatedFee ?? (delivery as any).actualFee ?? 0), (delivery as any).currency)}
       </div>
     </div>
   );

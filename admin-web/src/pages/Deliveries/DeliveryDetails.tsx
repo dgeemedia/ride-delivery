@@ -14,6 +14,7 @@ import { deliveriesAPI } from '@/services/api/deliveries';
 import { Delivery }       from '@/types';
 import { Card, Button, Badge, Modal, Alert, Spinner } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
+import { formatMoney } from '@/utils/money';
 import { useSocket }      from '@/hooks/useSocket';
 import toast              from 'react-hot-toast';
 
@@ -256,7 +257,7 @@ const DeliveryDetails: React.FC = () => {
       `PACKAGE`,
       `  Description: ${delivery.packageDescription}`,
       `  Weight:      ${delivery.packageWeight ?? '—'} kg`,
-      `  Value:       ₦${delivery.packageValue?.toLocaleString('en-NG') ?? '—'}`,
+      `  Value:       ${delivery.packageValue != null ? formatMoney(delivery.packageValue, delivery.currency) : '—'}`,
       `  Notes:       ${delivery.notes ?? '—'}`,
       ``,
       `ROUTE`,
@@ -267,12 +268,12 @@ const DeliveryDetails: React.FC = () => {
       `  Distance: ${delivery.distance?.toFixed(2) ?? '—'} km`,
       ``,
       `FINANCIALS`,
-      `  Estimated Fee:  ₦${delivery.estimatedFee.toLocaleString('en-NG')}`,
-      `  Actual Fee:     ₦${delivery.actualFee?.toLocaleString('en-NG') ?? 'Pending'}`,
+      `  Estimated Fee:  ${formatMoney(delivery.estimatedFee, delivery.currency)}`,
+      `  Actual Fee:     ${delivery.actualFee != null ? formatMoney(delivery.actualFee, delivery.currency) : 'Pending'}`,
       `  Payment Method: ${delivery.payment?.method ?? '—'}`,
       `  Payment Status: ${delivery.payment?.status ?? '—'}`,
-      `  Platform Fee:   ₦${delivery.payment?.platformFee?.toLocaleString('en-NG') ?? '—'}`,
-      `  Partner Earned: ₦${delivery.payment?.driverEarnings?.toLocaleString('en-NG') ?? '—'}`,
+      `  Platform Fee:   ${delivery.payment?.platformFee != null ? formatMoney(delivery.payment.platformFee, delivery.currency) : '—'}`,
+      `  Partner Earned: ${delivery.payment?.driverEarnings != null ? formatMoney(delivery.payment.driverEarnings, delivery.currency) : '—'}`,
       `  Transaction ID: ${delivery.payment?.transactionId ?? '—'}`,
       ``,
       `TIMELINE`,
@@ -422,7 +423,7 @@ const DeliveryDetails: React.FC = () => {
             </h3>
             <InfoRow icon={<Package className="h-4 w-4" />}    label="Description"    value={delivery.packageDescription} />
             <InfoRow icon={<Package className="h-4 w-4" />}    label="Weight"         value={delivery.packageWeight ? `${delivery.packageWeight} kg` : '—'} />
-            <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Declared value" value={delivery.packageValue ? `₦${delivery.packageValue.toLocaleString('en-NG')}` : '—'} />
+            <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Declared value" value={delivery.packageValue ? formatMoney(delivery.packageValue, delivery.currency) : '—'} />
             {delivery.notes && <InfoRow icon={<FileText className="h-4 w-4" />} label="Notes" value={delivery.notes} />}
             {delivery.recipientName && <InfoRow icon={<User className="h-4 w-4" />} label="Received by" value={delivery.recipientName} />}
             {delivery.deliveryImageUrl && (
@@ -445,11 +446,11 @@ const DeliveryDetails: React.FC = () => {
               <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-green-500" />Payment
               </h3>
-              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Amount"          value={`₦${delivery.payment.amount.toLocaleString('en-NG')}`} />
+              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Amount"          value={formatMoney(delivery.payment.amount, delivery.payment.currency ?? delivery.currency)} />
               <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Method"          value={delivery.payment.method} />
               <InfoRow icon={<CheckCircle className="h-4 w-4" />} label="Status"          value={<Badge variant={delivery.payment.status === 'COMPLETED' ? 'success' : 'warning'}>{delivery.payment.status}</Badge>} />
-              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Platform fee"    value={`₦${(delivery.payment as any).platformFee?.toLocaleString('en-NG') ?? '—'}`} />
-              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Partner earned"  value={`₦${(delivery.payment as any).driverEarnings?.toLocaleString('en-NG') ?? '—'}`} />
+              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Platform fee"    value={(delivery.payment as any).platformFee != null ? formatMoney((delivery.payment as any).platformFee, delivery.payment.currency ?? delivery.currency) : '—'} />
+              <InfoRow icon={<DollarSign className="h-4 w-4" />}  label="Partner earned"  value={(delivery.payment as any).driverEarnings != null ? formatMoney((delivery.payment as any).driverEarnings, delivery.payment.currency ?? delivery.currency) : '—'} />
               <InfoRow icon={<FileText className="h-4 w-4" />}    label="Transaction ID"  value={<span className="font-mono text-xs">{delivery.payment.transactionId ?? '—'}</span>} />
             </Card>
           )}
@@ -459,8 +460,8 @@ const DeliveryDetails: React.FC = () => {
           {/* Summary */}
           <Card>
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Summary</h3>
-            <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Estimated fee" value={`₦${delivery.estimatedFee.toLocaleString('en-NG')}`} />
-            <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Final fee"     value={delivery.actualFee ? `₦${delivery.actualFee.toLocaleString('en-NG')}` : 'Pending'} />
+            <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Estimated fee" value={formatMoney(delivery.estimatedFee, delivery.currency)} />
+            <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Final fee"     value={delivery.actualFee ? formatMoney(delivery.actualFee, delivery.currency) : 'Pending'} />
             <InfoRow icon={<MapPin className="h-4 w-4" />}     label="Distance"      value={delivery.distance ? `${delivery.distance.toFixed(2)} km` : '—'} />
             {delivery.rating && (
               <InfoRow

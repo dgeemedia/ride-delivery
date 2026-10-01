@@ -22,3 +22,4 @@ export { default as Alert } from './Alert';
 export { default as Select } from './Select';
 export type { SelectOption } from './Select';
 export { default as Spinner } from './Spinner';
+export { default as CurrencyTabs } from './CurrencyTabs';

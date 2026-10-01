@@ -9,6 +9,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { DIAL_CODES } = require('../utils/msisdn');
 const prisma  = require('../lib/prisma');
 const { logger } = require('../utils/logger');
 
@@ -47,9 +48,12 @@ const buildViewUrl = (token) => `${APP_BASE_URL}/shield/${token}`;
  * Build a WhatsApp wa.me deep-link for sharing.
  * Works on Android and iOS without the app needing to be installed.
  */
-const buildWhatsAppLink = (phone, message) => {
+// `dialCode` is the OWNER's country code (digits, no +). A local number typed with a
+// leading 0 gets that prefix — it used to be hard-wired to Nigeria's 234, which sent
+// a Malian guardian's link to a Nigerian number.
+const buildWhatsAppLink = (phone, message, dialCode = '234') => {
   const normalised = phone.replace(/\D/g, '');
-  const e164 = normalised.startsWith('0') ? `234${normalised.slice(1)}` : normalised;
+  const e164 = normalised.startsWith('0') ? `${dialCode}${normalised.slice(1)}` : normalised;
   return `https://wa.me/${e164}?text=${encodeURIComponent(message)}`;
 };
 
@@ -116,7 +120,8 @@ const createSession = async ({
     `Track this ${typeLabel} live here:\n${viewUrl}\n` +
     `Link expires when the ${typeLabel} ends.`;
 
-  const whatsappLink = buildWhatsAppLink(beneficiaryPhone, smsMessage);
+  const owner = await prisma.user.findUnique({ where: { id: userId }, select: { countryCode: true } });
+  const whatsappLink = buildWhatsAppLink(beneficiaryPhone, smsMessage, DIAL_CODES[owner?.countryCode ?? 'NG'] ?? '234');
 
   logger.info(`[SHIELD] Session created: ${token} for user=${userId} ride=${rideId ?? '-'} delivery=${deliveryId ?? '-'}`);
 

@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
 import api from '@/services/api';
 import { cn } from '@/utils/helpers';
+import { formatMoney, moneySymbol, isWholeUnitCurrency } from '@/utils/money';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES & CONSTANTS
@@ -69,6 +70,7 @@ interface Recipient {
   email:        string;
   role:         RecipientRole;
   isOnline:     boolean;
+  currency:     string;   // the recipient's wallet currency
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1218,7 +1220,7 @@ const CashbackSection: React.FC = () => {
 
 interface WalletUser {
   id: string; firstName: string; lastName: string; email: string; phone: string; role: string;
-  wallet?: { balance: number } | null;
+  wallet?: { balance: number; currency?: string } | null;
 }
 
 const ManualWalletCreditSection: React.FC = () => {
@@ -1247,10 +1249,14 @@ const ManualWalletCreditSection: React.FC = () => {
     setSelected(null); setAmount(''); setReason(''); setType('credit');
   };
 
+  // The adjustment is made in the wallet's own currency.
+  const selectedCurrency = selected?.wallet?.currency ?? 'NGN';
+
   const handleCredit = async () => {
     if (!selected) return;
     const amt = parseFloat(amount);
     if (isNaN(amt) || amt <= 0) { toast.error('Enter a valid amount'); return; }
+    if (isWholeUnitCurrency(selectedCurrency) && !Number.isInteger(amt)) { toast.error(`${selectedCurrency} has no decimals — enter a whole amount`); return; }
     if (!reason.trim()) { toast.error('A reason is required — this feeds the audit log'); return; }
 
     setSending(true);
@@ -1259,10 +1265,10 @@ const ManualWalletCreditSection: React.FC = () => {
         amount: amt, type, reason: reason.trim(),
       });
       toast.success(
-        `₦${amt.toLocaleString('en-NG')} ${type === 'credit' ? 'credited to' : 'debited from'} ${selected.firstName}'s wallet`
+        `${formatMoney(amt, selectedCurrency)} ${type === 'credit' ? 'credited to' : 'debited from'} ${selected.firstName}'s wallet`
       );
       const newBalance = res.data?.data?.wallet?.balance;
-      setSelected(s => s ? { ...s, wallet: { balance: newBalance ?? (s.wallet?.balance ?? 0) } } : s);
+      setSelected(s => s ? { ...s, wallet: { balance: newBalance ?? (s.wallet?.balance ?? 0), currency: s.wallet?.currency } } : s);
       setAmount(''); setReason('');
     } catch (err: any) {
       if (!err?._handled) toast.error(err?.response?.data?.message || 'Failed to adjust wallet');
@@ -1272,7 +1278,7 @@ const ManualWalletCreditSection: React.FC = () => {
   return (
     <div className="space-y-4">
       <Alert variant="warning">
-        Use this only after confirming the payment on the Paystack/Flutterwave dashboard — this does not
+        Use this only after confirming the payment on the Paystack, Flutterwave or Orange Money dashboard — this does not
         re-verify with the provider. For payments still tracked in-app, prefer <strong>Wallet Management → Wallet Top-Ups</strong>,
         which verifies with the provider automatically before crediting.
       </Alert>
@@ -1303,7 +1309,7 @@ const ManualWalletCreditSection: React.FC = () => {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{u.role}</span>
-                <span className="text-xs text-gray-500">₦{(u.wallet?.balance ?? 0).toLocaleString('en-NG')}</span>
+                <span className="text-xs text-gray-500">{formatMoney(u.wallet?.balance ?? 0, u.wallet?.currency)}</span>
               </div>
             </button>
           ))}
@@ -1316,7 +1322,7 @@ const ManualWalletCreditSection: React.FC = () => {
             <div>
               <p className="text-sm font-semibold text-gray-900">{selected.firstName} {selected.lastName}</p>
               <p className="text-xs text-gray-400">{selected.email} · {selected.role}</p>
-              <p className="text-xs text-gray-500 mt-1">Current balance: <strong>₦{(selected.wallet?.balance ?? 0).toLocaleString('en-NG')}</strong></p>
+              <p className="text-xs text-gray-500 mt-1">Current balance: <strong>{formatMoney(selected.wallet?.balance ?? 0, selectedCurrency, { decimals: 2 })}</strong></p>
             </div>
             <button onClick={reset} className="text-xs text-gray-400 hover:text-gray-600">Change user</button>
           </div>
@@ -1333,11 +1339,11 @@ const ManualWalletCreditSection: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Amount (₦)</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Amount ({selectedCurrency})</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₦</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">{moneySymbol(selectedCurrency)}</span>
                 <input type="number" min={1} value={amount} onChange={e => setAmount(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                  className="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
               </div>
             </div>
             <div>
@@ -1350,7 +1356,7 @@ const ManualWalletCreditSection: React.FC = () => {
 
           <Button loading={sending} onClick={handleCredit}>
             <Save className="h-4 w-4" />
-            {type === 'credit' ? 'Credit' : 'Debit'} ₦{(+amount || 0).toLocaleString('en-NG')}
+            {type === 'credit' ? 'Credit' : 'Debit'} {formatMoney(+amount || 0, selectedCurrency)}
           </Button>
         </div>
       )}
@@ -1732,6 +1738,7 @@ const CustomBonusSection: React.FC = () => {
           email:        d.user.email,
           role:         'DRIVER' as const,
           isOnline:     d.isOnline,
+          currency:     d.user.wallet?.currency ?? 'NGN',
         })),
         ...(partnersRes?.data?.data?.partners ?? []).map((p: any) => ({
           walletUserId: p.user.id,
@@ -1739,6 +1746,7 @@ const CustomBonusSection: React.FC = () => {
           email:        p.user.email,
           role:         'DELIVERY_PARTNER' as const,
           isOnline:     p.isOnline,
+          currency:     p.user.wallet?.currency ?? 'NGN',
         })),
       ];
       setRecipients(mapped);
@@ -1769,9 +1777,18 @@ const CustomBonusSection: React.FC = () => {
   const toggleAll = () =>
     setSelected(selected.size === filtered.length ? new Set() : new Set(filtered.map(r => r.walletUserId)));
 
+  // One flat amount can only be paid in ONE currency (the backend enforces this too).
+  const selectedCurrencies = Array.from(new Set(
+    recipients.filter(r => selected.has(r.walletUserId)).map(r => r.currency)
+  ));
+  const mixedCurrencies = selectedCurrencies.length > 1;
+  const bonusCurrency   = selectedCurrencies[0] ?? 'NGN';
+
   const handleDisburse = async () => {
     if (selected.size === 0)     { toast.error('Select at least one recipient'); return; }
-    if (!+amount || +amount < 1) { toast.error('Enter a valid amount (min ₦1)'); return; }
+    if (mixedCurrencies)         { toast.error(`Selected recipients use different currencies (${selectedCurrencies.join(', ')}). Send one bonus per currency.`); return; }
+    if (!+amount || +amount < 1) { toast.error(`Enter a valid amount (min ${formatMoney(1, bonusCurrency)})`); return; }
+    if (isWholeUnitCurrency(bonusCurrency) && !Number.isInteger(+amount)) { toast.error(`${bonusCurrency} has no decimals — enter a whole amount`); return; }
     setSending(true);
     try {
       const res = await api.post('/admin/bonuses/disburse', {
@@ -1780,7 +1797,7 @@ const CustomBonusSection: React.FC = () => {
         description:     description.trim() || undefined,
         nonWithdrawable: nonWithdraw,
       });
-      toast.success(`₦${(+amount).toLocaleString('en-NG')} credited to ${res.data.data.credited} recipient(s)`);
+      toast.success(`${formatMoney(+amount, res.data.data.currency ?? bonusCurrency)} credited to ${res.data.data.credited} recipient(s)`);
       setSelected(new Set());
       setAmount('');
       setDescription('');
@@ -1871,16 +1888,21 @@ const CustomBonusSection: React.FC = () => {
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Amount per recipient (₦)</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Amount per recipient ({bonusCurrency})</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">₦</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">{moneySymbol(bonusCurrency)}</span>
                     <input type="number" min={1} value={amount} onChange={e => setAmount(e.target.value)}
                       placeholder="e.g. 3000"
-                      className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                      className="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                   </div>
-                  {amount && +amount > 0 && (
+                  {amount && +amount > 0 && !mixedCurrencies && (
                     <p className="text-xs text-green-600 mt-1 font-medium">
-                      Total payout: ₦{(+amount * selected.size).toLocaleString('en-NG')}
+                      Total payout: {formatMoney(+amount * selected.size, bonusCurrency)}
+                    </p>
+                  )}
+                  {mixedCurrencies && (
+                    <p className="text-xs text-red-600 mt-1 font-medium">
+                      Your selection mixes {selectedCurrencies.join(' and ')} wallets. A flat amount can only be paid in one currency — narrow the selection and send one bonus per currency.
                     </p>
                   )}
                 </div>
@@ -1905,7 +1927,7 @@ const CustomBonusSection: React.FC = () => {
                   className="text-sm text-gray-500 hover:text-gray-700 font-medium">
                   Clear selection
                 </button>
-                <Button loading={sending} onClick={handleDisburse}>
+                <Button loading={sending} onClick={handleDisburse} disabled={mixedCurrencies}>
                   <Gift className="h-4 w-4" />Disburse to {selected.size} recipient{selected.size !== 1 ? 's' : ''}
                 </Button>
               </div>

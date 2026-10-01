@@ -1,5 +1,6 @@
 // backend/src/routes/wallet.routes.js  [UPDATED]
 const express = require('express');
+const { isPhoneAcceptable } = require('../utils/phone');
 const { body, query, param } = require('express-validator');
 const walletController = require('../controllers/wallet.controller');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
@@ -142,7 +143,7 @@ router.get(
 router.post(
   '/transfer',
   [
-    body('recipientPhone').isMobilePhone().withMessage('Valid phone number required'),
+    body('recipientPhone').custom(isPhoneAcceptable).withMessage('Valid phone number required'),
     body('amount').isFloat({ min: 50 }).withMessage('Minimum transfer amount is ₦50'),
     body('note').optional().isString().isLength({ max: 200 }),
   ],

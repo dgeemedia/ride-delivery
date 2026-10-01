@@ -10,6 +10,7 @@ import { getDriverDocDefs } from './DriverApproval';
 import { Driver } from '@/types';
 import { Card, Button, Badge, Spinner, Alert } from '@/components/common';
 import { formatDate, formatDateTime } from '@/utils/helpers';
+import { formatMoney } from '@/utils/money';
 import toast from 'react-hot-toast';
 
 const InfoRow: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode }> = ({ icon, label, value }) => (
@@ -200,9 +201,9 @@ const DriverDetails: React.FC = () => {
                     </div>
                     {ride.payment && (
                       <div className="mt-1 text-xs font-medium text-gray-700">
-                        ₦{ride.actualFare?.toLocaleString('en-NG') ?? ride.estimatedFare?.toLocaleString('en-NG')}
+                        {formatMoney(ride.actualFare ?? ride.estimatedFare, ride.payment.currency ?? ride.currency)}
                         {ride.payment.driverEarnings && (
-                          <span className="text-green-600 ml-2">(earned: ₦{ride.payment.driverEarnings.toLocaleString('en-NG')})</span>
+                          <span className="text-green-600 ml-2">(earned: {formatMoney(ride.payment.driverEarnings, ride.payment.currency ?? ride.currency)})</span>
                         )}
                       </div>
                     )}
@@ -259,7 +260,7 @@ const DriverDetails: React.FC = () => {
               <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2"><DollarSign className="h-4 w-4 text-green-500" />Wallet</h3>
               <div className="text-center py-3">
                 <p className="text-3xl font-bold text-gray-900">
-                  ₦{wallet.balance?.toLocaleString('en-NG') ?? '0'}
+                  {formatMoney(wallet.balance ?? 0, wallet.currency)}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">{wallet.currency ?? 'NGN'}</p>
               </div>

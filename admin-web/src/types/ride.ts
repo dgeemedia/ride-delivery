@@ -26,6 +26,7 @@ export interface Ride {
   cancelledAt?: string;
   notes?: string;
   cancellationReason?: string;
+  currency?: string;
   payment?: Payment;
   rating?: Rating;
 }

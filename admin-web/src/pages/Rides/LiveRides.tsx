@@ -10,6 +10,7 @@ import { ridesAPI }       from '@/services/api/rides';
 import { Ride }           from '@/types';
 import { Card, Button, Badge, Spinner } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
+import { formatMoney } from '@/utils/money';
 import { useSocket }      from '@/hooks/useSocket';
 import toast              from 'react-hot-toast';
 
@@ -49,7 +50,7 @@ const RideCard: React.FC<{ ride: Ride; onClick: () => void }> = ({ ride, onClick
         </div>
       )}
       <div className="text-xs font-medium text-gray-700">
-        ₦{ride.estimatedFare.toLocaleString('en-NG')}
+        {formatMoney(ride.estimatedFare, ride.currency)}
       </div>
     </div>
   );

@@ -152,3 +152,24 @@ Per country, from its `creditMethods` (Admin → Countries). The server only off
 what the country has and refuses other providers (Paystack is rejected outside NG/GH/CI).
 Orange Money is hidden until the Orange keys are configured. Flutterwave coverage should be
 confirmed with Flutterwave for each country listed with it.
+
+## HOTFIX — registration outside Nigeria
+Registering in Mali (or any non-Nigerian country) failed with "Please enter a valid
+Nigerian phone number": the register route accepted only `+234…` / `0[7-9]…`. The
+generic phone check used elsewhere also rejected real numbers from Mali, Senegal,
+Côte d'Ivoire, Guinea and Guinea-Bissau. Fixed in the backend only — **no app rebuild**.
+
+* `utils/phone.js` (new): Nigeria unchanged; other countries need `+<dial code>` + 6–12
+  digits and the dial code must match the selected country. Non-NG numbers are stored as
+  clean E.164 (`+22376427484`).
+* Registration now refuses unknown or **paused** countries even if the API is called directly.
+* The same country-aware check replaces `isMobilePhone()` on login, profile, transfers,
+  Shield, corporate and admin routes.
+* Shield WhatsApp links no longer assume Nigeria's `234` for numbers typed with a leading 0.
+
+Deploy the full zip (the hotfix touches files that depend on earlier updates). Files changed: `src/utils/phone.js`, `src/routes/{auth,admin,user,corporate,shield,wallet}.routes.js`,
+`src/controllers/auth.controller.js`, `src/controllers/shield.controller.js`,
+`src/services/shield.service.js`. No migration.
+
+Not changed: SMS one-time codes go through Termii (`ENABLE_SMS_DELIVERY`); confirm Termii
+delivers in your new countries before turning SMS verification on there.

@@ -11,6 +11,7 @@ import { getPartnerDocDefs } from './PartnerApproval';
 import { DeliveryPartner } from '@/types';
 import { Card, Button, Badge, Spinner, Alert } from '@/components/common';
 import { formatDate, formatDateTime } from '@/utils/helpers';
+import { formatMoney } from '@/utils/money';
 import toast from 'react-hot-toast';
 
 const InfoRow: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode }> = ({ icon, label, value }) => (
@@ -229,10 +230,12 @@ const PartnerDetails: React.FC = () => {
                       </div>
                     )}
                     <div className="mt-1 text-xs font-medium text-gray-700">
-                      ₦{(delivery.actualFee ?? delivery.estimatedFee)?.toLocaleString('en-NG') ?? '—'}
+                      {(delivery.actualFee ?? delivery.estimatedFee) != null
+                        ? formatMoney(delivery.actualFee ?? delivery.estimatedFee, delivery.payment?.currency ?? delivery.currency)
+                        : '—'}
                       {delivery.payment?.driverEarnings != null && (
                         <span className="text-green-600 ml-2">
-                          (earned: ₦{delivery.payment.driverEarnings.toLocaleString('en-NG')})
+                          (earned: {formatMoney(delivery.payment.driverEarnings, delivery.payment.currency ?? delivery.currency)})
                         </span>
                       )}
                     </div>
@@ -296,7 +299,7 @@ const PartnerDetails: React.FC = () => {
               </h3>
               <div className="text-center py-3">
                 <p className="text-3xl font-bold text-gray-900">
-                  ₦{wallet.balance?.toLocaleString('en-NG') ?? '0'}
+                  {formatMoney(wallet.balance ?? 0, wallet.currency)}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">{wallet.currency ?? 'NGN'}</p>
               </div>

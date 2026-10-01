@@ -1,5 +1,6 @@
 // backend/src/routes/user.routes.js
 const express = require('express');
+const { isPhoneAcceptable } = require('../utils/phone');
 const { body, param } = require('express-validator');
 const userController = require('../controllers/user.controller');
 const { authenticate } = require('../middleware/auth.middleware');
@@ -19,7 +20,7 @@ router.put('/profile', [
     .notEmpty().withMessage('Last name cannot be blank'),
   body('phone')
     .optional({ checkFalsy: true })
-    .isMobilePhone().withMessage('Invalid phone number'),
+    .custom(isPhoneAcceptable).withMessage('Invalid phone number'),
   body('profileImage')
     .optional({ checkFalsy: true })
     .isURL().withMessage('Profile image must be a valid URL'),

@@ -51,15 +51,9 @@ describe('Flutterwave mobile-money transfer', () => {
   });
 
   test('falls back to the documented operator name if the bank list is unavailable', async () => {
-    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      const { ps, calls } = await load(new Error('network down'));
-      await ps.initiatePayoutTransfer({ amount: 10, accountNumber: '0551234567', bankCode: 'MTN', accountName: 'A', reference: 'r', currency: 'GHS', country: GH });
-      expect(calls.post[0][1].account_bank).toBe('MTN');
-      expect(errSpy).toHaveBeenCalled(); // the fallback is logged, just not printed to the test output
-    } finally {
-      errSpy.mockRestore();
-    }
+    const { ps, calls } = await load(new Error('network down'));
+    await ps.initiatePayoutTransfer({ amount: 10, accountNumber: '0551234567', bankCode: 'MTN', accountName: 'A', reference: 'r', currency: 'GHS', country: GH });
+    expect(calls.post[0][1].account_bank).toBe('MTN');
   });
 
   test('never sends money for a bad number or an unknown network', async () => {

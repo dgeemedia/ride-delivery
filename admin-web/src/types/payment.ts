@@ -14,6 +14,8 @@ export interface Payment {
   amount: number;
   currency: string;
   method: PaymentMethod;
+  /** Gateway that took the money: 'paystack' | 'flutterwave' | 'orange' (null for cash/wallet). */
+  provider?: PaymentProvider | null;
   status: PaymentStatus;
   transactionId?: string;
   receiptUrl?: string;
@@ -25,7 +27,10 @@ export enum PaymentMethod {
   CASH = 'CASH',
   CARD = 'CARD',
   WALLET = 'WALLET',
+  MOBILE_MONEY = 'MOBILE_MONEY',
 }
+
+export type PaymentProvider = 'paystack' | 'flutterwave' | 'orange';
 
 export enum PaymentStatus {
   PENDING = 'PENDING',
@@ -38,4 +43,6 @@ export interface RefundRequest {
   paymentId: string;
   amount: number;
   reason: string;
+  /** Orange Money has no automated refund: confirm the money was already sent manually. */
+  manuallySettled?: boolean;
 }

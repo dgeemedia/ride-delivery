@@ -3,6 +3,7 @@
 'use strict';
 
 const express       = require('express');
+const { isPhoneAcceptable } = require('../utils/phone');
 const { body, param, query } = require('express-validator');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
 const ctrl          = require('../controllers/corporate.controller');
@@ -14,7 +15,7 @@ router.use(authenticate);
 router.post('/register', authorize('CUSTOMER'), [
   body('name').trim().notEmpty().isLength({ max: 200 }),
   body('email').isEmail().normalizeEmail(),
-  body('phone').isMobilePhone(),
+  body('phone').custom(isPhoneAcceptable),
   body('rcNumber').optional().isString().isLength({ min: 6, max: 20 }),
   body('address').optional().isString(),
   body('billingType').optional().isIn(['PREPAID', 'POSTPAID']),
@@ -24,7 +25,7 @@ router.get('/profile', ctrl.getCompanyProfile);
 router.put('/profile', [
   body('name').optional().trim().notEmpty(),
   body('email').optional().isEmail().normalizeEmail(),
-  body('phone').optional().isMobilePhone(),
+  body('phone').optional().custom(isPhoneAcceptable),
   body('address').optional().isString(),
   body('logoUrl').optional().isURL(),
 ], ctrl.updateCompanyProfile);
@@ -47,7 +48,7 @@ router.get('/employees', [
 ], ctrl.listEmployees);
 
 router.post('/employees/invite', [
-  body('phone').isMobilePhone(),
+  body('phone').custom(isPhoneAcceptable),
   body('monthlyLimit').optional().isFloat({ min: 1000, max: 500000 }),
   body('department').optional().isString(),
   body('jobTitle').optional().isString(),

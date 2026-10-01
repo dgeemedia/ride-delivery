@@ -2,6 +2,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const authController = require('../controllers/auth.controller');
+const { isPhoneAcceptable, registrationPhoneCheck } = require('../utils/phone');
 const { authenticate } = require('../middleware/auth.middleware');
 
 const rateLimit = require('express-rate-limit');
@@ -31,10 +32,10 @@ router.post(
   authLimiter,
   [
     body('email').isEmail().normalizeEmail(),
-    // ✅ Accept Nigerian numbers: starts with 0, 7-10 digits, or international +234
-    body('phone')
-      .matches(/^(\+234|0)[7-9]\d{9}$/)
-      .withMessage('Please enter a valid Nigerian phone number'),
+    // Country-aware (see utils/phone.js): Nigeria keeps its old format, every other
+    // market needs +<its dial code> and must match the selected country.
+    body('countryCode').optional().isString().isLength({ min: 2, max: 2 }),
+    body('phone').custom(registrationPhoneCheck),
     body('password').isLength({ min: 8 }),
     body('firstName').trim().notEmpty(),
     body('lastName').trim().notEmpty(),
@@ -48,7 +49,7 @@ router.post(
   authLimiter,
   [
     body('email').optional().isEmail().normalizeEmail(),
-    body('phone').optional().isMobilePhone(),
+    body('phone').optional().custom(isPhoneAcceptable).withMessage('Invalid phone number'),
     body('password').notEmpty(),
   ],
   authController.login

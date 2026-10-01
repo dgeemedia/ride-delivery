@@ -8,6 +8,7 @@ import {
 import { Card } from '@/components/common';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { formatMoney } from '@/utils/money';
 
 const CompanyDetails: React.FC = () => {
   const { id }   = useParams<{ id: string }>();
@@ -180,10 +181,10 @@ const CompanyDetails: React.FC = () => {
                 Corporate Wallet
               </h3>
               <p className="text-3xl font-black text-blue-600">
-                ₦{(company.wallet?.balance ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                {formatMoney(company.wallet?.balance ?? 0, company.wallet?.currency, { decimals: 2 })}
               </p>
               <p className="text-xs text-gray-400 mt-1">
-                Low-balance alert below ₦{(company.wallet?.lowBalanceThreshold ?? 50000).toLocaleString('en-NG')}
+                Low-balance alert below {formatMoney(company.wallet?.lowBalanceThreshold ?? 50000, company.wallet?.currency)}
               </p>
             </Card>
 
@@ -244,12 +245,12 @@ const CompanyDetails: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3 pr-4 text-gray-900 font-semibold">
-                        ₦{emp.monthlyLimit.toLocaleString('en-NG')}
+                        {formatMoney(emp.monthlyLimit, company.wallet?.currency)}
                       </td>
                       <td className="py-3">
                         <div>
                           <span className="font-semibold text-gray-900">
-                            ₦{emp.currentMonthSpend.toLocaleString('en-NG')}
+                            {formatMoney(emp.currentMonthSpend, company.wallet?.currency)}
                           </span>
                           <div className="w-24 h-1.5 bg-gray-100 rounded-full mt-1 overflow-hidden">
                             <div
@@ -299,7 +300,7 @@ const CompanyDetails: React.FC = () => {
                         <p className="truncate text-xs text-gray-400">{trip.ride?.dropoffAddress ?? trip.delivery?.dropoffAddress ?? ''}</p>
                       </td>
                       <td className="py-3 pr-4 text-gray-500 text-xs">{trip.purpose ?? '—'}</td>
-                      <td className="py-3 pr-4 font-semibold text-gray-900">₦{trip.fare.toLocaleString('en-NG')}</td>
+                      <td className="py-3 pr-4 font-semibold text-gray-900">{formatMoney(trip.fare, company.wallet?.currency)}</td>
                       <td className="py-3 text-gray-400 text-xs">
                         {new Date(trip.createdAt).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: '2-digit' })}
                       </td>

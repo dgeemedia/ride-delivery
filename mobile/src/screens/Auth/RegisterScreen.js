@@ -17,6 +17,7 @@ import { RegisterHeroIllustration } from '../../components/ServiceIcons';
 import { countryAPI } from '../../services/api';
 import * as Localization from 'expo-localization';
 import { applyCountryLanguage } from '../../i18n';
+import { formatPhone, isPlausiblePhoneLength } from '../../utils/phoneFormat';
 
 const { width, height } = Dimensions.get('window');
 const LOGO = require('../../../assets/diakite_dark.png');
@@ -29,26 +30,6 @@ const MEDIUM = height < 820;
 const G = {
   card:   (mode) => mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.80)',
   border: (mode) => mode === 'dark' ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
-};
-
-// ── Phone formatter ───────────────────────────────────────────────────────────
-// Country-aware: strips a leading trunk 0 (common across West African
-// numbering plans) and prepends whichever dial prefix the user selected,
-// rather than assuming +234 like before.
-const formatPhone = (raw, dialPrefix = '+234') => {
-  const digits = raw.replace(/\D/g, '');
-  const bareDial = dialPrefix.replace('+', '');
-  if (digits.startsWith(bareDial)) return `+${digits}`;
-  return `${dialPrefix}${digits.replace(/^0+/, '')}`;
-};
-
-// Soft validation only — returns false when the digit count clearly looks
-// wrong for the selected country. Never used to block submission by itself.
-const isPlausiblePhoneLength = (raw, countryCode) => {
-  const expected = COUNTRY_PHONE_DIGITS[countryCode];
-  if (!expected) return true; // unknown country code — don't gate on it
-  const digits = raw.replace(/\D/g, '').replace(/^0+/, '');
-  return digits.length === expected;
 };
 
 const ROLES = [
@@ -79,14 +60,7 @@ const COUNTRY_FLAGS = {
 // time) so the screen never hard-blocks signup entirely.
 const FALLBACK_COUNTRIES = [{ code: 'NG', flag: '🇳🇬', name: 'Nigeria', dialPrefix: '+234' }];
 
-// Approx local digit count (excluding country code) per market — used only
-// for a soft "looks wrong" hint, never to hard-block submission, since this
-// is inherently a best-effort client-side check.
-const COUNTRY_PHONE_DIGITS = {
-  NG: 10, GH: 9, CI: 10, SN: 9, ML: 8, TG: 8, BJ: 8, BF: 8,
-  NE: 8, GN: 9, GW: 7, GM: 7, SL: 8, LR: 8, CV: 7,
-  CM: 9, MG: 9, BW: 8, CD: 9, CF: 8,
-};
+// Phone parsing/formatting per country lives in utils/phoneFormat.js
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LEGAL CONTENT — full text bundled in app, no login required
@@ -534,7 +508,8 @@ export default function RegisterScreen({ navigation }) {
     if (!firstName.trim() || !lastName.trim()) return Alert.alert(t('register.missingFieldsTitle'),    t('register.missingFieldsBody'));
     if (!email.trim() || !email.includes('@'))  return Alert.alert(t('register.invalidEmailTitle'),    t('register.invalidEmailBody'));
     if (!phone.trim())                           return Alert.alert(t('register.missingPhoneTitle'),   t('register.missingPhoneBody'));
-    if (!isPlausiblePhoneLength(phone.trim(), countryCode)) {
+    const dialPrefix = countries.find(c => c.code === countryCode)?.dialPrefix;
+    if (!isPlausiblePhoneLength(phone.trim(), countryCode, dialPrefix)) {
       return Alert.alert(t('register.invalidPhoneLengthTitle'), t('register.invalidPhoneLengthBody'));
     }
     if (password.length < 8)                    return Alert.alert(t('register.weakPasswordTitle'),   t('register.weakPasswordBody'));
@@ -549,7 +524,7 @@ export default function RegisterScreen({ navigation }) {
         firstName: firstName.trim(),
         lastName:  lastName.trim(),
         email:     email.trim().toLowerCase(),
-        phone:     formatPhone(phone.trim(), countries.find(c => c.code === countryCode)?.dialPrefix),
+        phone:     formatPhone(phone.trim(), countryCode, dialPrefix),
         password,
         role:      roleId,
         countryCode,

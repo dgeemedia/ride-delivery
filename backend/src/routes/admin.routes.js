@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const { body, param } = require('express-validator');
+const { isPhoneAcceptable } = require('../utils/phone');
 const adminController = require('../controllers/admin.controller');
 const validate = require('../middleware/validate');
 const { authenticate, authorize, requireScope } = require('../middleware/auth.middleware');
@@ -49,7 +50,7 @@ router.post('/users/create-admin',
   [
     body('email').isEmail().normalizeEmail(),
     // ✅ FIX 1: was isMobilePhone() — fails Nigerian +234 numbers without a locale
-    body('phone').isMobilePhone('any'),
+    body('phone').custom(isPhoneAcceptable),
     body('password').isLength({ min: 8 }),
     body('firstName').trim().notEmpty(),
     body('lastName').trim().notEmpty(),
@@ -280,6 +281,7 @@ router.post('/payments/:id/refund',
   param('id').isUUID(),
   body('amount').optional().isFloat({ min: 0.01 }),
   body('reason').optional().isString().isLength({ max: 300 }),
+  body('manuallySettled').optional().isBoolean(),
   authorize('ADMIN', 'SUPER_ADMIN'),
   validate,
   adminController.adminIssueRefund

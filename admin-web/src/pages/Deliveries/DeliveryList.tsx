@@ -10,6 +10,7 @@ import {
   Badge, Pagination, Spinner,
 } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
+import { formatMoney } from '@/utils/money';
 import { DELIVERY_STATUSES } from '@/utils/constants';
 import toast from 'react-hot-toast';
 
@@ -228,7 +229,7 @@ const DeliveryList: React.FC = () => {
                       </Badge>
                     </TableCell>
                     <TableCell className="font-medium text-sm">
-                      ₦{(d.actualFee ?? d.estimatedFee).toLocaleString('en-NG')}
+                      {formatMoney(d.actualFee ?? d.estimatedFee, d.currency)}
                     </TableCell>
                     <TableCell className="text-sm text-gray-500 whitespace-nowrap">
                       {formatDateTime(d.requestedAt)}

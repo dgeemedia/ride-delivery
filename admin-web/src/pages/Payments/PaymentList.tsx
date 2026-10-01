@@ -3,15 +3,18 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   CreditCard, DollarSign, CheckCircle, XCircle, Clock,
   RefreshCw, Filter, Search, TrendingUp, Car, Package,
-  Wallet, Banknote, ChevronLeft, ChevronRight,
+  Wallet, Banknote, ChevronLeft, ChevronRight, Smartphone,
 } from 'lucide-react';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { formatMoney, sortCurrencies, BASE_CURRENCY } from '@/utils/money';
+import CurrencyTabs from '@/components/common/CurrencyTabs';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type PaymentStatus = 'ALL' | 'COMPLETED' | 'PENDING' | 'FAILED' | 'REFUNDED';
-type PaymentMethod = 'ALL' | 'CASH' | 'CARD' | 'WALLET';
+type PaymentMethod = 'ALL' | 'CASH' | 'CARD' | 'WALLET' | 'MOBILE_MONEY';
+type ProviderFilter = 'ALL' | 'paystack' | 'flutterwave' | 'orange';
 type ServiceFilter = 'ALL' | 'RIDE' | 'DELIVERY';
 
 interface PaymentUser {
@@ -41,7 +44,9 @@ interface Payment {
   updatedAt: string;
 }
 
-interface PaymentStats {
+// One block of figures per currency — amounts in different currencies are never added together.
+interface CurrencyStats {
+  currency:          string;
   totalRevenue:      number;
   todayRevenue:      number;
   totalCommission:   number;
@@ -49,13 +54,25 @@ interface PaymentStats {
   pendingCount:      number;
   refundedTotal:     number;
   byMethod:          { method: string; count: number; total: number }[];
+  byProvider:        { provider: string; count: number; total: number }[];
 }
+interface PaymentStats { byCurrency: CurrencyStats[]; }
 
 interface Pagination { total: number; page: number; pages: number; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const fmt = (n: number) => `₦${(n ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+// Always pass the record's own currency.
+const fmt = (n: number, currency?: string | null) => formatMoney(n, currency);
+
+const PROVIDER_LABEL: Record<string, string> = {
+  paystack: 'Paystack', flutterwave: 'Flutterwave', orange: 'Orange Money', none: 'No gateway',
+};
+const PROVIDER_STYLE: Record<string, string> = {
+  paystack:    'bg-sky-50 text-sky-700 border-sky-100',
+  flutterwave: 'bg-amber-50 text-amber-700 border-amber-100',
+  orange:      'bg-orange-50 text-orange-700 border-orange-100',
+};
 
 const STATUS_STYLE: Record<string, string> = {
   COMPLETED: 'bg-green-100 text-green-800 border-green-200',
@@ -68,6 +85,7 @@ const METHOD_ICON: Record<string, React.ReactNode> = {
   CASH:   <Banknote className="w-3.5 h-3.5" />,
   CARD:   <CreditCard className="w-3.5 h-3.5" />,
   WALLET: <Wallet className="w-3.5 h-3.5" />,
+  MOBILE_MONEY: <Smartphone className="w-3.5 h-3.5" />,
 };
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => (
@@ -113,6 +131,8 @@ const PaymentList: React.FC = () => {
   // Filters
   const [status,  setStatus]  = useState<PaymentStatus>('ALL');
   const [method,  setMethod]  = useState<PaymentMethod>('ALL');
+  const [provider, setProvider] = useState<ProviderFilter>('ALL');
+  const [currency, setCurrency] = useState<string>('');   // '' until stats tell us which currencies exist
   const [service, setService] = useState<ServiceFilter>('ALL');
   const [search,  setSearch]  = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -126,7 +146,14 @@ const PaymentList: React.FC = () => {
   const loadStats = useCallback(async () => {
     try {
       const res = await api.get('/admin/payments/stats');
-      setStats(res.data.data);
+      const data: PaymentStats = res.data.data;
+      setStats(data);
+      // Default to the base market if it has data, otherwise the first currency.
+      setCurrency(prev => {
+        const codes = data.byCurrency.map(c => c.currency);
+        if (prev && codes.includes(prev)) return prev;
+        return sortCurrencies(codes)[0] ?? '';
+      });
     } catch { /* non-critical */ }
   }, []);
 
@@ -136,6 +163,8 @@ const PaymentList: React.FC = () => {
       const params: Record<string, any> = { page, limit: 25 };
       if (status  !== 'ALL') params.status  = status;
       if (method  !== 'ALL') params.method  = method;
+      if (provider !== 'ALL') params.provider = provider;
+      if (currency) params.currency = currency;
       if (service === 'RIDE')     params.hasRide = 'true';
       if (service === 'DELIVERY') params.hasDelivery = 'true';
       if (debouncedSearch) params.search = debouncedSearch;
@@ -148,13 +177,19 @@ const PaymentList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [status, method, service, debouncedSearch]);
+  }, [status, method, provider, currency, service, debouncedSearch]);
 
   useEffect(() => { loadStats(); }, []);
-  useEffect(() => { loadPayments(1); }, [status, method, service, debouncedSearch]);
+  useEffect(() => { loadPayments(1); }, [status, method, provider, currency, service, debouncedSearch]);
+
+  const currencies = sortCurrencies((stats?.byCurrency ?? []).map(c => c.currency));
+  const cs: CurrencyStats | undefined =
+    stats?.byCurrency.find(c => c.currency === currency) ?? stats?.byCurrency[0];
+  const activeCurrency = cs?.currency ?? BASE_CURRENCY;
 
   const STATUS_FILTERS: PaymentStatus[] = ['ALL', 'COMPLETED', 'PENDING', 'FAILED', 'REFUNDED'];
-  const METHOD_FILTERS: PaymentMethod[] = ['ALL', 'CASH', 'CARD', 'WALLET'];
+  const METHOD_FILTERS: PaymentMethod[] = ['ALL', 'CASH', 'CARD', 'WALLET', 'MOBILE_MONEY'];
+  const PROVIDER_FILTERS: ProviderFilter[] = ['ALL', 'paystack', 'flutterwave', 'orange'];
   const SERVICE_FILTERS: ServiceFilter[] = ['ALL', 'RIDE', 'DELIVERY'];
 
   return (
@@ -175,26 +210,36 @@ const PaymentList: React.FC = () => {
       </div>
 
       {/* Stats */}
-      {stats && (
+      {/* Currency selector — totals are per currency, never summed across them */}
+      <CurrencyTabs currencies={currencies} value={activeCurrency} onChange={setCurrency} />
+
+      {cs && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <StatCard label="Total Revenue"      value={fmt(stats.totalRevenue)}    sub="All time"     icon={<DollarSign className="w-4 h-4 text-white" />}    color="bg-blue-500" />
-          <StatCard label="Today's Revenue"    value={fmt(stats.todayRevenue)}    sub="Today"        icon={<TrendingUp className="w-4 h-4 text-white" />}     color="bg-green-500" />
-          <StatCard label="Platform Commission" value={fmt(stats.totalCommission)} sub="All time"    icon={<DollarSign className="w-4 h-4 text-white" />}    color="bg-indigo-500" />
-          <StatCard label="Today Commission"   value={fmt(stats.todayCommission)} sub="Today"        icon={<TrendingUp className="w-4 h-4 text-white" />}    color="bg-purple-500" />
-          <StatCard label="Pending Payments"   value={String(stats.pendingCount)} sub="Needs action" icon={<Clock className="w-4 h-4 text-white" />}         color="bg-yellow-500" />
-          <StatCard label="Total Refunded"     value={fmt(stats.refundedTotal)}   sub="All time"     icon={<RefreshCw className="w-4 h-4 text-white" />}     color="bg-red-500" />
+          <StatCard label="Total Revenue"      value={fmt(cs.totalRevenue, cs.currency)}    sub="All time"     icon={<DollarSign className="w-4 h-4 text-white" />}    color="bg-blue-500" />
+          <StatCard label="Today's Revenue"    value={fmt(cs.todayRevenue, cs.currency)}    sub="Today"        icon={<TrendingUp className="w-4 h-4 text-white" />}     color="bg-green-500" />
+          <StatCard label="Platform Commission" value={fmt(cs.totalCommission, cs.currency)} sub="All time"    icon={<DollarSign className="w-4 h-4 text-white" />}    color="bg-indigo-500" />
+          <StatCard label="Today Commission"   value={fmt(cs.todayCommission, cs.currency)} sub="Today"        icon={<TrendingUp className="w-4 h-4 text-white" />}    color="bg-purple-500" />
+          <StatCard label="Pending Payments"   value={String(cs.pendingCount)}              sub="Needs action" icon={<Clock className="w-4 h-4 text-white" />}         color="bg-yellow-500" />
+          <StatCard label="Total Refunded"     value={fmt(cs.refundedTotal, cs.currency)}   sub="All time"     icon={<RefreshCw className="w-4 h-4 text-white" />}     color="bg-red-500" />
         </div>
       )}
 
-      {/* Method breakdown pills */}
-      {stats?.byMethod && (
+      {/* Method + gateway breakdown for the selected currency */}
+      {cs && (cs.byMethod.length > 0 || cs.byProvider.length > 0) && (
         <div className="flex flex-wrap gap-3">
-          {stats.byMethod.map(m => (
+          {cs.byMethod.map(m => (
             <div key={m.method} className="flex items-center gap-2 bg-white border border-gray-100 rounded-xl px-3 py-2 shadow-sm">
               <span className="text-gray-500">{METHOD_ICON[m.method] ?? <CreditCard className="w-3.5 h-3.5" />}</span>
               <span className="text-sm font-semibold text-gray-800">{m.method}</span>
               <span className="text-xs text-gray-400">{m.count} txns</span>
-              <span className="text-xs font-bold text-gray-700">{fmt(m.total)}</span>
+              <span className="text-xs font-bold text-gray-700">{fmt(m.total, cs.currency)}</span>
+            </div>
+          ))}
+          {cs.byProvider.filter(p => p.provider !== 'none').map(p => (
+            <div key={p.provider} className={`flex items-center gap-2 border rounded-xl px-3 py-2 shadow-sm ${PROVIDER_STYLE[p.provider] ?? 'bg-gray-50 text-gray-700 border-gray-100'}`}>
+              <span className="text-sm font-semibold">{PROVIDER_LABEL[p.provider] ?? p.provider}</span>
+              <span className="text-xs opacity-70">{p.count} txns</span>
+              <span className="text-xs font-bold">{fmt(p.total, cs.currency)}</span>
             </div>
           ))}
         </div>
@@ -239,6 +284,17 @@ const PaymentList: React.FC = () => {
                   className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
                     method === m ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}>{m}</button>
+              ))}
+            </div>
+
+            {/* Gateway */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-medium">Gateway:</span>
+              {PROVIDER_FILTERS.map(g => (
+                <button key={g} onClick={() => setProvider(g)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                    provider === g ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}>{g === 'ALL' ? 'ALL' : PROVIDER_LABEL[g]}</button>
               ))}
             </div>
 
@@ -291,7 +347,7 @@ const PaymentList: React.FC = () => {
 
                     {/* Amount */}
                     <td className="px-4 py-4">
-                      <div className="font-bold text-gray-900">{fmt(p.amount)}</div>
+                      <div className="font-bold text-gray-900">{fmt(p.amount, p.currency)}</div>
                       {p.transactionId && (
                         <div className="text-xs text-gray-400 font-mono mt-0.5 max-w-[120px] truncate" title={p.transactionId}>
                           {p.transactionId}
@@ -303,9 +359,9 @@ const PaymentList: React.FC = () => {
                     <td className="px-4 py-4">
                       {p.platformFee !== undefined ? (
                         <div>
-                          <div className="text-sm font-semibold text-indigo-700">{fmt(p.platformFee)}</div>
+                          <div className="text-sm font-semibold text-indigo-700">{fmt(p.platformFee, p.currency)}</div>
                           {p.driverEarnings !== undefined && (
-                            <div className="text-xs text-gray-500 mt-0.5">Earner: {fmt(p.driverEarnings)}</div>
+                            <div className="text-xs text-gray-500 mt-0.5">Earner: {fmt(p.driverEarnings, p.currency)}</div>
                           )}
                         </div>
                       ) : (
@@ -320,7 +376,9 @@ const PaymentList: React.FC = () => {
                         {p.method}
                       </span>
                       {p.provider && (
-                        <div className="text-[11px] text-gray-400 mt-0.5 capitalize">via {p.provider}</div>
+                        <span className={`inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${PROVIDER_STYLE[p.provider] ?? 'bg-gray-50 text-gray-600 border-gray-100'}`}>
+                          {PROVIDER_LABEL[p.provider] ?? p.provider}
+                        </span>
                       )}
                     </td>
 
@@ -336,7 +394,7 @@ const PaymentList: React.FC = () => {
 
                     {/* Date */}
                     <td className="px-4 py-4 text-xs text-gray-500 whitespace-nowrap">
-                      {new Date(p.createdAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+                      {new Date(p.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                     </td>
                   </tr>
                 ))}

@@ -1,6 +1,7 @@
 // backend/src/controllers/auth.controller.js
 'use strict';
 const prisma = require('../lib/prisma');
+const { normalizePhoneForStorage } = require('../utils/phone');
 const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -67,7 +68,22 @@ exports.register = async (req, res) => {
   if (!errors.isEmpty())
     return res.status(400).json({ success: false, errors: errors.array() });
 
-  const { email, phone, password, firstName, lastName, role, countryCode } = req.body;
+  const { email, phone: rawPhone, password, firstName, lastName, role, countryCode } = req.body;
+
+  // Nigeria is the default market (older app versions send no country). Anywhere
+  // else, the country must exist AND be live: new markets start paused until an
+  // admin has reviewed their pricing, and a client must not be able to register
+  // into one by sending its code directly.
+  const regCountry = String(countryCode || 'NG').toUpperCase();
+  if (regCountry !== 'NG') {
+    const country = await prisma.country.findUnique({ where: { code: regCountry }, select: { isActive: true } });
+    if (!country || !country.isActive) {
+      throw new AppError('Registration is not available in that country yet.', 400);
+    }
+  }
+  // Mali/Senegal/… numbers are stored as clean E.164 (+22376427484); Nigerian
+  // numbers keep the exact form they were entered in, as before.
+  const phone = normalizePhoneForStorage(rawPhone, regCountry);
 
   const existingUser = await prisma.user.findFirst({
     where: { OR: [{ email }, { phone }] },
@@ -82,7 +98,7 @@ exports.register = async (req, res) => {
     data: {
       email, phone, password: hashedPassword,
       firstName, lastName, role,
-      countryCode:        countryCode || 'NG', // ← optional; defaults to NG same as before
+      countryCode:        regCountry,
       emailVerifyToken:   hashedVerifyToken,
       emailVerifyExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
     },

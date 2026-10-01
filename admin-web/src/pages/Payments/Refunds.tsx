@@ -5,6 +5,7 @@ import { Card } from '@/components/common';
 import { Link } from 'react-router-dom';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
+import { formatMoney, sortCurrencies } from '@/utils/money';
 
 interface RefundUser {
   id: string; firstName: string; lastName: string; email: string; phone: string;
@@ -16,7 +17,9 @@ interface Refund {
   user: RefundUser;
   amount: number;
   refundAmount: number;
+  currency: string;
   method: string;
+  provider?: string | null;
   transactionId?: string;
   refundedAt: string;
   createdAt: string;
@@ -24,11 +27,17 @@ interface Refund {
 
 interface Pagination { total: number; page: number; pages: number; }
 
-const fmt = (n: number) => `₦${(n ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
+const fmt = (n: number, currency?: string | null) => formatMoney(n, currency, { decimals: 2 });
+
+const PROVIDER_LABEL: Record<string, string> = {
+  paystack: 'Paystack', flutterwave: 'Flutterwave', orange: 'Orange Money',
+};
+
+interface CurrencyTotal { currency: string; total: number; }
 
 const Refunds: React.FC = () => {
   const [refunds, setRefunds]           = useState<Refund[]>([]);
-  const [totalRefunded, setTotal]       = useState(0);
+  const [totals, setTotals]             = useState<CurrencyTotal[]>([]);
   const [pagination, setPagination]     = useState<Pagination>({ total: 0, page: 1, pages: 1 });
   const [loading, setLoading]           = useState(false);
   const [search, setSearch]             = useState('');
@@ -46,7 +55,8 @@ const Refunds: React.FC = () => {
       if (debouncedSearch) params.search = debouncedSearch;
       const res = await api.get('/admin/refunds', { params });
       setRefunds(res.data.data.refunds);
-      setTotal(res.data.data.totalRefunded);
+      setTotals(sortCurrencies((res.data.data.totalsByCurrency ?? []).map((t: CurrencyTotal) => t.currency))
+        .map(c => (res.data.data.totalsByCurrency as CurrencyTotal[]).find(t => t.currency === c)!));
       setPagination(res.data.data.pagination);
     } catch {
       toast.error('Failed to load refunds');
@@ -72,14 +82,17 @@ const Refunds: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 max-w-md">
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-          <div className="w-9 h-9 bg-purple-500 rounded-xl flex items-center justify-center mb-3">
-            <DollarSign className="w-4 h-4 text-white" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl">
+        {/* One "Total Refunded" card per currency — they are never added together */}
+        {(totals.length ? totals : [{ currency: '', total: 0 }]).map(t => (
+          <div key={t.currency || 'none'} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <div className="w-9 h-9 bg-purple-500 rounded-xl flex items-center justify-center mb-3">
+              <DollarSign className="w-4 h-4 text-white" />
+            </div>
+            <div className="text-xl font-bold text-gray-900">{fmt(t.total, t.currency || undefined)}</div>
+            <div className="text-xs text-gray-500 mt-0.5">Total Refunded{t.currency ? ` (${t.currency})` : ''}</div>
           </div>
-          <div className="text-xl font-bold text-gray-900">{fmt(totalRefunded)}</div>
-          <div className="text-xs text-gray-500 mt-0.5">Total Refunded</div>
-        </div>
+        ))}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <div className="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center mb-3">
             <RefreshCw className="w-4 h-4 text-white" />
@@ -126,11 +139,14 @@ const Refunds: React.FC = () => {
                       <div className="font-semibold text-gray-900">{r.user.firstName} {r.user.lastName}</div>
                       <div className="text-xs text-gray-500">{r.user.email}</div>
                     </td>
-                    <td className="px-4 py-4 text-gray-700">{fmt(r.amount)}</td>
-                    <td className="px-4 py-4 font-bold text-purple-700">{fmt(r.refundAmount)}</td>
-                    <td className="px-4 py-4 text-xs font-semibold text-gray-600">{r.method}</td>
+                    <td className="px-4 py-4 text-gray-700">{fmt(r.amount, r.currency)}</td>
+                    <td className="px-4 py-4 font-bold text-purple-700">{fmt(r.refundAmount, r.currency)}</td>
+                    <td className="px-4 py-4 text-xs font-semibold text-gray-600">
+                      {r.method}
+                      {r.provider && <div className="text-[11px] font-normal text-gray-400">{PROVIDER_LABEL[r.provider] ?? r.provider}</div>}
+                    </td>
                     <td className="px-4 py-4 text-xs text-gray-500">
-                      {new Date(r.refundedAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+                      {new Date(r.refundedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                     </td>
                     <td className="px-4 py-4">
                       <Link to={`/payments/${r.id}`} className="text-xs font-semibold text-blue-600 hover:underline">
