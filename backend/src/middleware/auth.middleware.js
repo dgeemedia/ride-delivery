@@ -42,6 +42,10 @@ const authenticate = async (req, res, next) => {
           firstName: true, lastName: true,
           role: true, isVerified: true, isActive: true,
           adminDepartment: true,
+          // Every country-aware lookup (payment options, limits, transfer minimums,
+          // phone dial code…) reads req.user.countryCode. Without it they all
+          // silently fell back to Nigeria for every non-Nigerian user.
+          countryCode: true,
           passwordChangedAt: true,
         },
       });
