@@ -42,6 +42,12 @@ const { maintenanceMiddleware } = require('./middleware/maintenance.middleware')
 
 const app = express();
 
+// The app runs behind Render's reverse proxy. Without this, req.ip is the PROXY's address
+// for every client, so each rate limiter below treated the whole user base as one person
+// (e.g. 100 requests per 15 minutes in total, shared by everyone — webhooks included) and
+// express-rate-limit logged ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. 1 = trust one proxy hop.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
+
 const crypto = require('crypto'); // add near your other requires at the top of the file instead if you prefer
 app.use((req, res, next) => {
   res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
@@ -320,6 +326,9 @@ app.get('/api', (_req, res) => {
     },
   });
 });
+
+// ─── Orange Money hosted-checkout landing pages (no auth, no side effects) ───
+app.use('/payment/orange', require('./routes/paymentReturn.routes'));
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
