@@ -190,6 +190,14 @@ const orangeRequest = async (method, path, body, { retryOn401 = true } = {}) => 
       || error?.response?.data?.description
       || error?.response?.data?.error_description
       || error.message;
+    // Diagnostics for the server logs. Deliberately NO request body (it carries the
+    // merchant key) and no tokens — just which endpoint Orange refused and why.
+    console.error('[orange] request refused', JSON.stringify({
+      method: String(method).toUpperCase(),
+      path,
+      httpStatus: error?.response?.status ?? null,
+      response: error?.response?.data ?? error.message,
+    }));
     const status = error?.response?.status && error.response.status < 500 ? 400 : 502;
     throw new AppError('Orange API error: ' + msg, status);
   }
@@ -204,11 +212,25 @@ const orangeRequest = async (method, path, body, { retryOn401 = true } = {}) => 
  * saved from the admin dashboard, so a single deployment can serve several
  * Orange markets with different merchant keys.
  */
+let _warnedSandbox = false;
 const resolveOrangeConfig = (countryCode = 'CI', config = {}) => {
   const cc = String(countryCode).toUpperCase();
+
+  // ORANGE_WEBPAY_COUNTRY=dev is a SERVER-WIDE sandbox switch. It deliberately beats
+  // any per-country value saved on the Country row (the seed pins e.g. Mali to 'ml'),
+  // because sandbox credentials sent to a live market path are refused by Orange with
+  // "Access denied". In sandbox we also use the env merchant key, never a live
+  // per-country one.
+  const sandbox = String(process.env.ORANGE_WEBPAY_COUNTRY || '').trim().toLowerCase() === 'dev';
+  if (sandbox && !_warnedSandbox) {
+    _warnedSandbox = true;
+    console.warn('[orange] SANDBOX MODE (ORANGE_WEBPAY_COUNTRY=dev): all Orange calls go to the test API. Remove it to go live.');
+  }
+
   return {
-    merchantKey:   config.merchantKey   || MERCHANT_KEY,
-    webpayCountry: config.webpayCountry || process.env.ORANGE_WEBPAY_COUNTRY || WEBPAY_COUNTRY_PATH[cc] || 'dev',
+    sandbox,
+    merchantKey:   sandbox ? MERCHANT_KEY : (config.merchantKey || MERCHANT_KEY),
+    webpayCountry: sandbox ? 'dev' : (config.webpayCountry || process.env.ORANGE_WEBPAY_COUNTRY || WEBPAY_COUNTRY_PATH[cc] || 'dev'),
     returnUrl:     config.returnUrl     || process.env.ORANGE_RETURN_URL,
     cancelUrl:     config.cancelUrl     || process.env.ORANGE_CANCEL_URL,
     notifUrl:      config.notifUrl      || process.env.ORANGE_NOTIF_URL,
@@ -251,7 +273,9 @@ const initializeWebPayment = async ({
 
   const payload = {
     merchant_key: cfg.merchantKey,
-    currency:     currency === 'XOF' || currency === 'XAF' ? currency : currency,
+    // Orange's sandbox ('dev') only accepts its own test currency (OUV). Real markets
+    // use the local currency. ORANGE_SANDBOX_CURRENCY lets you change it if Orange does.
+    currency:     cfg.webpayCountry === 'dev' ? (process.env.ORANGE_SANDBOX_CURRENCY || 'OUV') : currency,
     order_id:     orderId,
     amount:       Math.round(Number(amount)),
     return_url:   returnUrl || cfg.returnUrl,
