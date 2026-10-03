@@ -7,12 +7,8 @@ const { authenticate, authorize } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
-router.get('/debug-env', (req, res) => {
-  res.json({
-    hasKey: !!process.env.PAYSTACK_SECRET_KEY,
-    keyPreview: process.env.PAYSTACK_SECRET_KEY?.slice(0, 15) + '...',
-  });
-});
+// (A public /debug-env route used to live here and returned the first 15 characters
+// of PAYSTACK_SECRET_KEY to anyone. It was removed — never expose key material.)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC — Payment provider webhooks (no auth — verified via signature instead)
@@ -26,12 +22,16 @@ router.post('/topup/flutterwave/webhook', walletController.verifyFlutterwaveWebh
 // Orange's servers have no session with us.
 router.post('/topup/orange/webhook', walletController.orangeWebhook);
 
-// ── PUBLIC — deposit limits (no auth required, used by mobile top-up screen) ──
-router.get('/deposit-limits', walletController.getDepositLimits);
 // ─────────────────────────────────────────────────────────────────────────────
 // All routes below require authentication
 // ─────────────────────────────────────────────────────────────────────────────
 router.use(authenticate);
+
+// Deposit limits are per-country, per-role (the handler reads req.user), so this
+// MUST sit behind authenticate. It used to be declared above it as "public", which
+// made every call fail with a 500 (req.user undefined) and left the top-up screen
+// showing its built-in fallback limits instead of the country's real ones.
+router.get('/deposit-limits', walletController.getDepositLimits);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WALLET INFO

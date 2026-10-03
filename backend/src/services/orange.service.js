@@ -190,13 +190,18 @@ const orangeRequest = async (method, path, body, { retryOn401 = true } = {}) => 
       || error?.response?.data?.description
       || error?.response?.data?.error_description
       || error.message;
-    // Diagnostics for the server logs. Deliberately NO request body (it carries the
-    // merchant key) and no tokens — just which endpoint Orange refused and why.
+    // Diagnostics for the server logs: which endpoint Orange refused, why, and — for
+    // web payments only — the non-secret fields we sent (so an "Invalid body field"
+    // can be traced to the exact value). The merchant key and tokens are never logged.
+    const sent = String(path).includes('/webpayment') && body && typeof body === 'object'
+      ? Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'merchant_key'))
+      : undefined;
     console.error('[orange] request refused', JSON.stringify({
       method: String(method).toUpperCase(),
       path,
       httpStatus: error?.response?.status ?? null,
       response: error?.response?.data ?? error.message,
+      sent,
     }));
     const status = error?.response?.status && error.response.status < 500 ? 400 : 502;
     throw new AppError('Orange API error: ' + msg, status);
@@ -236,6 +241,11 @@ const resolveOrangeConfig = (countryCode = 'CI', config = {}) => {
     notifUrl:      config.notifUrl      || process.env.ORANGE_NOTIF_URL,
     lang:          config.lang          || 'fr',
   };
+};
+
+const isHttpUrl = (u) => {
+  try { const x = new URL(String(u)); return x.protocol === 'https:' || x.protocol === 'http:'; }
+  catch { return false; }
 };
 
 // ─────────────────────────────────────────────
@@ -284,6 +294,19 @@ const initializeWebPayment = async ({
     lang:         lang      || cfg.lang,
     reference:    reference || 'Ride & Delivery',
   };
+
+  // Orange rejects a malformed URL with the unhelpful "Invalid body field". Catch it here
+  // instead, name the culprit in the server log, and keep the customer message generic.
+  const badUrls = [
+    ['return_url', 'ORANGE_RETURN_URL'],
+    ['cancel_url', 'ORANGE_CANCEL_URL'],
+    ['notif_url',  'API_BASE_URL (or ORANGE_NOTIF_URL)'],
+  ].filter(([field]) => !isHttpUrl(payload[field]));
+  if (badUrls.length) {
+    console.error('[orange] cannot start payment — invalid URL(s): ' +
+      badUrls.map(([field, env]) => `${field}=${JSON.stringify(payload[field])} (set ${env})`).join('; '));
+    throw new AppError('Orange Money is temporarily unavailable. Please try another payment method.', 503);
+  }
 
   const data = await orangeRequest(
     'post',
