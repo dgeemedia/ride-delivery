@@ -14,10 +14,12 @@ import { settingsAPI }       from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
 
+// No phone/WhatsApp default on purpose: the server returns the numbers for the user's own
+// country, and a country with none set simply hides those rows (never a Nigerian number).
 const CONTACT_DEFAULTS = {
   email:    'support@diakite.app',
-  phone:    '+2348000000000',
-  whatsapp: '2348000000000',
+  phone:    '',
+  whatsapp: '',
 };
 
 // ── Section ───────────────────────────────────────────────────────────────────
@@ -94,12 +96,12 @@ export default function SupportScreen({ navigation }) {
     settingsAPI.getContactSettings()
       .then(res => {
         const s        = res?.data ?? {};
-        const phone    = s.support_phone    || CONTACT_DEFAULTS.phone;
+        const phone    = s.support_phone    || '';
         const whatsapp = s.support_whatsapp || phone;
         setContact({
           email:    s.support_email || CONTACT_DEFAULTS.email,
           phone,
-          whatsapp: whatsapp.replace(/^\+/, ''),
+          whatsapp: String(whatsapp).replace(/^\+/, ''),
         });
       })
       .catch(() => {});
@@ -194,21 +196,26 @@ export default function SupportScreen({ navigation }) {
                 theme={theme}
                 onPress={() => openURL(`mailto:${contact.email}`)}
               />
-              <MenuItem
-                icon="call-outline"
-                label={t('support.callUs')}
-                value={contact.phone}
-                theme={theme}
-                onPress={() => openURL(`tel:${contact.phone}`)}
-              />
-              <MenuItem
-                icon="logo-whatsapp"
-                label={t('support.whatsapp')}
-                value={`+${contact.whatsapp}`}
-                theme={theme}
-                last
-                onPress={() => openURL(`https://wa.me/${contact.whatsapp}`)}
-              />
+              {!!contact.phone && (
+                <MenuItem
+                  icon="call-outline"
+                  label={t('support.callUs')}
+                  value={contact.phone}
+                  theme={theme}
+                  last={!contact.whatsapp}
+                  onPress={() => openURL(`tel:${contact.phone}`)}
+                />
+              )}
+              {!!contact.whatsapp && (
+                <MenuItem
+                  icon="logo-whatsapp"
+                  label={t('support.whatsapp')}
+                  value={`+${contact.whatsapp}`}
+                  theme={theme}
+                  last
+                  onPress={() => openURL(`https://wa.me/${contact.whatsapp}`)}
+                />
+              )}
             </Section>
 
             {/* Self-service */}

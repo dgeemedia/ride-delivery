@@ -10,6 +10,7 @@ import {
 import { useAuthStore } from '@/store/authStore';
 import { formatDate } from '@/utils/helpers';
 import toast from 'react-hot-toast';
+import { CountryChips, CountryTag } from '@/components/CountryFilter';
 
 // ─── Vehicle-type-aware required document definitions ────────────────────────
 type DriverDocDef = { field: keyof Driver; label: string; icon: React.ReactNode };
@@ -314,13 +315,17 @@ const DriverApproval: React.FC = () => {
   const [loading,        setLoading]        = useState(true);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
 
-  useEffect(() => { loadPendingDrivers(); }, []);
+  const [country,   setCountry]   = useState('');
+  const [byCountry, setByCountry] = useState<Record<string, number>>({});
+
+  useEffect(() => { loadPendingDrivers(); }, [country]);
 
   const loadPendingDrivers = async () => {
     setLoading(true);
     try {
-      const res = await driversAPI.getPendingDrivers();
+      const res = await driversAPI.getPendingDrivers(country);
       setDrivers(res.data.drivers);
+      setByCountry(res.data.byCountry || {});
     } catch {
       toast.error('Failed to load pending drivers');
     } finally {
@@ -336,6 +341,8 @@ const DriverApproval: React.FC = () => {
           <p className="text-gray-500 text-sm mt-1">{drivers.length} application{drivers.length !== 1 ? 's' : ''} awaiting review</p>
         </div>
       </div>
+
+      <CountryChips counts={byCountry} value={country} onChange={setCountry} />
 
       {loading ? (
         <div className="flex justify-center py-16"><Spinner size="lg" showLabel /></div>
@@ -361,6 +368,7 @@ const DriverApproval: React.FC = () => {
                     {driver.user.firstName} {driver.user.lastName}
                   </p>
                   <p className="text-xs text-gray-500 truncate">{driver.user.email}</p>
+                  <CountryTag code={(driver.user as any).countryCode} className="mt-0.5" />
                 </div>
               </div>
 

@@ -11,6 +11,8 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }               from '../../context/ThemeContext';
+import { useCountryConfig } from '../../context/CountryConfigContext';
+import { useCountryCenter, regionAround, sampleDropoffFrom } from '../../utils/countryGeo';
 import { useCurrency }            from '../../context/CurrencyContext';
 import { useTranslation }         from 'react-i18next';
 import { deliveryAPI, walletAPI, placesAPI } from '../../services/api';
@@ -23,7 +25,6 @@ import { PaymentSelector, useCardPayment }                           from '../..
 const { height } = Dimensions.get('window');
 
 const SHEET_SNAP    = height * 0.75;
-const LAGOS_DEFAULT = { latitude: 6.5244, longitude: 3.3792, latitudeDelta: 0.012, longitudeDelta: 0.012 };
 
 const newSessionToken = () =>
   'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
@@ -187,6 +188,8 @@ const wt = StyleSheet.create({
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RequestDeliveryScreen({ navigation }) {
+  const { config: countryConfig } = useCountryConfig();
+  const countryCenter = useCountryCenter();
   const { theme }   = useTheme();
   const { formatMoney } = useCurrency();
   const { t } = useTranslation();
@@ -263,12 +266,12 @@ export default function RequestDeliveryScreen({ navigation }) {
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') { setPickupCoords({ lat: LAGOS_DEFAULT.latitude, lng: LAGOS_DEFAULT.longitude }); setPickupAddress('Lagos, Nigeria'); return; }
+        if (status !== 'granted') { setPickupCoords({ lat: countryCenter.lat, lng: countryCenter.lng }); setPickupAddress(`${countryCenter.city}, ${countryConfig.countryName}`); return; }
         const loc    = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
         setPickupCoords(coords);
         reverseGeocode(coords.lat, coords.lng, setPickupAddress);
-      } catch { setPickupCoords({ lat: LAGOS_DEFAULT.latitude, lng: LAGOS_DEFAULT.longitude }); setPickupAddress('Lagos, Nigeria'); }
+      } catch { setPickupCoords({ lat: countryCenter.lat, lng: countryCenter.lng }); setPickupAddress(`${countryCenter.city}, ${countryConfig.countryName}`); }
     })();
     socketService.connect?.();
   }, []);
@@ -462,7 +465,7 @@ export default function RequestDeliveryScreen({ navigation }) {
   const startPickingLocation = useCallback((type) => {
     setPlacingPin(type);
     const current = type === 'pickup' ? pickupCoords : dropoffCoords;
-    const center  = current ?? pickupCoords ?? { lat: LAGOS_DEFAULT.latitude, lng: LAGOS_DEFAULT.longitude };
+    const center  = current ?? pickupCoords ?? { lat: countryCenter.lat, lng: countryCenter.lng };
     setLiveAddress(type === 'pickup' ? pickupAddress : dropoffAddress);
     setMapCenter(center);
     mapRef.current?.animateToRegion({ latitude: center.lat, longitude: center.lng, latitudeDelta: 0.008, longitudeDelta: 0.008 }, 500);
@@ -549,7 +552,7 @@ export default function RequestDeliveryScreen({ navigation }) {
   const isPickingLocation = placingPin !== null;
   const pinColor          = placingPin === 'dropoff' ? '#E05555' : accentColor;
   const pinFg             = placingPin === 'dropoff' ? '#FFFFFF' : accentFg;
-  const mapRegion         = pickupCoords ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 } : LAGOS_DEFAULT;
+  const mapRegion         = pickupCoords ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 } : regionAround(countryCenter, 0.012);
 
   const confirmBtnLabel =
     paymentMethod === 'WALLET'      ? t('requestDelivery.confirmPayWallet')      :

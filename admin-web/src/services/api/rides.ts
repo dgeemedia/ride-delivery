@@ -12,6 +12,7 @@ export const ridesAPI = {
     customerId?: string;
     startDate?: string;
     endDate?: string;
+    country?: string;
   }): Promise<PaginatedResponse<Ride>> => {
     const response = await api.get('/admin/rides', { params });
     return response.data;
@@ -24,8 +25,8 @@ export const ridesAPI = {
   },
 
   /** GET /api/admin/rides/live — all in-progress rides with driver GPS */
-  getLiveRides: async (): Promise<ApiResponse<{ rides: Ride[]; total: number }>> => {
-    const response = await api.get('/admin/rides/live');
+  getLiveRides: async (country?: string): Promise<ApiResponse<{ rides: Ride[]; total: number }>> => {
+    const response = await api.get('/admin/rides/live', { params: { country: country || undefined } });
     return response.data;
   },
 

@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useCountryCenter, regionAround } from '../utils/countryGeo';
 
 // Lazy-load Google Maps
 let GoogleMapView, GoogleMarker, GooglePolyline, GoogleCircle;
@@ -116,10 +117,14 @@ const SmartMapView = forwardRef(function SmartMapView(
     style,
     provider,
     customMapStyle,
+    initialRegion,
     ...rest
   },
   ref
 ) {
+  // A screen with no region of its own gets the user's country, never a fixed city.
+  const countryCenter = useCountryCenter();
+  const startRegion = initialRegion ?? regionAround(countryCenter, 0.05);
   const googleRef = useRef(null);
   const osmRef    = useRef(null);
 
@@ -232,6 +237,7 @@ const SmartMapView = forwardRef(function SmartMapView(
           customMapStyle={customMapStyle}
           onMapReady={handleGoogleReady}
           onError={handleGoogleError}
+          initialRegion={startRegion}
           {...rest}
         >
           {translateChildrenForGoogle(children)}
@@ -264,6 +270,7 @@ const SmartMapView = forwardRef(function SmartMapView(
       ref={osmRef}
       style={style}
       onMapReady={onMapReady}
+      initialRegion={startRegion}
       {...rest}
     >
       {children}

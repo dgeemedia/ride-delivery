@@ -8,6 +8,9 @@ const notificationService = require('../services/notification.service');
 const otpService = require('../services/otp.service');
 const { logActivity } = require('../utils/auditLog'); // ← ADDED
 const { normalizePhoneForStorage } = require('../utils/phone');
+const { getCountryByCode } = require('../services/country.service');
+const { normalizeLanguage, tr } = require('../utils/supportI18n');
+const { pickRecipients } = require('../utils/supportRouting');
 
 /**
  * @desc    Get user profile
@@ -386,33 +389,42 @@ exports.submitSupportTicket = async (req, res) => {
 
   const { subject, description, category, priority = 'medium' } = req.body;
 
+  // Ticket belongs to the customer's market, answered in the language they use in the app
+  // (falling back to the country's default language).
+  const countryCode = String(req.user.countryCode || 'NG').toUpperCase();
+  const country     = await getCountryByCode(countryCode);
+  const language    = normalizeLanguage(req.body.language, country.languageCode);
+
   const ticketCount  = await prisma.supportTicket.count();
   const ticketNumber = `TKT-${String(ticketCount + 1).padStart(6, '0')}`;
 
   const ticket = await prisma.supportTicket.create({
-    data: { userId: req.user.id, ticketNumber, subject, description, category, priority },
+    data: { userId: req.user.id, ticketNumber, subject, description, category, priority, countryCode, language },
   });
 
   const adminUsers = await prisma.user.findMany({
     where:  { role: { in: ['ADMIN', 'SUPER_ADMIN', 'SUPPORT'] }, isActive: true },
-    select: { id: true },
+    select: { id: true, role: true, supportCountries: true, supportLanguages: true },
   });
 
+  // Only staff covering this country + language are notified (everyone if nobody is assigned).
+  const recipients = pickRecipients(adminUsers, { countryCode, language });
+
   await Promise.allSettled(
-    adminUsers.map(admin =>
+    recipients.map(admin =>
       notificationService.notify({
         userId:  admin.id,
         title:   `New Ticket #${ticketNumber}`,
-        message: `${subject} — ${category} • ${priority} priority`,
+        message: `${subject} — ${category} • ${priority} priority • ${countryCode}/${language.toUpperCase()}`,
         type:    'new_support_ticket',
-        data:    { ticketId: ticket.id, ticketNumber, category, priority },
+        data:    { ticketId: ticket.id, ticketNumber, category, priority, countryCode, language },
       })
     )
   );
 
   res.status(201).json({
     success: true,
-    message: 'Support ticket submitted. Our team will get back to you shortly.',
+    message: tr(language, 'submitted'),
     data:    { ticket },
   });
 };

@@ -15,6 +15,10 @@ export interface Country {
   defaultLocale: string;
   languageCode: string;
   phoneDialCode: string;
+  /** Where this market's maps open until GPS answers (also biases address search). */
+  mapCenterLat?: number | string | null;
+  mapCenterLng?: number | string | null;
+  mapCenterCity?: string | null;
   isActive: boolean;
   paymentProviders: PaymentProvider[];
   creditMethods: CreditMethod[];
@@ -59,7 +63,7 @@ export interface CountryOverview {
 }
 
 // ── Per-country rules (pricing, commission, wallet, payouts, bonuses) ────────
-export type SettingType = 'money' | 'percent' | 'number' | 'boolean' | 'enum' | 'date' | 'json';
+export type SettingType = 'money' | 'percent' | 'number' | 'boolean' | 'enum' | 'date' | 'json' | 'text';
 /** Where the value currently in effect comes from. */
 export type SettingSource = 'country' | 'global' | 'starter' | 'default';
 
@@ -72,6 +76,8 @@ export interface CountrySettingField {
   max?: number;
   options?: string[];
   help?: string;
+  maxLength?: number;
+  placeholder?: string;
   strictWhole?: boolean;
   value: any;
   source: SettingSource;

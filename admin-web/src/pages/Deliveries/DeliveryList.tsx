@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, MapPin, X } from 'lucide-react';
 import { deliveriesAPI } from '@/services/api/deliveries';
+import { CountrySelect, CountryTag } from '@/components/CountryFilter';
 import { Delivery } from '@/types';
 import {
   Card, Input, Select, Button,
@@ -32,13 +33,14 @@ const DeliveryList: React.FC = () => {
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [countryFilter, setCountryFilter] = useState('');
   const [dateFrom,     setDateFrom]     = useState('');
   const [dateTo,       setDateTo]       = useState('');
   const [currentPage,  setCurrentPage]  = useState(1);
   const [totalPages,   setTotalPages]   = useState(1);
   const [totalCount,   setTotalCount]   = useState(0);
 
-  useEffect(() => { load(); }, [currentPage, statusFilter]);
+  useEffect(() => { load(); }, [currentPage, statusFilter, countryFilter]);
 
   const load = async () => {
     setLoading(true);
@@ -47,6 +49,7 @@ const DeliveryList: React.FC = () => {
         page:   currentPage,
         limit:  20,
         status: statusFilter || undefined,
+        country: countryFilter || undefined,
         // API type does not include a search param — only page/limit/status/partnerId/customerId
         // dateFrom/dateTo are also not in the API type, so we omit them server-side
         // and filter client-side below
@@ -128,6 +131,10 @@ const DeliveryList: React.FC = () => {
         </div>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div className="md:col-span-3">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Country (sender's market)</label>
+            <CountrySelect value={countryFilter} onChange={c => { setCountryFilter(c); setCurrentPage(1); }} />
+          </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
             <input
@@ -185,6 +192,7 @@ const DeliveryList: React.FC = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Country</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Partner</TableHead>
                   <TableHead>Route</TableHead>
@@ -198,12 +206,13 @@ const DeliveryList: React.FC = () => {
               <TableBody>
                 {deliveries.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center text-gray-400 py-12 text-sm">
+                    <td colSpan={9} className="text-center text-gray-400 py-12 text-sm">
                       No deliveries found.
                     </td>
                   </tr>
                 ) : deliveries.map(d => (
                   <TableRow key={d.id} onClick={() => navigate(`/deliveries/${d.id}`)}>
+                    <TableCell><CountryTag code={(d.customer as any)?.countryCode} /></TableCell>
                     <TableCell>
                       <div className="font-medium text-sm">{d.customer?.firstName} {d.customer?.lastName}</div>
                       <div className="text-xs text-gray-500">{d.customer?.email}</div>

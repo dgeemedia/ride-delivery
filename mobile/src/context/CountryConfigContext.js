@@ -34,6 +34,7 @@ const FALLBACK_CONFIG = {
   payoutStyle:    'BANK',
   payoutRails:    ['BANK'],
   orangeReady:    false,
+  mapCenter:      { lat: 6.5244, lng: 3.3792, city: 'Lagos' },
 };
 
 const CountryConfigContext = createContext();

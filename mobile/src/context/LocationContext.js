@@ -1,18 +1,20 @@
 // mobile/src/context/LocationContext.js
 import React, {createContext, useState, useContext} from 'react';
+import { useCountryCenter } from '../utils/countryGeo';
 
 const LocationContext = createContext();
 
 export const LocationProvider = ({children}) => {
   const [location, setLocation] = useState(null);
   const [address, setAddress] = useState(null);
+  const countryCenter = useCountryCenter();
 
   const getCurrentLocation = async () => {
     // For Expo Go, we'll use a default location
     // You can add expo-location later for real GPS
     const defaultLocation = {
-      latitude: 6.5244,
-      longitude: 3.3792,
+      latitude: countryCenter.lat,
+      longitude: countryCenter.lng,
     };
     setLocation(defaultLocation);
     return defaultLocation;

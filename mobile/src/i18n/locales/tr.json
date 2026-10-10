@@ -167,6 +167,7 @@
     "weakPasswordBody": "Şifre en az 8 karakter olmalı.",
     "passwordMismatchTitle": "Şifreler Eşleşmiyor",
     "passwordMismatchBody": "Şifreler eşleşmiyor.",
+    "change": "Değiştir",
     "selectRoleTitle": "Rol Seç",
     "selectRoleBody": "Lütfen bir rol seç.",
     "termsRequiredTitle": "Şartlar Gerekli",

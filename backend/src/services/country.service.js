@@ -12,6 +12,7 @@
 'use strict';
 
 const prisma = require('../lib/prisma');
+const { getCountryCenter } = require('../utils/countryGeo');
 
 const FALLBACK_COUNTRY = {
   code: 'NG',
@@ -27,6 +28,9 @@ const FALLBACK_COUNTRY = {
   payoutMethods: ['NG_BANK_TRANSFER'],
   providerConfig: {},
   languageCode: 'en',
+  mapCenterLat: 6.5244,
+  mapCenterLng: 3.3792,
+  mapCenterCity: 'Lagos',
 };
 
 // Everything the app knows how to charge/credit with. A Country row may
@@ -245,8 +249,35 @@ const payoutRails = (country) => {
 };
 const RAIL_STYLE = { ORANGE: 'MOBILE_MONEY', MOMO: 'MOMO', BANK: 'BANK', MANUAL: 'MANUAL' };
 
+/**
+ * Where this country's maps should open when GPS isn't available yet, as
+ * { lat, lng, city } — or null if nothing is known.
+ * Order: the Country row (admin-editable) → built-in table for the seeded
+ * markets → null. Never silently substitutes another country's city.
+ */
+const centerFromRow = (c) => {
+  const lat = Number(c?.mapCenterLat), lng = Number(c?.mapCenterLng);
+  if (c?.mapCenterLat == null || c?.mapCenterLng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng, city: c.mapCenterCity || c.name || null };
+};
+
+const getMapCenterForCountry = async (code) => {
+  const wanted = String(code || '').trim().toUpperCase();
+  if (!wanted) return null;
+  try {
+    if (!_cache || Date.now() - _loadedAt >= CACHE_TTL_MS) await _loadAll();
+    const row = _cache.get(wanted);
+    const fromRow = centerFromRow(row);
+    if (fromRow) return fromRow;
+  } catch (err) {
+    console.error('[country.service] getMapCenterForCountry DB lookup failed:', err.message);
+  }
+  return getCountryCenter(wanted);   // built-in table, or null
+};
+
 const getPaymentConfigForCountry = async (code = 'NG') => {
   const country = await getCountryByCode(code);
+  const mapCenter = centerFromRow(country) ?? getCountryCenter(country.code);
   // Required lazily: orange.service requires the error middleware, which in
   // some boot orders requires back into services. Deferring avoids the cycle.
   const orange = require('./orange.service');
@@ -290,6 +321,8 @@ const getPaymentConfigForCountry = async (code = 'NG') => {
     // MANUAL = free-text destination that an admin pays by hand.
     payoutStyle:    RAIL_STYLE[payoutRails(country)[0]],
     orangeReady:    orange.isOrangeConfigured(),
+    // Where maps open until GPS answers. null only for a market with no centre set.
+    mapCenter,
   };
 };
 
@@ -314,6 +347,7 @@ module.exports = {
   getPaymentConfigForUser,
   getAllCountries,
   getCountryByCode,
+  getMapCenterForCountry,
   getCountryForUser,
   getCurrencyForUserId,
   getPricingContextForUserId,

@@ -16,6 +16,9 @@ export interface SupportTicket {
   priority: 'low' | 'medium' | 'high' | 'urgent';
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   assignedTo?: string;
+  /** Market + language the customer used when opening the ticket. */
+  countryCode?: string;
+  language?: string;
   resolution?: string;
   resolvedAt?: string;
   createdAt: string;
@@ -37,7 +40,8 @@ export const ticketsAPI = {
   getTickets: async (params?: {
     page?: number; limit?: number;
     status?: string; priority?: string; category?: string; assignedTo?: string;
-  }): Promise<PaginatedResponse<SupportTicket>> => {
+    countryCode?: string; language?: string; search?: string;
+  }): Promise<PaginatedResponse<SupportTicket>> => {   // data.openByCountry = { ML: 3, NG: 12 }
     const response = await api.get('/admin/tickets', { params });
     return response.data;
   },

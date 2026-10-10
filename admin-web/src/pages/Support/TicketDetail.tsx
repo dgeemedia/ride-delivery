@@ -9,6 +9,7 @@ import { ticketsAPI, SupportTicket, TicketReply } from '@/services/api/tickets';
 import { Card, Button, Badge, Select, Spinner } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
 import { useAuthStore } from '@/store/authStore';
+import { languageLabel, flagOf, translateUrl } from '@/utils/supportLanguages';
 import toast from 'react-hot-toast';
 
 const PRIORITY_VARIANT: Record<string, 'error' | 'warning' | 'info' | 'default'> = {
@@ -28,6 +29,20 @@ const CATEGORY_LABELS: Record<string, string> = {
   delivery: 'Delivery', technical: 'Technical', other: 'Other',
 };
 
+// ─── Translate link (opens Google Translate, free, no API key) ──────────────
+const TranslateLink: React.FC<{ text: string; target?: string; label?: string; className?: string }> = ({
+  text, target = 'en', label = 'Translate to English', className = '',
+}) => (
+  <a
+    href={translateUrl(text, target)}
+    target="_blank"
+    rel="noopener noreferrer"
+    className={`inline-flex items-center gap-1 text-xs text-primary-600 hover:underline ${className}`}
+  >
+    <ExternalLink className="h-3 w-3" />{label}
+  </a>
+);
+
 // ─── Reply bubble ─────────────────────────────────────────────────────────────
 const ReplyBubble: React.FC<{ reply: TicketReply; currentUserId?: string }> = ({ reply, currentUserId }) => {
   const isMe = reply.authorId === currentUserId;
@@ -45,6 +60,7 @@ const ReplyBubble: React.FC<{ reply: TicketReply; currentUserId?: string }> = ({
           {reply.isAdmin && <span className="ml-1 text-primary-400">(Admin)</span>}
           {' · '}{formatDateTime(reply.createdAt)}
         </p>
+        {!reply.isAdmin && <TranslateLink text={reply.message} className="px-1" />}
       </div>
     </div>
   );
@@ -122,6 +138,7 @@ const TicketDetail: React.FC = () => {
               </Badge>
             </div>
             <p className="text-xs text-gray-500 mt-0.5 font-mono">{ticket.ticketNumber} · {formatDateTime(ticket.createdAt)}</p>
+            <p className="text-xs text-gray-600 mt-1">{flagOf(ticket.countryCode)} {ticket.countryCode ?? '—'} · {languageLabel(ticket.language)}</p>
           </div>
         </div>
       </div>
@@ -149,6 +166,11 @@ const TicketDetail: React.FC = () => {
               )}
             </div>
             <p className="text-sm text-gray-700 whitespace-pre-wrap">{ticket.description}</p>
+            {ticket.language && ticket.language !== 'en' && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <TranslateLink text={ticket.description} label={`Translate from ${languageLabel(ticket.language)} to English`} />
+              </div>
+            )}
           </Card>
 
           {/* Reply thread */}
@@ -169,7 +191,13 @@ const TicketDetail: React.FC = () => {
           {/* Reply box */}
           {!['resolved', 'closed'].includes(ticket.status) && (
             <Card>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Reply to Customer</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-1">Reply to Customer</h3>
+              {ticket.language && ticket.language !== 'en' && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mb-3">
+                  This customer uses <strong>{languageLabel(ticket.language)}</strong>. Notification and email headings are sent in
+                  that language — please write your reply in {languageLabel(ticket.language)} too.
+                </p>
+              )}
               <textarea
                 rows={4}
                 value={reply}
@@ -177,6 +205,15 @@ const TicketDetail: React.FC = () => {
                 placeholder="Type your response to the customer..."
                 className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 resize-none"
               />
+              {ticket.language && ticket.language !== 'en' && reply.trim() && (
+                <div className="mt-2">
+                  <TranslateLink
+                    text={reply}
+                    target={ticket.language}
+                    label={`Translate my reply to ${languageLabel(ticket.language)} (copy the result back here)`}
+                  />
+                </div>
+              )}
               {status === 'resolved' && (
                 <div className="mt-3">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Resolution summary (optional)</label>

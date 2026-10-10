@@ -44,6 +44,18 @@ router.get('/applications/incomplete',
 // ─────────────────────────────────────────────
 router.get('/users', adminController.getUsers);
 
+// Which countries / languages a support agent handles (empty = all). Super admin only.
+router.put('/users/:id/support-coverage',
+  authorize('SUPER_ADMIN'),
+  param('id').isUUID(),
+  [
+    body('supportCountries').optional().isArray({ max: 60 }),
+    body('supportLanguages').optional().isArray({ max: 20 }),
+  ],
+  validate,
+  adminController.updateStaffSupportCoverage
+);
+
 // ✅ FIX: Moved BEFORE /users/:id so 'create-admin' isn't swallowed as a UUID param
 router.post('/users/create-admin',
   authorize('SUPER_ADMIN'),

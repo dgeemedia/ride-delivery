@@ -11,6 +11,7 @@ import MapView                                 from '../../components/SmartMapVi
 import { Ionicons }                            from '@expo/vector-icons';
 import { useSafeAreaInsets }                   from 'react-native-safe-area-context';
 import * as Location                           from '../../shims/Location';
+import { useCountryCenter, regionAround } from '../../utils/countryGeo';
 import { useAuth }                             from '../../context/AuthContext';
 import { useTheme }                            from '../../context/ThemeContext';
 import { useCurrency }                         from '../../context/CurrencyContext';
@@ -291,6 +292,31 @@ export default function PartnerDashboardScreen({ navigation }) {
   });
 
   const fadeA  = useRef(new Animated.Value(0)).current;
+
+  // The dashboard map is locked (no pan/zoom), so it must START in the right
+  // place. It used to be a fixed Lagos region, which is all a driver/courier in
+  // Mali or Senegal ever saw. Until GPS answers we show the user's own country;
+  // then we fly to the real position (only if permission was already granted —
+  // we don't prompt here; the go-online flow still does that).
+  const countryCenter = useCountryCenter();
+  const dashMapRef    = useRef(null);
+  const [dashMapReady, setDashMapReady] = useState(false);
+  useEffect(() => {
+    if (!dashMapReady) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const pos = (await Location.getLastKnownPositionAsync?.())
+          ?? (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+        if (cancelled || !pos?.coords) return;
+        dashMapRef.current?.animateToRegion(
+          { latitude: pos.coords.latitude, longitude: pos.coords.longitude, latitudeDelta: 0.03, longitudeDelta: 0.03 }, 600);
+      } catch { /* keep the country-centred view */ }
+    })();
+    return () => { cancelled = true; };
+  }, [dashMapReady]);
   const sheetY = useRef(new Animated.Value(60)).current;
 
   const hasMaintBanner = maintenance.isOn || maintenance.isScheduled;
@@ -473,7 +499,7 @@ export default function PartnerDashboardScreen({ navigation }) {
     { Icon: SupportIcon,         label: t('partnerDashboard.qaSupport'),          color: CA,        onPress: () => navigation.navigate('Support') },
   ];
 
-  const mapRegion = { latitude: 6.5244, longitude: 3.3792, latitudeDelta: 0.03, longitudeDelta: 0.03 };
+  const mapRegion = regionAround(countryCenter, 0.03);
 
   const sheetBg     = darkMode ? '#111111' : '#FFFFFF';
   const inputBg     = darkMode ? 'rgba(255,255,255,0.07)' : '#F2F2F7';
@@ -488,6 +514,8 @@ export default function PartnerDashboardScreen({ navigation }) {
       {/* ── MAP ── */}
       <View style={s.mapContainer}>
         <MapView
+          ref={dashMapRef}
+          onMapReady={() => setDashMapReady(true)}
           style={StyleSheet.absoluteFill}
           initialRegion={mapRegion}
           showsUserLocation

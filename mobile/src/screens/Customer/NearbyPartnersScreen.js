@@ -10,6 +10,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { useTheme } from '../../context/ThemeContext';
+import { useCountryConfig } from '../../context/CountryConfigContext';
+import { useCountryCenter, regionAround, sampleDropoffFrom } from '../../utils/countryGeo';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useTranslation } from 'react-i18next';
 import { deliveryAPI, placesAPI } from '../../services/api';
@@ -168,6 +170,7 @@ const pc = StyleSheet.create({
 // ─── LocationSearchSheet ──────────────────────────────────────────────────────
 const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, theme }) => {
   const { t } = useTranslation();
+  const countryCenter = useCountryCenter();
   const [query,     setQuery]     = useState('');
   const [results,   setResults]   = useState([]);
   const [loading,   setLoading]   = useState(false);
@@ -186,8 +189,8 @@ const LocationSearchSheet = ({ visible, type, onClose, onSelect, pickupCoords, t
 
   const initialRegion = useMemo(() => {
     if (pickupCoords) return { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.02, longitudeDelta: 0.02 };
-    return { latitude: 6.5244, longitude: 3.3792, latitudeDelta: 0.05, longitudeDelta: 0.05 };
-  }, [pickupCoords]);
+    return regionAround(countryCenter, 0.05);
+  }, [pickupCoords, countryCenter]);
 
   useEffect(() => {
     if (visible) {

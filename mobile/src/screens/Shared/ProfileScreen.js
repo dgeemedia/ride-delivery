@@ -17,10 +17,12 @@ import { useBiometric } from '../../hooks/useBiometric';
 
 const { width, height } = Dimensions.get('window');
 
+// labelKey → i18n key (shared with the registration screen so both always read
+// the same, translated, wording).
 const ROLE_META = {
-  CUSTOMER:         { label: 'Rider',   icon: 'person-outline'   },
-  DRIVER:           { label: 'Driver',  icon: 'car-outline'      },
-  DELIVERY_PARTNER: { label: 'Courier', icon: 'bicycle-outline'  },
+  CUSTOMER:         { labelKey: 'register.roleCustomerLabel', icon: 'person-outline'   },
+  DRIVER:           { labelKey: 'register.roleDriverLabel',   icon: 'car-outline'      },
+  DELIVERY_PARTNER: { labelKey: 'register.roleCourierLabel',  icon: 'bicycle-outline'  },
 };
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
@@ -518,7 +520,7 @@ export default function ProfileScreen({ navigation }) {
               </Text>
               <View style={[s.rolePill, { backgroundColor: theme.accent + '14', borderColor: theme.accent + '30' }]}>
                 <Ionicons name={meta.icon} size={13} color={theme.accent} />
-                <Text style={[s.roleLabel, { color: theme.accent }]}>{meta.label}</Text>
+                <Text style={[s.roleLabel, { color: theme.accent }]}>{t(meta.labelKey)}</Text>
               </View>
               <View style={s.verifiedRow}>
                 <Ionicons

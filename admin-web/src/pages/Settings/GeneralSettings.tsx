@@ -257,7 +257,7 @@ function markdownToHtml(text: string) {
 const PlatformSection: React.FC = () => {
   const [form, setForm] = useState({
     name: 'Diakite', supportEmail: 'support@diakite.com',
-    supportPhone: '+2348000000000', supportWhatsapp: '+2348000000000',
+    supportPhone: '', supportWhatsapp: '',
     logoUrl: '', maintenance: false, maintenanceMessage: '',
     maintenanceStartsAt: '', maintenanceEndsAt: '',
   });
@@ -353,16 +353,22 @@ const PlatformSection: React.FC = () => {
     <div className="space-y-5">
       {fetching && <p className="text-xs text-gray-400 animate-pulse">Loading…</p>}
 
+      <p className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+        <strong>Support phone &amp; WhatsApp are set per country.</strong> The numbers below are used for Nigeria only.
+        For every other country go to <em>Countries → (country) → Settings → Support contact</em>. A country with no
+        number set hides the “Call us” and WhatsApp buttons in the app.
+      </p>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Input label="Platform name"     value={form.name}          disabled={fetching} onChange={set('name')} />
         <Input label="Support email"     value={form.supportEmail}  disabled={fetching} onChange={set('supportEmail')} type="email" />
         <div>
-          <Input label="Support phone (call)" value={form.supportPhone} disabled={fetching}
-            hint="E.164 — e.g. +2348012345678" onChange={set('supportPhone')} />
+          <Input label="Support phone (call) — Nigeria / default" value={form.supportPhone} disabled={fetching}
+            hint="E.164 — e.g. +2348012345678. Used for Nigeria only." onChange={set('supportPhone')} />
         </div>
         <div>
-          <Input label="WhatsApp number" value={form.supportWhatsapp} disabled={fetching}
-            hint="Can differ from call number" onChange={set('supportWhatsapp')} />
+          <Input label="WhatsApp number — Nigeria / default" value={form.supportWhatsapp} disabled={fetching}
+            hint="Can differ from call number. Used for Nigeria only." onChange={set('supportWhatsapp')} />
           {form.supportPhone && form.supportPhone !== form.supportWhatsapp && (
             <button type="button"
               className="mt-1 text-xs text-primary-500 hover:text-primary-700 font-medium"

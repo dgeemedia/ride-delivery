@@ -837,9 +837,9 @@ export default function RegisterScreen({ navigation }) {
                     <View style={[s.rolePillIcon, { backgroundColor: activeRole.accent + '20' }]}>
                       <Ionicons name={activeRole.icon} size={13} color={activeRole.accent} />
                     </View>
-                    <Text style={[s.rolePillTxt, { color: theme.hint, fontSize: SMALL ? 12 : 13 }]}>{activeRole.label}</Text>
+                    <Text style={[s.rolePillTxt, { color: theme.hint, fontSize: SMALL ? 12 : 13 }]}>{t(ROLE_I18N_KEYS[activeRole.id].label)}</Text>
                     <TouchableOpacity onPress={goToStep1} style={s.changeBtn}>
-                      <Text style={[s.changeTxt, { color: activeRole.accent, fontSize: SMALL ? 11 : 12 }]}>Change</Text>
+                      <Text style={[s.changeTxt, { color: activeRole.accent, fontSize: SMALL ? 11 : 12 }]}>{t('register.change')}</Text>
                     </TouchableOpacity>
                   </View>
                 )}

@@ -153,6 +153,32 @@ def({ key: 'cashback_percentage',      group: 'cashback', label: 'Percentage rew
 def({ key: 'cashback_max_amount',      group: 'cashback', label: 'Reward cap (percentage mode)',    type: 'money',   base: 0, min: 0, strictWhole: true, help: '0 = no cap' });
 def({ key: 'cashback_new_user_after',  group: 'cashback', label: 'Only users who joined after',     type: 'date',    base: '' });
 
+// ── Support contact (shown on the app's Support screen) ─────────────────────
+// PER COUNTRY. Phone/WhatsApp are never inherited by another country: only the base
+// country (Nigeria) falls back to the old global value, so a customer in Mali can never
+// be shown a Nigerian number. A country with no number hides the Call/WhatsApp rows.
+const normalisePhone = (s) => {
+  const t = String(s).trim().replace(/[\s().\-]/g, '');
+  return t.startsWith('00') ? `+${t.slice(2)}` : t;
+};
+const PHONE_RE = /^\+[1-9]\d{6,14}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+def({ key: 'support_phone', group: 'support', label: 'Support phone number', type: 'text', base: '', inherit: 'base',
+      maxLength: 24, normalize: normalisePhone, pattern: PHONE_RE,
+      patternError: 'Support phone number must include the country code, e.g. +22320220000',
+      placeholder: '+223 20 22 00 00',
+      help: 'Shown on the Support screen. Include the country code. Clear it to hide the "Call us" row for this country.' });
+def({ key: 'support_whatsapp', group: 'support', label: 'Support WhatsApp number', type: 'text', base: '', inherit: 'base',
+      maxLength: 24, normalize: normalisePhone, pattern: PHONE_RE,
+      patternError: 'WhatsApp number must include the country code, e.g. +22370000000',
+      placeholder: '+223 70 00 00 00',
+      help: 'Leave empty to use the support phone number for WhatsApp. Include the country code.' });
+def({ key: 'support_email', group: 'support', label: 'Support email', type: 'text', base: '',
+      maxLength: 120, pattern: EMAIL_RE, patternError: 'Support email is not a valid email address',
+      placeholder: 'support@diakite.app',
+      help: 'Leave on "Inherited" to use the global support email.' });
+
 const DEF_BY_KEY = Object.fromEntries(DEFS.map(d => [d.key, d]));
 const INTEGER_KEYS = new Set(['utc_offset_minutes', 'cashback_milestone_trips']);
 
@@ -165,6 +191,7 @@ const GROUPS = [
   { id: 'payouts',          label: 'Payouts & withdrawals' },
   { id: 'bonuses',          label: 'Onboarding bonuses' },
   { id: 'cashback',         label: 'Customer cashback' },
+  { id: 'support',          label: 'Support contact' },
 ];
 const PRICING_GROUPS = GROUPS.filter(g => g.pricing).map(g => g.id);
 
@@ -228,6 +255,9 @@ const coerce = (d, raw) => {
       return d.options.includes(raw) ? raw : undefined;
     case 'date':
       return typeof raw === 'string' ? raw : undefined;
+    case 'text':
+      if (typeof raw === 'string') return raw.trim();
+      return typeof raw === 'number' ? String(raw) : undefined;
     case 'json':
       if (typeof raw === 'string') { try { return JSON.parse(raw); } catch { return undefined; } }
       return raw;
@@ -267,6 +297,16 @@ const validateValue = (key, raw, currency) => {
     const parsed = coerce(d, raw);
     if (parsed === undefined) throw new AppError(`${d.label}: invalid JSON`, 400);
     return key === 'surge_windows' ? validateSurgeWindows(parsed) : parsed;
+  }
+
+  if (d.type === 'text') {
+    const s = coerce(d, raw);
+    if (s === undefined) throw new AppError(`${d.label}: must be text`, 400);
+    if (s === '') return '';                       // explicit "none for this country"
+    const out = d.normalize ? d.normalize(s) : s;
+    if (d.maxLength && out.length > d.maxLength) throw new AppError(`${d.label} is too long (max ${d.maxLength} characters)`, 400);
+    if (d.pattern && !d.pattern.test(out)) throw new AppError(d.patternError || `${d.label} is not valid`, 400);
+    return out;
   }
 
   const v = coerce(d, raw);
@@ -566,6 +606,7 @@ const copySettings = async (targetCode, sourceCode, { factor, groups, adminId } 
   for (const d of DEFS) {
     if (!wanted.has(d.group)) continue;
     if (d.key === 'utc_offset_minutes') continue;        // timezone is per-country, never copied
+    if (d.group === 'support') continue;                 // a phone number is never cloned into another country
     let v = src.values[d.key];
     if (d.type === 'money') {
       v = roundMoney(v * f, tc.currencyCode);
@@ -592,6 +633,7 @@ const describeCountrySettings = async (countryCode) => {
     settings: DEFS.map(d => ({
       key: d.key, group: d.group, label: d.label, type: d.type,
       min: d.min, max: d.max, options: d.options, help: d.help,
+      maxLength: d.maxLength, placeholder: d.placeholder,
       strictWhole: d.strictWhole,
       value: eff.values[d.key],
       source: eff.sources[d.key],                       // country | global | starter | default

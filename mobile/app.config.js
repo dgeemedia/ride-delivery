@@ -13,7 +13,7 @@ module.exports = {
     name:        'Diakite',
     slug:        'diakite',
     scheme:      'diakite',
-    version:     '1.0.8',
+    version:     '1.0.9',
     orientation: 'portrait',
     icon:        './assets/icon.png',
     userInterfaceStyle: 'dark',
@@ -32,7 +32,7 @@ module.exports = {
     plugins: [
       [
         'expo-image-picker',
-        { photosPermission: 'Allow Diakite to access your photos.' },
+        { photosPermission: 'Allow Diakite to access your photos.', cameraPermission: 'Allow Diakite to use your camera to take a profile photo.' },
       ],
       [
         'expo-font',

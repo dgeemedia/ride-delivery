@@ -167,6 +167,7 @@
     "weakPasswordBody": "A senha deve ter pelo menos 8 caracteres.",
     "passwordMismatchTitle": "As Senhas Não Coincidem",
     "passwordMismatchBody": "As senhas não são iguais.",
+    "change": "Alterar",
     "selectRoleTitle": "Selecione a Função",
     "selectRoleBody": "Escolha uma função.",
     "termsRequiredTitle": "Termos Obrigatórios",

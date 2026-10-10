@@ -167,6 +167,7 @@
     "weakPasswordBody": "पासवर्ड कम से कम 8 अक्षर का होना चाहिए।",
     "passwordMismatchTitle": "पासवर्ड मेल नहीं खाते",
     "passwordMismatchBody": "पासवर्ड मेल नहीं खाते।",
+    "change": "बदलें",
     "selectRoleTitle": "भूमिका चुनें",
     "selectRoleBody": "कृपया एक भूमिका चुनें।",
     "termsRequiredTitle": "शर्तें आवश्यक हैं",

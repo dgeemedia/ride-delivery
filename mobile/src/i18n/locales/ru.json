@@ -167,6 +167,7 @@
     "weakPasswordBody": "Пароль должен содержать не менее 8 символов.",
     "passwordMismatchTitle": "Пароли не совпадают",
     "passwordMismatchBody": "Пароли не совпадают.",
+    "change": "Изменить",
     "selectRoleTitle": "Выберите роль",
     "selectRoleBody": "Пожалуйста, выберите роль.",
     "termsRequiredTitle": "Требуется согласие с условиями",

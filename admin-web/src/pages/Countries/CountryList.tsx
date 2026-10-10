@@ -26,6 +26,7 @@ import {
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/helpers';
+import { SUPPORT_LANGUAGES } from '@/utils/supportLanguages';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Presentation helpers
@@ -54,12 +55,7 @@ const PAYOUT_LABEL: Record<PayoutMethod, string> = {
   UNSUPPORTED:      'Not supported',
 };
 
-const LANGUAGES = [
-  { code: 'en', label: 'English' },
-  { code: 'fr', label: 'Français' },
-  { code: 'pt', label: 'Português' },
-  { code: 'es', label: 'Español' },
-];
+const LANGUAGES = SUPPORT_LANGUAGES.map(l => ({ code: l.code, label: l.label }));
 
 /** ISO alpha-2 → flag emoji, so we don't ship 20 flag images. */
 const flagOf = (code: string) =>
@@ -80,7 +76,7 @@ interface EditorProps {
 
 const blank: Partial<Country> = {
   code: '', name: '', currencyCode: '', currencySymbol: '',
-  phoneDialCode: '', languageCode: 'en', isActive: false,   // new markets start paused until pricing is reviewed
+  phoneDialCode: '', languageCode: 'en', mapCenterLat: '', mapCenterLng: '', mapCenterCity: '', isActive: false,   // new markets start paused until pricing is reviewed
   paymentProviders: ['flutterwave'],
   creditMethods: ['CASH', 'WALLET'],
   payoutMethods: ['MANUAL'],
@@ -125,8 +121,21 @@ const CountryEditor: React.FC<EditorProps> = ({ country, meta, onClose, onSaved 
     }
   };
 
+  // Map centre: both coordinates, in range. Required for a new country so its
+  // maps never open on another country's city.
+  const latNum = Number(form.mapCenterLat), lngNum = Number(form.mapCenterLng);
+  const hasLat = form.mapCenterLat !== '' && form.mapCenterLat != null;
+  const hasLng = form.mapCenterLng !== '' && form.mapCenterLng != null;
+  const centerError =
+    (isNew && !hasLat && !hasLng) ? 'Required — where should this country\'s maps open?'
+    : (hasLat !== hasLng)         ? 'Enter both latitude and longitude.'
+    : (hasLat && (!Number.isFinite(latNum) || latNum < -90  || latNum > 90))  ? 'Latitude must be between -90 and 90.'
+    : (hasLng && (!Number.isFinite(lngNum) || lngNum < -180 || lngNum > 180)) ? 'Longitude must be between -180 and 180.'
+    : '';
+
   const save = async () => {
     if (orphanMethods.length) return;
+    if (centerError) { toast.error(`Map centre: ${centerError}`); return; }
     setSaving(true);
     try {
       if (isNew) {
@@ -181,6 +190,22 @@ const CountryEditor: React.FC<EditorProps> = ({ country, meta, onClose, onSaved 
                  onChange={e => set('currencySymbol', e.target.value as any)} placeholder="CFA" />
           <Input label="Dial code" value={form.phoneDialCode ?? ''}
                  onChange={e => set('phoneDialCode', e.target.value as any)} placeholder="+225" />
+          <div className="col-span-2">
+            <div className="grid grid-cols-3 gap-4">
+              <Input label="Map centre latitude" inputMode="decimal" value={String(form.mapCenterLat ?? '')}
+                     onChange={e => set('mapCenterLat', e.target.value as any)} placeholder="12.6392" />
+              <Input label="Map centre longitude" inputMode="decimal" value={String(form.mapCenterLng ?? '')}
+                     onChange={e => set('mapCenterLng', e.target.value as any)} placeholder="-8.0029" />
+              <Input label="Map centre city" value={form.mapCenterCity ?? ''}
+                     onChange={e => set('mapCenterCity', e.target.value as any)} placeholder="Bamako" />
+            </div>
+            {centerError
+              ? <p className="mt-1 text-xs text-red-600">{centerError}</p>
+              : <p className="mt-1 text-xs text-slate-500">
+                  Where this country's maps open before the phone's GPS answers, and where address search is
+                  centred. Use the main city: in Google Maps, right-click it and copy the coordinates.
+                </p>}
+          </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">Default app language</label>
             <select

@@ -17,6 +17,7 @@
 // hidden until the credentials are in .env.
 
 const prisma = require('../../src/lib/prisma');
+const { getCountryCenter } = require('../../src/utils/countryGeo');
 
 const CARD   = ['CASH', 'WALLET', 'PAYSTACK', 'FLUTTERWAVE'];
 const FLW    = ['CASH', 'WALLET', 'FLUTTERWAVE'];
@@ -133,6 +134,13 @@ async function main() {
     const existing = await prisma.country.findUnique({ where: { code: country.code } });
     const { isActive, providerConfig, ...rest } = country;
 
+    // Map centre: seed it for new rows, but never overwrite one an admin set.
+    const centre = getCountryCenter(country.code);
+    const centreFields = centre
+      ? { mapCenterLat: centre.lat, mapCenterLng: centre.lng, mapCenterCity: centre.city }
+      : {};
+    const keepAdminCentre = existing?.mapCenterLat != null;
+
     const mergedConfig = {};
     for (const [provider, block] of Object.entries({ ...(providerConfig || {}), ...(existing?.providerConfig || {}) })) {
       mergedConfig[provider] = { ...((providerConfig || {})[provider] || {}), ...(((existing?.providerConfig || {})[provider]) || {}) };
@@ -140,8 +148,8 @@ async function main() {
 
     const saved = await prisma.country.upsert({
       where:  { code: country.code },
-      update: { ...rest, providerConfig: mergedConfig },
-      create: { ...rest, isActive: isActive ?? true, providerConfig: mergedConfig },
+      update: { ...rest, ...(keepAdminCentre ? {} : centreFields), providerConfig: mergedConfig },
+      create: { ...rest, ...centreFields, isActive: isActive ?? true, providerConfig: mergedConfig },
     });
     const providers = Array.isArray(saved.paymentProviders) ? saved.paymentProviders.join('/') : '-';
     console.log(`\u2713 ${saved.code} - ${saved.name} (${providers}, payout: ${saved.payoutMethod}, lang: ${saved.languageCode})`);

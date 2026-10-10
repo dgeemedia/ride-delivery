@@ -11,14 +11,15 @@ export const partnersAPI = {
     isApproved?: string;   // 'true' | 'false'
     isRejected?: string;   // ← NEW: 'true' | 'false'
     vehicleType?: string;
+    country?: string;      // ISO alpha-2, e.g. 'ML'
   }): Promise<PaginatedResponse<DeliveryPartner>> => {
     const response = await api.get('/admin/partners', { params });
     return response.data;
   },
 
   /** GET /api/admin/partners/pending */
-  getPendingPartners: async (): Promise<ApiResponse<{ partners: DeliveryPartner[] }>> => {
-    const response = await api.get('/admin/partners/pending');
+  getPendingPartners: async (country?: string): Promise<ApiResponse<{ partners: DeliveryPartner[]; byCountry?: Record<string, number> }>> => {
+    const response = await api.get('/admin/partners/pending', { params: { country: country || undefined } });
     return response.data;
   },
 

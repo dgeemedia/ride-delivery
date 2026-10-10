@@ -767,91 +767,71 @@ exports.sendAccountDeletedEmail = async (toEmail, firstName) => {
   });
 };
 
-/** Sent when a support agent replies to a user's ticket. */
-exports.sendTicketReplyEmail = async (toEmail, firstName, { ticketNumber, message }) => {
+const escapeHtml = (v) => String(v ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** Reply email: our wording in the ticket's language; the agent's text delivered as written. */
+exports.sendTicketReplyEmail = async (toEmail, firstName, { ticketNumber, message, language = 'en' }) => {
+  const { tr, isRtl, normalizeLanguage } = require('../utils/supportI18n');
+  const lang   = normalizeLanguage(language);
+  const L      = (k) => tr(lang, k, { n: ticketNumber, name: escapeHtml(firstName) });
+  const upper  = (k) => tr(lang, k).toLocaleUpperCase(lang);
+  const dir    = isRtl(lang) ? ' dir="rtl" style="text-align:right;"' : '';
   const appUrl = process.env.APP_URL ?? 'https://diakite.onrender.com';
-  const preview = String(message || '').slice(0, 240);
+  const raw     = String(message || '');
+  const preview = escapeHtml(raw.slice(0, 240));
   const body = `
-    ${pill('SUPPORT REPLY', '#e8f0fe', '#1a56db')}
-    <h2 style="font-size:22px;font-weight:900;margin:0 0 10px;color:#111;">
-      We've replied to ticket #${ticketNumber}
-    </h2>
-    <p style="color:#555;line-height:1.7;font-size:14px;margin:0 0 16px;">
-      Hi ${firstName}, one of our support agents just responded to your ticket.
-    </p>
+    <div${dir}>
+    ${pill(upper('replyPill'), '#e8f0fe', '#1a56db')}
+    <h2 style="font-size:22px;font-weight:900;margin:0 0 10px;color:#111;">${L('replyHeading')}</h2>
+    <p style="color:#555;line-height:1.7;font-size:14px;margin:0 0 16px;">${L('replyIntro')}</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;border-radius:12px;margin-bottom:20px;">
       <tr><td style="padding:16px 18px;">
-        <p style="margin:0 0 4px;font-size:12px;font-weight:800;color:#888;letter-spacing:0.3px;">SUPPORT SAYS</p>
-        <p style="margin:0;font-size:14px;color:#222;line-height:1.6;">${preview}${message && message.length > 240 ? '…' : ''}</p>
+        <p style="margin:0 0 4px;font-size:12px;font-weight:800;color:#888;letter-spacing:0.3px;">${upper('supportSays')}</p>
+        <p style="margin:0;font-size:14px;color:#222;line-height:1.6;">${preview}${raw.length > 240 ? '…' : ''}</p>
       </td></tr>
     </table>
-    <p style="color:#555;line-height:1.7;font-size:14px;margin:0 0 22px;">
-      Log in to view the full conversation and reply if you need to provide more information.
-    </p>
-    <a href="${appUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;
-       padding:14px 30px;border-radius:11px;font-weight:800;font-size:14px;">
-      View ticket #${ticketNumber}
-    </a>
-  `;
-
+    <p style="color:#555;line-height:1.7;font-size:14px;margin:0 0 22px;">${L('replyOutro')}</p>
+    <a href="${appUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:14px 30px;border-radius:11px;font-weight:800;font-size:14px;">${L('viewTicket')}</a>
+    </div>`;
   await _send({
     to: toEmail,
-    subject: `Support replied to your ticket #${ticketNumber}`,
+    subject: tr(lang, 'replySubject', { n: ticketNumber }),
     html: wrap(body),
-    text: [
-      `Hi ${firstName},`,
-      '',
-      `Support replied to your ticket #${ticketNumber}:`,
-      '',
-      preview,
-      '',
-      `Log in to Diakite to view the full conversation and respond if needed.`,
-    ].join('\n'),
+    text: [tr(lang, 'replyIntro', { name: firstName }), '', raw.slice(0, 240), '', tr(lang, 'replyOutro')].join('\n'),
   });
 };
 
-/** Sent when a support ticket is marked resolved. */
-exports.sendTicketResolvedEmail = async (toEmail, firstName, { ticketNumber, resolution = '' }) => {
+/** Resolved email, in the ticket's language. */
+exports.sendTicketResolvedEmail = async (toEmail, firstName, { ticketNumber, resolution = '', language = 'en' }) => {
+  const { tr, isRtl, normalizeLanguage } = require('../utils/supportI18n');
+  const lang   = normalizeLanguage(language);
+  const L      = (k) => tr(lang, k, { n: ticketNumber, name: escapeHtml(firstName) });
+  const upper  = (k) => tr(lang, k).toLocaleUpperCase(lang);
+  const dir    = isRtl(lang) ? ' dir="rtl" style="text-align:right;"' : '';
   const appUrl = process.env.APP_URL ?? 'https://diakite.onrender.com';
   const body = `
-    ${pill('TICKET RESOLVED', '#e8f8ee', '#0f7a3d')}
-    <h2 style="font-size:22px;font-weight:900;margin:0 0 10px;color:#111;">
-      Ticket #${ticketNumber} has been resolved ✅
-    </h2>
-    <p style="color:#555;line-height:1.7;font-size:14px;margin:0 0 16px;">
-      Hi ${firstName}, your support ticket has been marked as resolved.
-    </p>
+    <div${dir}>
+    ${pill(upper('resolvedPill'), '#e8f8ee', '#0f7a3d')}
+    <h2 style="font-size:22px;font-weight:900;margin:0 0 10px;color:#111;">${L('resolvedHeading')}</h2>
+    <p style="color:#555;line-height:1.7;font-size:14px;margin:0 0 16px;">${L('resolvedIntro')}</p>
     ${resolution ? `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;border-radius:12px;margin-bottom:20px;">
       <tr><td style="padding:16px 18px;">
-        <p style="margin:0 0 4px;font-size:12px;font-weight:800;color:#888;letter-spacing:0.3px;">RESOLUTION</p>
-        <p style="margin:0;font-size:14px;color:#222;line-height:1.6;">${resolution}</p>
+        <p style="margin:0 0 4px;font-size:12px;font-weight:800;color:#888;letter-spacing:0.3px;">${upper('resolutionLabel')}</p>
+        <p style="margin:0;font-size:14px;color:#222;line-height:1.6;">${escapeHtml(resolution)}</p>
       </td></tr>
     </table>` : ''}
-    <p style="color:#555;line-height:1.7;font-size:14px;margin:0 0 22px;">
-      If this didn't fully solve your issue, just reopen the ticket or contact us again — we're happy to help further.
-    </p>
-    <a href="${appUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;
-       padding:14px 30px;border-radius:11px;font-weight:800;font-size:14px;">
-      View ticket #${ticketNumber}
-    </a>
-  `;
-
+    <p style="color:#555;line-height:1.7;font-size:14px;margin:0 0 22px;">${L('resolvedOutro')}</p>
+    <a href="${appUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:14px 30px;border-radius:11px;font-weight:800;font-size:14px;">${L('viewTicket')}</a>
+    </div>`;
   await _send({
     to: toEmail,
-    subject: `Your ticket #${ticketNumber} has been resolved`,
+    subject: tr(lang, 'resolvedSubject', { n: ticketNumber }),
     html: wrap(body),
-    text: [
-      `Hi ${firstName},`,
-      '',
-      `Your support ticket #${ticketNumber} has been marked as resolved.`,
-      resolution ? `\nResolution: ${resolution}` : '',
-      '',
-      `If this didn't fully solve your issue, reopen the ticket or contact us again.`,
-    ].filter(Boolean).join('\n'),
+    text: [tr(lang, 'resolvedIntro', { name: firstName }), resolution ? `\n${tr(lang, 'resolutionLabel')}: ${resolution}` : '', '', tr(lang, 'resolvedOutro')].join('\n'),
   });
 };
-
 /** Sent the moment a driver/partner submits a withdrawal request. */
 exports.sendWithdrawalUnderReviewEmail = async (toEmail, firstName, { amount, reference, accountName, accountNumber, currency = null }) => {
   await _curFor(toEmail, currency);

@@ -13,6 +13,7 @@ import { formatDateTime } from '@/utils/helpers';
 import { formatMoney } from '@/utils/money';
 import { RIDE_STATUSES } from '@/utils/constants';
 import toast from 'react-hot-toast';
+import { CountrySelect, CountryTag } from '@/components/CountryFilter';
 
 const statusVariant = (s: string): 'success' | 'warning' | 'error' | 'info' | 'default' => ({
   COMPLETED: 'success', CANCELLED: 'error',
@@ -25,13 +26,14 @@ const RideList: React.FC = () => {
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [countryFilter, setCountryFilter] = useState('');
   const [dateFrom, setDateFrom]         = useState('');
   const [dateTo, setDateTo]             = useState('');
   const [currentPage, setCurrentPage]   = useState(1);
   const [totalPages, setTotalPages]     = useState(1);
   const [totalCount, setTotalCount]     = useState(0);
 
-  useEffect(() => { load(); }, [currentPage, statusFilter]);
+  useEffect(() => { load(); }, [currentPage, statusFilter, countryFilter]);
 
   const load = async () => {
     setLoading(true);
@@ -40,6 +42,7 @@ const RideList: React.FC = () => {
         page:      currentPage,
         limit:     20,
         status:    statusFilter || undefined,
+        country:   countryFilter || undefined,
         // API type uses startDate/endDate (not dateFrom/dateTo or search)
         startDate: dateFrom     || undefined,
         endDate:   dateTo       || undefined,
@@ -101,6 +104,10 @@ const RideList: React.FC = () => {
         </div>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div className="md:col-span-3">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Country (rider's market)</label>
+            <CountrySelect value={countryFilter} onChange={c => { setCountryFilter(c); setCurrentPage(1); }} />
+          </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
             <input
@@ -158,6 +165,7 @@ const RideList: React.FC = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Country</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Driver</TableHead>
                   <TableHead>Route</TableHead>
@@ -170,12 +178,13 @@ const RideList: React.FC = () => {
               <TableBody>
                 {rides.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center text-gray-400 py-12 text-sm">
+                    <td colSpan={8} className="text-center text-gray-400 py-12 text-sm">
                       No rides found.
                     </td>
                   </tr>
                 ) : rides.map(ride => (
                   <TableRow key={ride.id} onClick={() => navigate(`/rides/${ride.id}`)}>
+                    <TableCell><CountryTag code={(ride.customer as any)?.countryCode} /></TableCell>
                     <TableCell>
                       <div className="font-medium text-sm">{ride.customer?.firstName} {ride.customer?.lastName}</div>
                       <div className="text-xs text-gray-500">{ride.customer?.email}</div>

@@ -12,6 +12,7 @@ import { Card, Button, Badge, Spinner } from '@/components/common';
 import { formatDateTime } from '@/utils/helpers';
 import { formatMoney } from '@/utils/money';
 import { useSocket }      from '@/hooks/useSocket';
+import { CountrySelect, useCountries } from '@/components/CountryFilter';
 import toast              from 'react-hot-toast';
 
 // ── Leaflet default-icon fix for Vite ────────────────────────────────────────
@@ -76,6 +77,7 @@ const LiveRides: React.FC = () => {
 
   const [rides,   setRides]   = useState<Ride[]>([]);
   const [loading, setLoading] = useState(true);
+  const [country, setCountry] = useState('');
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef          = useRef<L.Map | null>(null);
@@ -85,14 +87,21 @@ const LiveRides: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await ridesAPI.getLiveRides();
+      const res = await ridesAPI.getLiveRides(country || undefined);
       setRides(res.data.rides ?? []);
     } catch {
       toast.error('Failed to load live rides');
     } finally { setLoading(false); }
-  }, []);
+  }, [country]);
 
   useEffect(() => { load(); }, [load]);
+  // Jump the map to the selected country's centre (admin-editable under Countries).
+  const countries = useCountries();
+  useEffect(() => {
+    const c = countries.find(x => x.code === country);
+    if (c && c.lat != null && c.lng != null) mapRef.current?.setView([c.lat, c.lng], 11);
+  }, [country, countries]);
+
 
   // Auto-refresh every 30 s
   useEffect(() => {
@@ -190,9 +199,12 @@ const LiveRides: React.FC = () => {
             {rides.length} active ride{rides.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <Button variant="outline" onClick={load} loading={loading}>
-          <RefreshCw className="h-4 w-4" />Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <CountrySelect value={country} onChange={setCountry} />
+          <Button variant="outline" onClick={load} loading={loading}>
+            <RefreshCw className="h-4 w-4" />Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-5" style={{ height: 'calc(100vh - 220px)' }}>

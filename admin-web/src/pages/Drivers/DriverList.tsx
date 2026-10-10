@@ -13,6 +13,7 @@ import { formatDate } from '@/utils/helpers';
 import { VEHICLE_TYPES } from '@/utils/constants';
 import { exportToExcel, exportToCSV, DRIVER_EXPORT_COLUMNS } from '@/utils/exportToExcel';
 import toast from 'react-hot-toast';
+import { CountrySelect, CountryTag } from '@/components/CountryFilter';
 
 const ExportDropdown: React.FC<{
   onExcel:  () => void;
@@ -68,11 +69,12 @@ const DriverList: React.FC = () => {
   const [search,         setSearch]         = useState('');
   const [statusFilter,   setStatusFilter]   = useState('');
   const [vehicleFilter,  setVehicleFilter]  = useState('');
+  const [countryFilter,  setCountryFilter]  = useState('');
   const [currentPage,    setCurrentPage]    = useState(1);
   const [totalPages,     setTotalPages]     = useState(1);
   const [totalCount,     setTotalCount]     = useState(0);
 
-  useEffect(() => { loadDrivers(); }, [currentPage, statusFilter, vehicleFilter]);
+  useEffect(() => { loadDrivers(); }, [currentPage, statusFilter, vehicleFilter, countryFilter]);
 
   const buildFilterParams = () => {
     const base: Record<string, any> = {
@@ -80,6 +82,7 @@ const DriverList: React.FC = () => {
       limit:       20,
       search:      search        || undefined,
       vehicleType: vehicleFilter || undefined,
+      country:     countryFilter || undefined,
     };
     if (statusFilter === 'approved:true')  { base.isApproved = 'true';  base.isRejected = 'false'; }
     if (statusFilter === 'pending')        { base.isApproved = 'false'; base.isRejected = 'false'; }
@@ -106,6 +109,7 @@ const DriverList: React.FC = () => {
       search:      search        || undefined,
       isApproved:  statusFilter  || undefined,
       vehicleType: vehicleFilter || undefined,
+      country:     countryFilter || undefined,
     });
     return res.data.drivers ?? [];
   };
@@ -155,7 +159,7 @@ const DriverList: React.FC = () => {
       </div>
 
       <Card>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="md:col-span-2">
             <Input
               placeholder="Search by name, email, or license..."
@@ -182,6 +186,7 @@ const DriverList: React.FC = () => {
               ...Object.entries(VEHICLE_TYPES).map(([value, label]) => ({ value, label })),
             ]}
           />
+          <CountrySelect value={countryFilter} onChange={c => { setCountryFilter(c); setCurrentPage(1); }} />
         </div>
         <div className="mt-4 flex justify-end">
           <Button onClick={() => { setCurrentPage(1); loadDrivers(); }}>
@@ -199,6 +204,7 @@ const DriverList: React.FC = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Driver</TableHead>
+                  <TableHead>Country</TableHead>
                   <TableHead>Vehicle</TableHead>
                   <TableHead>License</TableHead>
                   <TableHead>Rating</TableHead>
@@ -212,7 +218,7 @@ const DriverList: React.FC = () => {
                 {/* FIX: use native <tr><td> for colSpan */}
                 {drivers.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center text-gray-400 py-12 text-sm">
+                    <td colSpan={9} className="text-center text-gray-400 py-12 text-sm">
                       No drivers found.
                     </td>
                   </tr>
@@ -229,6 +235,7 @@ const DriverList: React.FC = () => {
                         </div>
                       </div>
                     </TableCell>
+                    <TableCell><CountryTag code={(driver.user as any).countryCode} /></TableCell>
                     <TableCell>
                       <div className="font-medium">{driver.vehicleMake} {driver.vehicleModel}</div>
                       <div className="text-sm text-gray-500">{driver.vehicleType} • {driver.vehiclePlate}</div>

@@ -10,6 +10,7 @@ export const deliveriesAPI = {
     status?: string;
     partnerId?: string;
     customerId?: string;
+    country?: string;
   }): Promise<PaginatedResponse<Delivery>> => {
     const response = await api.get('/admin/deliveries', { params });
     return response.data;
@@ -22,8 +23,8 @@ export const deliveriesAPI = {
   },
 
   /** GET /api/admin/deliveries/live — all in-progress deliveries with partner GPS */
-  getLiveDeliveries: async (): Promise<ApiResponse<{ deliveries: Delivery[]; total: number }>> => {
-    const response = await api.get('/admin/deliveries/live');
+  getLiveDeliveries: async (country?: string): Promise<ApiResponse<{ deliveries: Delivery[]; total: number }>> => {
+    const response = await api.get('/admin/deliveries/live', { params: { country: country || undefined } });
     return response.data;
   },
 

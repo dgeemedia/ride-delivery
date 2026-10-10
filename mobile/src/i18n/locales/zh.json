@@ -167,6 +167,7 @@
     "weakPasswordBody": "密码至少需要 8 个字符。",
     "passwordMismatchTitle": "密码不一致",
     "passwordMismatchBody": "两次输入的密码不一致。",
+    "change": "更改",
     "selectRoleTitle": "请选择角色",
     "selectRoleBody": "请选择一个角色。",
     "termsRequiredTitle": "需要同意服务条款",

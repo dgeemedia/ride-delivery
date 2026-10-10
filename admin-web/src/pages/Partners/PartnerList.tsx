@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Star, Download, ChevronDown, FileSpreadsheet, FileText } from 'lucide-react';
 import { partnersAPI } from '@/services/api/partners';
+import { CountrySelect, CountryTag } from '@/components/CountryFilter';
 import { DeliveryPartner } from '@/types';
 import {
   Card, Input, Select, Button,
@@ -56,11 +57,12 @@ const PartnerList: React.FC = () => {
   const [search,         setSearch]         = useState('');
   const [statusFilter,   setStatusFilter]   = useState('');
   const [vehicleFilter,  setVehicleFilter]  = useState('');
+  const [countryFilter,  setCountryFilter]  = useState('');
   const [currentPage,    setCurrentPage]    = useState(1);
   const [totalPages,     setTotalPages]     = useState(1);
   const [totalCount,     setTotalCount]     = useState(0);
 
-  useEffect(() => { loadPartners(); }, [currentPage, statusFilter, vehicleFilter]);
+  useEffect(() => { loadPartners(); }, [currentPage, statusFilter, vehicleFilter, countryFilter]);
 
   // ── Mirrors the driver list filter logic exactly ──
   const buildFilterParams = () => {
@@ -69,6 +71,7 @@ const PartnerList: React.FC = () => {
       limit:       20,
       search:      search        || undefined,
       vehicleType: vehicleFilter || undefined,
+      country:     countryFilter || undefined,
     };
     if (statusFilter === 'approved:true')  { base.isApproved = 'true';  base.isRejected = 'false'; }
     if (statusFilter === 'pending')        { base.isApproved = 'false'; base.isRejected = 'false'; }
@@ -95,6 +98,7 @@ const PartnerList: React.FC = () => {
       page: 1, limit: 5000,
       search:      search        || undefined,
       vehicleType: vehicleFilter || undefined,
+      country:     countryFilter || undefined,
     });
     return res.data.partners ?? [];
   };
@@ -145,7 +149,7 @@ const PartnerList: React.FC = () => {
       </div>
 
       <Card>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="md:col-span-2">
             <Input
               placeholder="Search by name or email..."
@@ -172,6 +176,7 @@ const PartnerList: React.FC = () => {
               ...Object.entries(VEHICLE_TYPES).map(([value, label]) => ({ value, label: label as string })),
             ]}
           />
+          <CountrySelect value={countryFilter} onChange={c => { setCountryFilter(c); setCurrentPage(1); }} />
         </div>
         <div className="mt-4 flex justify-end">
           <Button onClick={() => { setCurrentPage(1); loadPartners(); }}>
@@ -189,6 +194,7 @@ const PartnerList: React.FC = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Partner</TableHead>
+                  <TableHead>Country</TableHead>
                   <TableHead>Vehicle</TableHead>
                   <TableHead>Rating</TableHead>
                   <TableHead>Deliveries</TableHead>
@@ -200,7 +206,7 @@ const PartnerList: React.FC = () => {
               <TableBody>
                 {partners.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center text-gray-400 py-12 text-sm">
+                    <td colSpan={8} className="text-center text-gray-400 py-12 text-sm">
                       No delivery partners found.
                     </td>
                   </tr>
@@ -217,6 +223,7 @@ const PartnerList: React.FC = () => {
                         </div>
                       </div>
                     </TableCell>
+                    <TableCell><CountryTag code={(partner.user as any).countryCode} /></TableCell>
                     <TableCell>
                       <div className="font-medium">{partner.vehicleType}</div>
                       {partner.vehiclePlate && (

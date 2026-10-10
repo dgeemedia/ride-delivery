@@ -51,6 +51,7 @@ router.post('/support-ticket', [
   body('description').notEmpty(),
   body('category').isIn(['account', 'payment', 'ride', 'delivery', 'technical', 'other']),
   body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
+  body('language').optional().isString().isLength({ max: 12 }),
 ], userController.submitSupportTicket);
 
 // List own tickets

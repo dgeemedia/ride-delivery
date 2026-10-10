@@ -4,6 +4,9 @@ const express = require('express');
 const router  = express.Router();
 const prisma  = require('../lib/prisma');
 const { getMaintenanceState } = require('../middleware/maintenance.middleware');
+const jwt     = require('jsonwebtoken');
+const countrySettings = require('../services/countrySettings.service');
+const { getCountryByCode } = require('../services/country.service');
 
 const PUBLIC_SETTING_KEYS = [
   'support_email',
@@ -14,6 +17,23 @@ const PUBLIC_SETTING_KEYS = [
   'terms_url',
   'privacy_url',
 ];
+
+// Keys that differ per country (resolved through countrySettings).
+const COUNTRY_CONTACT_KEYS = ['support_email', 'support_phone', 'support_whatsapp'];
+
+// Signed-in user's own country wins, then ?country=XX, else null → global values (as before).
+const resolveContactCountry = async (req) => {
+  try {
+    const h = req.headers.authorization;
+    if (h?.startsWith('Bearer ')) {
+      const decoded = jwt.verify(h.split(' ')[1], process.env.JWT_SECRET);
+      const u = await prisma.user.findUnique({ where: { id: decoded.userId }, select: { countryCode: true } });
+      if (u?.countryCode) return String(u.countryCode).toUpperCase();
+    }
+  } catch { /* bad/expired token → fall through */ }
+  const q = String(req.query?.country || '').trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(q) ? q : null;
+};
 
 const LEGAL_KEYS = [
   'terms_content',
@@ -54,6 +74,20 @@ router.get('/contact', async (req, res) => {
     });
     const data = Object.fromEntries(rows.map(r => [r.key, r.value]));
     const safe = Object.fromEntries(PUBLIC_SETTING_KEYS.map(k => [k, data[k] ?? '']));
+
+    // Never answer a Malian user with Nigeria's number: unknown country → no phone/WhatsApp.
+    const country = await resolveContactCountry(req);
+    if (country) {
+      const known = (await getCountryByCode(country)).code === country;
+      if (known) {
+        const eff = await countrySettings.getEffectiveSettings(country);
+        for (const k of COUNTRY_CONTACT_KEYS) safe[k] = eff.values[k] ?? '';
+      } else {
+        safe.support_phone = '';
+        safe.support_whatsapp = '';
+      }
+      safe.countryCode = country;
+    }
     return res.json({ success: true, data: safe });
   } catch {
     return res.json({

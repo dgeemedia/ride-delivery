@@ -10,6 +10,7 @@ import {
 import { useAuthStore } from '@/store/authStore';
 import { formatDate } from '@/utils/helpers';
 import toast from 'react-hot-toast';
+import { CountryChips, CountryTag } from '@/components/CountryFilter';
 
 // ─── Vehicle-type-aware required document definitions ────────────────────────
 type PartnerDocDef = { field: keyof DeliveryPartner; label: string; icon: React.ReactNode };
@@ -318,13 +319,17 @@ const PartnerApproval: React.FC = () => {
   const [loading,         setLoading]         = useState(true);
   const [selectedPartner, setSelectedPartner] = useState<DeliveryPartner | null>(null);
 
-  useEffect(() => { loadPendingPartners(); }, []);
+  const [country,   setCountry]   = useState('');
+  const [byCountry, setByCountry] = useState<Record<string, number>>({});
+
+  useEffect(() => { loadPendingPartners(); }, [country]);
 
   const loadPendingPartners = async () => {
     setLoading(true);
     try {
-      const res = await partnersAPI.getPendingPartners();
+      const res = await partnersAPI.getPendingPartners(country);
       setPartners(res.data.partners);
+      setByCountry(res.data.byCountry || {});
     } catch {
       toast.error('Failed to load pending partners');
     } finally {
@@ -342,6 +347,8 @@ const PartnerApproval: React.FC = () => {
           </p>
         </div>
       </div>
+
+      <CountryChips counts={byCountry} value={country} onChange={setCountry} />
 
       {loading ? (
         <div className="flex justify-center py-16"><Spinner size="lg" showLabel /></div>
@@ -367,6 +374,7 @@ const PartnerApproval: React.FC = () => {
                     {partner.user.firstName} {partner.user.lastName}
                   </p>
                   <p className="text-xs text-gray-500 truncate">{partner.user.email}</p>
+                  <CountryTag code={(partner.user as any).countryCode} className="mt-0.5" />
                 </div>
               </div>
 

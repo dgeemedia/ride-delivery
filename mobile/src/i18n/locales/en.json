@@ -166,6 +166,7 @@
     "weakPasswordBody": "Password must be at least 8 characters.",
     "passwordMismatchTitle": "Password Mismatch",
     "passwordMismatchBody": "Passwords do not match.",
+    "change": "Change",
     "selectRoleTitle": "Select Role",
     "selectRoleBody": "Please choose a role.",
     "termsRequiredTitle": "Terms Required",

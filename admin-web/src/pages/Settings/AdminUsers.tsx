@@ -1,9 +1,11 @@
 // admin-web/src/pages/Settings/AdminUsers.tsx
 // FIX: removed unused Edit2 import, removed unused showEditModal/selectedAdmin state, fixed res variable, fixed colSpan
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Shield } from 'lucide-react';
+import { Plus, Trash2, Shield, Globe2 } from 'lucide-react';
 import { Card, Button, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Badge, Modal, Input, Select } from '@/components/common';
 import api from '@/services/api';
+import { countriesAPI, Country } from '@/services/api/countries';
+import { SUPPORT_LANGUAGES, languageLabel, flagOf } from '@/utils/supportLanguages';
 import toast from 'react-hot-toast';
 
 interface AdminUser {
@@ -14,12 +16,36 @@ interface AdminUser {
   phone: string;
   role: 'ADMIN' | 'SUPER_ADMIN' | 'MODERATOR' | 'SUPPORT';
   adminDepartment: 'RIDES' | 'DELIVERIES' | 'SUPPORT' | null;
+  /** Support coverage. Empty = every country / language. */
+  supportCountries?: string[];
+  supportLanguages?: string[];
   isActive: boolean;
   createdAt: string;
 }
 
 const AdminUsers: React.FC = () => {
   const [admins, setAdmins] = useState<AdminUser[]>([]);
+
+  // Support coverage editor
+  const [countries, setCountries]       = useState<Country[]>([]);
+  const [coverageFor, setCoverageFor]   = useState<AdminUser | null>(null);
+  const [covCountries, setCovCountries] = useState<string[]>([]);
+  const [covLanguages, setCovLanguages] = useState<string[]>([]);
+  const [savingCov, setSavingCov]       = useState(false);
+  useEffect(() => { countriesAPI.list().then(r => setCountries(r.data.countries)).catch(() => {}); }, []);
+  const openCoverage = (a: AdminUser) => { setCoverageFor(a); setCovCountries(a.supportCountries ?? []); setCovLanguages(a.supportLanguages ?? []); };
+  const toggle = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
+  const saveCoverage = async () => {
+    if (!coverageFor) return;
+    setSavingCov(true);
+    try {
+      await api.put(`/admin/users/${coverageFor.id}/support-coverage`, { supportCountries: covCountries, supportLanguages: covLanguages });
+      toast.success('Country coverage saved');
+      setAdmins(prev => prev.map(a => a.id === coverageFor.id ? { ...a, supportCountries: covCountries, supportLanguages: covLanguages } : a));
+      setCoverageFor(null);
+    } catch (err: any) { toast.error(err?.response?.data?.message || 'Failed to save coverage'); }
+    finally { setSavingCov(false); }
+  };
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -158,6 +184,7 @@ const AdminUsers: React.FC = () => {
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Department</TableHead>
+                <TableHead>Country coverage</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -166,7 +193,7 @@ const AdminUsers: React.FC = () => {
               {/* FIX: use native <tr><td> for colSpan */}
               {admins.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center text-gray-400 py-8 text-sm">
+                  <td colSpan={7} className="text-center text-gray-400 py-8 text-sm">
                     No admin users found.
                   </td>
                 </tr>
@@ -197,12 +224,24 @@ const AdminUsers: React.FC = () => {
                     </span>
                   </TableCell>
                   <TableCell>
+                    {(admin.supportCountries?.length || admin.supportLanguages?.length) ? (
+                      <div className="text-xs text-gray-600 space-y-0.5">
+                        <div>{admin.supportCountries?.length ? admin.supportCountries.map(c => `${flagOf(c)} ${c}`).join('  ') : 'All countries'}</div>
+                        <div className="text-gray-400">{admin.supportLanguages?.length ? admin.supportLanguages.map(languageLabel).join(', ') : 'All languages'}</div>
+                      </div>
+                    ) : <span className="text-xs text-gray-400">All countries &amp; languages</span>}
+                  </TableCell>
+                  <TableCell>
                     <Badge variant={admin.isActive ? 'success' : 'error'}>
                       {admin.isActive ? 'Active' : 'Suspended'}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
+                      <Button size="sm" variant="outline" title="Countries & languages this person handles"
+                        onClick={() => openCoverage(admin)}>
+                        <Globe2 className="h-3 w-3" />
+                      </Button>
                       <Button size="sm" variant="outline"
                         onClick={() => handleSuspend(admin)}
                         title={admin.isActive ? 'Suspend' : 'Reactivate'}>
@@ -256,6 +295,48 @@ const AdminUsers: React.FC = () => {
           <p className="text-xs text-gray-400">
             General admins can access all sections. Scoped admins only see their department.
           </p>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!coverageFor}
+        onClose={() => setCoverageFor(null)}
+        title={coverageFor ? `Country coverage — ${coverageFor.firstName} ${coverageFor.lastName}` : 'Country coverage'}
+        footer={<>
+          <Button variant="outline" onClick={() => setCoverageFor(null)}>Cancel</Button>
+          <Button loading={savingCov} onClick={saveCoverage}>Save coverage</Button>
+        </>}
+      >
+        <div className="space-y-5">
+          <p className="text-xs text-gray-500">
+            Choose which countries and languages this person handles. They only see, and are only notified about, matching
+            support tickets. The <strong>countries</strong> also limit which drivers, delivery partners, rides and deliveries
+            they can see and approve. <strong>Leave a list empty to cover everything.</strong> Super admins always see everything.
+          </p>
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">Countries</p>
+            <div className="flex flex-wrap gap-2">
+              {countries.map(c => (
+                <button key={c.code} type="button" onClick={() => toggle(covCountries, setCovCountries, c.code)}
+                  className={`px-2.5 py-1 rounded-full border text-xs font-semibold transition ${
+                    covCountries.includes(c.code) ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
+                  {flagOf(c.code)} {c.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">Languages</p>
+            <div className="flex flex-wrap gap-2">
+              {SUPPORT_LANGUAGES.map(l => (
+                <button key={l.code} type="button" onClick={() => toggle(covLanguages, setCovLanguages, l.code)}
+                  className={`px-2.5 py-1 rounded-full border text-xs font-semibold transition ${
+                    covLanguages.includes(l.code) ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </Modal>
     </div>

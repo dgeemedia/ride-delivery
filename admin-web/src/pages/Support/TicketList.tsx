@@ -6,6 +6,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, MessageCircle } from 'lucide-react';
 import { ticketsAPI, SupportTicket } from '@/services/api/tickets';
+import { countriesAPI, Country } from '@/services/api/countries';
+import { SUPPORT_LANGUAGES, languageLabel, flagOf } from '@/utils/supportLanguages';
 import {
   Card, Input, Select, Button,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -33,11 +35,16 @@ const TicketList: React.FC = () => {
   const [statusFilter, setStatusFilter]     = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [countryFilter, setCountryFilter]   = useState('');
+  const [languageFilter, setLanguageFilter] = useState('');
+  const [countries, setCountries]           = useState<Country[]>([]);
+  const [openByCountry, setOpenByCountry]   = useState<Record<string, number>>({});
   const [currentPage, setCurrentPage]       = useState(1);
   const [totalPages, setTotalPages]         = useState(1);
   const [totalCount, setTotalCount]         = useState(0);
 
-  useEffect(() => { load(); }, [currentPage, statusFilter, priorityFilter, categoryFilter]);
+  useEffect(() => { countriesAPI.list().then(r => setCountries(r.data.countries)).catch(() => {}); }, []);
+  useEffect(() => { load(); }, [currentPage, statusFilter, priorityFilter, categoryFilter, countryFilter, languageFilter]);
 
   const load = async () => {
     setLoading(true);
@@ -47,8 +54,12 @@ const TicketList: React.FC = () => {
         status:   statusFilter   || undefined,
         priority: priorityFilter || undefined,
         category: categoryFilter || undefined,
+        countryCode: countryFilter || undefined,
+        language: languageFilter || undefined,
+        search: search.trim() || undefined,
       });
       setTickets(res.data.tickets || []);
+      setOpenByCountry(res.data.openByCountry || {});
       setTotalPages(res.data.pagination.pages);
       setTotalCount(res.data.pagination.total);
     } catch {
@@ -102,6 +113,26 @@ const TicketList: React.FC = () => {
             ]}
           />
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+          <Select value={countryFilter} onChange={e => { setCountryFilter(e.target.value); setCurrentPage(1); }}
+            options={[{ value: '', label: 'All countries' }, ...countries.map(c => ({ value: c.code, label: `${flagOf(c.code)} ${c.name}` }))]} />
+          <Select value={languageFilter} onChange={e => { setLanguageFilter(e.target.value); setCurrentPage(1); }}
+            options={[{ value: '', label: 'All languages' }, ...SUPPORT_LANGUAGES.map(l => ({ value: l.code, label: l.label }))]} />
+        </div>
+
+        {Object.keys(openByCountry).length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-500 mr-1">Open by country:</span>
+            {Object.entries(openByCountry).sort((a, b) => b[1] - a[1]).map(([code, n]) => (
+              <button key={code} type="button"
+                onClick={() => { setCountryFilter(countryFilter === code ? '' : code); setCurrentPage(1); }}
+                className={`px-2.5 py-1 rounded-full border text-xs font-semibold transition ${
+                  countryFilter === code ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
+                {flagOf(code)} {code} · {n}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="mt-4 flex justify-end">
           <Button onClick={() => { setCurrentPage(1); load(); }}>
             <Search className="h-4 w-4 mr-2" />Search
@@ -120,6 +151,7 @@ const TicketList: React.FC = () => {
                   <TableHead>Ticket</TableHead>
                   <TableHead>Subject</TableHead>
                   <TableHead>User</TableHead>
+                  <TableHead>Market</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Priority</TableHead>
                   <TableHead>Status</TableHead>
@@ -131,7 +163,7 @@ const TicketList: React.FC = () => {
                 {/* FIX: use native <tr><td> for colSpan */}
                 {tickets.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center text-gray-400 py-12 text-sm">
+                    <td colSpan={9} className="text-center text-gray-400 py-12 text-sm">
                       No tickets found.
                     </td>
                   </tr>
@@ -147,6 +179,10 @@ const TicketList: React.FC = () => {
                       {ticket.user
                         ? <div><div className="text-sm font-medium">{ticket.user.firstName} {ticket.user.lastName}</div><div className="text-xs text-gray-500">{ticket.user.role}</div></div>
                         : <span className="text-xs text-gray-400">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm whitespace-nowrap">{flagOf(ticket.countryCode)} {ticket.countryCode ?? '—'}</div>
+                      <div className="text-xs text-gray-500">{languageLabel(ticket.language)}</div>
                     </TableCell>
                     <TableCell className="text-sm">{CATEGORY_LABELS[ticket.category] ?? ticket.category}</TableCell>
                     <TableCell>

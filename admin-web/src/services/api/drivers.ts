@@ -11,14 +11,15 @@ export const driversAPI = {
     isApproved?: string;   // 'true' | 'false'
     isRejected?: string;   // ← new: 'true' | 'false'
     vehicleType?: string;
+    country?: string;      // ISO alpha-2, e.g. 'ML'
   }): Promise<PaginatedResponse<Driver>> => {
     const response = await api.get('/admin/drivers', { params });
     return response.data;
   },
 
   /** GET /api/admin/drivers/pending */
-  getPendingDrivers: async (): Promise<ApiResponse<{ drivers: Driver[] }>> => {
-    const response = await api.get('/admin/drivers/pending');
+  getPendingDrivers: async (country?: string): Promise<ApiResponse<{ drivers: Driver[]; byCountry?: Record<string, number> }>> => {
+    const response = await api.get('/admin/drivers/pending', { params: { country: country || undefined } });
     return response.data;
   },
 

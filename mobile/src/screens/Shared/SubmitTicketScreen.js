@@ -31,7 +31,7 @@ const PRIORITIES = [
 
 export default function SubmitTicketScreen({ navigation }) {
   const { theme, mode } = useTheme();
-  const { t }            = useTranslation();
+  const { t, i18n }      = useTranslation();
   const insets          = useSafeAreaInsets();
   const fadeA           = useRef(new Animated.Value(0)).current;
   const messageRef      = useRef(null);
@@ -61,6 +61,7 @@ export default function SubmitTicketScreen({ navigation }) {
         priority,
         subject:     subject.trim(),
         description: message.trim(),
+        language:    i18n.language,   // the ticket is answered in the language the customer uses
       });
       Alert.alert(
         t('submitTicket.submittedTitle'),

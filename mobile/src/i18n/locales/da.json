@@ -167,6 +167,7 @@
     "weakPasswordBody": "Adgangskoden skal være mindst 8 tegn lang.",
     "passwordMismatchTitle": "Adgangskoder stemmer ikke overens",
     "passwordMismatchBody": "Adgangskoderne stemmer ikke overens.",
+    "change": "Skift",
     "selectRoleTitle": "Vælg rolle",
     "selectRoleBody": "Vælg venligst en rolle.",
     "termsRequiredTitle": "Servicevilkår påkrævet",

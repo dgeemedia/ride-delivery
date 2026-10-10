@@ -8,6 +8,7 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCountryCenter } from '../../utils/countryGeo';
 import { useCurrency }       from '../../context/CurrencyContext';
 import { useTranslation }    from 'react-i18next';
 import { driverAPI, rideAPI } from '../../services/api';
@@ -81,6 +82,7 @@ const mb = StyleSheet.create({
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function FloorPriceScreen({ navigation }) {
+  const countryCenter = useCountryCenter();
   const { theme, mode } = useTheme();
   const { formatMoney, currencySymbol } = useCurrency();
   const { t } = useTranslation();
@@ -121,8 +123,9 @@ export default function FloorPriceScreen({ navigation }) {
         driverAPI.getProfile(),
         rideAPI.getPlatformRates(),
         rideAPI.getEstimate({
-          pickupLat: 6.5244, pickupLng: 3.3792,
-          dropoffLat: 6.5689, dropoffLng: 3.3632,
+          // Reference trip in the driver's OWN country (was a fixed Lagos route).
+          pickupLat: countryCenter.lat, pickupLng: countryCenter.lng,
+          dropoffLat: countryCenter.lat + 0.0445, dropoffLng: countryCenter.lng - 0.0160,
           vehicleType: profile?.vehicleType ?? 'CAR',
         }),
       ]);

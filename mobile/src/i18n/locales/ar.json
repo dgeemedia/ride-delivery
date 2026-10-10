@@ -167,6 +167,7 @@
     "weakPasswordBody": "يجب ألا تقل كلمة المرور عن 8 أحرف.",
     "passwordMismatchTitle": "كلمتا المرور غير متطابقتين",
     "passwordMismatchBody": "كلمتا المرور غير متطابقتين.",
+    "change": "تغيير",
     "selectRoleTitle": "اختر الدور",
     "selectRoleBody": "يرجى اختيار دور.",
     "termsRequiredTitle": "الموافقة على الشروط مطلوبة",

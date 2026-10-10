@@ -167,6 +167,7 @@
     "weakPasswordBody": "Le mot de passe doit contenir au moins 8 caractères.",
     "passwordMismatchTitle": "Les mots de passe ne correspondent pas",
     "passwordMismatchBody": "Les mots de passe ne sont pas identiques.",
+    "change": "Changer",
     "selectRoleTitle": "Sélectionnez un rôle",
     "selectRoleBody": "Veuillez choisir un rôle.",
     "termsRequiredTitle": "Conditions requises",

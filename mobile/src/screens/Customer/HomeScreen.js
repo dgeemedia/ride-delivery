@@ -17,6 +17,8 @@ import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth }           from '../../context/AuthContext';
 import { useTheme }          from '../../context/ThemeContext';
+import { useCountryConfig } from '../../context/CountryConfigContext';
+import { useCountryCenter, regionAround, sampleDropoffFrom } from '../../utils/countryGeo';
 import { useTranslation }    from 'react-i18next';
 import { rideAPI, deliveryAPI } from '../../services/api';
 import ActiveRideBanner      from '../../components/ActiveRideBanner';
@@ -48,7 +50,7 @@ const TAB_H         = Platform.OS === 'android'
   : TAB_CONTENT_H;
 
 // ── Service card data ─────────────────────────────────────────────────────────
-const buildServices = (nav, maint, warn, userCoords, t) => [
+const buildServices = (nav, maint, warn, userCoords, t, center) => [
   {
     id: 'ride',
     IconComponent: RidesIcon,
@@ -71,8 +73,12 @@ const buildServices = (nav, maint, warn, userCoords, t) => [
     onPress: () => {
       if (maint.isOn) { warn(); return; }
       nav.navigate('NearbyDrivers', {
-        pickupAddress: '', pickupLat: userCoords?.lat ?? 6.5244, pickupLng: userCoords?.lng ?? 3.3792,
-        dropoffAddress: '', dropoffLat: 6.4281, dropoffLng: 3.4219,
+        pickupAddress: '', pickupLat: userCoords?.lat ?? center.lat, pickupLng: userCoords?.lng ?? center.lng,
+        dropoffAddress: '',
+        // Sample drop-off relative to the pickup (was a fixed Lagos point, which
+        // made fare previews for e.g. Bamako pickups a ~3,000 km "trip").
+        dropoffLat: sampleDropoffFrom(userCoords?.lat ?? center.lat, userCoords?.lng ?? center.lng).lat,
+        dropoffLng: sampleDropoffFrom(userCoords?.lat ?? center.lat, userCoords?.lng ?? center.lng).lng,
         vehicleType: 'CAR',
       });
     },
@@ -85,8 +91,8 @@ const buildServices = (nav, maint, warn, userCoords, t) => [
     onPress: () => {
       if (maint.isOn) { warn(); return; }
       nav.navigate('NearbyPartners', {
-        pickupLat:     userCoords?.lat ?? 6.5244,
-        pickupLng:     userCoords?.lng ?? 3.3792,
+        pickupLat:     userCoords?.lat ?? center.lat,
+        pickupLng:     userCoords?.lng ?? center.lng,
         pickupAddress: userCoords?.address ?? '',
       });
     },
@@ -101,9 +107,10 @@ const buildServices = (nav, maint, warn, userCoords, t) => [
 ];
 
 // ── DrawerMenu ────────────────────────────────────────────────────────────────
-const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
+const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode, userCoords }) => {
   const { logout } = useAuth();
   const { t } = useTranslation();
+  const countryCenter = useCountryCenter();
   const slideA = useRef(new Animated.Value(-320)).current;
   const bgA    = useRef(new Animated.Value(0)).current;
 
@@ -158,9 +165,11 @@ const DrawerMenu = ({ visible, onClose, navigation, user, theme, mode }) => {
     { icon: 'car-outline',           label: t('home.menuBookRide'),      dest: 'RequestRide' },
     { icon: 'cube-outline',          label: t('home.menuSendPackage'),   dest: 'RequestDelivery' },
     { icon: 'people-outline',        label: t('home.menuNearbyDrivers'),   dest: 'NearbyDrivers',
-      params: { pickupAddress: '', pickupLat: 6.5244, pickupLng: 3.3792, dropoffAddress: '', dropoffLat: 6.4281, dropoffLng: 3.4219, vehicleType: 'CAR' } },
+      params: { pickupAddress: '', pickupLat: userCoords?.lat ?? countryCenter.lat, pickupLng: userCoords?.lng ?? countryCenter.lng, dropoffAddress: '',
+                dropoffLat: sampleDropoffFrom(userCoords?.lat ?? countryCenter.lat, userCoords?.lng ?? countryCenter.lng).lat,
+                dropoffLng: sampleDropoffFrom(userCoords?.lat ?? countryCenter.lat, userCoords?.lng ?? countryCenter.lng).lng, vehicleType: 'CAR' } },
     { icon: 'bicycle-outline',       label: t('home.menuNearbyCouriers'),  dest: 'NearbyPartners',
-      params: { pickupLat: 6.5244, pickupLng: 3.3792, pickupAddress: '' } },
+      params: { pickupLat: userCoords?.lat ?? countryCenter.lat, pickupLng: userCoords?.lng ?? countryCenter.lng, pickupAddress: '' } },
     { icon: 'time-outline',          label: t('home.menuMyHistory'),       dest: 'HistoryTab' },
     { icon: 'wallet-outline',        label: t('home.menuWallet'),           dest: 'WalletTab' },
     { icon: 'notifications-outline', label: t('home.menuNotifications'),    dest: 'Notifications' },
@@ -292,6 +301,9 @@ export default function HomeScreen({ navigation }) {
   const { user }        = useAuth();
   const { theme, mode } = useTheme();
   const { t }           = useTranslation();
+  const countryCenter   = useCountryCenter();
+  const homeMapRef      = useRef(null);
+  const [homeMapReady, setHomeMapReady] = useState(false);
   const insets          = useSafeAreaInsets();
   const darkMode        = mode === 'dark';
 
@@ -428,6 +440,15 @@ export default function HomeScreen({ navigation }) {
     })();
   }, []);
 
+  // react-native-maps only reads `initialRegion` once (at mount), so when GPS
+  // resolves AFTER the map is up we must move the camera ourselves — otherwise
+  // the Google-Maps path stays on the fallback centre.
+  useEffect(() => {
+    if (!homeMapReady || !userCoords) return;
+    homeMapRef.current?.animateToRegion(
+      { latitude: userCoords.lat, longitude: userCoords.lng, latitudeDelta: 0.03, longitudeDelta: 0.03 }, 600);
+  }, [homeMapReady, userCoords]);
+
   const showMaintenanceAlert = () => {
     const endsMsg = maintenance.endsAt
       ? t('home.expectedBack', { datetime: new Date(maintenance.endsAt).toLocaleString('en-NG') })
@@ -479,7 +500,7 @@ export default function HomeScreen({ navigation }) {
     .slice(0, 6);
 
   const hasMaintBanner = maintenance.isOn || maintenance.isScheduled;
-  const serviceCards   = buildServices(navigation, maintenance, showMaintenanceAlert, userCoords, t);
+  const serviceCards   = buildServices(navigation, maintenance, showMaintenanceAlert, userCoords, t, countryCenter);
 
   const hour  = new Date().getHours();
   const greet = hour < 12 ? t('home.goodMorning') : hour < 17 ? t('home.goodAfternoon') : t('home.goodEvening');
@@ -506,15 +527,18 @@ export default function HomeScreen({ navigation }) {
         user={user}
         theme={theme}
         mode={mode}
+        userCoords={userCoords}
       />
 
       {/* ── MAP ── */}
       <View style={s.mapContainer}>
         <MapView
+          ref={homeMapRef}
+          onMapReady={() => setHomeMapReady(true)}
           style={StyleSheet.absoluteFill}
           initialRegion={{
-            latitude:      userCoords?.lat ?? 6.5244,
-            longitude:     userCoords?.lng ?? 3.3792,
+            latitude:      userCoords?.lat ?? countryCenter.lat,
+            longitude:     userCoords?.lng ?? countryCenter.lng,
             latitudeDelta:  0.03,
             longitudeDelta: 0.03,
           }}

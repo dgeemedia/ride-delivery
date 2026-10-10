@@ -78,24 +78,18 @@ const FloatInput = ({ label, iconName, value, onChangeText, keyboardType, editab
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Image picker helpers — react-native-image-crop-picker
+// Image picker helpers — expo-image-picker
 // cropperChooseText: 'Save' fixes the confusing "Crop" label on iOS
 // ─────────────────────────────────────────────────────────────────────────────
 async function pickFromLibrary() {
   try {
-    const image = await ImageCropPicker.openPicker({
-      width:                  400,
-      height:                 400,
-      cropping:               true,
-      cropperCircleOverlay:   false,
-      mediaType:              'photo',
-      compressImageQuality:   0.82,
-      cropperChooseText:      i18n.t('editProfile.cropperSave'),
-      cropperCancelText:      i18n.t('common.cancel'),
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) throw new Error('permission');
+    const r = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.82,
     });
-    return image.path;
+    return r.canceled ? null : r.assets[0].uri;
   } catch (err) {
-    if (err?.code === 'E_PICKER_CANCELLED') return null;
     Alert.alert(
       i18n.t('editProfile.permissionRequired'),
       i18n.t('editProfile.libraryPermissionMsg'),
@@ -107,19 +101,13 @@ async function pickFromLibrary() {
 
 async function pickFromCamera() {
   try {
-    const image = await ImageCropPicker.openCamera({
-      width:                  400,
-      height:                 400,
-      cropping:               true,
-      cropperCircleOverlay:   false,
-      mediaType:              'photo',
-      compressImageQuality:   0.82,
-      cropperChooseText:      i18n.t('editProfile.cropperSave'),
-      cropperCancelText:      i18n.t('common.cancel'),
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) throw new Error('permission');
+    const r = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.82,
     });
-    return image.path;
+    return r.canceled ? null : r.assets[0].uri;
   } catch (err) {
-    if (err?.code === 'E_PICKER_CANCELLED') return null;
     Alert.alert(
       i18n.t('editProfile.permissionRequired'),
       i18n.t('editProfile.cameraPermissionMsg'),

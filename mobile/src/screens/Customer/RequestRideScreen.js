@@ -11,6 +11,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme }           from '../../context/ThemeContext';
 import { useCurrency }        from '../../context/CurrencyContext';
+import { useCountryConfig } from '../../context/CountryConfigContext';
+import { useCountryCenter, regionAround, sampleDropoffFrom } from '../../utils/countryGeo';
 import { useTranslation }     from 'react-i18next';
 import { rideAPI, walletAPI, placesAPI } from '../../services/api';
 import socketService          from '../../services/socket';
@@ -204,6 +206,8 @@ const wt = StyleSheet.create({
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RequestRideScreen({ navigation }) {
+  const { config: countryConfig } = useCountryConfig();
+  const countryCenter = useCountryCenter();
   const { theme }   = useTheme();
   const { formatMoney } = useCurrency();
   const { t } = useTranslation();
@@ -277,12 +281,12 @@ export default function RequestRideScreen({ navigation }) {
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') { setPickupCoords({ lat: 6.5244, lng: 3.3792 }); setPickupAddress('Lagos, Nigeria'); return; }
+        if (status !== 'granted') { setPickupCoords({ lat: countryCenter.lat, lng: countryCenter.lng }); setPickupAddress(`${countryCenter.city}, ${countryConfig.countryName}`); return; }
         const loc    = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
         setPickupCoords(coords);
         reverseGeocode(coords.lat, coords.lng, setPickupAddress);
-      } catch { setPickupCoords({ lat: 6.5244, lng: 3.3792 }); setPickupAddress('Lagos, Nigeria'); }
+      } catch { setPickupCoords({ lat: countryCenter.lat, lng: countryCenter.lng }); setPickupAddress(`${countryCenter.city}, ${countryConfig.countryName}`); }
     })();
     socketService.connect().catch(() => {});
   }, []);
@@ -462,7 +466,7 @@ export default function RequestRideScreen({ navigation }) {
 
   const startPickingLocation = useCallback((type) => {
     setPlacingPin(type);
-    const center = (type === 'pickup' ? pickupCoords : dropoffCoords) ?? pickupCoords ?? { lat: 6.5244, lng: 3.3792 };
+    const center = (type === 'pickup' ? pickupCoords : dropoffCoords) ?? pickupCoords ?? { lat: countryCenter.lat, lng: countryCenter.lng };
     setLiveAddress(type === 'pickup' ? pickupAddress : dropoffAddress);
     setMapCenter(center);
     mapRef.current?.animateToRegion({ latitude: center.lat, longitude: center.lng, latitudeDelta: 0.008, longitudeDelta: 0.008 }, 500);
@@ -561,7 +565,7 @@ const cancelPendingRide = async () => {
   const isPickingLocation = placingPin !== null;
   const pinColor          = placingPin === 'dropoff' ? '#E05555' : accentColor;
   const pinFg             = placingPin === 'dropoff' ? '#FFFFFF' : accentFg;
-  const mapRegion         = pickupCoords ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 } : undefined;
+  const mapRegion         = pickupCoords ? { latitude: pickupCoords.lat, longitude: pickupCoords.lng, latitudeDelta: 0.012, longitudeDelta: 0.012 } : regionAround(countryCenter, 0.05);
   const sheetStyle = step === 2 ? { height: sheetH } : { height: SHEET_SNAP };
 
   const confirmBtnLabel =

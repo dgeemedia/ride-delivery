@@ -32,6 +32,9 @@ model User {
   adminDepartment      String?
   countryCode          String                  @default("NG")
   locale               String?
+  // Support staff coverage. Empty = covers everything.
+  supportCountries     String[]                @default([])
+  supportLanguages     String[]                @default([])
   twoFactorEnabled     Boolean                 @default(false)
   twoFactorMethod      String?
   passwordChangedAt    DateTime?               @db.Timestamptz(6)
@@ -492,6 +495,16 @@ model Country {
   // App language this country defaults to, e.g. "fr". Independent of
   // currency, and overridden by the user's own saved language choice.
   languageCode      String?
+
+  // ── Map centre ───────────────────────────────────────────────────────────
+  // Where this market's maps open until the phone's GPS answers, and where
+  // address search is biased when the app sends no coordinates. Set per country
+  // from the admin Countries page, so a new market never falls back to
+  // another country's city.
+  mapCenterLat      Float?
+  mapCenterLng      Float?
+  mapCenterCity     String?
+
   createdAt         DateTime @default(now())
   updatedAt         DateTime @default(now()) @updatedAt
 
@@ -553,6 +566,10 @@ model SupportTicket {
   assignedTo   String?
   resolvedAt   DateTime?
   resolution   String?
+  // Market + language when the ticket was opened (kept on the ticket so routing
+  // and reply language stay right even if the user later changes country/language).
+  countryCode  String        @default("NG")
+  language     String        @default("en")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @default(now()) @updatedAt
   user         User          @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -563,6 +580,8 @@ model SupportTicket {
   @@index([priority])
   @@index([assignedTo])
   @@index([createdAt])
+  @@index([countryCode])
+  @@index([language])
 }
 
 model TicketReply {

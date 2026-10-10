@@ -297,7 +297,7 @@ const Sidebar: React.FC = () => {
     { name: 'Payments',  href: '/payments',  icon: CreditCard, show: can.viewPayments  },
     { name: 'Analytics', href: '/analytics', icon: BarChart3,  show: can.viewAnalytics },
     { name: 'Countries', href: '/countries', icon: Globe,     show: can.viewSettings  },
-    { name: 'Pricing by country', href: '/country-settings', icon: SlidersHorizontal, show: can.viewSettings },
+    { name: 'Country Settings', href: '/country-settings', icon: SlidersHorizontal, show: can.viewSettings },
     { name: 'Settings',  href: '/settings',  icon: Settings,   show: can.viewSettings  },
   ];
 

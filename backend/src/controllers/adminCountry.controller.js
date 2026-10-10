@@ -15,6 +15,7 @@
 const prisma = require('../lib/prisma');
 const { AppError } = require('../middleware/errorHandler');
 const { logActivity } = require('../utils/auditLog');
+const { getCountryCenter } = require('../utils/countryGeo');
 const {
   ALL_CREDIT_METHODS,
   ALL_PAYOUT_METHODS,
@@ -102,6 +103,24 @@ const validateCountryPayload = (payload) => {
   }
 };
 
+/**
+ * Reads mapCenterLat/mapCenterLng/mapCenterCity from a request body.
+ *  → undefined  : nothing supplied (leave as is)
+ *  → {lat,lng,city}: valid
+ * Throws 400 if only one coordinate is given or a value is out of range, so a
+ * typo can't park a market's map in the ocean.
+ */
+const parseMapCenter = (body = {}) => {
+  const blank = (v) => v === undefined || v === null || v === '';
+  const { mapCenterLat: la, mapCenterLng: ln, mapCenterCity: city } = body;
+  if (blank(la) && blank(ln)) return undefined;
+  if (blank(la) || blank(ln)) throw new AppError('Map centre needs both a latitude and a longitude.', 400);
+  const lat = Number(la), lng = Number(ln);
+  if (!Number.isFinite(lat) || lat < -90  || lat > 90)  throw new AppError('Map centre latitude must be a number between -90 and 90.', 400);
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) throw new AppError('Map centre longitude must be a number between -180 and 180.', 400);
+  return { lat, lng, city: blank(city) ? null : String(city).trim().slice(0, 80) };
+};
+
 // Merge, rather than overwrite, providerConfig — so an admin editing the
 // Orange language doesn't wipe a merchant key they can't see in the UI.
 const mergeProviderConfig = (existing = {}, incoming = {}) => {
@@ -183,6 +202,14 @@ exports.createCountry = async (req, res) => {
 
   validateCountryPayload(payload);
 
+  // A market must say where its maps open. Seeded countries have a built-in
+  // default, so only a genuinely new country has to supply one.
+  const center = parseMapCenter(payload)
+    ?? (() => { const d = getCountryCenter(payload.code); return d ? { lat: d.lat, lng: d.lng, city: d.city } : undefined; })();
+  if (!center) {
+    throw new AppError('Map centre (latitude and longitude) is required for a new country, so its maps open in the right place.', 400);
+  }
+
   const existing = await prisma.country.findUnique({ where: { code: payload.code } });
   if (existing) throw new AppError(`${payload.code} already exists — edit it instead.`, 409);
 
@@ -205,6 +232,9 @@ exports.createCountry = async (req, res) => {
       // still read `payoutMethod` keep behaving correctly.
       payoutMethod:     (payload.payoutMethods ?? ['MANUAL'])[0],
       providerConfig:   mergeProviderConfig({}, payload.providerConfig),
+      mapCenterLat:     center.lat,
+      mapCenterLng:     center.lng,
+      mapCenterCity:    center.city ?? payload.name,
     },
   });
 
@@ -239,8 +269,10 @@ exports.updateCountry = async (req, res) => {
     payoutMethods:    payload.payoutMethods    ?? normalizeCountry(existing).payoutMethods,
   };
   validateCountryPayload(merged);
+  const center = parseMapCenter(payload);
 
   const data = {};
+  if (center) { data.mapCenterLat = center.lat; data.mapCenterLng = center.lng; data.mapCenterCity = center.city ?? existing.name; }
   for (const field of ['name', 'currencyCode', 'currencySymbol', 'defaultLocale', 'languageCode', 'phoneDialCode']) {
     if (payload[field] !== undefined) data[field] = payload[field];
   }

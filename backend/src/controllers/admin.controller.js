@@ -15,7 +15,10 @@ const { getWithdrawableBalance, ensureWallet } = require('../utils/walletHelpers
 const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog');
 const countrySettingsService = require('../services/countrySettings.service');
+const { marketWhere, scopeOnlyWhere, canActInMarket, tallyByCountry } = require('../utils/marketScope');
 const { formatMoney, isWholeUnitCurrency } = require('../utils/currency');
+const { SUPPORTED_LANGUAGES, normalizeLanguage, tr } = require('../utils/supportI18n');
+const { ticketScopeWhere, canAccessTicket } = require('../utils/supportRouting');
 
 // Onboarding bonus for one earner: an explicit admin override wins, otherwise
 // the bonus configured for the earner's own country (in that country's currency).
@@ -239,6 +242,7 @@ exports.getUsers = async (req, res) => {
       select: {
         id: true, email: true, phone: true, firstName: true, lastName: true,
         role: true, isActive: true, isSuspended: true, isVerified: true, createdAt: true,
+        adminDepartment: true, supportCountries: true, supportLanguages: true,
         wallet: { select: { balance: true, currency: true } },
       },
       skip: parseInt(skip), take: parseInt(limit), orderBy: { createdAt: 'desc' },
@@ -469,22 +473,32 @@ exports.getIncompleteApplications = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.getPendingDrivers = async (req, res) => {
+  const userWhere = marketWhere(req.user, req.query.country);
   const drivers = await prisma.driverProfile.findMany({
     where: {
       isApproved: false,
       isRejected: false,
+      ...(userWhere ? { user: userWhere } : {}),
     },
     include: {
       user: {
         select: {
           id: true, firstName: true, lastName: true,
-          email: true, phone: true,
+          email: true, phone: true, countryCode: true,
           profileImage: true, createdAt: true,
         },
       },
     },
     orderBy: { createdAt: 'desc' },
   });
+
+  // Pending count per country (within the staff member's own markets) for the filter chips.
+  const scope = scopeOnlyWhere(req.user);
+  const pendingRows = await prisma.driverProfile.findMany({
+    where: { isApproved: false, isRejected: false, ...(scope ? { user: scope } : {}) },
+    select: { user: { select: { countryCode: true } } },
+  });
+  const byCountry = tallyByCountry(pendingRows);
 
   // Attach a derived `documentStatus` to each record so the admin dashboard
   // can surface "Has all docs", "Partial docs", or "No docs" without extra queries.
@@ -493,7 +507,7 @@ exports.getPendingDrivers = async (req, res) => {
     documentStatus: deriveDocumentStatus(d),
   }));
 
-  res.status(200).json({ success: true, data: { drivers: enriched } });
+  res.status(200).json({ success: true, data: { drivers: enriched, byCountry } });
 };
 
 // Helper — does NOT block approval, it's purely informational for the admin UI.
@@ -531,6 +545,7 @@ exports.approveDriver = async (req, res) => {
     include: { user: { select: { id: true, firstName: true, lastName: true, email: true, countryCode: true } } },
   });
   if (!driver)            throw new AppError('Driver profile not found.', 404);
+  if (!canActInMarket(req.user, driver.user?.countryCode)) throw new AppError('This driver is outside your assigned countries.', 403);
   if (driver.isApproved)  throw new AppError('Driver is already approved.', 400);
 
   const updatedDriver = await prisma.driverProfile.update({
@@ -638,9 +653,10 @@ exports.rejectDriver = async (req, res) => {
   const driver = await prisma.driverProfile.findUnique({
     where:   { id },
     // NOTE: email is now selected so we can notify the driver directly.
-    include: { user: { select: { id: true, firstName: true, email: true } } },
+    include: { user: { select: { id: true, firstName: true, email: true, countryCode: true } } },
   });
   if (!driver) throw new AppError('Driver profile not found.', 404);
+  if (!canActInMarket(req.user, driver.user?.countryCode)) throw new AppError('This driver is outside your assigned countries.', 403);
 
   await prisma.driverProfile.update({
     where: { id },
@@ -685,23 +701,23 @@ exports.rejectDriver = async (req, res) => {
 };
 
 exports.getDrivers = async (req, res) => {
-  const { page = 1, limit = 20, search, isApproved, isRejected, vehicleType } = req.query;
+  const { page = 1, limit = 20, search, isApproved, isRejected, vehicleType, country } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
   const where = {};
   if (isApproved !== undefined) where.isApproved = isApproved === 'true';
   if (isRejected !== undefined) where.isRejected = isRejected === 'true';
   if (vehicleType) where.vehicleType = vehicleType.toUpperCase();
+  const userWhere = { ...(marketWhere(req.user, country) || {}) };
   if (search) {
-    where.user = {
-      OR: [
-        { firstName: { contains: search, mode: 'insensitive' } },
-        { lastName:  { contains: search, mode: 'insensitive' } },
-        { email:     { contains: search, mode: 'insensitive' } },
-        { phone:     { contains: search, mode: 'insensitive' } },
-      ],
-    };
+    userWhere.OR = [
+      { firstName: { contains: search, mode: 'insensitive' } },
+      { lastName:  { contains: search, mode: 'insensitive' } },
+      { email:     { contains: search, mode: 'insensitive' } },
+      { phone:     { contains: search, mode: 'insensitive' } },
+    ];
   }
+  if (Object.keys(userWhere).length) where.user = userWhere;
 
   const [drivers, total] = await Promise.all([
     prisma.driverProfile.findMany({
@@ -710,7 +726,7 @@ exports.getDrivers = async (req, res) => {
         user: {
           select: {
             id: true, firstName: true, lastName: true,
-            email: true, phone: true, createdAt: true,
+            email: true, phone: true, createdAt: true, countryCode: true,
             isActive: true, isSuspended: true, isVerified: true,
             wallet: { select: { currency: true } },
           },
@@ -798,16 +814,18 @@ function derivePartnerDocumentStatus(profile) {
 }
 
 exports.getPendingPartners = async (req, res) => {
+  const userWhere = marketWhere(req.user, req.query.country);
   const partners = await prisma.deliveryPartnerProfile.findMany({
     where: {
       isApproved: false,
       isRejected: false,           // ← only truly pending, not rejected
+      ...(userWhere ? { user: userWhere } : {}),
     },
     include: {
       user: {
         select: {
           id: true, firstName: true, lastName: true,
-          email: true, phone: true,
+          email: true, phone: true, countryCode: true,
           profileImage: true, createdAt: true,
         },
       },
@@ -815,12 +833,19 @@ exports.getPendingPartners = async (req, res) => {
     orderBy: { createdAt: 'desc' },
   });
 
+  const scope = scopeOnlyWhere(req.user);
+  const pendingRows = await prisma.deliveryPartnerProfile.findMany({
+    where: { isApproved: false, isRejected: false, ...(scope ? { user: scope } : {}) },
+    select: { user: { select: { countryCode: true } } },
+  });
+  const byCountry = tallyByCountry(pendingRows);
+
   const enriched = partners.map(p => ({
     ...p,
     documentStatus: derivePartnerDocumentStatus(p),
   }));
 
-  res.status(200).json({ success: true, data: { partners: enriched } });
+  res.status(200).json({ success: true, data: { partners: enriched, byCountry } });
 };
 
 exports.approvePartner = async (req, res) => {
@@ -833,6 +858,7 @@ exports.approvePartner = async (req, res) => {
     include: { user: { select: { id: true, firstName: true, lastName: true, email: true, countryCode: true } } },
   });
   if (!partner)           throw new AppError('Partner profile not found.', 404);
+  if (!canActInMarket(req.user, partner.user?.countryCode)) throw new AppError('This partner is outside your assigned countries.', 403);
   if (partner.isApproved) throw new AppError('Partner is already approved.', 400);
 
   const updatedPartner = await prisma.deliveryPartnerProfile.update({
@@ -938,9 +964,10 @@ exports.rejectPartner = async (req, res) => {
   const partner = await prisma.deliveryPartnerProfile.findUnique({
     where:   { id },
     // NOTE: email is now selected so we can notify the partner directly.
-    include: { user: { select: { id: true, firstName: true, email: true } } },
+    include: { user: { select: { id: true, firstName: true, email: true, countryCode: true } } },
   });
   if (!partner) throw new AppError('Partner profile not found.', 404);
+  if (!canActInMarket(req.user, partner.user?.countryCode)) throw new AppError('This partner is outside your assigned countries.', 403);
 
   // ← UPDATE instead of DELETE — partner can see rejection reason and reapply
   await prisma.deliveryPartnerProfile.update({
@@ -986,23 +1013,23 @@ exports.rejectPartner = async (req, res) => {
 };
 
 exports.getPartners = async (req, res) => {
-  const { page = 1, limit = 20, search, isApproved, isRejected, vehicleType } = req.query;
+  const { page = 1, limit = 20, search, isApproved, isRejected, vehicleType, country } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
   const where = {};
   if (isApproved !== undefined) where.isApproved = isApproved === 'true';
   if (isRejected !== undefined) where.isRejected = isRejected === 'true';  // ← NEW filter
   if (vehicleType) where.vehicleType = vehicleType.toUpperCase();
+  const userWhere = { ...(marketWhere(req.user, country) || {}) };
   if (search) {
-    where.user = {
-      OR: [
-        { firstName: { contains: search, mode: 'insensitive' } },
-        { lastName:  { contains: search, mode: 'insensitive' } },
-        { email:     { contains: search, mode: 'insensitive' } },
-        { phone:     { contains: search, mode: 'insensitive' } },
-      ],
-    };
+    userWhere.OR = [
+      { firstName: { contains: search, mode: 'insensitive' } },
+      { lastName:  { contains: search, mode: 'insensitive' } },
+      { email:     { contains: search, mode: 'insensitive' } },
+      { phone:     { contains: search, mode: 'insensitive' } },
+    ];
   }
+  if (Object.keys(userWhere).length) where.user = userWhere;
 
   const [partners, total] = await Promise.all([
     prisma.deliveryPartnerProfile.findMany({
@@ -1011,7 +1038,7 @@ exports.getPartners = async (req, res) => {
         user: {
           select: {
             id: true, firstName: true, lastName: true,
-            email: true, phone: true, createdAt: true,
+            email: true, phone: true, createdAt: true, countryCode: true,
             isActive: true, isSuspended: true, isVerified: true,
             wallet: { select: { currency: true } },
           },
@@ -1077,9 +1104,11 @@ exports.getPartnerById = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.getRides = async (req, res) => {
-  const { page = 1, limit = 20, status, driverId, customerId, startDate, endDate } = req.query;
+  const { page = 1, limit = 20, status, driverId, customerId, startDate, endDate, country } = req.query;
   const skip = (page - 1) * limit;
   const where = {};
+  const market = marketWhere(req.user, country);
+  if (market) where.customer = market;
   if (status) where.status = status;
   if (driverId) where.driverId = driverId;
   if (customerId) where.customerId = customerId;
@@ -1089,21 +1118,23 @@ exports.getRides = async (req, res) => {
     if (endDate)   where.requestedAt.lte = new Date(endDate);
   }
   const [rides, total] = await Promise.all([
-    prisma.ride.findMany({ where, include: { customer: { select: { firstName: true, lastName: true, email: true } }, driver: { select: { firstName: true, lastName: true, email: true } }, payment: true }, skip: parseInt(skip), take: parseInt(limit), orderBy: { requestedAt: 'desc' } }),
+    prisma.ride.findMany({ where, include: { customer: { select: { firstName: true, lastName: true, email: true, countryCode: true } }, driver: { select: { firstName: true, lastName: true, email: true } }, payment: true }, skip: parseInt(skip), take: parseInt(limit), orderBy: { requestedAt: 'desc' } }),
     prisma.ride.count({ where }),
   ]);
   res.status(200).json({ success: true, data: { rides, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } } });
 };
 
 exports.getDeliveries = async (req, res) => {
-  const { page = 1, limit = 20, status, partnerId, customerId } = req.query;
+  const { page = 1, limit = 20, status, partnerId, customerId, country } = req.query;
   const skip = (page - 1) * limit;
   const where = {};
+  const market = marketWhere(req.user, country);
+  if (market) where.customer = market;
   if (status) where.status = status;
   if (partnerId) where.partnerId = partnerId;
   if (customerId) where.customerId = customerId;
   const [deliveries, total] = await Promise.all([
-    prisma.delivery.findMany({ where, include: { customer: { select: { firstName: true, lastName: true, email: true } }, partner: { select: { firstName: true, lastName: true, email: true } }, payment: true }, skip: parseInt(skip), take: parseInt(limit), orderBy: { requestedAt: 'desc' } }),
+    prisma.delivery.findMany({ where, include: { customer: { select: { firstName: true, lastName: true, email: true, countryCode: true } }, partner: { select: { firstName: true, lastName: true, email: true } }, payment: true }, skip: parseInt(skip), take: parseInt(limit), orderBy: { requestedAt: 'desc' } }),
     prisma.delivery.count({ where }),
   ]);
   res.status(200).json({ success: true, data: { deliveries, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } } });
@@ -2213,10 +2244,11 @@ exports.getDeliveryById = async (req, res) => {
 };
 
 exports.getLiveDeliveries = async (req, res) => {
+  const market = marketWhere(req.user, req.query.country);
   const deliveries = await prisma.delivery.findMany({
-    where: { status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } },
+    where: { status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] }, ...(market ? { customer: market } : {}) },
     include: {
-      customer: { select: { id: true, firstName: true, lastName: true, phone: true } },
+      customer: { select: { id: true, firstName: true, lastName: true, phone: true, countryCode: true } },
       partner: {
         select: {
           id: true, firstName: true, lastName: true, phone: true, profileImage: true,
@@ -2269,11 +2301,12 @@ exports.cancelDelivery = async (req, res) => {
 };
 
 exports.getLiveRides = async (req, res) => {
+  const market = marketWhere(req.user, req.query.country);
   const rides = await prisma.ride.findMany({
-    where: { status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } },
+    where: { status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] }, ...(market ? { customer: market } : {}) },
     include: {
       customer: {
-        select: { id: true, firstName: true, lastName: true, phone: true },
+        select: { id: true, firstName: true, lastName: true, phone: true, countryCode: true },
       },
       driver: {
         select: {
@@ -2549,14 +2582,48 @@ await prisma.deliveryPartnerProfile.create({
 // ─────────────────────────────────────────────
 
 exports.getTickets = async (req, res) => {
-  const { page = 1, limit = 20, status, priority, assignedTo } = req.query;
-  const skip = (page - 1) * limit;
-  const where = {};
-  if (status) where.status = status;
-  if (priority) where.priority = priority;
+  const { page = 1, limit = 20, status, priority, assignedTo, category, countryCode, language, search } = req.query;
+  const pageN  = Math.max(parseInt(page, 10) || 1, 1);
+  const limitN = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+
+  // Agents only see the markets/languages they are assigned to.
+  const scope = ticketScopeWhere(req.user);
+  const where = { ...scope };
+  // An explicit filter may only NARROW what the agent may already see.
+  const narrow = (allowed, wanted) => (allowed ? { in: allowed.in.includes(wanted) ? [wanted] : [] } : wanted);
+  if (countryCode) where.countryCode = narrow(scope.countryCode, String(countryCode).toUpperCase());
+  if (language)    where.language    = narrow(scope.language,    String(language).toLowerCase());
+
+  if (status)     where.status = status;
+  if (priority)   where.priority = priority;
+  if (category)   where.category = category;
   if (assignedTo) where.assignedTo = assignedTo;
-  const [tickets, total] = await Promise.all([prisma.supportTicket.findMany({ where, skip: parseInt(skip), take: parseInt(limit), orderBy: { createdAt: 'desc' } }), prisma.supportTicket.count({ where })]);
-  res.status(200).json({ success: true, data: { tickets, pagination: { total, page: parseInt(page), pages: Math.ceil(total / limit) } } });
+  if (search && String(search).trim()) {
+    const q = String(search).trim();
+    where.OR = [
+      { ticketNumber: { contains: q, mode: 'insensitive' } },
+      { subject:      { contains: q, mode: 'insensitive' } },
+    ];
+  }
+
+  const [tickets, total, openRows] = await Promise.all([
+    prisma.supportTicket.findMany({
+      where, skip: (pageN - 1) * limitN, take: limitN, orderBy: { createdAt: 'desc' },
+      include: { user: { select: { id: true, firstName: true, lastName: true, role: true, email: true, phone: true } } },
+    }),
+    prisma.supportTicket.count({ where }),
+    prisma.supportTicket.groupBy({
+      by: ['countryCode'],
+      where: { ...scope, status: { in: ['open', 'in_progress'] } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const openByCountry = Object.fromEntries(openRows.map(r => [r.countryCode, r._count._all]));
+  res.status(200).json({
+    success: true,
+    data: { tickets, openByCountry, pagination: { total, page: pageN, pages: Math.ceil(total / limitN) } },
+  });
 };
 
 exports.getTicketById = async (req, res) => {
@@ -2580,8 +2647,52 @@ exports.getTicketById = async (req, res) => {
   });
  
   if (!ticket) throw new AppError('Ticket not found', 404);
+  if (!canAccessTicket(req.user, ticket)) throw new AppError('This ticket belongs to a market or language you are not assigned to.', 403);
  
   res.status(200).json({ success: true, data: { ticket } });
+};
+
+// ─── STAFF SUPPORT COVERAGE ──────────────────────────────────────────────────
+// Which countries / languages a support agent handles. Empty list = everything.
+exports.updateStaffSupportCoverage = async (req, res) => {
+  const { id } = req.params;
+  const target = await prisma.user.findUnique({ where: { id }, select: { id: true, role: true } });
+  if (!target) throw new AppError('User not found', 404);
+  if (!['ADMIN', 'SUPER_ADMIN', 'SUPPORT', 'MODERATOR'].includes(target.role))
+    throw new AppError('Support coverage only applies to staff accounts.', 400);
+
+  // Normalise FIRST, then de-duplicate ('ml' and 'ML' collapse to one).
+  const list = (v, label, norm) => {
+    if (v === undefined) return undefined;
+    if (!Array.isArray(v)) throw new AppError(`${label} must be a list`, 400);
+    return [...new Set(v.map(x => norm(String(x).trim())).filter(Boolean))];
+  };
+  const countries = list(req.body.supportCountries, 'supportCountries', c => c.toUpperCase());
+  const languages = list(req.body.supportLanguages, 'supportLanguages', l => l.toLowerCase());
+
+  if (countries?.length) {
+    const known = new Set((await prisma.country.findMany({ select: { code: true } })).map(c => c.code));
+    const unknown = countries.filter(c => !known.has(c));
+    if (unknown.length) throw new AppError(`Unknown country code(s): ${unknown.join(', ')}`, 400);
+  }
+  if (languages?.length) {
+    const unknown = languages.filter(l => !SUPPORTED_LANGUAGES.includes(l));
+    if (unknown.length) throw new AppError(`Unsupported language(s): ${unknown.join(', ')}`, 400);
+  }
+
+  const data = {};
+  if (countries !== undefined) data.supportCountries = countries;
+  if (languages !== undefined) data.supportLanguages = languages;
+  if (!Object.keys(data).length) throw new AppError('Nothing to update', 400);
+
+  const user = await prisma.user.update({ where: { id }, data, select: { id: true, supportCountries: true, supportLanguages: true } });
+
+  await logActivity({
+    userId: req.user.id, action: 'staff_support_coverage_updated', entityType: 'User', entityId: id,
+    details: { supportCountries: user.supportCountries, supportLanguages: user.supportLanguages }, req,
+  });
+
+  res.status(200).json({ success: true, message: 'Support coverage updated', data: { user } });
 };
 
 // ─── UPDATE TICKET (with reply support) ──────────────────────────────────────
@@ -2594,6 +2705,10 @@ exports.updateTicket = async (req, res) => {
     include: { user: { select: { id: true, firstName: true, email: true } } },
   });
   if (!ticket) throw new AppError('Ticket not found', 404);
+  if (!canAccessTicket(req.user, ticket)) throw new AppError('This ticket belongs to a market or language you are not assigned to.', 403);
+
+  // Everything WE say to the customer is in the language they opened the ticket in.
+  const lang = normalizeLanguage(ticket.language);
 
   const updated = await prisma.supportTicket.update({
     where: { id },
@@ -2621,7 +2736,7 @@ exports.updateTicket = async (req, res) => {
 
     await notificationService.notify({
       userId:  ticket.userId,
-      title:   `Update on Ticket #${ticket.ticketNumber}`,
+      title:   tr(lang, 'replyTitle', { n: ticket.ticketNumber }),
       message: replyMessage.trim(),
       type:    'ticket_reply',
       data:    { ticketId: id, ticketNumber: ticket.ticketNumber, repliedBy: req.user.id },
@@ -2632,6 +2747,7 @@ exports.updateTicket = async (req, res) => {
         () => emailService.sendTicketReplyEmail(ticket.user.email, ticket.user.firstName, {
           ticketNumber: ticket.ticketNumber,
           message: replyMessage.trim(),
+          language: lang,
         }),
         'Ticket reply'
       );
@@ -2641,8 +2757,8 @@ exports.updateTicket = async (req, res) => {
   if (status === 'resolved') {
     await notificationService.notify({
       userId:  ticket.userId,
-      title:   `Ticket #${ticket.ticketNumber} Resolved ✅`,
-      message: `Your support ticket has been resolved.${resolution ? ` Resolution: ${resolution}` : ''}`,
+      title:   tr(lang, 'resolvedTitle', { n: ticket.ticketNumber }),
+      message: `${tr(lang, 'resolvedBody')}${resolution ? ` ${tr(lang, 'resolutionLabel')}: ${resolution}` : ''}`,
       type:    'ticket_resolved',
       data:    { ticketId: id, ticketNumber: ticket.ticketNumber },
     });
@@ -2652,6 +2768,7 @@ exports.updateTicket = async (req, res) => {
         () => emailService.sendTicketResolvedEmail(ticket.user.email, ticket.user.firstName, {
           ticketNumber: ticket.ticketNumber,
           resolution: resolution || '',
+          language: lang,
         }),
         'Ticket resolved'
       );
