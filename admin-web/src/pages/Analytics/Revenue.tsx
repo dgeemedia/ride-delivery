@@ -55,7 +55,12 @@ const Revenue: React.FC = () => {
   const [countries, setCountries] = useState<Country[]>([]);
 
   useEffect(() => {
-    countriesAPI.list().then(r => setCountries(r.data.countries)).catch(() => {});
+    countriesAPI.list().then(r => {
+      setCountries(r.data.countries);
+      // A country-limited admin only receives their own countries: start on the first one.
+      const codes = r.data.countries.map(c => c.code);
+      if (codes.length && !codes.includes('NG')) setCountry(codes[0]);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -126,14 +131,14 @@ const Revenue: React.FC = () => {
           iconBg="bg-blue-50"
         />
         <StatCard
-          label="Platform Fee (20%)"
+          label="Platform Fee"
           value={fmt(data.platformFee)}
           sub="Commission earned"
           icon={<DollarSign className="h-5 w-5 text-green-600" />}
           iconBg="bg-green-50"
         />
         <StatCard
-          label="Net to Earners (80%)"
+          label="Net to Earners"
           value={fmt(data.netRevenue)}
           sub="Paid to drivers & partners"
           icon={<CreditCard className="h-5 w-5 text-purple-600" />}
@@ -161,6 +166,7 @@ const Revenue: React.FC = () => {
               { key: 'deliveries', name: 'Deliveries', color: '#FF9500' },
             ]}
             height={320}
+            currency={data.currency}
           />
         ) : (
           <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
@@ -178,6 +184,7 @@ const Revenue: React.FC = () => {
             xKey="method"
             bars={[{ key: 'amount', name: `Revenue (${data.currency})`, color: '#007AFF' }]}
             height={280}
+            currency={data.currency}
           />
         ) : (
           <div className="flex items-center justify-center h-48 text-gray-400 text-sm">

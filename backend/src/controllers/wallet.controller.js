@@ -10,6 +10,7 @@ const { logActivity } = require('../utils/auditLog');
 const { ensureWallet: ensureWalletShared, getWithdrawableBalance } = require('../utils/walletHelpers');
 const { getCountryForUser, getCurrencyForUserId, getPaymentConfigForUser, payoutRails } = require('../services/country.service');
 const orangeService = require('../services/orange.service');
+const { marketWhere } = require('../utils/marketScope');
 const { formatMoney, isWholeUnitCurrency } = require('../utils/currency');
 const { phoneCandidates } = require('../utils/phone');
 const countrySettingsService = require('../services/countrySettings.service');
@@ -1079,9 +1080,11 @@ exports.verifyBankAccount = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.adminGetPayouts = async (req, res) => {
-  const { status = 'PENDING', page = 1, limit = 20 } = req.query;
+  const { status = 'PENDING', page = 1, limit = 20, country } = req.query;
   const skip  = (page - 1) * limit;
   const where = {};
+  const payoutMarket = marketWhere(req.user, country);
+  if (payoutMarket) where.user = payoutMarket;
   if (status !== 'ALL') where.status = status;
 
   const [payouts, total] = await Promise.all([
@@ -1347,10 +1350,12 @@ exports.adminRejectPayout = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.adminGetTransfers = async (req, res) => {
-  const { status = 'PENDING', page = 1, limit = 20 } = req.query;
+  const { status = 'PENDING', page = 1, limit = 20, country } = req.query;
   const skip = (page - 1) * limit;
 
   const where = {};
+  const transferMarket = marketWhere(req.user, country);
+  if (transferMarket) where.sender = transferMarket;
   if (status !== 'ALL') where.status = status;
 
   const [transfers, total] = await Promise.all([
@@ -1559,6 +1564,8 @@ exports.adminRejectTransfer = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.adminGetWalletStats = async (req, res) => {
+  const wm = marketWhere(req.user, req.query.country);
+  const wUser = wm ? { user: wm } : {};
   const [
     balancesByCurrency, totalUsers,
     pendingPayouts, pendingTransfers,
@@ -1566,18 +1573,18 @@ exports.adminGetWalletStats = async (req, res) => {
     // Grouped by currency instead of a single sum — a raw sum across NGN,
     // GHS, and XOF wallets would be a meaningless number once non-NG
     // wallets exist.
-    prisma.wallet.groupBy({ by: ['currency'], _sum: { balance: true }, _count: true }),
-    prisma.wallet.count(),
-    prisma.payout.count({ where: { status: 'PENDING' } }),
+    prisma.wallet.groupBy({ by: ['currency'], where: wUser, _sum: { balance: true }, _count: true }),
+    prisma.wallet.count({ where: wUser }),
+    prisma.payout.count({ where: { status: 'PENDING', ...(wm ? { user: wm } : {}) } }),
     // FIX: count from Transfer table instead of WalletTransaction description heuristic
-    prisma.transfer.count({ where: { status: 'PENDING' } }),
+    prisma.transfer.count({ where: { status: 'PENDING', ...(wm ? { sender: wm } : {}) } }),
   ]);
 
   // WalletTransaction has no currency column, so credits/debits are summed per
   // wallet currency by filtering on the owning wallet.
   const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
   const todayByCurrency = await Promise.all(balancesByCurrency.map(async (b) => {
-    const base = { status: 'COMPLETED', createdAt: { gte: todayStart }, wallet: { currency: b.currency } };
+    const base = { status: 'COMPLETED', createdAt: { gte: todayStart }, wallet: { currency: b.currency, ...wUser } };
     const [credits, debits] = await Promise.all([
       prisma.walletTransaction.aggregate({ where: { ...base, type: 'CREDIT' }, _sum: { amount: true } }),
       prisma.walletTransaction.aggregate({ where: { ...base, type: 'DEBIT'  }, _sum: { amount: true } }),
@@ -1680,7 +1687,7 @@ exports.emailTransactionHistory = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.adminGetTopUps = async (req, res) => {
-  const { status = 'PENDING', page = 1, limit = 20, provider } = req.query;
+  const { status = 'PENDING', page = 1, limit = 20, provider, country } = req.query;
   const skip = (page - 1) * limit;
 
   // Any CREDIT wallet transaction with a provider set is a top-up — no more
@@ -1691,6 +1698,8 @@ exports.adminGetTopUps = async (req, res) => {
     type:     'CREDIT',
     provider: { in: TOPUP_PROVIDERS },
   };
+  const topupMarket = marketWhere(req.user, country);
+  if (topupMarket) where.wallet = { user: topupMarket };
   if (provider && TOPUP_PROVIDERS.includes(String(provider).toLowerCase())) {
     where.provider = String(provider).toLowerCase();
   }

@@ -85,8 +85,9 @@ exports.createCommissionRecord = async ({
  *
  * @param {{ from?: Date, to?: Date, serviceType?: 'RIDE'|'DELIVERY' }} opts
  */
-exports.getCommissionStats = async ({ from, to, serviceType } = {}) => {
+exports.getCommissionStats = async ({ from, to, serviceType, earnerMarket } = {}) => {
   const where = {};
+  if (earnerMarket) where.earnerUser = earnerMarket;
   if (serviceType) where.serviceType = serviceType;
   if (from || to) {
     where.createdAt = {};
@@ -162,11 +163,12 @@ exports.getCommissionStats = async ({ from, to, serviceType } = {}) => {
 /**
  * Daily commission breakdown for the last N days (chart data).
  */
-exports.getDailyCommission = async ({ days = 30, serviceType } = {}) => {
+exports.getDailyCommission = async ({ days = 30, serviceType, earnerMarket } = {}) => {
   const from = new Date();
   from.setDate(from.getDate() - days);
 
   const where = { createdAt: { gte: from } };
+  if (earnerMarket) where.earnerUser = earnerMarket;
   if (serviceType) where.serviceType = serviceType;
 
   const rows = await prisma.commissionLedger.findMany({

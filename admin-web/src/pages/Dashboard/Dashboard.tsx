@@ -8,6 +8,7 @@ import { analyticsAPI } from '@/services/api/analytics';
 import api from '@/services/api';
 import { DashboardStats, RevenueAnalytics } from '@/types';
 import { formatCurrency, formatDate } from '@/utils/helpers';
+import { CountrySelect } from '@/components/CountryFilter';
 import toast from 'react-hot-toast';
 
 // ─── Feature flags ──────────────────────────────────────────────────────────
@@ -34,14 +35,16 @@ const Dashboard: React.FC = () => {
   const [revenue,      setRevenue]      = useState<RevenueAnalytics | null>(null);
   const [shieldActive, setShieldActive] = useState<number>(0);
   const [loading,      setLoading]      = useState(true);
+  // '' = all countries. Money is then shown per currency, never added together.
+  const [country,      setCountry]      = useState('');
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [country]);
 
   const loadData = async () => {
     try {
       const [statsRes, revenueRes, shieldRes] = await Promise.all([
-        analyticsAPI.getDashboardStats(),
-        analyticsAPI.getRevenueAnalytics('week'),
+        analyticsAPI.getDashboardStats(country || undefined),
+        analyticsAPI.getRevenueAnalytics('week', country || undefined),
         ENABLE_SHIELD
           ? api.get('/admin/shield/stats').catch(() => ({ data: { data: { activeSessions: 0 } } }))
           : Promise.resolve({ data: { data: { activeSessions: 0 } } }),
@@ -66,6 +69,17 @@ const Dashboard: React.FC = () => {
   // ── Real sub-labels derived from live data ──────────────────────────────────
   const revenueDelta = formatDelta(stats.revenue?.revenueDelta ?? stats.deltas?.revenue);
   const userDelta    = formatDelta(stats.deltas?.users);
+
+  // One figure when a single currency applies; one line per currency across several countries.
+  const moneyNode = (key: 'today' | 'week' | 'month' | 'year'): React.ReactNode => {
+    const rows = stats.revenue.byCurrency ?? [];
+    if (rows.length <= 1) return formatCurrency(stats.revenue[key], stats.revenue.currency);
+    return (
+      <span className="block space-y-0.5 text-lg leading-snug">
+        {rows.map(r => <span key={r.currency} className="block">{formatCurrency(r[key], r.currency)}</span>)}
+      </span>
+    );
+  };
 
 const statCards = [
     {
@@ -154,7 +168,7 @@ const statCards = [
     },
     {
       title:    "Today's Revenue",
-      value:    formatCurrency(stats.revenue.today),
+      value:    moneyNode('today'),
       icon:     DollarSign,
       color:    'bg-error-500',
       subLabel: revenueDelta,
@@ -174,11 +188,12 @@ const statCards = [
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-600 mt-1">Welcome back! Here's what's happening today.</p>
         </div>
+        <CountrySelect value={country} onChange={setCountry} />
       </div>
 
       {/* Stats Grid */}
@@ -212,7 +227,13 @@ const statCards = [
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <h3 className="text-lg font-semibold mb-4">Revenue Trend (Last 7 Days)</h3>
+          <h3 className="text-lg font-semibold mb-1">Revenue Trend (Last 7 Days)</h3>
+          {revenue && (
+            <p className="text-xs text-gray-500 mb-3">
+              {revenue.countryName ?? revenue.country} · {revenue.currency}
+              {!country && ' — choose a country above to see another market'}
+            </p>
+          )}
           {revenue && revenue.dailyRevenue.length > 0 ? (
             <LineChart
               data={revenue.dailyRevenue}
@@ -222,6 +243,7 @@ const statCards = [
                 { key: 'rides',      name: 'Rides',         color: '#34C759' },
                 { key: 'deliveries', name: 'Deliveries',    color: '#FF9500' },
               ]}
+              currency={revenue.currency}
             />
           ) : (
             <div className="flex items-center justify-center h-48 text-sm text-gray-400">
@@ -240,6 +262,7 @@ const statCards = [
                 { key: 'rides',      name: 'Rides',      color: '#34C759' },
                 { key: 'deliveries', name: 'Deliveries', color: '#FF9500' },
               ]}
+              currency={revenue.currency}
             />
           ) : (
             <div className="flex items-center justify-center h-48 text-sm text-gray-400">
@@ -276,7 +299,7 @@ const statCards = [
             <Activity className="h-8 w-8 text-primary-500" />
             <div className="ml-4">
               <p className="text-sm text-gray-600">Week Revenue</p>
-              <p className="text-xl font-bold">{formatCurrency(stats.revenue.week)}</p>
+              <p className="text-xl font-bold">{moneyNode('week')}</p>
             </div>
           </div>
         </Card>
@@ -286,7 +309,7 @@ const statCards = [
             <Activity className="h-8 w-8 text-indigo-500" />
             <div className="ml-4">
               <p className="text-sm text-gray-600">Month Revenue</p>
-              <p className="text-xl font-bold">{formatCurrency(stats.revenue.month)}</p>
+              <p className="text-xl font-bold">{moneyNode('month')}</p>
             </div>
           </div>
         </Card>
@@ -296,7 +319,7 @@ const statCards = [
             <DollarSign className="h-8 w-8 text-emerald-500" />
             <div className="ml-4">
               <p className="text-sm text-gray-600">Year Revenue</p>
-              <p className="text-xl font-bold">{formatCurrency(stats.revenue.year)}</p>
+              <p className="text-xl font-bold">{moneyNode('year')}</p>
             </div>
           </div>
         </Card>

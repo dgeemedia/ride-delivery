@@ -16,6 +16,13 @@ const prisma = require('../lib/prisma');
 const { AppError } = require('../middleware/errorHandler');
 const { logActivity } = require('../utils/auditLog');
 const { getCountryCenter } = require('../utils/countryGeo');
+const { staffMarkets, canActInMarket } = require('../utils/marketScope');
+
+// A country-limited admin only sees their own countries; everyone else sees all.
+const visibleTo = (user, rows) => {
+  const mine = staffMarkets(user);
+  return mine.length ? rows.filter(r => mine.includes(String(r.code).toUpperCase())) : rows;
+};
 const {
   ALL_CREDIT_METHODS,
   ALL_PAYOUT_METHODS,
@@ -145,7 +152,7 @@ const mergeProviderConfig = (existing = {}, incoming = {}) => {
 
 // GET /api/admin/countries
 exports.listCountries = async (req, res) => {
-  const rows = await prisma.country.findMany({ orderBy: { name: 'asc' } });
+  const rows = visibleTo(req.user, await prisma.country.findMany({ orderBy: { name: 'asc' } }));
 
   // Attach live user counts so an admin can see which markets actually have
   // traffic before toggling one off.
@@ -259,6 +266,13 @@ exports.updateCountry = async (req, res) => {
   if (!existing) throw new AppError('Country not found', 404);
 
   const payload = req.body;
+
+  // A country admin runs their market but cannot re-denominate it: wallets and payments
+  // are already stored in this currency. Only a Super Admin can change it.
+  if (req.user.role !== 'SUPER_ADMIN' && payload.currencyCode !== undefined
+      && String(payload.currencyCode).toUpperCase() !== String(existing.currencyCode).toUpperCase()) {
+    throw new AppError('Only a Super Admin can change a country\'s currency.', 403);
+  }
 
   // Validate against the MERGED result, not just the patch — otherwise
   // removing a provider while leaving its credit method behind would slip
@@ -430,7 +444,7 @@ exports.getCountryOverview = async (req, res) => {
  * dashboard can show one row per market without N round-trips.
  */
 exports.getAllCountriesOverview = async (req, res) => {
-  const countries = await prisma.country.findMany({ orderBy: { name: 'asc' } });
+  const countries = visibleTo(req.user, await prisma.country.findMany({ orderBy: { name: 'asc' } }));
 
   const [userCounts, payoutCounts, paymentSums] = await Promise.all([
     prisma.user.groupBy({ by: ['countryCode'], _count: { _all: true } }),
@@ -524,6 +538,7 @@ exports.copyCountrySettings = async (req, res) => {
   const row = await requireCountry(req.params.code);
   const { fromCode, factor, groups } = req.body;
   if (!fromCode) throw new AppError('fromCode is required', 400);
+  if (!canActInMarket(req.user, fromCode)) throw new AppError('You can only copy settings from your own countries.', 403);
   const { applied } = await countrySettings.copySettings(row.code, fromCode, { factor, groups, adminId: req.user.id });
 
   logActivity({
@@ -555,7 +570,7 @@ exports.compareCountrySettings = async (req, res) => {
   const unknown = keys.filter(k => !countrySettings.DEF_BY_KEY[k]);
   if (unknown.length) throw new AppError(`Unknown setting(s): ${unknown.join(', ')}`, 400);
 
-  const countries = await prisma.country.findMany({ orderBy: { name: 'asc' } });
+  const countries = visibleTo(req.user, await prisma.country.findMany({ orderBy: { name: 'asc' } }));
   const rows = await Promise.all(countries.map(async c => {
     const eff = await countrySettings.getEffectiveSettings(c.code);
     return {

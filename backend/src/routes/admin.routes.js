@@ -6,6 +6,7 @@ const adminController = require('../controllers/admin.controller');
 const validate = require('../middleware/validate');
 const { authenticate, authorize, requireScope } = require('../middleware/auth.middleware');
 const adminCountryRoutes = require('./adminCountry.routes');
+const { marketGuard, denyScoped, superOrCountryAdmin } = require('../middleware/marketGuard');
 
 const router = express.Router();
 
@@ -16,6 +17,12 @@ router.use((req, res, next) => {
     return res.status(403).json({ success: false, message: 'Admin access required.' });
   next();
 });
+
+// ── Country-limited admins ────────────────────────────────────────────────
+// An admin with assigned countries can only open/change records of those countries,
+// and cannot enter sections that are global by nature. Everyone else is unaffected.
+router.use(marketGuard);
+router.use(['/logs', '/promo-codes', '/corporate', '/duopay/run-overdue-check'], denyScoped);
 
 // ─────────────────────────────────────────────
 // DASHBOARD
@@ -44,9 +51,10 @@ router.get('/applications/incomplete',
 // ─────────────────────────────────────────────
 router.get('/users', adminController.getUsers);
 
-// Which countries / languages a support agent handles (empty = all). Super admin only.
+// Which countries / languages a staff member handles (empty = all). Super Admin, or a country
+// admin for staff inside their own countries (enforced in the controller).
 router.put('/users/:id/support-coverage',
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   param('id').isUUID(),
   [
     body('supportCountries').optional().isArray({ max: 60 }),
@@ -58,7 +66,7 @@ router.put('/users/:id/support-coverage',
 
 // ✅ FIX: Moved BEFORE /users/:id so 'create-admin' isn't swallowed as a UUID param
 router.post('/users/create-admin',
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   [
     body('email').isEmail().normalizeEmail(),
     // ✅ FIX 1: was isMobilePhone() — fails Nigerian +234 numbers without a locale
@@ -129,7 +137,7 @@ router.put('/users/:id/activate',
 
 router.delete('/users/:id',
   param('id').isUUID(),
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   validate,
   adminController.deleteUser
 );
@@ -426,7 +434,7 @@ router.get('/wallets',
 
 router.post('/wallets/:userId/adjust',
   param('userId').isUUID(),
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   [
     body('amount').isFloat({ min: 0.01 }),
     body('type').isIn(['credit', 'debit']),
@@ -455,12 +463,12 @@ router.post('/notifications/broadcast',
 // /preview before / to avoid route ambiguity
 // ─────────────────────────────────────────────
 router.get('/bonuses/onboarding/preview',
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   adminController.previewOnboardingBonuses
 );
 
 router.post('/bonuses/onboarding',
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   [
     body('driverBonus').optional().isFloat({ min: 0 }),
     body('partnerBonus').optional().isFloat({ min: 0 }),
@@ -473,7 +481,7 @@ router.post('/bonuses/onboarding',
 // CUSTOM BONUS DISBURSEMENT — SUPER_ADMIN only
 // ─────────────────────────────────────────────
 router.post('/bonuses/disburse',
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   [
     body('userIds').isArray({ min: 1 }).withMessage('Select at least one recipient.'),
     body('userIds.*').isUUID(),

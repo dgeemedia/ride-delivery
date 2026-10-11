@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Menu, LogOut, User, Settings, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
+import { flagOf } from '@/utils/supportLanguages';
 import { useUIStore } from '@/store/uiStore';
 import NotificationBell from '@/components/notifications/NotificationBell';
 
@@ -72,6 +73,11 @@ const Header: React.FC = () => {
               </p>
               <p className="text-xs text-gray-400 mt-0.5">
                 {roleLabel[user?.role ?? ''] ?? user?.role}
+                {user?.role !== 'SUPER_ADMIN' && (user?.supportCountries?.length ?? 0) > 0 && (
+                  <span className="ml-1 text-primary-600 font-medium">
+                    · {user!.supportCountries!.map(c => `${flagOf(c)} ${c}`).join(' ')}
+                  </span>
+                )}
               </p>
             </div>
             <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform duration-150 ${showDropdown ? 'rotate-180' : ''}`} />

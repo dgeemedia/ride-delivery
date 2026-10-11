@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, Car, Package, Navigation,
   CreditCard, BarChart3, Settings, X, Truck, Globe, SlidersHorizontal,
   MessageCircle, Shield, LogOut, Building2, Zap, Wallet, Star,
-  ChevronDown,
+  ChevronDown, UserCog,
 } from 'lucide-react';
 import { useUIStore } from '@/store/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -275,7 +275,7 @@ const Sidebar: React.FC = () => {
     },
     {
       name: 'Corporate', href: '/corporate', icon: Building2,
-      show: ENABLE_CORPORATE && can.viewUsers,
+      show: ENABLE_CORPORATE && can.viewUsers && can.viewGlobal,
       children: [
         { name: 'Companies', href: '/corporate',       show: can.viewUsers },
         { name: 'Trips',     href: '/corporate/trips', show: can.viewUsers },
@@ -298,6 +298,7 @@ const Sidebar: React.FC = () => {
     { name: 'Analytics', href: '/analytics', icon: BarChart3,  show: can.viewAnalytics },
     { name: 'Countries', href: '/countries', icon: Globe,     show: can.viewSettings  },
     { name: 'Country Settings', href: '/country-settings', icon: SlidersHorizontal, show: can.viewSettings },
+    { name: 'Staff & countries', href: '/staff', icon: UserCog, show: can.createAdmins },
     { name: 'Settings',  href: '/settings',  icon: Settings,   show: can.viewSettings  },
   ];
 
@@ -306,7 +307,7 @@ const Sidebar: React.FC = () => {
   const opsItems      = navigation.filter(i => i.show && ['/drivers', '/rides', '/partners', '/deliveries'].includes(i.href));
   const financeItems  = navigation.filter(i => i.show && ['/wallets', '/payments'].includes(i.href));
   const featureItems  = navigation.filter(i => i.show && ['/shield', '/corporate', '/duopay'].includes(i.href));
-  const systemItems   = navigation.filter(i => i.show && ['/support/tickets', '/analytics', '/countries', '/country-settings', '/settings'].includes(i.href));
+  const systemItems   = navigation.filter(i => i.show && ['/support/tickets', '/analytics', '/countries', '/country-settings', '/staff', '/settings'].includes(i.href));
 
   const renderItem = (item: NavItem) => {
     const visibleChildren = item.children?.filter(c => c.show) ?? [];

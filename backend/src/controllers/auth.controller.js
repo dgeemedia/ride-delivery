@@ -58,6 +58,8 @@ const AUTH_USER_SELECT = {
   role: true, profileImage: true,
   isVerified: true, createdAt: true,
   twoFactorEnabled: true, twoFactorMethod: true,
+  // The admin panel needs these to limit itself to a country-limited admin's markets.
+  adminDepartment: true, supportCountries: true, supportLanguages: true, countryCode: true,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

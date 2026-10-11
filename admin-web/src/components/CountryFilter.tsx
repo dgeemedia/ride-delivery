@@ -35,7 +35,9 @@ export const CountrySelect: React.FC<{
   value: string;
   onChange: (code: string) => void;
   className?: string;
-}> = ({ value, onChange, className }) => {
+  /** Label for the empty option; pass null to force picking one country. */
+  allLabel?: string | null;
+}> = ({ value, onChange, className, allLabel = 'All countries' }) => {
   const countries = useCountries();
   return (
     <Select
@@ -43,7 +45,7 @@ export const CountrySelect: React.FC<{
       value={value}
       onChange={e => onChange(e.target.value)}
       options={[
-        { value: '', label: 'All countries' },
+        ...(allLabel === null || countries.length === 1 ? [] : [{ value: '', label: allLabel }]),
         ...countries.map(c => ({ value: c.code, label: `${flagOf(c.code)} ${c.name}` })),
       ]}
     />

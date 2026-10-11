@@ -388,7 +388,9 @@ const OverviewPanel: React.FC<{ code: string; onClose: () => void }> = ({ code, 
 const CountryList: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const canEdit = user?.role === 'SUPER_ADMIN';
+  const isSuper = user?.role === 'SUPER_ADMIN';
+  // A country admin can edit and pause/resume their own countries; only a Super Admin adds countries.
+  const canEdit = isSuper || (user?.role === 'ADMIN' && (user?.supportCountries?.length ?? 0) > 0);
 
   const [countries, setCountries] = useState<Country[]>([]);
   const [meta, setMeta] = useState<CountryMeta | null>(null);
@@ -474,7 +476,7 @@ const CountryList: React.FC = () => {
           <Button variant="secondary" onClick={load}>
             <RefreshCw className="w-4 h-4 mr-1.5" /> Refresh
           </Button>
-          {canEdit && (
+          {isSuper && (
             <Button onClick={() => setEditing(null)}>
               <Plus className="w-4 h-4 mr-1.5" /> Add country
             </Button>

@@ -313,7 +313,8 @@ const ApprovalModal: React.FC<ApprovalModalProps> = ({ partner, isSuperAdmin, on
 // ─── Main page ────────────────────────────────────────────────────────────────
 const PartnerApproval: React.FC = () => {
   const { user }     = useAuthStore();
-  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  // Super Admin or a country admin may grant the onboarding bonus.
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && (user?.supportCountries?.length ?? 0) > 0);
 
   const [partners,        setPartners]        = useState<DeliveryPartner[]>([]);
   const [loading,         setLoading]         = useState(true);

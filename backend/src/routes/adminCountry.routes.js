@@ -10,6 +10,7 @@ const express = require('express');
 const { body, param } = require('express-validator');
 const controller = require('../controllers/adminCountry.controller');
 const { authorize } = require('../middleware/auth.middleware');
+const { superOrCountryAdmin } = require('../middleware/marketGuard');
 
 const router = express.Router();
 
@@ -55,7 +56,7 @@ router.post(
 
 router.put(
   '/:code',
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   param('code').isLength({ min: 2, max: 2 }),
   controller.updateCountry
 );
@@ -64,31 +65,31 @@ router.put(
 // without resubmitting the whole payment configuration.
 router.patch(
   '/:code/status',
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   param('code').isLength({ min: 2, max: 2 }),
   [body('isActive').isBoolean()],
   controller.setCountryStatus
 );
 
 // ── Per-country pricing / commission / wallet / payout / bonus rules ──────
-// Money-moving rules: SUPER_ADMIN only, same as editing global settings.
+// Super Admin, or the admin assigned to this country (see middleware/marketGuard).
 router.put(
   '/:code/settings',
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   param('code').isLength({ min: 2, max: 2 }),
   controller.updateCountrySettings
 );
 
 router.post(
   '/:code/settings/copy',
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   param('code').isLength({ min: 2, max: 2 }),
   controller.copyCountrySettings
 );
 
 router.post(
   '/:code/settings/review',
-  authorize('SUPER_ADMIN'),
+  superOrCountryAdmin,
   param('code').isLength({ min: 2, max: 2 }),
   controller.markPricingReviewed
 );

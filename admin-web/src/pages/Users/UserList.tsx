@@ -22,7 +22,7 @@ const roleBadgeVariant = (role: string): 'success' | 'warning' | 'error' | 'info
 const UserList: React.FC = () => {
   const navigate = useNavigate();
   const { user: currentUser } = useAuthStore();
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN' || (currentUser?.role === 'ADMIN' && (currentUser?.supportCountries?.length ?? 0) > 0);
 
   const [users, setUsers]             = useState<User[]>([]);
   const [loading, setLoading]         = useState(true);

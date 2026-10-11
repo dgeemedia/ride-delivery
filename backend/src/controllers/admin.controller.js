@@ -15,7 +15,7 @@ const { getWithdrawableBalance, ensureWallet } = require('../utils/walletHelpers
 const paymentService = require('../services/payment.service');
 const { logActivity } = require('../utils/auditLog');
 const countrySettingsService = require('../services/countrySettings.service');
-const { marketWhere, scopeOnlyWhere, canActInMarket, tallyByCountry } = require('../utils/marketScope');
+const { marketWhere, scopeOnlyWhere, canActInMarket, tallyByCountry, staffMarkets, hasCountryAuthority, staffInsideMarkets } = require('../utils/marketScope');
 const { formatMoney, isWholeUnitCurrency } = require('../utils/currency');
 const { SUPPORTED_LANGUAGES, normalizeLanguage, tr } = require('../utils/supportI18n');
 const { ticketScopeWhere, canAccessTicket } = require('../utils/supportRouting');
@@ -38,10 +38,11 @@ const safeSendEmail = async (fn, label) => {
   }
 };
 
-async function fetchBonusCandidates() {
+async function fetchBonusCandidates(market) {
+  const scoped = market ? { user: market } : {};
   const [allDrivers, allPartners] = await Promise.all([
     prisma.driverProfile.findMany({
-      where:   { isApproved: true },
+      where:   { isApproved: true, ...scoped },
       include: {
         user: {
           include: {
@@ -59,7 +60,7 @@ async function fetchBonusCandidates() {
       },
     }),
     prisma.deliveryPartnerProfile.findMany({
-      where:   { isApproved: true },
+      where:   { isApproved: true, ...scoped },
       include: {
         user: {
           include: {
@@ -94,93 +95,107 @@ async function fetchBonusCandidates() {
 // ─────────────────────────────────────────────
 
 exports.getDashboardStats = async (req, res) => {
+  // Optional ?country=ML scopes the whole dashboard to one market. Staff with assigned
+  // countries are always confined to them. Money is NEVER added across currencies:
+  // amounts come back per currency, with a "primary" one for the single-figure cards.
+  const market      = marketWhere(req.user, req.query.country);   // { countryCode } | undefined
+  const countryCode = market && typeof market.countryCode === 'string' ? market.countryCode : null;
+  const uW          = market ? { ...market } : {};                // User / SupportTicket
+  const viaCustomer = market ? { customer: market } : {};         // Ride / Delivery
+  const viaUser     = market ? { user: market } : {};             // Payment
+
   const todayStart     = new Date(); todayStart.setHours(0, 0, 0, 0);
   const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
   const monthStart     = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const weekStart      = new Date(); weekStart.setDate(weekStart.getDate() - 7); weekStart.setHours(0, 0, 0, 0);
   const yearStart      = new Date(new Date().getFullYear(), 0, 1);
 
+  const paid = (createdAt) => prisma.payment.groupBy({
+    by: ['currency'],
+    where: { status: 'COMPLETED', ...viaUser, ...(createdAt ? { createdAt } : {}) },
+    _sum: { amount: true },
+  });
+
   const [
     totalUsers, totalDrivers, totalPartners,
     totalRides, totalDeliveries, activeRides, activeDeliveries,
-    todayRevenue, yesterdayRevenue, monthRevenue, weekRevenue, yearRevenue, totalWalletBalance,
+    todayRevenue, yesterdayRevenue, monthRevenue, weekRevenue, yearRevenue, walletRows,
     pendingDrivers, pendingPartners, openTickets,
     newUsersToday, newUsersYesterday,
     suspendedDriversCount, suspendedPartnersCount,
     suspendedDriversList, suspendedPartnersList,
+    countryRow,
   ] = await Promise.all([
-    prisma.user.count({ where: { role: 'CUSTOMER' } }),
-    prisma.user.count({ where: { role: 'DRIVER' } }),
-    prisma.user.count({ where: { role: 'DELIVERY_PARTNER' } }),
-    prisma.ride.count({ where: { status: 'COMPLETED' } }),
-    prisma.delivery.count({ where: { status: 'DELIVERED' } }),
-    prisma.ride.count({ where: { status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } } }),
-    prisma.delivery.count({ where: { status: { in: ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } } }),
- 
-    // Today's revenue
-    prisma.payment.aggregate({
-      where: { status: 'COMPLETED', createdAt: { gte: todayStart } },
-      _sum: { amount: true },
-    }),
-    // Yesterday's revenue (for delta)
-    prisma.payment.aggregate({
-      where: { status: 'COMPLETED', createdAt: { gte: yesterdayStart, lt: todayStart } },
-      _sum: { amount: true },
-    }),
-    prisma.payment.aggregate({
-      where: { status: 'COMPLETED', createdAt: { gte: monthStart } },
-      _sum: { amount: true },
-    }),
-    prisma.payment.aggregate({
-      where: { status: 'COMPLETED', createdAt: { gte: weekStart } },
-      _sum: { amount: true },
-    }),
-    prisma.payment.aggregate({
-      where: { status: 'COMPLETED', createdAt: { gte: yearStart } },
-      _sum: { amount: true },
-    }),
+    prisma.user.count({ where: { role: 'CUSTOMER', ...uW } }),
+    prisma.user.count({ where: { role: 'DRIVER', ...uW } }),
+    prisma.user.count({ where: { role: 'DELIVERY_PARTNER', ...uW } }),
+    prisma.ride.count({ where: { status: 'COMPLETED', ...viaCustomer } }),
+    prisma.delivery.count({ where: { status: 'DELIVERED', ...viaCustomer } }),
+    prisma.ride.count({ where: { status: { in: ['REQUESTED', 'ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] }, ...viaCustomer } }),
+    prisma.delivery.count({ where: { status: { in: ['PENDING', 'ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] }, ...viaCustomer } }),
 
-    prisma.wallet.aggregate({
-      where: { user: { role: { in: ['CUSTOMER', 'DRIVER', 'DELIVERY_PARTNER'] }, isActive: true } },
+    paid({ gte: todayStart }),
+    paid({ gte: yesterdayStart, lt: todayStart }),
+    paid({ gte: monthStart }),
+    paid({ gte: weekStart }),
+    paid({ gte: yearStart }),
+
+    prisma.wallet.groupBy({
+      by: ['currency'],
+      where: { user: { role: { in: ['CUSTOMER', 'DRIVER', 'DELIVERY_PARTNER'] }, isActive: true, ...uW } },
       _sum: { balance: true },
     }),
-    prisma.driverProfile.count({ where: { isApproved: false, isRejected: false } }),
-    prisma.deliveryPartnerProfile.count({ where: { isApproved: false, isRejected: false } }),
-    prisma.supportTicket.count({ where: { status: 'open' } }),
- 
-    // New users today (for delta)
-    prisma.user.count({ where: { createdAt: { gte: todayStart } } }),
-    // New users yesterday (for delta)
-    prisma.user.count({ where: { createdAt: { gte: yesterdayStart, lt: todayStart } } }),
+    prisma.driverProfile.count({ where: { isApproved: false, isRejected: false, ...(market ? { user: market } : {}) } }),
+    prisma.deliveryPartnerProfile.count({ where: { isApproved: false, isRejected: false, ...(market ? { user: market } : {}) } }),
+    prisma.supportTicket.count({ where: { status: 'open', ...uW } }),
 
-    // Suspended drivers count + list (dashboard widget)
-    prisma.user.count({ where: { role: 'DRIVER', isSuspended: true } }),
-    prisma.user.count({ where: { role: 'DELIVERY_PARTNER', isSuspended: true } }),
+    prisma.user.count({ where: { createdAt: { gte: todayStart }, ...uW } }),
+    prisma.user.count({ where: { createdAt: { gte: yesterdayStart, lt: todayStart }, ...uW } }),
+
+    prisma.user.count({ where: { role: 'DRIVER', isSuspended: true, ...uW } }),
+    prisma.user.count({ where: { role: 'DELIVERY_PARTNER', isSuspended: true, ...uW } }),
     prisma.user.findMany({
-      where: { role: 'DRIVER', isSuspended: true },
+      where: { role: 'DRIVER', isSuspended: true, ...uW },
       select: { id: true, firstName: true, lastName: true, email: true, phone: true, suspendedAt: true, suspensionReason: true },
       orderBy: { suspendedAt: 'desc' },
       take: 10,
     }),
     prisma.user.findMany({
-      where: { role: 'DELIVERY_PARTNER', isSuspended: true },
+      where: { role: 'DELIVERY_PARTNER', isSuspended: true, ...uW },
       select: { id: true, firstName: true, lastName: true, email: true, phone: true, suspendedAt: true, suspensionReason: true },
       orderBy: { suspendedAt: 'desc' },
       take: 10,
     }),
+    countryCode ? prisma.country.findUnique({ where: { code: countryCode }, select: { code: true, name: true, currencyCode: true } }) : null,
   ]);
- 
-  // ── Revenue delta (today vs yesterday) ──────────────────────────────────────
-  const todayRev     = todayRevenue._sum.amount     ?? 0;
-  const yesterdayRev = yesterdayRevenue._sum.amount ?? 0;
- 
-  let revenueDelta = null;
-  if (yesterdayRev > 0) {
-    revenueDelta = parseFloat((((todayRev - yesterdayRev) / yesterdayRev) * 100).toFixed(1));
-  } else if (todayRev > 0) {
-    revenueDelta = 100; // first revenue of the platform
-  }
- 
+
+  // ── Money, one row per currency ─────────────────────────────────────────────
+  const byCur = {};
+  const row = (c) => (byCur[c] ??= { currency: c, today: 0, yesterday: 0, week: 0, month: 0, year: 0, walletBalance: 0 });
+  todayRevenue.forEach(r     => { row(r.currency).today         = r._sum.amount ?? 0; });
+  yesterdayRevenue.forEach(r => { row(r.currency).yesterday     = r._sum.amount ?? 0; });
+  weekRevenue.forEach(r      => { row(r.currency).week          = r._sum.amount ?? 0; });
+  monthRevenue.forEach(r     => { row(r.currency).month         = r._sum.amount ?? 0; });
+  yearRevenue.forEach(r      => { row(r.currency).year          = r._sum.amount ?? 0; });
+  walletRows.forEach(r       => { row(r.currency).walletBalance = r._sum.balance ?? 0; });
+
+  // A selected country always shows its own currency, even before its first payment.
+  if (countryRow?.currencyCode) row(countryRow.currencyCode);
+
+  const pct = (now, before) => {
+    if (before > 0) return parseFloat((((now - before) / before) * 100).toFixed(1));
+    return now > 0 ? 100 : null;                    // first revenue ever / nothing yet
+  };
+  const byCurrency = Object.values(byCur)
+    .map((r) => ({ ...r, delta: pct(r.today, r.yesterday) }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+
+  // Primary = the selected country's currency; otherwise Naira if present, else the first.
+  const primaryCode = countryRow?.currencyCode
+    || (byCur.NGN ? 'NGN' : (byCurrency[0]?.currency ?? 'NGN'));
+  const primary = byCur[primaryCode] ?? { today: 0, yesterday: 0, week: 0, month: 0, year: 0, walletBalance: 0 };
+  const revenueDelta = pct(primary.today, primary.yesterday);
+
   // ── User delta (today vs yesterday signups) ──────────────────────────────────
   let userDelta = null;
   if (newUsersYesterday > 0) {
@@ -188,23 +203,25 @@ exports.getDashboardStats = async (req, res) => {
   } else if (newUsersToday > 0) {
     userDelta = 100;
   }
- 
+
   res.status(200).json({
     success: true,
     data: {
+      country:    countryCode,
       users:      { total: totalUsers, drivers: totalDrivers, partners: totalPartners, newToday: newUsersToday },
       rides:      { total: totalRides, active: activeRides },
       deliveries: { total: totalDeliveries, active: activeDeliveries },
       revenue: {
-        today:         todayRev,
-        yesterday:     yesterdayRev,
-        month:         monthRevenue._sum.amount ?? 0,
-        week:          weekRevenue._sum.amount ?? 0,
-        year:          yearRevenue._sum.amount ?? 0,
-        currency:      'NGN',
+        today:         primary.today,
+        yesterday:     primary.yesterday,
+        month:         primary.month,
+        week:          primary.week,
+        year:          primary.year,
+        currency:      primaryCode,
         revenueDelta,
+        byCurrency,
       },
-      wallet:  { totalBalance: totalWalletBalance._sum.balance ?? 0 },
+      wallet:  { totalBalance: primary.walletBalance, currency: primaryCode, byCurrency: byCurrency.map(r => ({ currency: r.currency, balance: r.walletBalance })) },
       pending: { drivers: pendingDrivers, partners: pendingPartners },
       support: { openTickets },
       deltas:  { revenue: revenueDelta, users: userDelta },
@@ -223,9 +240,9 @@ exports.getDashboardStats = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.getUsers = async (req, res) => {
-  const { page = 1, limit = 20, role, search, isActive } = req.query;
+  const { page = 1, limit = 20, role, search, isActive, country } = req.query;
   const skip = (page - 1) * limit;
-  const where = {};
+  const where = { ...(marketWhere(req.user, country) || {}) };
   if (role) where.role = role;
   if (isActive !== undefined) where.isActive = isActive === 'true';
   if (search) {
@@ -282,8 +299,8 @@ exports.suspendUser = async (req, res) => {
   if (target.role === 'SUPER_ADMIN')
     throw new AppError('Super admin accounts cannot be suspended.', 403);
 
-  if (target.role === 'ADMIN' && req.user.role !== 'SUPER_ADMIN')
-    throw new AppError('Only a Super Admin can suspend an Admin account.', 403);
+  if (target.role === 'ADMIN' && req.user.role !== 'SUPER_ADMIN' && !staffInsideMarkets(req.user, target))
+    throw new AppError('Only a Super Admin, or the admin of that country, can suspend an Admin account.', 403);
 
   const user = await prisma.user.update({
     where: { id },
@@ -355,6 +372,8 @@ exports.deleteUser = async (req, res) => {
 
   if (user.role === 'SUPER_ADMIN')
     throw new AppError('Super admin accounts cannot be deleted', 403);
+  if (['ADMIN', 'SUPPORT', 'MODERATOR'].includes(user.role) && !staffInsideMarkets(req.user, user))
+    throw new AppError('You can only delete staff accounts that belong to your own countries.', 403);
 
   // Capture original PII before anonymizing — the email service needs it,
   // and it won't exist on the row anymore after this update.
@@ -426,6 +445,7 @@ exports.getIncompleteApplications = async (req, res) => {
     where: {
       role: { in: roles },
       isDeleted: false,
+      ...(marketWhere(req.user, req.query.country) || {}),
     },
     select: {
       id: true, firstName: true, lastName: true, email: true, phone: true,
@@ -566,7 +586,7 @@ exports.approveDriver = async (req, res) => {
   let bonusCredited = 0;
   const bonusAmount = grantBonus ? await bonusFor('driver', driver.user.countryCode, bonusOverride) : 0;
   const bonusWallet = grantBonus ? await prisma.wallet.findUnique({ where: { userId: driver.userId }, select: { currency: true } }) : null;
-  const canGrantBonus = req.user.role === 'SUPER_ADMIN' && grantBonus && bonusAmount > 0;
+  const canGrantBonus = hasCountryAuthority(req.user) && grantBonus && bonusAmount > 0;
   if (canGrantBonus) {
     const wallet = await prisma.wallet.findUnique({ where: { userId: driver.userId } });
     if (wallet) {
@@ -879,7 +899,7 @@ exports.approvePartner = async (req, res) => {
   let bonusCredited = 0;
   const bonusAmount = grantBonus ? await bonusFor('partner', partner.user.countryCode, bonusOverride) : 0;
   const bonusWallet = grantBonus ? await prisma.wallet.findUnique({ where: { userId: partner.userId }, select: { currency: true } }) : null;
-  const canGrantBonus = req.user.role === 'SUPER_ADMIN' && grantBonus && bonusAmount > 0;
+  const canGrantBonus = hasCountryAuthority(req.user) && grantBonus && bonusAmount > 0;
   if (canGrantBonus) {
     const wallet = await prisma.wallet.findUnique({ where: { userId: partner.userId } });
     if (wallet) {
@@ -1155,11 +1175,14 @@ exports.getPayments = async (req, res) => {
     search,
     hasRide,
     hasDelivery,
+    country,
   } = req.query;
  
   const skip = (parseInt(page) - 1) * parseInt(limit);
  
   const where = {};
+  const payMarket = marketWhere(req.user, country);
+  if (payMarket) where.AND = [{ user: payMarket }];
   if (status)            where.status  = status;
   if (method)            where.method  = method;
   if (provider)          where.provider = String(provider).toLowerCase();
@@ -1226,10 +1249,12 @@ exports.getPaymentById = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.getRefunds = async (req, res) => {
-  const { page = 1, limit = 25, method, search, currency } = req.query;
+  const { page = 1, limit = 25, method, search, currency, country } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
   const where = { status: 'REFUNDED' };
+  const refundMarket = marketWhere(req.user, country);
+  if (refundMarket) where.AND = [{ user: refundMarket }];
   if (method) where.method = method;
   if (currency) where.currency = String(currency).toUpperCase();
   if (search) {
@@ -1369,6 +1394,9 @@ exports.adminIssueRefund = async (req, res) => {
 exports.getPaymentStats = async (req, res) => {
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const caught = { _sum: { commissionAmount: 0 } };
+  const market = marketWhere(req.user, req.query.country);
+  const payScope = market ? { user: market } : {};
+  const ledgerScope = market ? { earnerUser: market } : {};
 
   // Everything is grouped by currency: NGN, GHS and XOF amounts can't be added
   // together, so the admin UI shows one set of figures per currency.
@@ -1376,14 +1404,14 @@ exports.getPaymentStats = async (req, res) => {
     revenue, todayRevenue, commission, todayCommission,
     pending, refunded, byMethod, byProvider,
   ] = await Promise.all([
-    prisma.payment.groupBy({ by: ['currency'], where: { status: 'COMPLETED' }, _sum: { amount: true } }),
-    prisma.payment.groupBy({ by: ['currency'], where: { status: 'COMPLETED', createdAt: { gte: todayStart } }, _sum: { amount: true } }),
-    prisma.commissionLedger.groupBy({ by: ['currency'], _sum: { commissionAmount: true } }).catch(() => []),
-    prisma.commissionLedger.groupBy({ by: ['currency'], where: { createdAt: { gte: todayStart } }, _sum: { commissionAmount: true } }).catch(() => []),
-    prisma.payment.groupBy({ by: ['currency'], where: { status: 'PENDING' }, _count: { id: true } }),
-    prisma.payment.groupBy({ by: ['currency'], where: { status: 'REFUNDED' }, _sum: { amount: true } }),
-    prisma.payment.groupBy({ by: ['currency', 'method'], where: { status: 'COMPLETED' }, _sum: { amount: true }, _count: { id: true } }),
-    prisma.payment.groupBy({ by: ['currency', 'provider'], where: { status: 'COMPLETED' }, _sum: { amount: true }, _count: { id: true } }),
+    prisma.payment.groupBy({ by: ['currency'], where: { status: 'COMPLETED', ...payScope }, _sum: { amount: true } }),
+    prisma.payment.groupBy({ by: ['currency'], where: { status: 'COMPLETED', createdAt: { gte: todayStart }, ...payScope }, _sum: { amount: true } }),
+    prisma.commissionLedger.groupBy({ by: ['currency'], where: ledgerScope, _sum: { commissionAmount: true } }).catch(() => []),
+    prisma.commissionLedger.groupBy({ by: ['currency'], where: { createdAt: { gte: todayStart }, ...ledgerScope }, _sum: { commissionAmount: true } }).catch(() => []),
+    prisma.payment.groupBy({ by: ['currency'], where: { status: 'PENDING', ...payScope }, _count: { id: true } }),
+    prisma.payment.groupBy({ by: ['currency'], where: { status: 'REFUNDED', ...payScope }, _sum: { amount: true } }),
+    prisma.payment.groupBy({ by: ['currency', 'method'], where: { status: 'COMPLETED', ...payScope }, _sum: { amount: true }, _count: { id: true } }),
+    prisma.payment.groupBy({ by: ['currency', 'provider'], where: { status: 'COMPLETED', ...payScope }, _sum: { amount: true }, _count: { id: true } }),
   ]);
 
   const rows = {};
@@ -1410,15 +1438,18 @@ exports.getPaymentStats = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.getCommissionAnalytics = async (req, res) => {
-  const { from, to, serviceType, days } = req.query;
+  const { from, to, serviceType, days, country } = req.query;
+  const earnerMarket = marketWhere(req.user, country);
  
   const [stats, daily] = await Promise.all([
     commissionService.getCommissionStats({
+      earnerMarket,
       from:        from ? new Date(from) : undefined,
       to:          to   ? new Date(to)   : undefined,
       serviceType: serviceType || undefined,
     }),
     commissionService.getDailyCommission({
+      earnerMarket,
       days:        parseInt(days ?? '30'),
       serviceType: serviceType || undefined,
     }),
@@ -1436,7 +1467,9 @@ exports.getRevenueAnalytics = async (req, res) => {
   // Revenue is reported for ONE country at a time: amounts in different
   // currencies can't be added. Omitted → Nigeria (what this screen showed
   // before there were other markets).
-  const countryCode = String(req.query.country || 'NG').toUpperCase();
+  const mine = staffMarkets(req.user);
+  const countryCode = String(req.query.country || mine[0] || 'NG').toUpperCase();
+  if (mine.length && !mine.includes(countryCode)) throw new AppError('That country is outside your assigned countries.', 403);
   const country = await prisma.country.findUnique({ where: { code: countryCode }, select: { code: true, name: true, currencyCode: true } });
   const currency = country?.currencyCode ?? 'NGN';
 
@@ -1482,6 +1515,8 @@ exports.getRevenueAnalytics = async (req, res) => {
 
 exports.getPerformanceAnalytics = async (req, res) => {
   const { period = 'week' } = req.query;
+  const market = marketWhere(req.user, req.query.country);
+  const viaCustomer = market ? { customer: market } : {};
  
   let startDate = new Date();
   if (period === 'week')  startDate.setDate(startDate.getDate() - 7);
@@ -1502,10 +1537,10 @@ exports.getPerformanceAnalytics = async (req, res) => {
     dailyRides,
     dailyDeliveries,
   ] = await Promise.all([
-    prisma.ride.count({ where: { status: 'COMPLETED',  requestedAt: dateFilter } }),
-    prisma.ride.count({ where: { status: 'CANCELLED',  requestedAt: dateFilter } }),
-    prisma.delivery.count({ where: { status: 'DELIVERED', requestedAt: dateFilter } }),
-    prisma.delivery.count({ where: { status: 'CANCELLED', requestedAt: dateFilter } }),
+    prisma.ride.count({ where: { status: 'COMPLETED',  requestedAt: dateFilter, ...viaCustomer } }),
+    prisma.ride.count({ where: { status: 'CANCELLED',  requestedAt: dateFilter, ...viaCustomer } }),
+    prisma.delivery.count({ where: { status: 'DELIVERED', requestedAt: dateFilter, ...viaCustomer } }),
+    prisma.delivery.count({ where: { status: 'CANCELLED', requestedAt: dateFilter, ...viaCustomer } }),
  
     // Average ride duration in minutes (completedAt - acceptedAt, both must exist)
     prisma.ride.findMany({
@@ -1514,6 +1549,7 @@ exports.getPerformanceAnalytics = async (req, res) => {
         requestedAt: dateFilter,
         acceptedAt:  { not: null },
         completedAt: { not: null },
+        ...viaCustomer,
       },
       select: { acceptedAt: true, completedAt: true },
     }),
@@ -1525,30 +1561,31 @@ exports.getPerformanceAnalytics = async (req, res) => {
         requestedAt: dateFilter,
         assignedAt:  { not: null },
         deliveredAt: { not: null },
+        ...viaCustomer,
       },
       select: { assignedAt: true, deliveredAt: true },
     }),
  
     // Average driver rating (from Rating table, linked via rideId)
     prisma.rating.aggregate({
-      where: { ride: { requestedAt: dateFilter }, driverRating: { not: null } },
+      where: { ride: { requestedAt: dateFilter, ...viaCustomer }, driverRating: { not: null } },
       _avg: { driverRating: true },
     }).catch(() => ({ _avg: { driverRating: null } })),
  
     // Average delivery partner rating
     prisma.rating.aggregate({
-      where: { delivery: { requestedAt: dateFilter }, partnerRating: { not: null } },
+      where: { delivery: { requestedAt: dateFilter, ...viaCustomer }, partnerRating: { not: null } },
       _avg: { partnerRating: true },
     }).catch(() => ({ _avg: { partnerRating: null } })),
  
     // Daily breakdown for rides (last 7 days always shown)
     prisma.ride.findMany({
-      where: { requestedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+      where: { requestedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, ...viaCustomer },
       select: { status: true, requestedAt: true },
     }),
  
     prisma.delivery.findMany({
-      where: { requestedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+      where: { requestedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, ...viaCustomer },
       select: { status: true, requestedAt: true },
     }),
   ]);
@@ -1632,10 +1669,11 @@ exports.getPerformanceAnalytics = async (req, res) => {
 
 exports.getUserGrowth = async (req, res) => {
   const { period = 'month' } = req.query;
+  const market = marketWhere(req.user, req.query.country);
   let startDate = new Date();
   if (period === 'month') startDate.setMonth(startDate.getMonth() - 6);
   else if (period === 'year') startDate.setFullYear(startDate.getFullYear() - 1);
-  const users = await prisma.user.findMany({ where: { createdAt: { gte: startDate } }, select: { role: true, createdAt: true }, orderBy: { createdAt: 'asc' } });
+  const users = await prisma.user.findMany({ where: { createdAt: { gte: startDate }, ...(market || {}) }, select: { role: true, createdAt: true }, orderBy: { createdAt: 'asc' } });
   const growthByMonth = {};
   users.forEach(u => {
     const month = u.createdAt.toISOString().slice(0, 7);
@@ -1768,9 +1806,11 @@ exports.getActivityLogs = async (req, res) => {
 // ─────────────────────────────────────────────
 
 exports.getWallets = async (req, res) => {
-  const { page = 1, limit = 20, minBalance, currency } = req.query;
+  const { page = 1, limit = 20, minBalance, currency, country } = req.query;
   const skip = (page - 1) * limit;
   const where = {};
+  const walletMarket = marketWhere(req.user, country);
+  if (walletMarket) where.user = walletMarket;
   if (minBalance) where.balance = { gte: parseFloat(minBalance) };
   if (currency)   where.currency = String(currency).toUpperCase();
   const [wallets, total, totalsByCurrency] = await Promise.all([
@@ -1787,6 +1827,8 @@ exports.adjustWallet = async (req, res) => {
   const { amount, type, reason } = req.body;
   if (!amount || amount <= 0) throw new AppError('Valid amount is required', 400);
   if (!['credit', 'debit'].includes(type)) throw new AppError('Type must be credit or debit', 400);
+  if (userId === req.user.id && req.user.role !== 'SUPER_ADMIN')
+    throw new AppError('You cannot adjust your own wallet.', 403);
 
   const wallet = await prisma.wallet.findUnique({
     where: { userId },
@@ -1845,7 +1887,8 @@ exports.broadcastNotification = async (req, res) => {
     );
   }
 
-  const where = { isActive: true };
+  // A country-limited admin can only message users in their own countries.
+  const where = { isActive: true, ...(marketWhere(req.user, req.body.country) || {}) };
   if (role) where.role = role;
   const users = await prisma.user.findMany({ where, select: { id: true } });
   await prisma.notification.createMany({ data: users.map(u => ({ userId: u.id, title, message, type, data: { broadcast: true, sentBy: req.user.id } })) });
@@ -1885,11 +1928,11 @@ const planBonusesByCountry = async ({ driversEligible, partnersEligible, overrid
 };
 
 exports.previewOnboardingBonuses = async (req, res) => {
-  if (req.user.role !== 'SUPER_ADMIN')
-    throw new AppError('Only Super Admins can preview onboarding bonuses', 403);
+  if (!hasCountryAuthority(req.user))
+    throw new AppError('Only a Super Admin or a country admin can preview onboarding bonuses', 403);
 
   const { allDrivers, allPartners, driversEligible, partnersEligible } =
-    await fetchBonusCandidates();
+    await fetchBonusCandidates(marketWhere(req.user, req.query.country));
 
   const plan = await planBonusesByCountry({ driversEligible, partnersEligible });
 
@@ -1927,8 +1970,8 @@ exports.previewOnboardingBonuses = async (req, res) => {
 };
 
 exports.disburseOnboardingBonuses = async (req, res) => {
-  if (req.user.role !== 'SUPER_ADMIN')
-    throw new AppError('Only Super Admins can disburse onboarding bonuses', 403);
+  if (!hasCountryAuthority(req.user))
+    throw new AppError('Only a Super Admin or a country admin can disburse onboarding bonuses', 403);
 
   const { driverBonus: legacyDriver, partnerBonus: legacyPartner, overrides = {}, countryCodes } = req.body;
   for (const v of [legacyDriver, legacyPartner, ...Object.values(overrides).flatMap(o => [o?.driver, o?.partner])]) {
@@ -1936,7 +1979,7 @@ exports.disburseOnboardingBonuses = async (req, res) => {
       throw new AppError('Bonus amounts must be positive', 400);
   }
 
-  let { driversEligible, partnersEligible } = await fetchBonusCandidates();
+  let { driversEligible, partnersEligible } = await fetchBonusCandidates(marketWhere(req.user, undefined));
 
   // Optionally restrict the run to specific countries.
   if (Array.isArray(countryCodes) && countryCodes.length) {
@@ -2092,7 +2135,7 @@ exports.disburseCustomBonuses = async (req, res) => {
   const wallets = await prisma.wallet.findMany({
     where: {
       userId: { in: userIds },
-      user:   { role: { in: ['DRIVER', 'DELIVERY_PARTNER'] } },  // restrict to earners
+      user:   { role: { in: ['DRIVER', 'DELIVERY_PARTNER'] }, ...(marketWhere(req.user, undefined) || {}) },  // earners, in the admin's countries
     },
     include: { user: { select: { id: true, firstName: true, lastName: true, role: true, email: true, countryCode: true } } },
   });
@@ -2406,6 +2449,32 @@ exports.createAdminUser = async (req, res) => {
     role, adminDepartment, countryCode,
   } = req.body;
  
+  // A country admin can only create accounts inside their own countries, and never a Super Admin.
+  const actorMarkets = staffMarkets(req.user);
+  const actorLimited = req.user.role !== 'SUPER_ADMIN';
+  if (actorLimited && role === 'SUPER_ADMIN') throw new AppError('Only a Super Admin can create a Super Admin.', 403);
+
+  // Country-limited staff: ['ML'] makes a "Mali admin". Empty/omitted = all countries.
+  let coverage = [];
+  if (['ADMIN', 'SUPPORT', 'MODERATOR'].includes(role) && req.body.supportCountries !== undefined) {
+    if (!Array.isArray(req.body.supportCountries)) throw new AppError('supportCountries must be a list of country codes.', 400);
+    coverage = [...new Set(req.body.supportCountries.map(c => String(c).trim().toUpperCase()).filter(Boolean))];
+    if (coverage.length) {
+      const known = await prisma.country.findMany({ where: { code: { in: coverage } }, select: { code: true } });
+      const missing = coverage.filter(c => !known.some(k => k.code === c));
+      if (missing.length) throw new AppError(`Unknown country code(s): ${missing.join(', ')}`, 400);
+    }
+  }
+  if (actorLimited) {
+    if (['ADMIN', 'SUPPORT', 'MODERATOR'].includes(role)) {
+      if (!coverage.length) coverage = [...actorMarkets];                       // default: same countries as you
+      if (coverage.some(c => !actorMarkets.includes(c))) throw new AppError('You can only assign countries that you manage yourself.', 403);
+    } else if (countryCode && !actorMarkets.includes(String(countryCode).toUpperCase())) {
+      throw new AppError('You can only create accounts for your own countries.', 403);
+    }
+  }
+  const effectiveCountry = String(countryCode || coverage[0] || (actorLimited ? actorMarkets[0] : '') || 'NG').toUpperCase();
+
   // Only ADMIN, SUPPORT, MODERATOR can be created here (not CUSTOMER/DRIVER/etc.)
   const allowedRoles = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'MODERATOR', 'CUSTOMER', 'DRIVER', 'DELIVERY_PARTNER'];
 if (!allowedRoles.includes(role))
@@ -2422,7 +2491,8 @@ const user = await prisma.user.create({
     email, phone, firstName, lastName,
     password:        hashed,
     role,
-    countryCode:     countryCode || 'NG',
+    countryCode:     effectiveCountry,
+    supportCountries: coverage,
     adminDepartment: ['ADMIN', 'SUPPORT', 'MODERATOR', 'SUPER_ADMIN'].includes(role)
       ? (adminDepartment ?? null)
       : null,
@@ -2431,12 +2501,12 @@ const user = await prisma.user.create({
   },
   select: {
     id: true, email: true, phone: true, firstName: true, lastName: true,
-    role: true, adminDepartment: true, isActive: true, createdAt: true,
+    role: true, adminDepartment: true, supportCountries: true, isActive: true, createdAt: true,
   },
 });
 
 // Create wallet for all roles
-await ensureWallet(user.id, countryCode || 'NG');
+await ensureWallet(user.id, effectiveCountry);
 
 // Create role-specific profile
 if (role === 'DRIVER') {
@@ -2656,10 +2726,15 @@ exports.getTicketById = async (req, res) => {
 // Which countries / languages a support agent handles. Empty list = everything.
 exports.updateStaffSupportCoverage = async (req, res) => {
   const { id } = req.params;
-  const target = await prisma.user.findUnique({ where: { id }, select: { id: true, role: true } });
+  const target = await prisma.user.findUnique({ where: { id }, select: { id: true, role: true, supportCountries: true } });
   if (!target) throw new AppError('User not found', 404);
   if (!['ADMIN', 'SUPER_ADMIN', 'SUPPORT', 'MODERATOR'].includes(target.role))
     throw new AppError('Support coverage only applies to staff accounts.', 400);
+  const actorIsSuper = req.user.role === 'SUPER_ADMIN';
+  if (!actorIsSuper) {
+    if (id === req.user.id) throw new AppError('You cannot change your own country assignment.', 403);
+    if (!staffInsideMarkets(req.user, target)) throw new AppError('You can only manage staff who belong to your own countries.', 403);
+  }
 
   // Normalise FIRST, then de-duplicate ('ml' and 'ML' collapse to one).
   const list = (v, label, norm) => {
@@ -2669,6 +2744,11 @@ exports.updateStaffSupportCoverage = async (req, res) => {
   };
   const countries = list(req.body.supportCountries, 'supportCountries', c => c.toUpperCase());
   const languages = list(req.body.supportLanguages, 'supportLanguages', l => l.toLowerCase());
+  if (!actorIsSuper && countries !== undefined) {
+    const mine = staffMarkets(req.user);
+    if (!countries.length || countries.some(c => !mine.includes(c)))
+      throw new AppError('Choose one or more of your own countries (an empty list would give all-country access).', 403);
+  }
 
   if (countries?.length) {
     const known = new Set((await prisma.country.findMany({ select: { code: true } })).map(c => c.code));
@@ -2792,6 +2872,8 @@ exports.updateTicket = async (req, res) => {
 exports.getShieldStats = async (req, res) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const shieldMarket = marketWhere(req.user, req.query.country);
+  const viaUser = shieldMarket ? { user: shieldMarket } : {};
  
   const [
     activeSessions,
@@ -2800,11 +2882,11 @@ exports.getShieldStats = async (req, res) => {
     autoTriggered,
     arrivedSafe,
   ] = await Promise.all([
-    prisma.shieldSession.count({ where: { isActive: true } }),
-    prisma.shieldSession.count({ where: { createdAt: { gte: today } } }),
-    prisma.shieldSession.count({ where: { driverAlerted: true } }),
-    prisma.shieldSession.count({ where: { autoTriggered: true, createdAt: { gte: today } } }),
-    prisma.shieldSession.count({ where: { arrivedSafe: true, createdAt: { gte: today } } }),
+    prisma.shieldSession.count({ where: { isActive: true, ...viaUser } }),
+    prisma.shieldSession.count({ where: { createdAt: { gte: today }, ...viaUser } }),
+    prisma.shieldSession.count({ where: { driverAlerted: true, ...viaUser } }),
+    prisma.shieldSession.count({ where: { autoTriggered: true, createdAt: { gte: today }, ...viaUser } }),
+    prisma.shieldSession.count({ where: { arrivedSafe: true, createdAt: { gte: today }, ...viaUser } }),
   ]);
  
   res.status(200).json({
@@ -2820,9 +2902,10 @@ exports.getShieldStats = async (req, res) => {
 };
  
 exports.getShieldSessions = async (req, res) => {
-  const { page = 1, limit = 20, isActive, autoTriggered } = req.query;
+  const { page = 1, limit = 20, isActive, autoTriggered, country } = req.query;
   const skip  = (parseInt(page) - 1) * parseInt(limit);
-  const where = {};
+  const sMarket = marketWhere(req.user, country);
+  const where = sMarket ? { user: sMarket } : {};
  
   if (isActive !== undefined)      where.isActive      = isActive === 'true';
   if (autoTriggered !== undefined) where.autoTriggered = autoTriggered === 'true';
@@ -3126,6 +3209,8 @@ exports.suspendCompany = async (req, res) => {
 // ─── DUOPAY ADMIN ─────────────────────────────────────────────────────────────
 
 exports.getDuoPayStats = async (req, res) => {
+  const dm = marketWhere(req.user, req.query.country);
+  const acct = dm ? { user: dm } : {};
   const [
     totalAccounts,
     activeAccounts,
@@ -3134,13 +3219,13 @@ exports.getDuoPayStats = async (req, res) => {
     outstandingAgg,
     overdueAgg,
   ] = await Promise.all([
-    prisma.duoPayAccount.count(),
-    prisma.duoPayAccount.count({ where: { status: 'ACTIVE'    } }),
-    prisma.duoPayAccount.count({ where: { status: 'SUSPENDED' } }),
-    prisma.duoPayAccount.count({ where: { status: 'DEFAULTED' } }),
-    prisma.duoPayAccount.aggregate({ _sum: { usedBalance: true } }),
+    prisma.duoPayAccount.count({ where: acct }),
+    prisma.duoPayAccount.count({ where: { status: 'ACTIVE',    ...acct } }),
+    prisma.duoPayAccount.count({ where: { status: 'SUSPENDED', ...acct } }),
+    prisma.duoPayAccount.count({ where: { status: 'DEFAULTED', ...acct } }),
+    prisma.duoPayAccount.aggregate({ where: acct, _sum: { usedBalance: true } }),
     prisma.duoPayTransaction.aggregate({
-      where: { status: 'OVERDUE' },
+      where: { status: 'OVERDUE', ...(dm ? { account: { user: dm } } : {}) },
       _sum:  { amount: true },
     }),
   ]);
@@ -3159,9 +3244,10 @@ exports.getDuoPayStats = async (req, res) => {
 };
 
 exports.getDuoPayAccounts = async (req, res) => {
-  const { page = 1, limit = 15, status } = req.query;
+  const { page = 1, limit = 15, status, country } = req.query;
   const skip  = (parseInt(page) - 1) * parseInt(limit);
-  const where = status ? { status } : {};
+  const dMarket = marketWhere(req.user, country);
+  const where = { ...(status ? { status } : {}), ...(dMarket ? { user: dMarket } : {}) };
 
   const [accounts, total] = await Promise.all([
     prisma.duoPayAccount.findMany({
@@ -3321,9 +3407,10 @@ exports.runDuoPayOverdueCheck = async (req, res) => {
 
 // APP FEEDBACK
 exports.getAppFeedback = async (req, res) => {
-  const { page = 1, limit = 20, rating, category } = req.query;
+  const { page = 1, limit = 20, rating, category, country } = req.query;
   const skip  = (parseInt(page) - 1) * parseInt(limit);
-  const where = {};
+  const fMarket = marketWhere(req.user, country);
+  const where = fMarket ? { user: fMarket } : {};
   if (rating)   where.rating   = parseInt(rating);
   if (category) where.category = category;
  
@@ -3352,11 +3439,13 @@ exports.getAppFeedback = async (req, res) => {
 };
  
 exports.getAppFeedbackStats = async (req, res) => {
+  const fm = marketWhere(req.user, req.query.country);
+  const fw = fm ? { user: fm } : {};
   const [total, ratingGroups, categoryGroups, avgResult] = await Promise.all([
-    prisma.appFeedback.count(),
-    prisma.appFeedback.groupBy({ by: ['rating'],   _count: { rating: true }   }),
-    prisma.appFeedback.groupBy({ by: ['category'], _count: { category: true } }),
-    prisma.appFeedback.aggregate({ _avg: { rating: true } }),
+    prisma.appFeedback.count({ where: fw }),
+    prisma.appFeedback.groupBy({ by: ['rating'],   where: fw, _count: { rating: true }   }),
+    prisma.appFeedback.groupBy({ by: ['category'], where: fw, _count: { category: true } }),
+    prisma.appFeedback.aggregate({ where: fw, _avg: { rating: true } }),
   ]);
  
   const distribution = {};

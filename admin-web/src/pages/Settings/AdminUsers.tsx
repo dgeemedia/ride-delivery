@@ -25,6 +25,7 @@ interface AdminUser {
 
 const AdminUsers: React.FC = () => {
   const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [newCountries, setNewCountries] = useState<string[]>([]);   // [] = all countries
 
   // Support coverage editor
   const [countries, setCountries]       = useState<Country[]>([]);
@@ -89,6 +90,7 @@ const AdminUsers: React.FC = () => {
     firstName: '', lastName: '', email: '', phone: '',
     password: '', role: 'ADMIN', adminDepartment: '',
   });
+  // (countries are reset separately below)
 
   const handleCreate = async () => {
     if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone || !formData.password) {
@@ -104,10 +106,12 @@ const AdminUsers: React.FC = () => {
         password:        formData.password,
         role:            formData.role,
         adminDepartment: formData.adminDepartment || undefined,
+        supportCountries: newCountries,
       });
       toast.success('Admin user created successfully');
       setShowCreateModal(false);
       resetForm();
+      setNewCountries([]);
       loadAdmins();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to create admin user');
@@ -295,6 +299,23 @@ const AdminUsers: React.FC = () => {
           <p className="text-xs text-gray-400">
             General admins can access all sections. Scoped admins only see their department.
           </p>
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-1">Countries</p>
+            <div className="flex flex-wrap gap-2">
+              {countries.map(c => (
+                <button key={c.code} type="button" onClick={() => toggle(newCountries, setNewCountries, c.code)}
+                  className={`px-2.5 py-1 rounded-full border text-xs font-semibold transition ${
+                    newCountries.includes(c.code) ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
+                  {flagOf(c.code)} {c.name}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              Pick one country (for example Mali) to make a <strong>country admin</strong>: they get full access to that country
+              and nothing outside it. Leave all unticked for an admin who works across every country
+              (if you are a country admin, leaving them unticked gives the new account your own countries).
+            </p>
+          </div>
         </div>
       </Modal>
 

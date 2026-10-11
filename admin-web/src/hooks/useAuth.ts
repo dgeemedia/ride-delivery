@@ -25,6 +25,13 @@ export const useAuth = () => {
   const isSupport     = role === 'SUPPORT';
   const isAnyAdmin    = isAdmin || isSupport;
 
+  // Country-limited staff (e.g. a "Mali admin"): empty list = all countries; Super Admin is never limited.
+  const markets = isSuperAdmin ? [] : ((user?.supportCountries ?? []) as string[]).map(c => String(c).toUpperCase());
+  const isCountryLimited = markets.length > 0;
+  // Full authority over a country: Super Admin everywhere, or an ADMIN assigned to specific countries
+  // (the server then keeps them inside those countries). An ADMIN with no countries is not elevated.
+  const hasCountryAuthority = isSuperAdmin || (role === 'ADMIN' && isCountryLimited);
+
   // ── Department helpers ──────────────────────────────────────────────────────
   // General admin has no department restriction
   const isGeneralAdmin = isAdmin && dept === null;
@@ -43,8 +50,8 @@ export const useAuth = () => {
     // Users
     viewUsers:        isAnyAdmin,
     suspendUsers:     isAdmin,
-    deleteUsers:      isSuperAdmin,
-    createAdmins:     isSuperAdmin,
+    deleteUsers:      hasCountryAuthority,
+    createAdmins:     hasCountryAuthority,
 
     // Drivers / rides
     manageDrivers:    canAccess('RIDES'),
@@ -67,16 +74,20 @@ export const useAuth = () => {
 
     // Settings
     viewSettings:     isAdmin,
-    editSettings:     isSuperAdmin,
+    editSettings:     isSuperAdmin,          // global platform settings
+    editCountrySettings: hasCountryAuthority, // a country's own pricing, payments, payouts…
 
-    // Promo codes
-    managePromos:     isAdmin,
+    // Promo codes (global, so closed to country-limited accounts)
+    managePromos:     isAdmin && !isCountryLimited,
+
+    // Global sections (corporate accounts, audit log…) — not for country-limited accounts
+    viewGlobal:       isAnyAdmin && !isCountryLimited,
 
     // Notifications
     broadcast:        isAdmin,
 
     // Bonuses
-    disburseBonus:    isSuperAdmin,
+    disburseBonus:    hasCountryAuthority,
   };
 
   return {
@@ -90,6 +101,9 @@ export const useAuth = () => {
     isSupport,
     isAnyAdmin,
     isGeneralAdmin,
+    markets,
+    isCountryLimited,
+    hasCountryAuthority,
     canAccess,
     can,
     login,

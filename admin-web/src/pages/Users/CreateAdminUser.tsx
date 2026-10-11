@@ -3,6 +3,9 @@ import React, { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Shield, Eye, EyeOff, Upload, CheckCircle, X, Loader2 } from 'lucide-react';
 import { usersAPI } from '@/services/api/users';
+import { useAuth } from '@/hooks/useAuth';
+import { useCountries } from '@/components/CountryFilter';
+import { flagOf } from '@/utils/supportLanguages';
 import { Card, Input, Select, Button, Alert } from '@/components/common';
 import api from '@/services/api';
 import toast from 'react-hot-toast';
@@ -341,6 +344,11 @@ type Role = 'SUPER_ADMIN' | 'ADMIN' | 'SUPPORT' | 'MODERATOR' | 'CUSTOMER' | 'DR
 
 const CreateAdminUser: React.FC = () => {
   const navigate = useNavigate();
+  const { isSuperAdmin, markets } = useAuth();
+  const countryList = useCountries();            // a country admin only receives their own countries
+  const [staffCountries, setStaffCountries] = useState<string[]>([]);
+  const [accountCountry, setAccountCountry] = useState('');
+  const isStaffRole = (r: string) => ['ADMIN', 'SUPPORT', 'MODERATOR', 'SUPER_ADMIN'].includes(r);
   const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
@@ -478,6 +486,8 @@ const CreateAdminUser: React.FC = () => {
           : ['ADMIN', 'SUPER_ADMIN'].includes(form.role)
           ? (form.adminDepartment || null)
           : null,
+        ...(isStaffRole(form.role) && form.role !== 'SUPER_ADMIN' ? { supportCountries: staffCountries } : {}),
+        ...(!isStaffRole(form.role) && accountCountry ? { countryCode: accountCountry } : {}),
       };
 
       if (form.role === 'DRIVER') {
@@ -556,7 +566,7 @@ const CreateAdminUser: React.FC = () => {
             value={form.role}
             onChange={e => handleRoleChange(e.target.value as Role)}
             options={[
-              { value: 'SUPER_ADMIN',      label: 'Super Admin'       },
+              ...(isSuperAdmin ? [{ value: 'SUPER_ADMIN', label: 'Super Admin' }] : []),
               { value: 'ADMIN',            label: 'Admin'             },
               { value: 'SUPPORT',          label: 'Support Agent'     },
               { value: 'MODERATOR',        label: 'Moderator'         },
@@ -565,6 +575,38 @@ const CreateAdminUser: React.FC = () => {
               { value: 'DELIVERY_PARTNER', label: 'Delivery Partner'  },
             ]}
           />
+
+          {/* Countries: who this account works for */}
+          {form.role !== 'SUPER_ADMIN' && (isStaffRole(form.role) ? (
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-1">Countries</p>
+              <div className="flex flex-wrap gap-2">
+                {countryList.map(c => (
+                  <button key={c.code} type="button"
+                    onClick={() => setStaffCountries(l => l.includes(c.code) ? l.filter(x => x !== c.code) : [...l, c.code])}
+                    className={`px-2.5 py-1 rounded-full border text-xs font-semibold transition ${
+                      staffCountries.includes(c.code) ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
+                    {flagOf(c.code)} {c.name}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                {markets.length > 0
+                  ? 'Leave unticked to give this account all of your countries.'
+                  : 'Tick one country (for example Mali) to make a country admin with full access to that country only. Leave unticked for all countries.'}
+              </p>
+            </div>
+          ) : (
+            <Select
+              label="Country"
+              value={accountCountry}
+              onChange={e => setAccountCountry(e.target.value)}
+              options={[
+                { value: '', label: markets.length > 0 ? 'My country' : 'Nigeria (default)' },
+                ...countryList.map(c => ({ value: c.code, label: `${flagOf(c.code)} ${c.name}` })),
+              ]}
+            />
+          ))}
 
           {['ADMIN', 'SUPER_ADMIN'].includes(form.role) && (
             <Select

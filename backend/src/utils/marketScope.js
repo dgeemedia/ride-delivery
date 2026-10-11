@@ -51,4 +51,26 @@ const tallyByCountry = (rows, pick = (r) => r.user?.countryCode) => {
   return out;
 };
 
-module.exports = { countryParam, staffMarkets, marketWhere, scopeOnlyWhere, canActInMarket, tallyByCountry };
+/**
+ * Full authority over a country: a Super Admin anywhere, or an ADMIN who has been assigned
+ * countries (they are then confined to those countries by marketGuard). An ADMIN with no
+ * assigned countries is NOT elevated by this.
+ */
+const hasCountryAuthority = (user) =>
+  !!user && (user.role === 'SUPER_ADMIN' || (user.role === 'ADMIN' && staffMarkets(user).length > 0));
+
+/**
+ * May `actor` manage this staff account? Super Admin always. A country admin only staff whose
+ * assigned countries are all among the actor's own (never a Super Admin, never an all-country
+ * account).
+ */
+const staffInsideMarkets = (actor, target) => {
+  if (!actor) return false;
+  if (actor.role === 'SUPER_ADMIN') return true;
+  const mine = staffMarkets(actor);
+  if (!mine.length || !target || target.role === 'SUPER_ADMIN') return false;
+  const theirs = (Array.isArray(target.supportCountries) ? target.supportCountries : []).map(up).filter(Boolean);
+  return theirs.length > 0 && theirs.every((c) => mine.includes(c));
+};
+
+module.exports = { countryParam, staffMarkets, marketWhere, scopeOnlyWhere, canActInMarket, tallyByCountry, hasCountryAuthority, staffInsideMarkets };

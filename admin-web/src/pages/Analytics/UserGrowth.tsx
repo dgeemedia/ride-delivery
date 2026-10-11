@@ -4,21 +4,23 @@ import { Card, Select } from '@/components/common';
 import { AreaChart, BarChart } from '@/components/charts';
 import { analyticsAPI } from '@/services/api/analytics';
 import { UserGrowth as UserGrowthType } from '@/types';
+import { CountrySelect } from '@/components/CountryFilter';
 import toast from 'react-hot-toast';
 
 const UserGrowth: React.FC = () => {
   const [period, setPeriod] = useState('month');
+  const [country, setCountry] = useState('');
   const [data, setData] = useState<UserGrowthType | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadData();
-  }, [period]);
+  }, [period, country]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const response = await analyticsAPI.getUserGrowth(period);
+      const response = await analyticsAPI.getUserGrowth(period, country || undefined);
       setData(response.data);
     } catch (error) {
       toast.error('Failed to load user growth data');
@@ -38,6 +40,8 @@ const UserGrowth: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">User Growth</h1>
           <p className="text-gray-600 mt-1">Track user acquisition and growth trends</p>
         </div>
+        <div className="flex gap-3">
+        <CountrySelect value={country} onChange={setCountry} />
         <Select
           value={period}
           onChange={(e) => setPeriod(e.target.value)}
@@ -47,6 +51,7 @@ const UserGrowth: React.FC = () => {
             { value: 'year', label: 'Last Year' },
           ]}
         />
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -102,6 +107,7 @@ const UserGrowth: React.FC = () => {
             { key: 'partners', name: 'Partners', color: '#FF9500' },
           ]}
           height={400}
+          valueType="number"
         />
       </Card>
     </div>

@@ -92,3 +92,53 @@ describe('admin list endpoints honour the country filter', () => {
     expect((await run('getRides', { role: 'SUPER_ADMIN', supportCountries: ['ML'] }, {}))[0].where.customer).toBeUndefined();
   });
 });
+
+describe('dashboard stats are per country and never mix currencies', () => {
+  const run = async (user, query, { payments = {}, wallets = [] } = {}) => {
+    jest.resetModules();
+    const seen = [];
+    const group = (name) => ({ groupBy: async (a) => { seen.push({ name, where: a.where }); return payments[name]?.(a) ?? []; } });
+    const cnt = (name) => ({ count: async (a) => { seen.push({ name, where: a.where }); return 0; }, findMany: async (a) => { seen.push({ name: name + 'List', where: a.where }); return []; } });
+    jest.doMock('../src/lib/prisma', () => ({
+      user: cnt('user'), ride: cnt('ride'), delivery: cnt('delivery'),
+      driverProfile: cnt('driver'), deliveryPartnerProfile: cnt('partner'), supportTicket: cnt('ticket'),
+      payment: group('payment'),
+      wallet: { groupBy: async () => wallets },
+      country: { findUnique: async ({ where }) => ({ code: where.code, name: where.code, currencyCode: where.code === 'ML' ? 'XOF' : 'NGN' }) },
+    }));
+    for (const dep of ['notification.service', 'email.service', 'shield.service', 'commission.service', 'payment.service']) jest.doMock(`../src/services/${dep}`, () => ({}));
+    jest.doMock('../src/services/countrySettings.service', () => ({}));
+    const ctrl = require('../src/controllers/admin.controller');
+    let body; await ctrl.getDashboardStats({ user, query }, { status: () => ({ json: (b) => { body = b.data; } }) });
+    return { body, seen };
+  };
+  const ADMIN = { role: 'ADMIN', supportCountries: [] };
+  // payment.groupBy is called 5 times in order: today, yesterday, month, week, year
+  const pays = (rowsByCall) => { let i = 0; return () => rowsByCall[i++] ?? []; };
+
+  test('all countries: one row per currency, not one summed Naira total', async () => {
+    const { body } = await run(ADMIN, {}, { payments: { payment: pays([
+      [{ currency: 'NGN', _sum: { amount: 5000 } }, { currency: 'XOF', _sum: { amount: 100000 } }], [], [], [], [] ]) } });
+    expect(body.revenue.byCurrency.map(r => [r.currency, r.today])).toEqual([['NGN', 5000], ['XOF', 100000]]);
+    expect(body.revenue.currency).toBe('NGN');
+    expect(body.revenue.today).toBe(5000);              // NOT 105000
+  });
+  test('Mali selected: scoped queries and the primary currency is XOF', async () => {
+    const { body, seen } = await run(ADMIN, { country: 'ml' }, { payments: { payment: pays([[{ currency: 'XOF', _sum: { amount: 70000 } }], [], [], [], []]) } });
+    expect(body.country).toBe('ML');
+    expect(body.revenue.currency).toBe('XOF');
+    expect(body.revenue.today).toBe(70000);
+    expect(seen.find(s => s.name === 'payment').where.user).toEqual({ countryCode: 'ML' });
+    expect(seen.find(s => s.name === 'ride').where.customer).toEqual({ countryCode: 'ML' });
+    expect(seen.find(s => s.name === 'ticket').where.countryCode).toBe('ML');
+  });
+  test('selected country with no payments yet still reports its own currency, zeros', async () => {
+    const { body } = await run(ADMIN, { country: 'ML' });
+    expect(body.revenue.currency).toBe('XOF');
+    expect(body.revenue.byCurrency).toEqual([expect.objectContaining({ currency: 'XOF', today: 0 })]);
+  });
+  test('scoped admin cannot widen to all countries', async () => {
+    const { seen } = await run({ role: 'ADMIN', supportCountries: ['ML'] }, {});
+    expect(seen.find(s => s.name === 'payment').where.user).toEqual({ countryCode: { in: ['ML'] } });
+  });
+});

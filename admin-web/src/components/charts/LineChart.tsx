@@ -11,9 +11,14 @@ interface LineChartProps {
     color: string;
   }>;
   height?: number;
+  /** Currency of the plotted amounts (default NGN). Ignored when valueType is 'number'. */
+  currency?: string;
+  /** 'money' (default) formats as currency; 'number' for counts such as rides or users. */
+  valueType?: 'money' | 'number';
 }
 
-const LineChart: React.FC<LineChartProps> = ({ data, xKey, lines, height = 300 }) => {
+const LineChart: React.FC<LineChartProps> = ({ data, xKey, lines, height = 300, currency, valueType = 'money' }) => {
+  const fmt = (v: any) => (valueType === 'number' ? Number(v ?? 0).toLocaleString() : formatCurrency(v, currency));
   return (
     <ResponsiveContainer width="100%" height={height}>
       <RechartsLineChart data={data}>
@@ -26,7 +31,7 @@ const LineChart: React.FC<LineChartProps> = ({ data, xKey, lines, height = 300 }
         <YAxis 
           stroke="#757575"
           style={{ fontSize: '12px' }}
-          tickFormatter={(value) => formatCurrency(value)}
+          tickFormatter={(value) => fmt(value)}
         />
         <Tooltip 
           contentStyle={{ 
@@ -34,7 +39,7 @@ const LineChart: React.FC<LineChartProps> = ({ data, xKey, lines, height = 300 }
             border: '1px solid #e0e0e0',
             borderRadius: '8px'
           }}
-          formatter={(value: any) => formatCurrency(value)}
+          formatter={(value: any) => fmt(value)}
         />
         <Legend />
         {lines.map((line) => (

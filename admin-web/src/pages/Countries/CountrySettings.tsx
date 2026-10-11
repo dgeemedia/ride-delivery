@@ -375,7 +375,8 @@ const CountrySettings: React.FC = () => {
   const navigate = useNavigate();
   const { code: codeParam } = useParams<{ code?: string }>();
   const { user } = useAuthStore();
-  const canEdit = user?.role === 'SUPER_ADMIN';
+  // Super Admin, or the admin assigned to this country (the list only contains their countries).
+  const canEdit = user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && (user?.supportCountries?.length ?? 0) > 0);
 
   const [countries, setCountries] = useState<Country[]>([]);
   const [code, setCode] = useState<string>((codeParam ?? 'NG').toUpperCase());
@@ -522,7 +523,7 @@ const CountrySettings: React.FC = () => {
       </div>
 
       {!canEdit && (
-        <Alert variant="info">You can view these rules. Only a Super Admin can change them.</Alert>
+        <Alert variant="info">You can view these rules. Only a Super Admin or the admin of this country can change them.</Alert>
       )}
 
       {data && !data.pricingReviewed && (

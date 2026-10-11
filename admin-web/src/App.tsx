@@ -10,6 +10,7 @@ import Dashboard          from '@/pages/Dashboard/Dashboard';
 import UserList           from '@/pages/Users/UserList';
 import UserDetails        from '@/pages/Users/UserDetails';
 import CreateAdminUser    from '@/pages/Users/CreateAdminUser';
+import AdminUsers         from '@/pages/Settings/AdminUsers';
 import DriverList         from '@/pages/Drivers/DriverList';
 import DriverApproval     from '@/pages/Drivers/DriverApproval';
 import DriverDetails      from '@/pages/Drivers/DriverDetails';
@@ -59,7 +60,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const SuperAdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAuthenticated } = useAuthStore();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (user?.role !== 'SUPER_ADMIN') return <Navigate to="/" replace />;
+  // Super Admin, or a country admin (an ADMIN assigned to specific countries).
+  const countryAdmin = user?.role === 'ADMIN' && (user?.supportCountries?.length ?? 0) > 0;
+  if (user?.role !== 'SUPER_ADMIN' && !countryAdmin) return <Navigate to="/" replace />;
   return <Layout>{children}</Layout>;
 };
 
@@ -78,6 +81,8 @@ function App() {
           {/* Users */}
           <Route path="/users"              element={<ProtectedRoute><UserList /></ProtectedRoute>} />
           <Route path="/users/create-admin" element={<SuperAdminRoute><CreateAdminUser /></SuperAdminRoute>} />
+          {/* Staff & country assignments: Super Admin, or a country admin for their own countries. */}
+          <Route path="/staff" element={<SuperAdminRoute><AdminUsers /></SuperAdminRoute>} />
           <Route path="/users/:id"          element={<ProtectedRoute><UserDetails /></ProtectedRoute>} />
 
           {/* Incomplete Applications */}

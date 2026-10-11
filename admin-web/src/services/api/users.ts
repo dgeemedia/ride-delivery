@@ -7,6 +7,9 @@ export interface CreateAdminPayload {
   firstName: string; lastName: string;
   role: 'SUPER_ADMIN'|'ADMIN'|'SUPPORT'|'MODERATOR'|'CUSTOMER'|'DRIVER'|'DELIVERY_PARTNER';
   adminDepartment?: 'RIDES'|'DELIVERIES'|'SUPPORT' | null;
+  /** Staff roles: countries they manage ([] = all). Other roles: use countryCode. */
+  supportCountries?: string[];
+  countryCode?: string;
 
   // ── Driver vehicle ────────────────────────────────────────────────────────
   licenseNumber?: string;

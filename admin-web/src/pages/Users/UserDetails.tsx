@@ -37,7 +37,7 @@ const UserDetails: React.FC = () => {
   const location = useLocation();
   const backTo   = (location.state as any)?.from ?? '/users';
   const { user: currentUser } = useAuthStore();
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN' || (currentUser?.role === 'ADMIN' && (currentUser?.supportCountries?.length ?? 0) > 0);
 
   const [user, setUser]               = useState<UserType | null>(null);
   const [loading, setLoading]         = useState(true);

@@ -309,7 +309,8 @@ const docDefs = getDriverDocDefs(driver.vehicleType);
 // ─── Main page ────────────────────────────────────────────────────────────────
 const DriverApproval: React.FC = () => {
   const { user }     = useAuthStore();
-  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  // Super Admin or a country admin may grant the onboarding bonus.
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && (user?.supportCountries?.length ?? 0) > 0);
 
   const [drivers,        setDrivers]        = useState<Driver[]>([]);
   const [loading,        setLoading]        = useState(true);

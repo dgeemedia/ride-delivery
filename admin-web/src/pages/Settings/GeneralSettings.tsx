@@ -2073,6 +2073,7 @@ interface CardDef {
 const GeneralSettings: React.FC = () => {
   const { user } = useAuthStore();
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const hasCountryAuthority = isSuperAdmin || (user?.role === 'ADMIN' && (user?.supportCountries?.length ?? 0) > 0);
   const [openCard, setOpenCard] = useState<string | null>(null);
 
   const toggleCard = (id: string) =>
@@ -2115,6 +2116,24 @@ const GeneralSettings: React.FC = () => {
       subtitle: 'Recent changes to platform configuration',
       component: <AuditLogSection />,
     },
+        // Bonuses are per country: a country admin can pay bonuses to their own country's drivers & partners.
+        ...(hasCountryAuthority ? [
+      {
+        id: 'custom-bonus',
+        icon: <Gift className="h-4 w-4" />,
+        title: 'Custom bonus',
+        subtitle: 'Credit specific drivers or partners a custom amount',
+        component: <CustomBonusSection />,
+        wide: true,
+      },
+      {
+        id: 'onboarding-bonus',
+        icon: <Gift className="h-4 w-4" />,
+        title: 'Onboarding bonus',
+        subtitle: "Credit approved drivers & partners who haven't received one yet",
+        component: <OnboardingBonusSection />,
+      },
+    ] as CardDef[] : []),
         ...(isSuperAdmin ? [
       {
         id: 'manual-credit',
@@ -2148,23 +2167,6 @@ const GeneralSettings: React.FC = () => {
         title: 'Wallet limits',
         subtitle: 'Min/max top-up amounts per transaction',
         component: <WalletLimitsSection />,
-        superAdmin: true,
-      },
-      {
-        id: 'custom-bonus',
-        icon: <Gift className="h-4 w-4" />,
-        title: 'Custom bonus',
-        subtitle: 'Credit specific drivers or partners a custom amount',
-        component: <CustomBonusSection />,
-        wide: true,
-        superAdmin: true,
-      },
-      {
-        id: 'onboarding-bonus',
-        icon: <Gift className="h-4 w-4" />,
-        title: 'Onboarding bonus',
-        subtitle: "Credit approved drivers & partners who haven't received one yet",
-        component: <OnboardingBonusSection />,
         superAdmin: true,
       },
       {

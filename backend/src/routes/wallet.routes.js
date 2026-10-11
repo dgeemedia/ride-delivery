@@ -4,6 +4,7 @@ const { isPhoneAcceptable } = require('../utils/phone');
 const { body, query, param } = require('express-validator');
 const walletController = require('../controllers/wallet.controller');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
+const { walletMarketGuard } = require('../middleware/marketGuard');
 
 const router = express.Router();
 
@@ -26,6 +27,8 @@ router.post('/topup/orange/webhook', walletController.orangeWebhook);
 // All routes below require authentication
 // ─────────────────────────────────────────────────────────────────────────────
 router.use(authenticate);
+// Country-limited admins may only act on payouts / transfers / top-ups of their countries.
+router.use('/admin', walletMarketGuard);
 
 // Deposit limits are per-country, per-role (the handler reads req.user), so this
 // MUST sit behind authenticate. It used to be declared above it as "public", which

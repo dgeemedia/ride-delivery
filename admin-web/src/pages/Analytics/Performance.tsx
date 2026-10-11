@@ -4,6 +4,7 @@ import { Card, Select, Spinner } from '@/components/common';
 import { LineChart, PieChart } from '@/components/charts';
 import { Clock, Star, CheckCircle } from 'lucide-react';
 import { analyticsAPI, PerformanceAnalytics } from '@/services/api/analytics';
+import { CountrySelect } from '@/components/CountryFilter';
 import toast from 'react-hot-toast';
 
 const PERIOD_OPTIONS = [
@@ -48,17 +49,18 @@ const KpiCard: React.FC<KpiCardProps> = ({ label, value, icon, iconBg, subtext }
 
 const Performance: React.FC = () => {
   const [period,  setPeriod]  = useState('week');
+  const [country, setCountry] = useState('');
   const [data,    setData]    = useState<PerformanceAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     load();
-  }, [period]);
+  }, [period, country]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await analyticsAPI.getPerformanceAnalytics(period);
+      const res = await analyticsAPI.getPerformanceAnalytics(period, country || undefined);
       setData(res.data);
     } catch {
       toast.error('Failed to load performance data');
@@ -86,11 +88,14 @@ const Performance: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Performance Metrics</h1>
           <p className="text-gray-500 mt-1 text-sm">Monitor platform performance and efficiency</p>
         </div>
-        <Select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
-          options={PERIOD_OPTIONS}
-        />
+        <div className="flex gap-3">
+          <CountrySelect value={country} onChange={setCountry} />
+          <Select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            options={PERIOD_OPTIONS}
+          />
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -214,6 +219,7 @@ const Performance: React.FC = () => {
               { key: 'deliveries', name: 'Deliveries', color: '#FF9500' },
             ]}
             height={300}
+            valueType="number"
           />
         </Card>
       </div>

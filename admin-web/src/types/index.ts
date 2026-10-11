@@ -10,6 +10,9 @@ export interface User {
   lastName: string;
   role: 'CUSTOMER' | 'DRIVER' | 'DELIVERY_PARTNER' | 'ADMIN' | 'SUPER_ADMIN' | 'MODERATOR' | 'SUPPORT';
   adminDepartment?: AdminDepartment;
+  /** Countries a staff member is limited to. Empty/absent = all countries. */
+  supportCountries?: string[];
+  supportLanguages?: string[];
   profileImage?: string;
   isActive: boolean;
   isVerified: boolean;
@@ -245,9 +248,18 @@ export interface DashboardStats {
     year:          number;
     currency:      string;
     revenueDelta?: number | null;
+    /** One row per currency — amounts in different currencies are never added together. */
+    byCurrency?: Array<{
+      currency: string; today: number; yesterday: number; week: number; month: number; year: number;
+      walletBalance?: number; delta?: number | null;
+    }>;
   };
+  /** ISO code when the dashboard is scoped to one country, else null/undefined (all countries). */
+  country?: string | null;
   wallet: {
     totalBalance: number;
+    currency?: string;
+    byCurrency?: Array<{ currency: string; balance: number }>;
   };
   pending: {
     drivers:  number;
