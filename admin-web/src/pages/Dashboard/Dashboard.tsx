@@ -8,7 +8,7 @@ import { analyticsAPI } from '@/services/api/analytics';
 import api from '@/services/api';
 import { DashboardStats, RevenueAnalytics } from '@/types';
 import { formatCurrency, formatDate } from '@/utils/helpers';
-import { CountrySelect } from '@/components/CountryFilter';
+import { CountrySelect, CountryTag } from '@/components/CountryFilter';
 import toast from 'react-hot-toast';
 
 // ─── Feature flags ──────────────────────────────────────────────────────────
@@ -223,6 +223,38 @@ const statCards = [
           </Card>
         ))}
       </div>
+
+      {/* Revenue by country: several countries can share one currency (XOF), so split them back out. */}
+      {(stats.revenue.byCountry?.length ?? 0) > 0 && (
+        <Card>
+          <h3 className="text-lg font-semibold mb-1">Revenue by country</h3>
+          <p className="text-xs text-gray-500 mb-3">Revenue and wallet balances for each country, in its own currency. Amounts in different currencies are never added together.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase text-gray-500 border-b">
+                  <th className="py-2 pr-4">Country</th>
+                  <th className="py-2 pr-4 text-right">Today</th>
+                  <th className="py-2 pr-4 text-right">This month</th>
+                  <th className="py-2 pr-4 text-right">This year</th>
+                  <th className="py-2 text-right">Wallet balances</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.revenue.byCountry!.map(r => (
+                  <tr key={`${r.country}-${r.currency}`} className="border-b last:border-0">
+                    <td className="py-2 pr-4"><CountryTag code={r.country} className="mr-2" />{r.name}</td>
+                    <td className="py-2 pr-4 text-right whitespace-nowrap">{formatCurrency(r.today, r.currency)}</td>
+                    <td className="py-2 pr-4 text-right whitespace-nowrap">{formatCurrency(r.month, r.currency)}</td>
+                    <td className="py-2 pr-4 text-right whitespace-nowrap font-medium">{formatCurrency(r.year, r.currency)}</td>
+                    <td className="py-2 text-right whitespace-nowrap">{formatCurrency(r.walletBalance, r.currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

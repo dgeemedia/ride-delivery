@@ -196,6 +196,44 @@ exports.getDashboardStats = async (req, res) => {
   const primary = byCur[primaryCode] ?? { today: 0, yesterday: 0, week: 0, month: 0, year: 0, walletBalance: 0 };
   const revenueDelta = pct(primary.today, primary.yesterday);
 
+  // ── Per-country money (only when the view spans several countries) ──────────
+  // Currencies are shared (XOF is used by many markets), so this splits them back out.
+  // Aggregated inside Postgres, so it stays fast however many payments exist.
+  let byCountry = [];
+  if (!countryCode) {
+    const scoped = market && market.countryCode && Array.isArray(market.countryCode.in) ? market.countryCode.in : null;
+    const payParams = [todayStart, monthStart, yearStart];
+    const payScope  = scoped ? ' AND u."countryCode" = ANY($4::text[])' : '';
+    if (scoped) payParams.push(scoped);
+    const [payRows, walRows] = await Promise.all([
+      prisma.$queryRawUnsafe(
+        `SELECT u."countryCode" AS country, p.currency AS currency,
+                COALESCE(SUM(p.amount) FILTER (WHERE p."createdAt" >= $1), 0) AS today,
+                COALESCE(SUM(p.amount) FILTER (WHERE p."createdAt" >= $2), 0) AS month,
+                COALESCE(SUM(p.amount), 0) AS year
+           FROM "Payment" p JOIN "User" u ON u.id = p."userId"
+          WHERE p.status = 'COMPLETED' AND p."createdAt" >= $3${payScope}
+          GROUP BY u."countryCode", p.currency`, ...payParams),
+      prisma.$queryRawUnsafe(
+        `SELECT u."countryCode" AS country, w.currency AS currency, COALESCE(SUM(w.balance), 0) AS balance
+           FROM "Wallet" w JOIN "User" u ON u.id = w."userId"
+          WHERE u.role IN ('CUSTOMER','DRIVER','DELIVERY_PARTNER') AND u."isActive" = true${scoped ? ' AND u."countryCode" = ANY($1::text[])' : ''}
+          GROUP BY u."countryCode", w.currency`, ...(scoped ? [scoped] : [])),
+    ]);
+    const acc = {};
+    const slot = (cc, cur) => (acc[`${cc}|${cur}`] ??= { country: cc || '', currency: cur, today: 0, month: 0, year: 0, walletBalance: 0 });
+    for (const r of payRows || []) Object.assign(slot(r.country, r.currency), { today: Number(r.today), month: Number(r.month), year: Number(r.year) });
+    for (const r of walRows || []) slot(r.country, r.currency).walletBalance = Number(r.balance);
+    const codes = [...new Set(Object.values(acc).map(r => r.country).filter(Boolean))];
+    const names = codes.length
+      ? await prisma.country.findMany({ where: { code: { in: codes } }, select: { code: true, name: true } })
+      : [];
+    const nameOf = Object.fromEntries((names || []).map(c => [c.code, c.name]));
+    byCountry = Object.values(acc)
+      .map(r => ({ ...r, name: nameOf[r.country] || r.country || 'Unassigned' }))
+      .sort((x, y) => (y.year - x.year) || (y.walletBalance - x.walletBalance));
+  }
+
   // ── User delta (today vs yesterday signups) ──────────────────────────────────
   let userDelta = null;
   if (newUsersYesterday > 0) {
@@ -220,6 +258,7 @@ exports.getDashboardStats = async (req, res) => {
         currency:      primaryCode,
         revenueDelta,
         byCurrency,
+        byCountry,
       },
       wallet:  { totalBalance: primary.walletBalance, currency: primaryCode, byCurrency: byCurrency.map(r => ({ currency: r.currency, balance: r.walletBalance })) },
       pending: { drivers: pendingDrivers, partners: pendingPartners },

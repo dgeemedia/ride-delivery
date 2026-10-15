@@ -103,8 +103,9 @@ describe('dashboard stats are per country and never mix currencies', () => {
       user: cnt('user'), ride: cnt('ride'), delivery: cnt('delivery'),
       driverProfile: cnt('driver'), deliveryPartnerProfile: cnt('partner'), supportTicket: cnt('ticket'),
       payment: group('payment'),
+      $queryRawUnsafe: async () => [],
       wallet: { groupBy: async () => wallets },
-      country: { findUnique: async ({ where }) => ({ code: where.code, name: where.code, currencyCode: where.code === 'ML' ? 'XOF' : 'NGN' }) },
+      country: { findMany: async () => [], findUnique: async ({ where }) => ({ code: where.code, name: where.code, currencyCode: where.code === 'ML' ? 'XOF' : 'NGN' }) },
     }));
     for (const dep of ['notification.service', 'email.service', 'shield.service', 'commission.service', 'payment.service']) jest.doMock(`../src/services/${dep}`, () => ({}));
     jest.doMock('../src/services/countrySettings.service', () => ({}));

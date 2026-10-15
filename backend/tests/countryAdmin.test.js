@@ -202,3 +202,51 @@ describe('full authority for a country admin (and no more)', () => {
     await expect(ctrl.adjustWallet({ user: { ...MALI, id: 'me' }, params: { userId: 'me' }, body: { amount: 10, type: 'credit' } }, res())).rejects.toThrow(/own wallet/);
   });
 });
+
+describe('dashboard revenue by country', () => {
+  const run = async (user, query) => {
+    jest.resetModules();
+    const now = new Date();
+    const calls = [];
+    const stub = () => ({ count: async () => 0, groupBy: async () => [], findUnique: async () => null, findMany: async () => [] });
+    const prisma = { user: stub(), ride: stub(), delivery: stub(), driverProfile: stub(), deliveryPartnerProfile: stub(), supportTicket: stub(), wallet: stub(), payment: stub() };
+    prisma.$queryRawUnsafe = async (sql, ...params) => {
+      calls.push({ sql, params });
+      if (sql.includes('"Payment"')) return [
+        { country: 'ML', currency: 'XOF', today: 1000, month: 1000, year: 1300 },
+        { country: 'SN', currency: 'XOF', today: 500, month: 500, year: 500 },
+        { country: 'NG', currency: 'NGN', today: 200, month: 200, year: 200 },
+      ];
+      return [
+        { country: 'ML', currency: 'XOF', balance: 700 },
+        { country: 'GH', currency: 'GHS', balance: 90 },   // wallet but no payments yet
+      ];
+    };
+    prisma.country = { findMany: async () => [{ code: 'ML', name: 'Mali' }, { code: 'SN', name: 'Senegal' }, { code: 'NG', name: 'Nigeria' }, { code: 'GH', name: 'Ghana' }], findUnique: async () => null };
+    jest.doMock('../src/lib/prisma', () => prisma);
+    const { getDashboardStats } = require('../src/controllers/admin.controller');
+    let out; await getDashboardStats({ user, query }, { status: () => ({ json: (b) => { out = b; } }) });
+    return { rows: out.data.revenue.byCountry, calls, out };
+  };
+
+  test('splits a shared currency into countries, with wallet balances, nothing summed across currencies', async () => {
+    const { rows, calls } = await run({ role: 'SUPER_ADMIN' }, {});
+    expect(rows.map(r => r.country).sort()).toEqual(['GH', 'ML', 'NG', 'SN']);
+    expect(rows.find(r => r.country === 'ML')).toMatchObject({ currency: 'XOF', year: 1300, walletBalance: 700, name: 'Mali' });
+    expect(rows.find(r => r.country === 'SN')).toMatchObject({ year: 500, walletBalance: 0 });
+    expect(rows.find(r => r.country === 'GH')).toMatchObject({ currency: 'GHS', year: 0, walletBalance: 90 });
+    expect(calls.every(c => !c.sql.includes('ANY('))).toBe(true);                       // super admin: no country filter
+  });
+
+  test('a country admin only queries their own countries', async () => {
+    const { calls } = await run({ role: 'ADMIN', supportCountries: ['ML', 'SN'] }, {});
+    expect(calls).toHaveLength(2);
+    calls.forEach(c => { expect(c.sql).toContain('ANY('); expect(c.params).toContainEqual(['ML', 'SN']); });
+  });
+
+  test('a single selected country has no per-country table', async () => {
+    const { rows, calls } = await run({ role: 'SUPER_ADMIN' }, { country: 'ML' });
+    expect(rows).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+});

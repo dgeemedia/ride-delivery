@@ -253,6 +253,8 @@ export interface DashboardStats {
       currency: string; today: number; yesterday: number; week: number; month: number; year: number;
       walletBalance?: number; delta?: number | null;
     }>;
+    /** Revenue split by country (all-countries view only), since several countries can share one currency. */
+    byCountry?: Array<{ country: string; name: string; currency: string; today: number; month: number; year: number; walletBalance: number }>;
   };
   /** ISO code when the dashboard is scoped to one country, else null/undefined (all countries). */
   country?: string | null;
